@@ -48,7 +48,7 @@ public class E2EEStrip {
 
   private final String INFO_CONTACT_ALREADY_EXISTS = "Contact already exists and was not saved";
   private final String INFO_CONTACT_INVALID = "Contact is invalid and was not saved";
-  private final String INFO_SESSION_CREATION_FAILED = "Session creation failed. If possible delete sender in contact list and ask for a new keybundle";
+  private final String INFO_SESSION_CREATION_FAILED = "Could not set up a session from that invite. Ask your contact to send a fresh one.";
   /**
    * Deliberately does NOT tell the user to just delete and re-add. That is the right remedy for a
    * reinstall and exactly the wrong one for an impersonation attempt, and the app cannot tell which

@@ -97,28 +97,39 @@ Worse, that version also cleared the pinned identity on contact removal, which o
 path that did not exist before: substitute a key, the user is shown generic "delete and re-invite"
 advice, follows it, and the attacker's key is accepted as a clean first sighting.
 
-Contact removal was therefore made to *keep* the pin — and that turned out to be a second mistake,
-of the opposite kind, found by asking a question the first three review rounds never asked. They all
-asked whether a substituted key could get itself trusted. None asked **who controls entry into the
-refusing state, and whether a legitimate user can get back out.** An attacker controls entry: one
-forged bundle to an address the messenger sees in every envelope. Nobody controlled the exit — accept
-had no UI, `removeIdentity` had no caller at all, and deletion deliberately did not help. Messaging
-carried on normally against the genuine pinned key, so nothing looked broken; the verified badge was
-simply gone, permanently, for whichever contacts the attacker chose. A remote, silent, unclearable
-DoS on the one indicator the whole model rests on is worse than the fail-open it was guarding, and it
-trains the user to disregard the badge well before any real substitution arrives.
+Contact removal was therefore made to *keep* the pin. Then a question none of the first three review
+rounds had asked — **who controls entry into the refusing state, and can a legitimate user get back
+out?** — showed that half of that was wrong too. An attacker controls entry: one forged bundle to an
+address the messenger sees in every envelope. Nobody controlled the exit — accept had no UI,
+`removeIdentity` had no caller at all, and deletion deliberately did not help. Messaging carried on
+normally against the genuine pinned key, so nothing looked broken; the verified badge was simply
+gone, permanently. A remotely-triggerable, unclearable DoS on the one indicator the model rests on
+trains the user to disregard it well before any real substitution arrives.
 
-Deletion is now the exit, and the fail-open is closed where it actually originated: the user is no
-longer given delete-and-re-invite advice for an identity change at all. `warnIfIdentityChanged`
-displaces it on every path where a substitution is recorded, so deleting is an informed act rather
-than one the app talked them into. The exit is **discard, never adopt** — `acceptIdentityChange`
-stays unwired, because a legitimately reinstalled peer returns under a fresh address and so nobody
-ever needs to adopt a key at an old one.
+The first attempt at an exit was deletion — clear the pin when the contact is deleted — and it was
+**worse than the problem**, which the next review round caught before it went anywhere. The
+justification had been that the fail-open was closed at source because the delete-and-re-invite
+advice no longer appeared for an identity change. That was false: the advice was the app's standard
+response to *any* decryption failure, and the messenger can induce one whenever it likes by replaying
+a message (`DuplicateMessageException`) or flipping a bit (`InvalidMessageException`). Neither records
+a pending change, so no identity-change warning fires — guarding that one branch closed nothing,
+because the attacker has no reason to use it. Replay the message, wait for the user to follow the
+advice, then supply your own bundle for the now-unpinned address.
+
+The exit used now is **dismiss**: discard the offered key, *keep the pin*. It opens no window,
+because nothing about the stored key changes. It is safe for one specific reason, which is a coupling
+rather than a local property — `createFingerprint` always derives the displayed number from the
+**pinned** key, so a user pressing verify has compared the key already in use and found it correct;
+the right response to that is to throw away what somebody else offered. `PendingChangeExitTest`
+guards the coupling directly, so a refactor that made the offered key visible would fail loudly
+rather than turning verify into a one-tap adopt.
+
+Deletion keeps the pin, as it did before. `acceptIdentityChange` stays unwired.
 
 As it now stands: a displaced key is refused in **both** directions; the change is recorded from the
 `UntrustedIdentityException` path, taking the offered key from the bundle (libsignal raises that
 exception with a null identity, so `getUntrustedIdentity()` is useless); contact removal does **not**
-surrender the pin to anything but an explicit deletion; and `acceptIdentityChange` takes the key the user was actually shown and refuses
+surrender the pin; and `acceptIdentityChange` takes the key the user was actually shown and refuses
 anything else, so a key arriving between display and confirmation cannot slip through.
 
 **Out-of-band exchange** now exists as a mechanism: `exportOwnKeyBundle()` produces transferable
@@ -151,9 +162,12 @@ identity-change warning now reaches an existing contact and not only a newly add
 solely from `createSessionWithContact`, which runs on the add-contact path, so the two routes a real
 attacker takes (a substituted `PreKeySignalMessage`, and a bundle-only re-invite) showed either the
 generic decryption-failure advice or a success-shaped screen with no mention that a safety number had
-changed. `verifyContact` now returns whether it took, and a refusal keeps the user on the verify
-screen and says why; previously the screen advanced exactly as on success and the badge just never
-appeared.
+changed. `verifyContact` now returns whether it took — `false` means only that nothing was
+loaded, and the UI says exactly that rather than inventing a security claim.
+
+The generic failure strings no longer tell the user to delete a contact, for any cause. That advice
+was attacker-triggerable and could not fix anything even when it was honest; the commonest reason it
+appeared is decrypting the same message twice, for which deleting is pure damage.
 
 Still unwired: `exportOwnKeyBundle`, `importOutOfBandKeyBundle` and `getPendingIdentity`, so there is
 no in-keyboard out-of-band exchange and no screen showing the offered number beside the pinned one.

@@ -101,21 +101,32 @@ public class VerifyContactTest {
   }
 
   /**
-   * Verification must NOT adopt a pending identity change, and must refuse outright while one is
-   * pending.
+   * Verification DISMISSES a pending identity change: it throws the offered key away and keeps the
+   * pinned one. It must never adopt the offered key.
    *
-   * <p>An earlier version of this test asserted the opposite. The argument then was that a
-   * legitimately reinstalled contact otherwise has no route forward — but that case cannot arise:
-   * {@code initializeProtocol} mints a fresh {@code UUID.randomUUID()} per install, so a
-   * reinstalled peer appears as a NEW address and never collides with an existing pin. Every
-   * pending change is therefore a substitution or a store rollback, which makes a one-tap accept on
-   * the verify screen an attack surface rather than a recovery path.
+   * <p>This assertion has been written three ways and the history is the argument.
+   *
+   * <p>First it asserted that verifying <em>adopts</em> the pending key, so a legitimately
+   * reinstalled contact had a route forward. Wrong: {@code initializeProtocol} mints a fresh
+   * {@code UUID.randomUUID()} per install, so a reinstalled peer arrives at a NEW address and never
+   * collides with an existing pin (see {@link AddressingPremiseTest}). Every pending change is a
+   * substitution or a store rollback, so a one-tap accept was an attack surface.
+   *
+   * <p>Then it asserted a flat <em>refusal</em>. That made the state terminal: an attacker forces it
+   * with one forged bundle and nobody can leave, so the badge is destroyed permanently.
+   *
+   * <p>Now: dismiss. Safe for one specific reason — the number on the verify screen is computed from
+   * the PINNED key, so a user pressing verify has compared the key already in use and found it
+   * correct. Discarding what somebody else offered is the right response to that. See
+   * {@code PendingChangeExitTest#verifyingWouldBeUnsafeIfTheOfferedKeyWereEverDisplayed}, which
+   * guards the coupling.
    */
   @Test
-  public void verifyingIsRefusedWhileASubstitutedIdentityIsPending() throws Exception {
+  public void verifyingDismissesAPendingChangeWithoutAdoptingTheOfferedKey() throws Exception {
     final Contact contact = storedContact();
 
     SignalProtocolMain.initialize(null);
+    final Account attacker = SignalProtocolMain.getInstance().getAccount();
     final String attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
     SignalProtocolMain.getInstance().setAccount(me);
     assertFalse(SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress));
@@ -124,13 +135,16 @@ public class VerifyContactTest {
     final IdentityKey pinnedBefore =
         me.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress);
 
-    SignalProtocolMain.verifyContact(contact);
+    assertTrue(SignalProtocolMain.verifyContact(contact));
 
-    assertTrue("verifying must not silently adopt a substituted key",
+    assertFalse("the pending change must be gone - it was the only thing blocking the badge",
         SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
-    assertEquals("the pinned key must be untouched", pinnedBefore,
+    assertEquals("verifying must not move the pin", pinnedBefore,
         me.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
-    assertFalse("and the contact must not be marked verified", contact.isVerified());
+    assertNotEquals("and must never install the offered key",
+        attacker.getIdentityKeyPair().getPublicKey(),
+        me.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+    assertTrue(contact.isVerified());
   }
 
   /**

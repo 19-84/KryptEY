@@ -156,57 +156,49 @@ public class IdentitySubstitutionTest {
   }
 
   /**
-   * Deleting a contact DOES clear the pin, and this test used to assert the opposite.
+   * The regression that matters most. Deleting a contact must NOT clear the pin.
    *
-   * <p>The original reasoning: clearing on delete opened a fail-open path, because the app showed
-   * generic "delete the contact and ask for a new invite" advice on any decryption failure, so an
-   * attacker could substitute a key, let the refusal produce that advice, and have the user walk
-   * onto their key as a clean first sighting.
+   * <p>This assertion was briefly reversed, on the grounds that a pending identity change was
+   * otherwise a terminal state an attacker could force and nobody could leave. That problem is
+   * real, but deletion was the wrong exit — see {@link PendingChangeExitTest}, which uses the right
+   * one (dismiss the offered key, keep the pin).
    *
-   * <p>What that reasoning left out is who controls entry into the refusing state. An attacker
-   * does — one forged bundle to a known address — and once there, nothing could leave: accept had
-   * no UI, {@code removeIdentity} had no caller, and deletion deliberately did not help. The badge
-   * was destroyed permanently while messaging carried on normally, so nothing looked broken. That
-   * is a remote, silent, permanent DoS on the one indicator the trust model rests on, and it is
-   * worse than the fail-open it was guarding.
-   *
-   * <p>The fail-open is now closed where it actually originated — {@code warnIfIdentityChanged}
-   * displaces the delete-and-re-invite advice for an identity change — so deletion is an informed
-   * act rather than one the app talked the user into. See {@link PendingChangeExitTest}, and the
-   * rationale block in {@code SignalProtocolMain.removeContact}.
-   *
-   * <p>What must still hold, and is asserted below: deletion <em>discards</em>. It must never leave
-   * the offered key installed in place of the pinned one.
+   * <p>Why deletion is the wrong exit, concretely: the app's "delete and ask for a new invite"
+   * advice was its standard response to <em>any</em> decryption failure, and the messenger can
+   * induce one whenever it likes by replaying a message or flipping a bit — neither of which records
+   * a pending identity change, so no identity-change warning fires. Guarding only the
+   * identity-change branch therefore closes nothing; the attacker uses a branch with no guard. The
+   * pin outliving the contact is what makes all of those fail closed.
    */
   @Test
-  public void deletingAContactClearsThePinnedIdentityWithoutAdoptingTheOfferedOne()
-      throws Exception {
+  public void deletingAContactDoesNotClearThePinnedIdentity() throws Exception {
     final SignalProtocolAddress peerAddress = addressOf(realPeer);
 
     final String genuine = bundleFrom(realPeer);
     activate(victim);
     SignalProtocolMain.importOutOfBandKeyBundle(genuine, peerAddress);
-
-    // An attacker forces the terminal state.
-    final String substituted = bundleFrom(attacker);
-    activate(victim);
-    assertFalse(SignalProtocolMain.importOutOfBandKeyBundle(substituted, peerAddress));
-    assertTrue(SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+    final IdentityKey pinned = victim.getSignalProtocolStore().getIdentityKeyStore()
+        .getIdentity(peerAddress);
+    assertNotNull(pinned);
 
     final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact contact =
         new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
             "Real", "Peer", peerAddress.getName(), peerAddress.getDeviceId(), false);
     SignalProtocolMain.removeContactFromContactListAndProtocol(contact);
 
-    assertNull("deletion is the only exit from a state an attacker can force",
-        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
-    assertFalse(SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+    assertEquals("deleting a contact must not surrender the pinned identity",
+        pinned, victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
 
-    // Discard, never adopt. Leaving the attacker's key pinned would turn the exit into their
-    // delivery mechanism, which is the failure the original assertion was really protecting.
-    assertNotEquals("deletion must not install the offered key",
-        attacker.getIdentityKeyPair().getPublicKey(),
-        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+    // The assertion that actually encodes the cost of getting this wrong: after the delete, the
+    // attacker's bundle must still be refused. A previous revision replaced this with a check that
+    // the pin was null and then that it did not equal the attacker's key - vacuously true, since
+    // nothing was pinned at all, and it silently stopped testing substitution.
+    final String substituted = bundleFrom(attacker);
+    activate(victim);
+    assertFalse("delete-and-re-add must not become a way to accept a substituted key",
+        SignalProtocolMain.importOutOfBandKeyBundle(substituted, peerAddress));
+    assertEquals("and the genuine key must still be the one pinned",
+        pinned, victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
   }
 
   @Test

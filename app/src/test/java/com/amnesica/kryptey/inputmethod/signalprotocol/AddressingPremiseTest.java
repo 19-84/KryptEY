@@ -19,8 +19,8 @@ import java.util.UUID;
  *
  * <p>The design says: a pending identity change is <em>always</em> hostile — a substitution or a
  * store rollback — never a legitimate peer. That is why {@code verifyContact} refuses while a
- * change is pending, why there is deliberately no one-tap "accept this new key" button, and why
- * contact removal does not surrender the pin.
+ * change is pending it is dismissed rather than accepted, why there is deliberately no one-tap
+ * "accept this new key" button, and why contact removal does not surrender the pin.
  *
  * <p>All of that follows from one property of addressing, and nothing else: <b>a fresh install
  * mints a brand-new random address</b>, so a peer who reinstalls comes back as a different address
@@ -36,8 +36,9 @@ public class AddressingPremiseTest {
 
   /**
    * The premise itself. If this fails, re-read the trust model before changing anything — the
-   * refusal in {@code verifyContactInContactList} and the absence of an accept path both become
-   * wrong, not just suboptimal.
+   * dismissal in {@code verifyContactInContactList} and the absence of an accept path both become
+   * wrong, not just suboptimal - a peer who legitimately returned to the same address would have
+   * their real new key thrown away every time the user pressed verify.
    */
   @Test
   public void everyFreshInstallMintsADistinctAddress() {

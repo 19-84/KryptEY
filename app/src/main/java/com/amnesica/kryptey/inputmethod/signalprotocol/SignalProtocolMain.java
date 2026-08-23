@@ -160,6 +160,21 @@ public class SignalProtocolMain {
    *     what is pending, so a key that arrives between display and confirmation cannot slip through
    * @return true if the pinned key was replaced
    */
+  /**
+   * Discards a pending identity change, keeping the pinned key. The safe exit from the state an
+   * attacker can force; see {@code IdentityKeyStoreImpl.dismissIdentityChange}.
+   */
+  public static boolean dismissIdentityChange(final SignalProtocolAddress address) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    final boolean dismissed = sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .dismissIdentityChange(address);
+    if (dismissed) {
+      Log.i(TAG, "Discarded a pending identity change; the pinned key is unchanged");
+      sInstance.storeAllAccountInformationInSharedPreferences();
+    }
+    return dismissed;
+  }
+
   public static boolean acceptIdentityChange(final SignalProtocolAddress address,
                                              final IdentityKey shown) {
     if (address == null || sInstance.mAccount == null) return false;
@@ -307,20 +322,30 @@ public class SignalProtocolMain {
   private boolean verifyContactInContactList(Contact contact) throws UnknownContactException {
     if (contact == null || mAccount == null) return false;
 
-    // Deliberately does NOT adopt a pending identity change.
+    // A pending identity change is DISMISSED here, not accepted.
     //
-    // An earlier attempt made it do so, reasoning that a legitimately reinstalled contact otherwise
-    // has no route forward. That reasoning was wrong: initializeProtocol mints a fresh
-    // UUID.randomUUID() address per install, so a reinstalled peer arrives as a NEW address and
-    // never collides with an existing pin. A pending change therefore only ever arises from a
-    // substitution or a store rollback - so a one-tap "accept" on this screen would be an attack
-    // surface, not a recovery path. The honest recovery is a new invite from the peer's new
-    // identity.
+    // This is safe for exactly one reason, and it is a coupling rather than a local property:
+    // createFingerprint always derives the displayed number from the PINNED key, never from the
+    // offered one (see the comment there, and TrustScopingTest /
+    // VerifyContactTest#theDisplayedFingerprintTracksThePinnedKeyNotThePendingOne). So a user
+    // pressing this button has just compared the key already in use and found it correct. The
+    // right response to "the key I have is the right one" is to throw away the key somebody else
+    // offered - which is what dismissing does. The pin never moves.
+    //
+    // If createFingerprint is ever changed to show the offered key while a change is pending, this
+    // becomes a one-tap adopt of an attacker's key and must be changed back to a refusal first.
+    // VerifyContactTest#verifyingWouldBeUnsafeIfTheOfferedKeyWereEverDisplayed exists to make that
+    // change fail loudly instead of silently.
+    //
+    // The alternative - refusing outright - was tried and is worse: it made the pending state
+    // terminal, so one forged bundle from anyone who knows the address permanently destroyed the
+    // contact's badge with no way back. Deleting the contact as the exit is worse still, because it
+    // surrenders the pin and opens a substitution window on the app's generic "delete and
+    // re-invite" advice, which an attacker can trigger by replaying any message.
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
-        .hasUnacceptedIdentityChange(contact.getSignalProtocolAddress())) {
-      Log.w(TAG, "Refusing to mark " + contact.getSignalProtocolAddressName()
-          + " verified while a substituted identity is pending");
-      return false;
+        .dismissIdentityChange(contact.getSignalProtocolAddress())) {
+      Log.i(TAG, "Discarded an offered identity for " + contact.getSignalProtocolAddressName()
+          + " because the user confirmed the number of the key already pinned");
     }
 
     contact.setVerified(true);
@@ -437,36 +462,30 @@ public class SignalProtocolMain {
     Log.d(TAG, "Deleting unencrypted messages from contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 
-    // Deleting a contact forgets its pinned identity and any pending change with it.
+    // Deliberately does NOT clear the pinned identity.
     //
-    // This reverses an earlier decision, and the reason is worth recording because the earlier
-    // reasoning was not wrong so much as incomplete.
+    // This has now been argued in both directions and settled here, so the reasoning is worth
+    // keeping in full.
     //
-    // The pin used to survive deletion, to close a fail-open path: an attacker substitutes their
-    // key, libsignal refuses, the user is shown generic "delete the contact and ask for a new
-    // invite" advice, follows it, and the attacker's key is accepted as a clean first sighting.
+    // Clearing it opens a fail-open path: the user is shown "delete the contact and ask for a new
+    // invite" advice, follows it, and whatever key arrives next is accepted as a clean first
+    // sighting. Crucially that advice is NOT specific to an identity change - it is the app's
+    // standard response to any decryption failure, and the messenger can induce one at will by
+    // replaying a message (DuplicateMessageException) or flipping a bit (InvalidMessageException),
+    // neither of which records a pending change. So warning on the identity-change branch cannot
+    // close this; the attacker simply uses a branch that has no warning on it. The pin outliving
+    // the contact is what makes all of those fail closed.
     //
-    // What that missed is who controls entry into the refusing state. Anyone who knows this
-    // address - and the messenger carrying every envelope does - can send one forged bundle and
-    // permanently destroy the contact's verified badge. Nothing could clear it: acceptIdentityChange
-    // has no UI, removeIdentity had no caller, and deletion deliberately did not help. Messaging
-    // kept working on the genuine pinned key, so nothing looked broken; the badge was simply gone
-    // forever. Applied to every contact at once that is a one-shot, remote, silent, permanent DoS
-    // on the single indicator the whole trust model rests on - and it teaches the user the badge
-    // means nothing well before any real substitution.
+    // A previous revision cleared the pin here, to escape a real problem: a pending identity change
+    // was a terminal state that an attacker could force with one forged bundle and nobody could
+    // leave, permanently destroying the contact's verified badge. That problem is real, but
+    // deletion was the wrong exit - it traded a denial of service for a key-substitution window.
+    // The right exit is dismissIdentityChange: drop the offered key, KEEP the pin. Nothing about
+    // the pinned key changed, the safety number on screen is still computed from it, so the badge
+    // can be restored by re-comparing the very same number. See its javadoc.
     //
-    // A state a third party can force and no one can leave is worse than the fail-open it was
-    // guarding, so deletion is now the exit. The fail-open is closed at its actual source instead:
-    // the user is no longer given delete-and-re-invite advice for an identity change (see
-    // E2EEStripView.warnIfIdentityChanged, which displaces it), so deleting is now an informed act
-    // rather than one the app talked them into. Re-adding the same address afterwards lands in
-    // ordinary unverified first-contact state, badge off, comparison prompted.
-    //
-    // Note what is NOT offered: adopting the offered key in place. acceptIdentityChange stays
-    // unwired. The exit is discard, never adopt - a legitimately reinstalled peer returns under a
-    // fresh address (see AddressingPremiseTest), so nobody ever needs to adopt a key at an old one.
-    mAccount.getSignalProtocolStore().getIdentityKeyStore()
-        .removeIdentity(contactToRemove.getSignalProtocolAddress());
+    // The sanctioned ways out of a pending change are therefore: dismiss (keep the pinned key), or
+    // acceptIdentityChange after comparing the offered number out of band - never deletion.
 
     storeAllAccountInformationInSharedPreferences();
   }

@@ -128,15 +128,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_VERIFY_CONTACT = "To verify the security of your end-to-end encryption with %s, compare the numbers above with their device";
   private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
 
-  private final String INFO_SESSION_CREATION_FAILED = "Session creation failed. If possible delete sender in contact list and ask for a new keybundle";
+  // Deliberately does not tell the user to delete the contact. That advice was the app's standard
+  // response to any failure here, and an attacker can induce failures at will, so it functioned as
+  // a remote instruction to discard a contact's state. Deleting keeps the pinned key either way, so
+  // it is no longer a substitution window - but it is still advice that cannot fix anything.
+  private final String INFO_SESSION_CREATION_FAILED = "Could not set up a session from that invite. Ask your contact to send a fresh one.";
   private final String INFO_CONTACT_CREATION_FAILED = "Could not create contact. Abort";
   private final String INFO_ADD_FIRSTNAME_ADD_CONTACT = "Enter a first name to create contact";
   private final String INFO_CHOOSE_CONTACT_FIRST = "Please choose a contact first";
   private final String INFO_NO_MESSAGE_TO_ENCRYPT = "No message to encrypt";
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
-  private final String INFO_VERIFY_REFUSED = "Cannot verify %s: a different security number has been offered for them since you last spoke. Get a fresh invite from them and add them again - do not confirm this one.";
+  private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
+  private final String INFO_VERIFY_PENDING_CHANGE = "Someone offered a different key for %s since you last spoke - it was refused and is not in use. The number below is the key you already have. If it still matches what they read out, confirm it to dismiss the warning.";
   private final String INFO_IDENTITY_CHANGED_EXISTING = "%s's security number has changed. Either they reinstalled, or someone is impersonating them. Do NOT follow any advice to delete and re-add them until you have checked their new number with them through another channel.";
-  private final String INFO_MESSAGE_DECRYPTION_FAILED = "Message could not be decrypted. Possible Reasons: You decrypted a message you already have decrypted once or the session is invalid. In that case delete your contact and tell your contact to delete you and ask for a new invite";
+  // Same reasoning as INFO_SESSION_CREATION_FAILED: no deletion advice. The commonest cause by far
+  // is decrypting the same message twice, for which deleting anything is pure damage.
+  private final String INFO_MESSAGE_DECRYPTION_FAILED = "Message could not be decrypted. Most often this means it was already decrypted once - each message can only be opened a single time. If a new message from this contact also fails, ask them to send a fresh invite.";
   private final String INFO_CANNOT_DECRYPT_OWN_MESSAGES = "You can't decrypt your own messages";
   private final String INFO_SIGNAL_MESSAGE_NO_CONTACT_FOUND = "Please add the contact first";
   private final String INFO_MESSAGE_ENCRYPTION_FAILED = "Message could not be encrypted";
@@ -216,14 +223,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mVerifyContactVerifyButton == null) return;
     mVerifyContactVerifyButton.setOnClickListener(v -> {
       try {
+        // false now means only "no contact or no account loaded" - verification itself no longer
+        // refuses. Saying "a different security number was offered" here would fabricate a
+        // security claim out of a failed load.
         if (!mE2EEStrip.verifyContact(chosenContact)) {
-          // Refused: a substituted identity is pending. Stay on this screen and say so - advancing
-          // to the contact list looked exactly like success and the badge just never appeared.
-          setInfoTextViewMessage(mVerifyContactInfoTextView,
-              String.format(INFO_VERIFY_REFUSED, chosenContact.getFirstName()));
-          Toast.makeText(getContext(),
-              String.format(INFO_VERIFY_REFUSED, chosenContact.getFirstName()),
-              Toast.LENGTH_LONG).show();
+          Toast.makeText(getContext(), INFO_VERIFY_UNAVAILABLE, Toast.LENGTH_LONG).show();
           return;
         }
         loadContactsIntoContactsListView();
@@ -252,6 +256,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       return;
     }
     if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(true);
+    // Tell the user a key was offered BEFORE they compare, so they compare attentively. The digits
+    // shown are the pinned key's, which is what makes confirming them a dismissal of the offered
+    // key rather than an acceptance of it.
+    if (com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain
+        .hasUnacceptedIdentityChange(chosenContact.getSignalProtocolAddress())) {
+      setInfoTextViewMessage(mVerifyContactInfoTextView,
+          String.format(INFO_VERIFY_PENDING_CHANGE, chosenContact.getFirstName()));
+    }
     setFingerprintViews(fingerprint, true);
   }
 
@@ -483,7 +495,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
       if (successful) {
         setInfoTextViewMessage(mInfoTextView, "Contact " + chosenContact.getFirstName() + " " + chosenContact.getLastName() + " created. You can send messages now");
-      } else {
+      } else if (!warnIfIdentityChanged(chosenContact)) {
+        // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
+        // and this used to overwrite it with INFO_SESSION_CREATION_FAILED - the same delete-and-
+        // re-invite advice - defeating its own guard.
         setInfoTextViewMessage(mInfoTextView, INFO_SESSION_CREATION_FAILED);
       }
     }
@@ -882,7 +897,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       e.printStackTrace();
       resetChosenContactAndInfoText();
     }
-    showChosenContactInMainInfoField();
+    // Only reset the info field if nothing more important is standing in it. This unconditionally
+    // overwrote the identity-change warning one frame after it was set, on the clipboard path -
+    // which is the only path an attacker's envelope takes - leaving a ~3.5s toast as the entire
+    // signal, over a screen that otherwise looked like an ordinary success.
+    if (!mIdentityWarningStanding) showChosenContactInMainInfoField();
+    mIdentityWarningStanding = false;
     mE2EEStrip.clearClipboard();
     changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
   }
@@ -942,6 +962,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
    *     move for an impersonation attempt and the right one only for a reinstall.
    */
+  /** Set while an identity-change warning is on screen, so the info field is not reset over it. */
+  private boolean mIdentityWarningStanding = false;
+
   private boolean warnIfIdentityChanged(final Contact sender) {
     if (sender == null) return false;
     if (!com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain
@@ -953,6 +976,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         Toast.LENGTH_LONG).show();
     setInfoTextViewMessage(mInfoTextView,
         String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName()));
+    mIdentityWarningStanding = true;
     return true;
   }
 

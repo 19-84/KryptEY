@@ -171,6 +171,33 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    *
    * @return true if the pin was replaced.
    */
+  /**
+   * Discards a pending identity change and keeps the pinned key.
+   *
+   * <p>This is the safe exit from a pending change, and the only one a user should normally need.
+   *
+   * <p>Entry into the pending state is controlled by an attacker: one forged bundle to an address
+   * the messenger sees in every envelope records a change and drops the contact's verified badge.
+   * Without an exit that state is permanent, and a permanent remotely-triggerable DoS on the badge
+   * teaches the user to disregard it long before a real substitution arrives.
+   *
+   * <p>Deleting the contact was tried as that exit and was worse: it surrendered the pin, which
+   * turns every attacker-inducible decryption failure - a replay, a flipped bit - into a
+   * key-substitution window, because the app's generic failure advice tells the user to delete and
+   * re-invite. Dismissing creates no such window. The pinned key is untouched, so
+   * {@code createFingerprint} still shows the number the user compared before, and re-comparing it
+   * confirms a key that never moved.
+   *
+   * <p>Deliberately does not restore {@code Contact.verified} by itself - the user re-runs the
+   * comparison, which is cheap because the number is unchanged, and that keeps "verified" meaning
+   * "somebody compared this" rather than "some code decided it was fine".
+   *
+   * @return true if a change was pending and has been discarded.
+   */
+  public boolean dismissIdentityChange(final SignalProtocolAddress address) {
+    return pendingIdentities.remove(addressKey(address)) != null;
+  }
+
   public boolean acceptIdentityChange(final SignalProtocolAddress address, final IdentityKey shown) {
     final IdentityKey pending = getPendingIdentity(address);
     if (pending == null || shown == null || !pending.equals(shown)) return false;
