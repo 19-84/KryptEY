@@ -133,19 +133,43 @@ public class KyberPreKeyTest {
         () -> store.markKyberPreKeyUsed(1, 1, baseKey.getPublicKey()));
   }
 
+  /**
+   * Two peers may legitimately use the same last-resort Kyber pre-key; only a repeated (base key,
+   * pre-key) pairing is a replay. Asserting the second call simply returns is not enough - it would
+   * pass just as well if the store recorded nothing, so the replay guard is checked afterwards.
+   */
   @Test
   public void differentBaseKeysAgainstOneKyberPreKeyAreAccepted() throws Exception {
     final KyberPreKeyStoreImpl store = new KyberPreKeyStoreImpl();
-    store.markKyberPreKeyUsed(1, 1, ECKeyPair.generate().getPublicKey());
-    store.markKyberPreKeyUsed(1, 1, ECKeyPair.generate().getPublicKey());
+    final ECKeyPair first = ECKeyPair.generate();
+    final ECKeyPair second = ECKeyPair.generate();
+
+    store.markKyberPreKeyUsed(1, 1, first.getPublicKey());
+    store.markKyberPreKeyUsed(1, 1, second.getPublicKey());
+
+    // Both must now be burned against pre-key 1, or the store accepted them without recording them.
+    assertThrows("the first base key was not recorded", ReusedBaseKeyException.class,
+        () -> store.markKyberPreKeyUsed(1, 1, first.getPublicKey()));
+    assertThrows("the second base key was not recorded", ReusedBaseKeyException.class,
+        () -> store.markKyberPreKeyUsed(1, 1, second.getPublicKey()));
   }
 
+  /** Burning a base key against one pre-key must not burn it against another. */
   @Test
   public void theSameBaseKeyAgainstDifferentKyberPreKeysIsAccepted() throws Exception {
     final KyberPreKeyStoreImpl store = new KyberPreKeyStoreImpl();
     final ECKeyPair baseKey = ECKeyPair.generate();
+
     store.markKyberPreKeyUsed(1, 1, baseKey.getPublicKey());
     store.markKyberPreKeyUsed(2, 1, baseKey.getPublicKey());
+
+    // Scoped per pre-key: each pairing is burned, and neither leaked into the other.
+    assertThrows(ReusedBaseKeyException.class,
+        () -> store.markKyberPreKeyUsed(1, 1, baseKey.getPublicKey()));
+    assertThrows(ReusedBaseKeyException.class,
+        () -> store.markKyberPreKeyUsed(2, 1, baseKey.getPublicKey()));
+    // A third, untouched pre-key must still accept it.
+    store.markKyberPreKeyUsed(3, 1, baseKey.getPublicKey());
   }
 
   @Test

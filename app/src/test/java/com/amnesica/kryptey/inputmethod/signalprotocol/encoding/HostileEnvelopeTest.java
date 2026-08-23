@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -42,7 +43,10 @@ public class HostileEnvelopeTest {
   @Test
   public void validDeviceIdsStillDecode() throws Exception {
     for (final int ok : new int[] {1, 42, 127}) {
-      BinaryEnvelope.decode(messageWithDeviceId(ok));
+      // Discarding the result would let this pass even if decode returned an envelope naming a
+      // different device - the bounds check is only half of what matters here.
+      assertEquals("decoded the wrong device id", ok,
+          BinaryEnvelope.decode(messageWithDeviceId(ok)).getDeviceId());
     }
   }
 

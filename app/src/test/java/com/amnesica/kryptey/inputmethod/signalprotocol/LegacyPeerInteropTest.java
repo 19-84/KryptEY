@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
@@ -44,8 +45,11 @@ public class LegacyPeerInteropTest {
     // Must not raise: before the fix this propagated an unchecked IllegalArgumentException out of
     // the click listener and killed the input-method process.
     final Object contact = SignalProtocolMain.extractContactFromMessageEnvelope(envelope);
-    // A null result (unknown contact) is a fine outcome; a thrown exception is not.
-    assertTrue("unexpected type: " + contact, contact == null || contact instanceof Object);
+    // "contact == null || contact instanceof Object" was the assertion here, which is true for
+    // every possible value - the test proved only that the call returned. A null result is the
+    // correct outcome for an envelope naming a peer that is not in the contact list; anything else
+    // means the lookup matched something it should not have.
+    assertNull("an envelope from an unknown peer must not resolve to a contact", contact);
   }
 
   @Test
