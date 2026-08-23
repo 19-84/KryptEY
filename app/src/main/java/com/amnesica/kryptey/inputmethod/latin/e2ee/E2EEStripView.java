@@ -134,6 +134,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_CHOOSE_CONTACT_FIRST = "Please choose a contact first";
   private final String INFO_NO_MESSAGE_TO_ENCRYPT = "No message to encrypt";
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
+  private final String INFO_VERIFY_REFUSED = "Cannot verify %s: a different security number has been offered for them since you last spoke. Get a fresh invite from them and add them again - do not confirm this one.";
+  private final String INFO_IDENTITY_CHANGED_EXISTING = "%s's security number has changed. Either they reinstalled, or someone is impersonating them. Do NOT follow any advice to delete and re-add them until you have checked their new number with them through another channel.";
   private final String INFO_MESSAGE_DECRYPTION_FAILED = "Message could not be decrypted. Possible Reasons: You decrypted a message you already have decrypted once or the session is invalid. In that case delete your contact and tell your contact to delete you and ask for a new invite";
   private final String INFO_CANNOT_DECRYPT_OWN_MESSAGES = "You can't decrypt your own messages";
   private final String INFO_SIGNAL_MESSAGE_NO_CONTACT_FOUND = "Please add the contact first";
@@ -214,7 +216,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mVerifyContactVerifyButton == null) return;
     mVerifyContactVerifyButton.setOnClickListener(v -> {
       try {
-        mE2EEStrip.verifyContact(chosenContact);
+        if (!mE2EEStrip.verifyContact(chosenContact)) {
+          // Refused: a substituted identity is pending. Stay on this screen and say so - advancing
+          // to the contact list looked exactly like success and the badge just never appeared.
+          setInfoTextViewMessage(mVerifyContactInfoTextView,
+              String.format(INFO_VERIFY_REFUSED, chosenContact.getFirstName()));
+          Toast.makeText(getContext(),
+              String.format(INFO_VERIFY_REFUSED, chosenContact.getFirstName()),
+              Toast.LENGTH_LONG).show();
+          return;
+        }
         loadContactsIntoContactsListView();
         showOnlyUIView(UIView.CONTACT_LIST_VIEW);
       } catch (UnknownContactException e) {
@@ -596,7 +607,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           changeImageButtonState(mDecryptButton, ButtonState.ENABLED);
           setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_DETECTED);
         } else if (clipboardType == MessageType.SIGNAL_MESSAGE) {
-          changeImageButtonState(mEncryptButton, ButtonState.ENABLED);
+          // Was mEncryptButton, which is a copy-paste slip - an inbound message enables decrypt.
+          // Inert either way: setInfoTextViewMessage below fires a TextWatcher that enables both
+          // buttons for any info text other than INFO_NO_CONTACT_CHOSEN, so all three of these
+          // calls are dead. Corrected rather than deleted so the branch reads as what it means.
+          changeImageButtonState(mDecryptButton, ButtonState.ENABLED);
           setInfoTextViewMessage(mInfoTextView, INFO_SIGNAL_MESSAGE_DETECTED);
         }
       } catch (IOException e) {
@@ -920,15 +935,41 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     showOnlyUIView(UIView.ADD_CONTACT_VIEW);
   }
 
+  /**
+   * Shows the identity-change warning if one is pending for this sender.
+   *
+   * @return true if a warning was shown, in which case the caller must not also show the generic
+   *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
+   *     move for an impersonation attempt and the right one only for a reinstall.
+   */
+  private boolean warnIfIdentityChanged(final Contact sender) {
+    if (sender == null) return false;
+    if (!com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain
+        .hasUnacceptedIdentityChange(sender.getSignalProtocolAddress())) {
+      return false;
+    }
+    Toast.makeText(getContext(),
+        String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName()),
+        Toast.LENGTH_LONG).show();
+    setInfoTextViewMessage(mInfoTextView,
+        String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName()));
+    return true;
+  }
+
   private void decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
     final CharSequence decryptedMessage = mE2EEStrip.decryptMessage(messageEnvelope, sender);
+
+    // Check before branching: a substitution recorded during this decrypt attempt must be reported
+    // even on the paths that otherwise look like success (a bundle-only re-invite advances the UI
+    // exactly as a good one does), and must displace the generic advice on the failure path.
+    final boolean identityChanged = warnIfIdentityChanged(sender);
 
     if (!isSessionCreation && decryptedMessage != null) {
       mInputEditText.setText(decryptedMessage);
       changeVisibilityInputFieldButtons(true);
     } else if (isSessionCreation) {
       changeVisibilityInputFieldButtons(true);
-    } else {
+    } else if (!identityChanged) {
       Toast.makeText(getContext(), INFO_MESSAGE_DECRYPTION_FAILED, Toast.LENGTH_LONG).show();
       Log.e(TAG, "Error: Decrypted message is null");
     }

@@ -187,8 +187,11 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   /**
    * Forgets everything known about {@code address}.
    *
-   * <p>Contact removal must reach this, or the app's own advice — delete the contact and ask for a
-   * new invite — cannot work: the stale identity would survive and keep refusing the new one.
+   * <p>Reached from contact removal, and only from there. That is the sole exit from a pending
+   * identity change: without it, one forged bundle from anyone who knows the address permanently
+   * destroys that contact's verified badge with no way back. See the rationale in
+   * {@code SignalProtocolMain.removeContact} - in particular why the exit is discard and never
+   * adopt, and why the fail-open this used to guard is now closed in the UI advice instead.
    */
   public void removeIdentity(final SignalProtocolAddress address) {
     trustedKeys.removeIf(k -> k != null && k.getSignalProtocolAddress().equals(address));

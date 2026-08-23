@@ -223,8 +223,9 @@ public class E2EEStrip {
     return SignalProtocolMain.getFingerprint(contact);
   }
 
-  public void verifyContact(Contact contact) throws UnknownContactException {
-    SignalProtocolMain.verifyContact(contact);
+  /** @return false if verification was refused because a substituted identity is pending. */
+  public boolean verifyContact(Contact contact) throws UnknownContactException {
+    return SignalProtocolMain.verifyContact(contact);
   }
 
   /**

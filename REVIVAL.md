@@ -97,10 +97,28 @@ Worse, that version also cleared the pinned identity on contact removal, which o
 path that did not exist before: substitute a key, the user is shown generic "delete and re-invite"
 advice, follows it, and the attacker's key is accepted as a clean first sighting.
 
+Contact removal was therefore made to *keep* the pin — and that turned out to be a second mistake,
+of the opposite kind, found by asking a question the first three review rounds never asked. They all
+asked whether a substituted key could get itself trusted. None asked **who controls entry into the
+refusing state, and whether a legitimate user can get back out.** An attacker controls entry: one
+forged bundle to an address the messenger sees in every envelope. Nobody controlled the exit — accept
+had no UI, `removeIdentity` had no caller at all, and deletion deliberately did not help. Messaging
+carried on normally against the genuine pinned key, so nothing looked broken; the verified badge was
+simply gone, permanently, for whichever contacts the attacker chose. A remote, silent, unclearable
+DoS on the one indicator the whole model rests on is worse than the fail-open it was guarding, and it
+trains the user to disregard the badge well before any real substitution arrives.
+
+Deletion is now the exit, and the fail-open is closed where it actually originated: the user is no
+longer given delete-and-re-invite advice for an identity change at all. `warnIfIdentityChanged`
+displaces it on every path where a substitution is recorded, so deleting is an informed act rather
+than one the app talked them into. The exit is **discard, never adopt** — `acceptIdentityChange`
+stays unwired, because a legitimately reinstalled peer returns under a fresh address and so nobody
+ever needs to adopt a key at an old one.
+
 As it now stands: a displaced key is refused in **both** directions; the change is recorded from the
 `UntrustedIdentityException` path, taking the offered key from the bundle (libsignal raises that
 exception with a null identity, so `getUntrustedIdentity()` is useless); contact removal does **not**
-surrender the pin; and `acceptIdentityChange` takes the key the user was actually shown and refuses
+surrender the pin to anything but an explicit deletion; and `acceptIdentityChange` takes the key the user was actually shown and refuses
 anything else, so a key arriving between display and confirmation cannot slip through.
 
 **Out-of-band exchange** now exists as a mechanism: `exportOwnKeyBundle()` produces transferable
@@ -128,13 +146,19 @@ the transfer, dropped when the key is forgotten, and not carried over to a repla
 after a change.
 
 **What is and is not wired to UI**, precisely, because an earlier version of this note overstated
-it. The contact list badge does consult `isContactKeyTrustworthy` (`ListAdapterContacts:52`), so an
-out-of-band contact displays as trusted. Nothing invokes `exportOwnKeyBundle`,
-`importOutOfBandKeyBundle`, `acceptIdentityChange` or `getPendingIdentity` — so the mechanisms exist
-and are tested, but a user has no way to perform an out-of-band exchange or to accept a changed
-identity from inside the keyboard. A legitimately reinstalled contact therefore has no in-app route
-forward: sends fail with an explanatory message, and deleting the contact deliberately no longer
-helps (that was the fail-open path). Closing this needs UI work.
+it. The contact list badge consults `isContactKeyTrustworthy` (`ListAdapterContacts:52`). The
+identity-change warning now reaches an existing contact and not only a newly added one — it fired
+solely from `createSessionWithContact`, which runs on the add-contact path, so the two routes a real
+attacker takes (a substituted `PreKeySignalMessage`, and a bundle-only re-invite) showed either the
+generic decryption-failure advice or a success-shaped screen with no mention that a safety number had
+changed. `verifyContact` now returns whether it took, and a refusal keeps the user on the verify
+screen and says why; previously the screen advanced exactly as on success and the badge just never
+appeared.
+
+Still unwired: `exportOwnKeyBundle`, `importOutOfBandKeyBundle` and `getPendingIdentity`, so there is
+no in-keyboard out-of-band exchange and no screen showing the offered number beside the pinned one.
+`acceptIdentityChange` is unwired **deliberately** — see above. Closing the out-of-band gap needs UI
+work.
 
 QR is purely a UX layer over the same string and needs a dependency decision.
 
@@ -177,10 +201,16 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
 
 ## Open
 
-1. **UI for out-of-band exchange and for accepting an identity change.** Both mechanisms exist and
-   are tested; nothing in the keyboard invokes them yet. QR would be a dependency decision (ZXing);
-   string transfer needs none.
-2. **Run the instrumentation tests.** The single largest remaining unknown — see below.
+1. **UI for out-of-band exchange.** `exportOwnKeyBundle` / `importOutOfBandKeyBundle` exist and are
+   tested; nothing in the keyboard invokes them. QR would be a dependency decision (ZXing); string
+   transfer needs none. *Not* on this list any more: UI for accepting an identity change. That is
+   now a decision rather than a gap — the exit is discard via deletion, and adopt-in-place stays
+   unavailable on purpose.
+2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
+   supplies it. The user is told a number changed but cannot yet see what it changed to, which is
+   what they would need to recognise a peer who genuinely reinstalled onto the same address (only
+   reachable today via a store rollback).
+3. **Run the instrumentation tests.** The single largest remaining unknown — see below.
 
 ## Known-deferred defects
 
@@ -192,6 +222,8 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
 - **No user-visible signal when the Keystore key is gone** — it currently looks identical to
   "no data". `destroyMasterKey()` has no caller, so there is no reset path.
 - **Non-atomic account write** — 7 independent `commit()`s per save, on the IME main thread.
-- `E2EEStripView` enables the *encrypt* button on detecting an encrypted message while the sibling
-  branches enable *decrypt*. Looks like a copy-paste error; there is a coherent alternative reading,
-  so it was flagged rather than changed.
+- ~~`E2EEStripView` enables the *encrypt* button on detecting an encrypted message.~~ Resolved: it
+  was a copy-paste slip, and inert — `setInfoTextViewMessage` fires a `TextWatcher` that enables
+  both buttons for any info text other than `INFO_NO_CONTACT_CHOSEN`, so all three sibling
+  `changeImageButtonState` calls are dead. Corrected rather than deleted, so the branch reads as
+  what it means.

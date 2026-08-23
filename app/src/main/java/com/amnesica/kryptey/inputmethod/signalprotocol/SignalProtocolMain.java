@@ -291,13 +291,21 @@ public class SignalProtocolMain {
     return sInstance.createFingerprint(contact);
   }
 
-  public static void verifyContact(Contact contact) throws UnknownContactException {
+  /**
+   * Marks a contact verified after the user compared safety numbers.
+   *
+   * @return false if the request was refused - the caller MUST report that. The refusal happens
+   *     when a substituted identity is pending, and it is silent from the user's point of view: the
+   *     screen advances and the badge simply never appears. A refusal the user cannot see teaches
+   *     them the badge is unreliable, which is the same damage as showing a wrong badge.
+   */
+  public static boolean verifyContact(Contact contact) throws UnknownContactException {
     Log.d(TAG, "Verifying contact...");
-    sInstance.verifyContactInContactList(contact);
+    return sInstance.verifyContactInContactList(contact);
   }
 
-  private void verifyContactInContactList(Contact contact) throws UnknownContactException {
-    if (contact == null || mAccount == null) return;
+  private boolean verifyContactInContactList(Contact contact) throws UnknownContactException {
+    if (contact == null || mAccount == null) return false;
 
     // Deliberately does NOT adopt a pending identity change.
     //
@@ -312,12 +320,13 @@ public class SignalProtocolMain {
         .hasUnacceptedIdentityChange(contact.getSignalProtocolAddress())) {
       Log.w(TAG, "Refusing to mark " + contact.getSignalProtocolAddressName()
           + " verified while a substituted identity is pending");
-      return;
+      return false;
     }
 
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
     storeAllAccountInformationInSharedPreferences();
+    return true;
   }
 
   /**
@@ -428,13 +437,36 @@ public class SignalProtocolMain {
     Log.d(TAG, "Deleting unencrypted messages from contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 
-    // Deliberately does NOT clear the pinned identity.
+    // Deleting a contact forgets its pinned identity and any pending change with it.
     //
-    // Clearing it here opened a fail-open path: an attacker substitutes their key, libsignal
-    // refuses, the user is shown generic "delete the contact and ask for a new invite" advice,
-    // follows it, and the attacker's key is then accepted as a clean first sighting. The pin
-    // surviving deletion is what makes that attack fail closed. The sanctioned way to move to a new
-    // key is acceptIdentityChange, after comparing safety numbers out of band.
+    // This reverses an earlier decision, and the reason is worth recording because the earlier
+    // reasoning was not wrong so much as incomplete.
+    //
+    // The pin used to survive deletion, to close a fail-open path: an attacker substitutes their
+    // key, libsignal refuses, the user is shown generic "delete the contact and ask for a new
+    // invite" advice, follows it, and the attacker's key is accepted as a clean first sighting.
+    //
+    // What that missed is who controls entry into the refusing state. Anyone who knows this
+    // address - and the messenger carrying every envelope does - can send one forged bundle and
+    // permanently destroy the contact's verified badge. Nothing could clear it: acceptIdentityChange
+    // has no UI, removeIdentity had no caller, and deletion deliberately did not help. Messaging
+    // kept working on the genuine pinned key, so nothing looked broken; the badge was simply gone
+    // forever. Applied to every contact at once that is a one-shot, remote, silent, permanent DoS
+    // on the single indicator the whole trust model rests on - and it teaches the user the badge
+    // means nothing well before any real substitution.
+    //
+    // A state a third party can force and no one can leave is worse than the fail-open it was
+    // guarding, so deletion is now the exit. The fail-open is closed at its actual source instead:
+    // the user is no longer given delete-and-re-invite advice for an identity change (see
+    // E2EEStripView.warnIfIdentityChanged, which displaces it), so deleting is now an informed act
+    // rather than one the app talked them into. Re-adding the same address afterwards lands in
+    // ordinary unverified first-contact state, badge off, comparison prompted.
+    //
+    // Note what is NOT offered: adopting the offered key in place. acceptIdentityChange stays
+    // unwired. The exit is discard, never adopt - a legitimately reinstalled peer returns under a
+    // fresh address (see AddressingPremiseTest), so nobody ever needs to adopt a key at an old one.
+    mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .removeIdentity(contactToRemove.getSignalProtocolAddress());
 
     storeAllAccountInformationInSharedPreferences();
   }
