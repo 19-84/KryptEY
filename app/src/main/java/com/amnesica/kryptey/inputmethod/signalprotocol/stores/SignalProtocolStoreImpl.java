@@ -8,6 +8,9 @@ import org.signal.libsignal.protocol.InvalidKeyIdException;
 import org.signal.libsignal.protocol.NoSessionException;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 import org.signal.libsignal.protocol.groups.state.SenderKeyRecord;
+import org.signal.libsignal.protocol.ReusedBaseKeyException;
+import org.signal.libsignal.protocol.ecc.ECPublicKey;
+import org.signal.libsignal.protocol.state.KyberPreKeyRecord;
 import org.signal.libsignal.protocol.state.PreKeyRecord;
 import org.signal.libsignal.protocol.state.SessionRecord;
 import org.signal.libsignal.protocol.state.SignalProtocolStore;
@@ -29,6 +32,9 @@ public class SignalProtocolStoreImpl implements SignalProtocolStore {
 
   @JsonProperty
   private final SenderKeyStoreImpl senderKeyStore = new SenderKeyStoreImpl();
+
+  @JsonProperty
+  private final KyberPreKeyStoreImpl kyberPreKeyStore = new KyberPreKeyStoreImpl();
 
   @JsonProperty
   private IdentityKeyStoreImpl identityKeyStore;
@@ -56,7 +62,7 @@ public class SignalProtocolStoreImpl implements SignalProtocolStore {
   }
 
   @Override
-  public boolean saveIdentity(SignalProtocolAddress address, IdentityKey identityKey) {
+  public IdentityChange saveIdentity(SignalProtocolAddress address, IdentityKey identityKey) {
     return identityKeyStore.saveIdentity(address, identityKey);
   }
 
@@ -158,6 +164,36 @@ public class SignalProtocolStoreImpl implements SignalProtocolStore {
   @Override
   public SenderKeyRecord loadSenderKey(SignalProtocolAddress sender, UUID distributionId) {
     return senderKeyStore.loadSenderKey(sender, distributionId);
+  }
+
+  @Override
+  public KyberPreKeyRecord loadKyberPreKey(int kyberPreKeyId) throws InvalidKeyIdException {
+    return kyberPreKeyStore.loadKyberPreKey(kyberPreKeyId);
+  }
+
+  @Override
+  public List<KyberPreKeyRecord> loadKyberPreKeys() {
+    return kyberPreKeyStore.loadKyberPreKeys();
+  }
+
+  @Override
+  public void storeKyberPreKey(int kyberPreKeyId, KyberPreKeyRecord record) {
+    kyberPreKeyStore.storeKyberPreKey(kyberPreKeyId, record);
+  }
+
+  @Override
+  public boolean containsKyberPreKey(int kyberPreKeyId) {
+    return kyberPreKeyStore.containsKyberPreKey(kyberPreKeyId);
+  }
+
+  @Override
+  public void markKyberPreKeyUsed(int kyberPreKeyId, int signedPreKeyId, ECPublicKey baseKey)
+      throws ReusedBaseKeyException {
+    kyberPreKeyStore.markKyberPreKeyUsed(kyberPreKeyId, signedPreKeyId, baseKey);
+  }
+
+  public KyberPreKeyStoreImpl getKyberPreKeyStore() {
+    return kyberPreKeyStore;
   }
 
   public PreKeyStoreImpl getPreKeyStore() {

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The identity key is sealed under an Android Keystore key that is bound to this device and cannot
+  leave it. Transferring the app's data without that key produces a store the new device can never
+  decrypt: the migration guard correctly refuses to mint a replacement master key, and because the
+  "first run" flag would transfer too, nothing would re-initialise. The user would land on a
+  permanently non-functional E2EE keyboard with no way out.
+
+  android:allowBackup="false" already disables cloud backup, but on Android 12+ it does NOT disable
+  device-to-device transfer - that needs these rules. Excluding everything makes a new device a
+  genuine fresh install: a new identity is generated and contacts re-verify, which is the honest
+  outcome for hardware-bound keys.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="device_root" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="device_root" path="." />
+    </device-transfer>
+</data-extraction-rules>

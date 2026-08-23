@@ -13,6 +13,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.DuplicateContactException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.InvalidContactException;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.KyberPreKeyEntity;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyEntity;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
@@ -38,10 +39,10 @@ import org.signal.libsignal.protocol.NoSessionException;
 import org.signal.libsignal.protocol.SessionBuilder;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 import org.signal.libsignal.protocol.UntrustedIdentityException;
-import org.signal.libsignal.protocol.ecc.Curve;
 import org.signal.libsignal.protocol.ecc.ECPublicKey;
 import org.signal.libsignal.protocol.fingerprint.Fingerprint;
 import org.signal.libsignal.protocol.fingerprint.NumericFingerprintGenerator;
+import org.signal.libsignal.protocol.state.KyberPreKeyRecord;
 import org.signal.libsignal.protocol.state.PreKeyBundle;
 
 import java.io.IOException;
@@ -174,7 +175,9 @@ public class SignalProtocolTest {
     SignalProtocolMain.processPreKeyResponseMessage(outgoingPreKeyResponse, addressRecipient);
 
     assertTrue(sender.getSignalProtocolStore().containsSession(addressRecipient));
-    assertEquals(3, sender.getSignalProtocolStore().loadSession(addressRecipient).getSessionVersion());
+    // PQXDH sessions are version 4; classical X3DH was 3. This assertion is the clearest
+    // evidence in the suite that the post-quantum handshake actually ran.
+    assertEquals(4, sender.getSignalProtocolStore().loadSession(addressRecipient).getSessionVersion());
     assertEquals(recipient.getSignalProtocolStore().getIdentityKeyStore().getIdentityKeyPair().getPublicKey(), sender.getSignalProtocolStore().getIdentityKeyStore().getIdentity(addressRecipient));
 
     putAllInformationInMapSharedPreferences(sender, senderUsername);
@@ -563,17 +566,7 @@ public class SignalProtocolTest {
   }
 
   // old way of building/sending preKeyBundle
-  @Deprecated
-  private void buildSessionWithPreKeyBundle(final Account sender, final String senderUsername, final Account recipient, final String recipientUsername) throws IOException, InvalidMessageException, UntrustedIdentityException, DuplicateMessageException, InvalidVersionException, InvalidKeyIdException, LegacyMessageException, InvalidKeyException, NoSessionException {
-    MessageEnvelope recipientsPreKeyMessage = createPreKeyBundleMessage(recipient, recipientUsername);
-    assertNotNull(recipientsPreKeyMessage);
 
-    setActiveProtocolAccount(sender, senderUsername);
-    SignalProtocolMain.decryptMessage(recipientsPreKeyMessage, recipient.getSignalProtocolAddress());
-
-    assertTrue(sender.getSignalProtocolStore().containsSession(recipient.getSignalProtocolAddress()));
-    assertEquals(3, sender.getSignalProtocolStore().loadSession(recipient.getSignalProtocolAddress()).getSessionVersion());
-  }
 
   @Deprecated
   private MessageEnvelope createPreKeyBundleMessage(final Account account, final String username) throws IOException {
@@ -595,66 +588,31 @@ public class SignalProtocolTest {
     return messageEnvelope;
   }
 
-  @Deprecated
-  // sample code as template for real implementation
-  private void buildSessionWithPreKeyResponseMessageTemplateImplementation(final Account sender, final String senderUsername, final Account recipient, final String recipientUsername) throws IOException, InvalidKeyIdException, InvalidKeyException, UntrustedIdentityException {
-    // recipient side
-    PreKeyResponse preKeyResponseMessageGeneratedByRecipient = createPreKeyResponseMessage(recipient, recipientUsername);
-    assertNotNull(preKeyResponseMessageGeneratedByRecipient);
 
-    // test serializing/deserializing
-    String outgoingPreKeyResponse = JsonUtil.toJson(preKeyResponseMessageGeneratedByRecipient);
-    PreKeyResponse incomingPreKeyResponse = JsonUtil.fromJson(outgoingPreKeyResponse, PreKeyResponse.class);
-
-    // sender side
-    if (incomingPreKeyResponse.getDevices() == null || incomingPreKeyResponse.getDevices().size() < 1)
-      throw new IOException("Empty prekey list");
-
-    PreKeyResponseItem device = incomingPreKeyResponse.getDevices().get(0);
-    ECPublicKey preKey = null;
-    ECPublicKey signedPreKey = null;
-    byte[] signedPreKeySignature = null;
-    int preKeyId = -1;
-    int signedPreKeyId = -1;
-
-    if (device.getPreKey() != null) {
-      preKeyId = device.getPreKey().getKeyId();
-      preKey = device.getPreKey().getPublicKey();
-    }
-
-    if (device.getSignedPreKey() != null) {
-      signedPreKeyId = device.getSignedPreKey().getKeyId();
-      signedPreKey = device.getSignedPreKey().getPublicKey();
-      signedPreKeySignature = device.getSignedPreKey().getSignature();
-    }
-
-    PreKeyBundle preKeyBundle = new PreKeyBundle(device.getRegistrationId(), device.getDeviceId(), preKeyId, preKey, signedPreKeyId, signedPreKey, signedPreKeySignature, incomingPreKeyResponse.getIdentityKey());
-    assertNotNull(preKeyBundle.getSignedPreKeySignature());
-    assertNotNull(preKeyBundle.getPreKey());
-    assertEquals(preKeyBundle.getPreKeyId(), 1);
-    assertNotNull(preKeyBundle.getSignedPreKey());
-    assertNotNull(preKeyBundle.getIdentityKey());
-    assertNotNull(preKeyBundle);
-
-    SessionBuilder sessionBuilder = new SessionBuilder(sender.getSignalProtocolStore(), recipient.getSignalProtocolAddress());
-    sessionBuilder.process(preKeyBundle);
-    assertTrue(sender.getSignalProtocolStore().containsSession(recipient.getSignalProtocolAddress()));
-    assertEquals(3, sender.getSignalProtocolStore().loadSession(recipient.getSignalProtocolAddress()).getSessionVersion());
-  }
 
   @Deprecated
   // new approach for pre key bundle message
   private PreKeyResponse createPreKeyResponseMessage(final Account account, final String username) throws InvalidKeyIdException, InvalidKeyException {
     setActiveProtocolAccount(account, username);
 
-    final byte[] signedPreKeySignature = Curve.calculateSignature(account.getSignalProtocolStore().getIdentityKeyPair().getPrivateKey(), account.getSignalProtocolStore().loadSignedPreKey(account.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey().serialize());
+    final byte[] signedPreKeySignature = account.getSignalProtocolStore().getIdentityKeyPair().getPrivateKey()
+        .calculateSignature(account.getSignalProtocolStore().loadSignedPreKey(account.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey().serialize());
 
     final int preKeyId = 1;
     final int mDeviceId = 1;
-    final PreKeyBundle preKeyBundle = new PreKeyBundle(account.getSignalProtocolStore().getLocalRegistrationId(), mDeviceId, preKeyId, account.getSignalProtocolStore().loadPreKey(preKeyId).getKeyPair().getPublicKey(), account.getMetadataStore().getActiveSignedPreKeyId(), account.getSignalProtocolStore().loadSignedPreKey(account.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey(), signedPreKeySignature, account.getSignalProtocolStore().getIdentityKeyPair().getPublicKey());
+
+    if (!account.getSignalProtocolStore().containsKyberPreKey(account.getMetadataStore().getActiveKyberPreKeyId())) {
+      KeyUtil.generateAndStoreKyberPreKey(account.getSignalProtocolStore(), account.getMetadataStore());
+    }
+    final int kyberPreKeyId = account.getMetadataStore().getActiveKyberPreKeyId();
+    final KyberPreKeyRecord kyberRecord = account.getSignalProtocolStore().loadKyberPreKey(kyberPreKeyId);
+
+    final PreKeyBundle preKeyBundle = new PreKeyBundle(account.getSignalProtocolStore().getLocalRegistrationId(), mDeviceId, preKeyId, account.getSignalProtocolStore().loadPreKey(preKeyId).getKeyPair().getPublicKey(), account.getMetadataStore().getActiveSignedPreKeyId(), account.getSignalProtocolStore().loadSignedPreKey(account.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey(), signedPreKeySignature, account.getSignalProtocolStore().getIdentityKeyPair().getPublicKey(),
+        kyberPreKeyId, kyberRecord.getKeyPair().getPublicKey(), kyberRecord.getSignature());
 
     List<PreKeyResponseItem> responseItems = new LinkedList<>();
-    responseItems.add(new PreKeyResponseItem(preKeyBundle.getDeviceId(), preKeyBundle.getRegistrationId(), new SignedPreKeyEntity(account.getMetadataStore().getActiveSignedPreKeyId(), preKeyBundle.getSignedPreKey(), signedPreKeySignature), new PreKeyEntity(preKeyId, preKeyBundle.getPreKey())));
+    responseItems.add(new PreKeyResponseItem(preKeyBundle.getDeviceId(), preKeyBundle.getRegistrationId(), new SignedPreKeyEntity(account.getMetadataStore().getActiveSignedPreKeyId(), preKeyBundle.getSignedPreKey(), signedPreKeySignature), new PreKeyEntity(preKeyId, preKeyBundle.getPreKey()),
+        new KyberPreKeyEntity(kyberPreKeyId, kyberRecord.getKeyPair().getPublicKey(), kyberRecord.getSignature())));
 
     return new PreKeyResponse(account.getSignalProtocolStore().getIdentityKeyPair().getPublicKey(), responseItems);
   }

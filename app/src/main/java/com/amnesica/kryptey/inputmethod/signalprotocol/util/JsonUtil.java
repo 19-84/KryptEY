@@ -22,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.node.IntNode;
-import com.google.protobuf.ByteString;
 
 import org.signal.libsignal.protocol.IdentityKey;
 import org.signal.libsignal.protocol.IdentityKeyPair;
@@ -64,10 +63,6 @@ public class JsonUtil {
       e.printStackTrace();
       return null;
     }
-  }
-
-  public static ByteString toJsonByteString(Object object) {
-    return ByteString.copyFrom(toJson(object).getBytes());
   }
 
   public static <T> T fromJson(String json, Class<T> clazz)
@@ -145,7 +140,14 @@ public class JsonUtil {
     @Override
     public IdentityKeyPair deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
       Log.d(TAG, "IdentityKeyPairDeserializer used");
-      return new IdentityKeyPair(Base64.decodeWithoutPadding(p.getValueAsString()));
+      try {
+        return new IdentityKeyPair(Base64.decodeWithoutPadding(p.getValueAsString()));
+      } catch (InvalidKeyException e) {
+        // libsignal 0.86 validates the key on construction and reports a malformed one instead of
+        // accepting it. Surface it as an IOException so it travels the same path as any other
+        // deserialization failure rather than escaping Jackson as an unchecked exception.
+        throw new IOException(e);
+      }
     }
   }
 
@@ -168,7 +170,8 @@ public class JsonUtil {
       JsonNode node = p.getCodec().readTree(p);
       String name = node.get("name").asText();
       int deviceId = (Integer) ((IntNode) node.get("deviceId")).numberValue();
-      return new SignalProtocolAddress(name, deviceId);
+      // Legacy stores hold device ids up to 9999, which libsignal 0.86 refuses to construct.
+      return ProtocolAddresses.of(name, deviceId);
     }
   }
 

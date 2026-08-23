@@ -8,9 +8,12 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.stores.SignalProtocolStor
 import org.signal.libsignal.protocol.IdentityKey;
 import org.signal.libsignal.protocol.IdentityKeyPair;
 import org.signal.libsignal.protocol.InvalidKeyException;
-import org.signal.libsignal.protocol.ecc.Curve;
+import org.signal.libsignal.protocol.ecc.ECPublicKey;
 import org.signal.libsignal.protocol.ecc.ECKeyPair;
 import org.signal.libsignal.protocol.ecc.ECPrivateKey;
+import org.signal.libsignal.protocol.kem.KEMKeyPair;
+import org.signal.libsignal.protocol.kem.KEMKeyType;
+import org.signal.libsignal.protocol.state.KyberPreKeyRecord;
 import org.signal.libsignal.protocol.state.PreKeyRecord;
 import org.signal.libsignal.protocol.state.SignedPreKeyRecord;
 import org.signal.libsignal.protocol.util.KeyHelper;
@@ -29,7 +32,7 @@ public class KeyUtil {
   private static final long SIGNED_PRE_KEY_ARCHIVE_AGE = TimeUnit.DAYS.toMillis(2); // debug: TimeUnit.SECONDS.toMillis(20)
 
   public static IdentityKeyPair generateIdentityKeyPair() {
-    final ECKeyPair identityKeyPairKeys = Curve.generateKeyPair();
+    final ECKeyPair identityKeyPairKeys = ECKeyPair.generate();
 
     return new IdentityKeyPair(new IdentityKey(identityKeyPairKeys.getPublicKey()),
         identityKeyPairKeys.getPrivateKey());
@@ -56,7 +59,7 @@ public class KeyUtil {
 
   public synchronized static PreKeyRecord generateAndStoreOneTimePreKey(final SignalProtocolStoreImpl protocolStore, final int preKeyId) {
     Log.d(TAG, "Generating one-time prekey with id: " + preKeyId + "...");
-    ECKeyPair keyPair = Curve.generateKeyPair();
+    ECKeyPair keyPair = ECKeyPair.generate();
     PreKeyRecord record = new PreKeyRecord(preKeyId, keyPair);
 
     protocolStore.storePreKey(preKeyId, record);
@@ -84,14 +87,37 @@ public class KeyUtil {
   }
 
   public synchronized static SignedPreKeyRecord generateSignedPreKey(final int signedPreKeyId, final ECPrivateKey privateKey, final PreKeyMetadataStore metadataStore) {
-    try {
-      ECKeyPair keyPair = Curve.generateKeyPair();
-      byte[] signature = Curve.calculateSignature(privateKey, keyPair.getPublicKey().serialize());
+    // No try/catch: libsignal 0.86's ECPrivateKey.calculateSignature no longer declares
+    // InvalidKeyException, so the old catch block became unreachable.
+    final ECKeyPair keyPair = ECKeyPair.generate();
+    final byte[] signature = privateKey.calculateSignature(keyPair.getPublicKey().serialize());
 
-      return new SignedPreKeyRecord(signedPreKeyId, System.currentTimeMillis(), keyPair, signature);
-    } catch (InvalidKeyException e) {
-      throw new AssertionError(e);
-    }
+    return new SignedPreKeyRecord(signedPreKeyId, System.currentTimeMillis(), keyPair, signature);
+  }
+
+  /**
+   * Generates a Kyber-1024 pre-key, signs its public half with the identity key, and stores it.
+   *
+   * <p>The signature is what binds the post-quantum key to the identity: without it an attacker
+   * could substitute their own Kyber key and PQXDH would agree on a shared secret with them.
+   */
+  public synchronized static KyberPreKeyRecord generateAndStoreKyberPreKey(
+      final SignalProtocolStoreImpl protocolStore, final PreKeyMetadataStore metadataStore) {
+    final int kyberPreKeyId = metadataStore.getNextKyberPreKeyId();
+    final ECPrivateKey identityPrivateKey = protocolStore.getIdentityKeyPair().getPrivateKey();
+
+    final KEMKeyPair keyPair = KEMKeyPair.generate(KEMKeyType.KYBER_1024);
+    final byte[] signature = identityPrivateKey.calculateSignature(keyPair.getPublicKey().serialize());
+
+    final KyberPreKeyRecord record =
+        new KyberPreKeyRecord(kyberPreKeyId, System.currentTimeMillis(), keyPair, signature);
+
+    protocolStore.storeKyberPreKey(kyberPreKeyId, record);
+    metadataStore.setActiveKyberPreKeyId(kyberPreKeyId);
+    metadataStore.setNextKyberPreKeyId((kyberPreKeyId + 1) % Medium.MAX_VALUE);
+
+    Log.d(TAG, "Generated kyber pre key with id: " + kyberPreKeyId);
+    return record;
   }
 
   private static void rotateSignedPreKey(SignalProtocolStoreImpl protocolStore, PreKeyMetadataStore metadataStore) {
@@ -99,42 +125,83 @@ public class KeyUtil {
     metadataStore.setActiveSignedPreKeyId(signedPreKeyRecord.getId());
     metadataStore.setSignedPreKeyRegistered(true);
     metadataStore.setSignedPreKeyFailureCount(0);
+
+    // Rotate the Kyber pre key on the same schedule. Both are signed by the identity key and both
+    // feed the same PQXDH handshake, so leaving the post-quantum half pinned forever would mean a
+    // single compromised Kyber key exposes every future initial message - which is the specific
+    // thing rotating the classical half is meant to bound.
+    generateAndStoreKyberPreKey(protocolStore, metadataStore);
   }
 
-  public static Integer getUnusedOneTimePreKeyId(final SignalProtocolStoreImpl protocolStore) {
-    if (protocolStore == null || protocolStore.getPreKeyStore() == null) return null;
+  /** How many consumed one-time pre-keys to retain so late first-messages still decrypt. */
+  private static final int USED_PRE_KEY_RETENTION = 50;
 
-    final int preKeyId = 1;
-    final Boolean preKeyIsUsed = protocolStore.getPreKeyStore().checkPreKeyAvailable(preKeyId);
-    if (preKeyIsUsed == null || preKeyIsUsed) {
-      Log.d(TAG, "No unused prekey left. Generating new one time prekey with id " + preKeyId);
-      generateAndStoreOneTimePreKey(protocolStore, preKeyId);
-    } else {
-      Log.d(TAG, "Prekey with id " + preKeyId + " is unused");
+  /**
+   * Returns an unused one-time pre-key id, allocating a fresh one if the pool is empty.
+   *
+   * <p>This used to hard-code id 1 and regenerate <em>in place</em> whenever that id was consumed.
+   * Handing out a second bundle therefore destroyed the key material the first invitee had already
+   * been given: their opening message referenced pre-key 1 but pre-key 1 was now different key
+   * material, so it could never be decrypted and there was no way to recover.
+   *
+   * <p>Now each bundle gets its own id, and consumed records are retained (bounded by
+   * {@link #USED_PRE_KEY_RETENTION}) so a first message that arrives later still opens.
+   */
+  public static Integer getUnusedOneTimePreKeyId(final SignalProtocolStoreImpl protocolStore,
+                                                 final PreKeyMetadataStore metadataStore) {
+    if (protocolStore == null || metadataStore == null || protocolStore.getPreKeyStore() == null) {
+      return null;
     }
+
+    final Integer unused = protocolStore.getPreKeyStore().findUnusedPreKeyId();
+    if (unused != null) {
+      Log.d(TAG, "Reusing unused pre key with id " + unused);
+      return unused;
+    }
+
+    int preKeyId = Math.floorMod(metadataStore.getNextOneTimePreKeyId(), Medium.MAX_VALUE);
+    // Never overwrite an id that already holds key material a peer may be relying on.
+    int guard = 0;
+    while (protocolStore.getPreKeyStore().containsPreKey(preKeyId) && guard++ < Medium.MAX_VALUE) {
+      preKeyId = Math.floorMod(preKeyId + 1, Medium.MAX_VALUE);
+    }
+
+    Log.d(TAG, "No unused prekey left. Generating new one time prekey with id " + preKeyId);
+    generateAndStoreOneTimePreKey(protocolStore, preKeyId);
+    metadataStore.setNextOneTimePreKeyId(Math.floorMod(preKeyId + 1, Medium.MAX_VALUE));
+
+    protocolStore.getPreKeyStore().pruneUsedPreKeys(USED_PRE_KEY_RETENTION);
     return preKeyId;
   }
 
   public static boolean refreshSignedPreKeyIfNecessary(final SignalProtocolStoreImpl protocolStore, final PreKeyMetadataStore metadataStore) {
     if (protocolStore == null || metadataStore == null) return false;
 
-    if (System.currentTimeMillis() > metadataStore.getNextSignedPreKeyRefreshTime()) {
+    final boolean rotated = System.currentTimeMillis() > metadataStore.getNextSignedPreKeyRefreshTime();
+    if (rotated) {
       Log.d(TAG, "Rotating signed prekey...");
       rotateSignedPreKey(protocolStore, metadataStore);
-      return true;
     } else {
       Log.d(TAG, "Rotation of signed prekey not necessary...");
     }
+    // Runs on both paths: previously an early return meant retirement was only ever considered on
+    // the calls that did NOT rotate, so keys retired by a rotation were never cleaned up by it.
     deleteOlderSignedPreKeysIfNecessary(protocolStore, metadataStore);
-    return false;
+    return rotated;
   }
 
   private static void deleteOlderSignedPreKeysIfNecessary(final SignalProtocolStoreImpl protocolStore, final PreKeyMetadataStore metadataStore) {
     if (protocolStore == null || metadataStore == null) return;
 
-    if (System.currentTimeMillis() > SIGNED_PRE_KEY_ARCHIVE_AGE) {
+    // Compare against the stored deletion *timestamp*, not against SIGNED_PRE_KEY_ARCHIVE_AGE.
+    // That constant is a duration (2 days in millis, ~1.7e8); currentTimeMillis is ~1.7e12, so the
+    // original comparison was unconditionally true and retired keys were dropped the instant they
+    // were replaced. A peer still holding the previous bundle could then no longer be decrypted -
+    // the archive window exists precisely to cover messages already in flight.
+    if (System.currentTimeMillis() > metadataStore.getOldSignedPreKeyDeletionTime()) {
       Log.d(TAG, "Deleting old signed prekeys...");
       protocolStore.getSignedPreKeyStore().removeOldSignedPreKeys(metadataStore.getActiveSignedPreKeyId());
+      protocolStore.getKyberPreKeyStore().removeOldKyberPreKeys(metadataStore.getActiveKyberPreKeyId());
     } else {
       Log.d(TAG, "Deletion of old signed prekeys not necessary...");
     }

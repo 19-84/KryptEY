@@ -382,9 +382,14 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     updateSoftInputWindowLayoutParameters();
 
     if (isFirstRunAfterInstall()) {
-      // initialize protocol on first app run or when in debug mode
-      SignalProtocolMain.initialize(this);
-      setBooleanFirstRunAfterInstall();
+      // Only record that setup completed if the identity was actually established and persisted.
+      // Flipping the flag after a failed write would leave the next raise generating a different
+      // identity from the one already handed out in a pre-key bundle.
+      if (SignalProtocolMain.initialize(this)) {
+        setBooleanFirstRunAfterInstall();
+      } else {
+        Log.e(TAG, "Signal protocol initialization failed; leaving firstrun set so it retries");
+      }
     } else {
       // load account from shared preferences
       SignalProtocolMain.reloadAccount(this);

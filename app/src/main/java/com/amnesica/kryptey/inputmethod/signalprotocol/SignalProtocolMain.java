@@ -10,6 +10,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.InvalidContact
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.UnknownContactException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.UnknownMessageException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.KyberPreKeyEntity;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyEntity;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
@@ -18,6 +19,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.stores.PreKeyMetadataStor
 import com.amnesica.kryptey.inputmethod.signalprotocol.stores.PreKeyMetadataStoreImpl;
 import com.amnesica.kryptey.inputmethod.signalprotocol.stores.SignalProtocolStoreImpl;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.KeyUtil;
+import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 
 import org.signal.libsignal.protocol.DuplicateMessageException;
 import org.signal.libsignal.protocol.IdentityKey;
@@ -32,13 +34,13 @@ import org.signal.libsignal.protocol.SessionBuilder;
 import org.signal.libsignal.protocol.SessionCipher;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 import org.signal.libsignal.protocol.UntrustedIdentityException;
-import org.signal.libsignal.protocol.ecc.Curve;
 import org.signal.libsignal.protocol.ecc.ECPublicKey;
 import org.signal.libsignal.protocol.fingerprint.Fingerprint;
 import org.signal.libsignal.protocol.fingerprint.NumericFingerprintGenerator;
 import org.signal.libsignal.protocol.message.CiphertextMessage;
 import org.signal.libsignal.protocol.message.PreKeySignalMessage;
 import org.signal.libsignal.protocol.message.SignalMessage;
+import org.signal.libsignal.protocol.state.KyberPreKeyRecord;
 import org.signal.libsignal.protocol.state.PreKeyBundle;
 import org.signal.libsignal.protocol.state.SignedPreKeyRecord;
 
@@ -74,17 +76,48 @@ public class SignalProtocolMain {
     // Intentional empty constructor for singleton.
   }
 
-  public static void initialize(final Context context) {
+  /**
+   * Creates a brand-new identity, unless one already exists.
+   *
+   * @return true if an account is now loaded; false if nothing usable could be established, in
+   *     which case the caller must NOT record that first-run setup completed.
+   */
+  public static boolean initialize(final Context context) {
     Log.d(TAG, "Initializing signal protocol...");
     sInstance.initializeStorageHelper(context);
+
+    // Refuse to generate over existing data. The caller decides to call initialize() based on a
+    // "first run" boolean held in device-protected storage, while the identity lives in
+    // credential-protected storage; the two can be lost independently, and the boolean defaults to
+    // true on any read failure. Generating here would silently and irrecoverably destroy the user's
+    // identity key, every session, and their verified contacts.
+    if (sInstance.mStorageHelper != null && sInstance.mStorageHelper.hasExistingProtocolData()) {
+      Log.w(TAG, "Protocol data already exists; refusing to generate a new identity. "
+          + "Loading the existing account instead.");
+      sInstance.reloadAccountFromSharedPreferences();
+      return sInstance.mAccount != null;
+    }
+
     sInstance.initializeProtocol();
+    if (sInstance.mAccount == null) return false;
+
+    // Only report success if the identity actually reached disk. Storage now depends on the
+    // Keystore and can fail; a caller that recorded "setup done" after a failed write would come
+    // back on the next raise, find nothing stored, and generate a different identity.
+    return sInstance.mStorageHelper != null && sInstance.mStorageHelper.hasExistingProtocolData();
   }
 
   public static void reloadAccount(final Context context) {
     Log.d(TAG, "Reloading local account for signal protocol (not first app run)...");
     sInstance.initializeStorageHelper(context);
     sInstance.reloadAccountFromSharedPreferences();
-    sInstance.storeAllAccountInformationInSharedPreferences();
+    // Only write back if we actually loaded something. Storing a null account here would NPE, and
+    // storing a partially-populated one would overwrite the user's identity keys with blanks.
+    if (sInstance.mAccount != null) {
+      sInstance.storeAllAccountInformationInSharedPreferences();
+    } else {
+      Log.e(TAG, "Error: account could not be reloaded; leaving stored data untouched");
+    }
   }
 
   public static MessageEnvelope encryptMessage(final String unencryptedMessage, final SignalProtocolAddress signalProtocolAddress) {
@@ -105,6 +138,27 @@ public class SignalProtocolMain {
   public static MessageEnvelope getPreKeyResponseMessage() {
     Log.d(TAG, "Creating pre key response message...");
     return sInstance.createPreKeyResponseMessage();
+  }
+
+  /**
+   * Whether this contact's identity key changed and the user has not acknowledged it.
+   *
+   * <p>A changed safety number is the highest-signal security event the protocol produces: it means
+   * either the contact reinstalled, or someone is impersonating them. The store refuses to send
+   * until it is acknowledged; this is how the UI finds out why.
+   */
+  public static boolean hasUnacceptedIdentityChange(final SignalProtocolAddress address) {
+    if (address == null || sInstance.mAccount == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .hasUnacceptedIdentityChange(address);
+  }
+
+  /** Records that the user has seen and accepted a contact's changed identity key. */
+  public static void acceptIdentityChange(final SignalProtocolAddress address) {
+    if (address == null || sInstance.mAccount == null) return;
+    sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .acceptIdentityChange(address);
+    sInstance.storeAllAccountInformationInSharedPreferences();
   }
 
   public static MessageType getMessageType(final MessageEnvelope messageEnvelope) {
@@ -129,6 +183,57 @@ public class SignalProtocolMain {
   public static Object extractContactFromMessageEnvelope(final MessageEnvelope messageEnvelope) {
     Log.d(TAG, "Extracting contact from message envelope...");
     return sInstance.extractContactFromEnvelope(messageEnvelope);
+  }
+
+  /**
+   * Records that a contact's key bundle was obtained out of band.
+   *
+   * <p>This is the only thing that closes the first-contact gap. Trust-on-first-use cannot detect a
+   * hostile messenger substituting keys at first contact, because there is no earlier key to have
+   * changed — so the assurance has to come from the bundle not travelling through that messenger at
+   * all. After the fact the two are indistinguishable from the stored key, which is why it is
+   * recorded at import time rather than inferred later.
+   */
+  public static void markContactKeyAsOutOfBand(final Contact contact) {
+    if (contact == null || sInstance.mAccount == null) return;
+    contact.setKeyOrigin(Contact.KeyOrigin.OUT_OF_BAND);
+    try {
+      sInstance.mAccount.updateContactInContactList(contact);
+    } catch (UnknownContactException e) {
+      Log.e(TAG, "Cannot record out-of-band provenance for an unknown contact", e);
+      return;
+    }
+    sInstance.storeAllAccountInformationInSharedPreferences();
+  }
+
+  /** The bundle text a user hands to a contact through a channel they trust. */
+  public static String exportOwnKeyBundle() throws java.io.IOException {
+    final MessageEnvelope envelope = getPreKeyResponseMessage();
+    if (envelope == null) return null;
+    return com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec.toWire(envelope);
+  }
+
+  /**
+   * Imports a bundle the user received out of band and establishes a session from it.
+   *
+   * @return true only if the bundle parsed, its signatures held, and a session was built.
+   */
+  public static boolean importOutOfBandKeyBundle(final String wireText,
+                                                 final SignalProtocolAddress address) {
+    if (wireText == null || address == null) return false;
+    final MessageEnvelope envelope;
+    try {
+      envelope = com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec
+          .fromWire(wireText);
+    } catch (java.io.IOException e) {
+      Log.e(TAG, "Out-of-band bundle could not be parsed", e);
+      return false;
+    }
+    if (envelope.getPreKeyResponse() == null) {
+      Log.e(TAG, "Out-of-band text is not a key bundle");
+      return false;
+    }
+    return processPreKeyResponseMessage(envelope, address);
   }
 
   public static Contact addContact(final CharSequence firstName, final CharSequence lastName, final String signalProtocolAddressName, final int deviceId) throws DuplicateContactException, InvalidContactException {
@@ -157,20 +262,43 @@ public class SignalProtocolMain {
   }
 
   private void verifyContactInContactList(Contact contact) throws UnknownContactException {
-    if (contact == null) return;
+    if (contact == null || mAccount == null) return;
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
+
+    // Comparing safety numbers out of band is precisely the acknowledgement a pending identity
+    // change is waiting for, so clear it here rather than making the user perform two separate
+    // confirmations for one decision.
+    mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .acceptIdentityChange(contact.getSignalProtocolAddress());
+
     storeAllAccountInformationInSharedPreferences();
   }
 
   private Fingerprint createFingerprint(Contact contact) {
-    if (contact == null) return null;
+    if (contact == null || getAccount() == null) return null;
 
     final IdentityKey localIdentity = getAccount().getIdentityKeyPair().getPublicKey();
-    // find session for contact to extract public key
-    final IdentityKey remoteIdentity = getAccount().getSignalProtocolStore().getSessionStore().getPublicKeyFromSession(contact.getSignalProtocolAddress());
 
-    if (localIdentity == null && remoteIdentity == null) return null;
+    // Prefer the session's copy, but fall back to the stored identity. Verification should be
+    // possible as soon as a contact's bundle has been processed - before any message is exchanged -
+    // because that is exactly when a user ought to compare safety numbers, and requiring a session
+    // first means the check happens only after they have already sent something.
+    IdentityKey remoteIdentity = getAccount().getSignalProtocolStore().getSessionStore()
+        .getPublicKeyFromSession(contact.getSignalProtocolAddress());
+    if (remoteIdentity == null) {
+      remoteIdentity = getAccount().getSignalProtocolStore().getIdentityKeyStore()
+          .getIdentity(contact.getSignalProtocolAddress());
+    }
+
+    // Was '&&'. localIdentity is essentially never null, so a missing remote identity fell straight
+    // through into NumericFingerprintGenerator and NPE'd inside libsignal - crashing the keyboard
+    // whenever the user opened "verify contact" without a session.
+    if (localIdentity == null || remoteIdentity == null) {
+      Log.w(TAG, "No identity available for " + contact.getSignalProtocolAddressName()
+          + "; cannot build a fingerprint yet");
+      return null;
+    }
 
     final int version = 2; // use UUID
     final byte[] localId = getAccount().getSignalProtocolAddress().getName().getBytes();
@@ -191,7 +319,11 @@ public class SignalProtocolMain {
   }
 
   private Contact extractContactFromEnvelope(MessageEnvelope messageEnvelope) {
-    final SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(messageEnvelope.signalProtocolAddressName, messageEnvelope.getDeviceId());
+    // The device id here comes straight off the wire from the peer. A 0.1.5 peer generated it with
+    // nextInt(10000), so ~99% are outside libsignal's [1,127] and the raw constructor throws an
+    // unchecked IllegalArgumentException - which nothing on the clipboard-decrypt path catches, so
+    // it killed the IME process on any message from a legacy contact.
+    final SignalProtocolAddress signalProtocolAddress = ProtocolAddresses.of(messageEnvelope.signalProtocolAddressName, messageEnvelope.getDeviceId());
     return getContactFromAddressInContactList(signalProtocolAddress);
   }
 
@@ -232,6 +364,13 @@ public class SignalProtocolMain {
     Log.d(TAG, "Deleting unencrypted messages from contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 
+    // Also forget the pinned identity. Without this the app's own recovery advice - delete the
+    // contact and ask for a new invite - cannot work: the stale identity survives contact removal
+    // and keeps refusing the new key, leaving the contact permanently unreachable.
+    Log.d(TAG, "Deleting stored identity for contact: " + contactToRemove.getSignalProtocolAddress().getName());
+    mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .removeIdentity(contactToRemove.getSignalProtocolAddress());
+
     storeAllAccountInformationInSharedPreferences();
   }
 
@@ -271,7 +410,17 @@ public class SignalProtocolMain {
       }
 
       final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
-      CiphertextMessage ciphertextMessage = sessionCipher.encrypt(unencryptedMessage.getBytes());
+      final CiphertextMessage ciphertextMessage;
+      try {
+        ciphertextMessage = sessionCipher.encrypt(unencryptedMessage.getBytes());
+      } catch (NoSessionException e) {
+        // New in libsignal 0.86: encrypting with no established session is an explicit failure
+        // rather than an implicit one. Returning null here matches how this method already reports
+        // failure, and crucially avoids sending anything unencrypted.
+        Log.e(TAG, "Error: no session with " + signalProtocolAddress.getName()
+            + "; cannot encrypt", e);
+        return null;
+      }
       logMessageType(ciphertextMessage.getType());
 
       if (messageEnvelope == null) {
@@ -311,7 +460,12 @@ public class SignalProtocolMain {
       if (messageEnvelope.getPreKeyResponse() != null) {
         final PreKeyBundle preKeyBundle = createPreKeyBundle(messageEnvelope.getPreKeyResponse());
 
-        buildSession(preKeyBundle, signalProtocolAddress);
+        if (!buildSession(preKeyBundle, signalProtocolAddress)) {
+          // Signature verification or an identity change. Report failure so the UI stops telling
+          // the user a session was created when none was.
+          Log.e(TAG, "Session could not be built - bundle rejected by libsignal");
+          return false;
+        }
         Log.d(TAG, "Session with PreKeyBundle created: " + sessionExists(signalProtocolAddress));
         Log.d(TAG, "Amount of pre key ids: " + mAccount.getSignalProtocolStore().getPreKeyStore().getSize());
         storeAllAccountInformationInSharedPreferences();
@@ -393,8 +547,17 @@ public class SignalProtocolMain {
       signedPreKeySignature = device.getSignedPreKey().getSignature();
     }
 
+    if (device.getKyberPreKey() == null) {
+      // A bundle from a pre-PQXDH peer. This libsignal has no classical-only PreKeyBundle, and
+      // silently downgrading to X3DH is not an option, so fail loudly rather than appear to
+      // succeed. IOException to match how this method already reports a malformed bundle.
+      throw new IOException("peer bundle has no kyber pre key (pre-PQXDH sender)");
+    }
+
     return new PreKeyBundle(device.getRegistrationId(), device.getDeviceId(), preKeyId, preKey,
-        signedPreKeyId, signedPreKey, signedPreKeySignature, preKeyResponse.getIdentityKey());
+        signedPreKeyId, signedPreKey, signedPreKeySignature, preKeyResponse.getIdentityKey(),
+        device.getKyberPreKey().getKeyId(), device.getKyberPreKey().getPublicKey(),
+        device.getKyberPreKey().getSignature());
   }
 
   private void storeUnencryptedMessageInMap(Account account, SignalProtocolAddress signalProtocolAddress, final String decryptedMessage, final Instant timestamp, final boolean isFromOwnAccount) throws InvalidContactException {
@@ -445,13 +608,33 @@ public class SignalProtocolMain {
     // check age of signedPreKey and generate new one if necessary (and delete old ones after archive age)
     KeyUtil.refreshSignedPreKeyIfNecessary(mAccount.getSignalProtocolStore(), mAccount.getMetadataStore());
 
-    final byte[] signedPreKeySignature = Curve.calculateSignature(
-        mAccount.getSignalProtocolStore().getIdentityKeyPair().getPrivateKey(),
-        mAccount.getSignalProtocolStore().loadSignedPreKey(mAccount.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey().serialize());
+    final byte[] signedPreKeySignature = mAccount.getSignalProtocolStore().getIdentityKeyPair().getPrivateKey()
+        .calculateSignature(mAccount.getSignalProtocolStore().loadSignedPreKey(mAccount.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey().serialize());
 
-    final int preKeyId = KeyUtil.getUnusedOneTimePreKeyId(mAccount.getSignalProtocolStore());
+    final Integer allocatedPreKeyId = KeyUtil.getUnusedOneTimePreKeyId(
+        mAccount.getSignalProtocolStore(), mAccount.getMetadataStore());
+    if (allocatedPreKeyId == null) {
+      // Unboxing a null here previously produced an NPE out of the bundle path.
+      throw new InvalidKeyIdException("could not allocate a one-time pre key");
+    }
+    final int preKeyId = allocatedPreKeyId;
 
-    Log.d(TAG, "Generating PreKeyBundle with pre key id: " + preKeyId);
+    // PQXDH: libsignal 0.86.x has no non-Kyber PreKeyBundle constructor, so a Kyber pre key is
+    // mandatory rather than optional. Generate one lazily for accounts created before this upgrade.
+    if (!mAccount.getSignalProtocolStore().containsKyberPreKey(mAccount.getMetadataStore().getActiveKyberPreKeyId())) {
+      KeyUtil.generateAndStoreKyberPreKey(mAccount.getSignalProtocolStore(), mAccount.getMetadataStore());
+      // Persist immediately. This method hands the public half to a peer; if the private half is
+      // still only in memory when the keyboard is dismissed, reloadAccount() replaces the account
+      // from disk and the key is gone. The peer then builds a session against a key we can never
+      // use, and ML-KEM implicit rejection turns that into an opaque MAC failure rather than a
+      // diagnosable error.
+      storeAllAccountInformationInSharedPreferences();
+    }
+    final int kyberPreKeyId = mAccount.getMetadataStore().getActiveKyberPreKeyId();
+    final KyberPreKeyRecord kyberRecord = mAccount.getSignalProtocolStore().loadKyberPreKey(kyberPreKeyId);
+
+    Log.d(TAG, "Generating PreKeyBundle with pre key id: " + preKeyId
+        + " and kyber pre key id: " + kyberPreKeyId);
     final PreKeyBundle preKeyBundle = new PreKeyBundle(
         mAccount.getSignalProtocolStore().getLocalRegistrationId(),
         mAccount.getDeviceId(),
@@ -460,7 +643,10 @@ public class SignalProtocolMain {
         mAccount.getMetadataStore().getActiveSignedPreKeyId(),
         mAccount.getSignalProtocolStore().loadSignedPreKey(mAccount.getMetadataStore().getActiveSignedPreKeyId()).getKeyPair().getPublicKey(),
         signedPreKeySignature,
-        mAccount.getSignalProtocolStore().getIdentityKeyPair().getPublicKey());
+        mAccount.getSignalProtocolStore().getIdentityKeyPair().getPublicKey(),
+        kyberPreKeyId,
+        kyberRecord.getKeyPair().getPublicKey(),
+        kyberRecord.getSignature());
 
     return preKeyBundle;
   }
@@ -473,7 +659,9 @@ public class SignalProtocolMain {
         preKeyBundle.getDeviceId(),
         preKeyBundle.getRegistrationId(),
         new SignedPreKeyEntity(preKeyBundle.getSignedPreKeyId(), preKeyBundle.getSignedPreKey(), preKeyBundle.getSignedPreKeySignature()),
-        new PreKeyEntity(preKeyBundle.getPreKeyId(), preKeyBundle.getPreKey())));
+        new PreKeyEntity(preKeyBundle.getPreKeyId(), preKeyBundle.getPreKey()),
+        new KyberPreKeyEntity(preKeyBundle.getKyberPreKeyId(), preKeyBundle.getKyberPreKey(),
+            preKeyBundle.getKyberPreKeySignature())));
 
     return new PreKeyResponse(preKeyBundle.getIdentityKey(), responseItems);
   }
@@ -484,14 +672,21 @@ public class SignalProtocolMain {
    * @param preKeyBundle                   PreKeyBundle
    * @param recipientSignalProtocolAddress SignalProtocolAddress
    */
-  private void buildSession(final PreKeyBundle preKeyBundle, final SignalProtocolAddress recipientSignalProtocolAddress) {
+  /** @return true only if the session was actually established and the bundle's signatures held. */
+  private boolean buildSession(final PreKeyBundle preKeyBundle, final SignalProtocolAddress recipientSignalProtocolAddress) {
     try {
       SessionBuilder sessionBuilder = new SessionBuilder(mAccount.getSignalProtocolStore(), recipientSignalProtocolAddress);
       sessionBuilder.process(preKeyBundle);
       storeAllAccountInformationInSharedPreferences();
+      return true;
     } catch (InvalidKeyException | UntrustedIdentityException e) {
+      // libsignal verifies the signed and kyber pre key signatures against the bundle's identity
+      // key and raises here when either fails, or when the peer's identity key has changed. That
+      // is the single most important security event in the protocol; swallowing it into a log made
+      // a forged bundle and a MITM identity swap both report "session created" to the user.
       Log.e(TAG, "Error: Building session with recipient id " + recipientSignalProtocolAddress.getName() + " failed");
       e.printStackTrace();
+      return false;
     }
   }
 
@@ -500,7 +695,7 @@ public class SignalProtocolMain {
    */
   private void initializeProtocol() {
     final String uniqueUserId = UUID.randomUUID().toString();
-    final int deviceId = new Random().nextInt(10000);
+    final int deviceId = ProtocolAddresses.generateDeviceId();
     final SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(uniqueUserId, deviceId);
     final PreKeyMetadataStore metadataStore = new PreKeyMetadataStoreImpl();
 
@@ -527,10 +722,26 @@ public class SignalProtocolMain {
   }
 
   private void reloadAccountFromSharedPreferences() {
-    mAccount = mStorageHelper.getAccountFromSharedPreferences();
+    if (mStorageHelper == null) {
+      Log.e(TAG, "Error: cannot reload account, storage helper is null");
+      return;
+    }
+    final Account loaded = mStorageHelper.getAccountFromSharedPreferences();
+    if (loaded == null) {
+      // Keep whatever is already in memory. setInputView() runs on every input-view creation
+      // (rotation, theme change), so a transient storage failure must not discard a live account
+      // mid-conversation.
+      Log.e(TAG, "Error: account could not be loaded; keeping the existing in-memory account");
+      return;
+    }
+    mAccount = loaded;
   }
 
   private void storeAllAccountInformationInSharedPreferences() {
+    if (mAccount == null) {
+      Log.e(TAG, "Error: No protocol resources were stored (mAccount is null)");
+      return;
+    }
     if (mStorageHelper != null) {
       mStorageHelper.storeAllInformationInSharedPreferences(mAccount);
     } else {

@@ -1,33 +1,91 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 33
-    buildToolsVersion '33.0.0'
+    namespace 'com.amnesica.kryptey.inputmethod'
+    compileSdk 35
+
     defaultConfig {
         applicationId "com.amnesica.kryptey"
-        minSdkVersion 26
-        targetSdkVersion 33
+        minSdk 26
+        targetSdk 33
         versionCode 24
         versionName "0.1.5"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    packaging {
+        jniLibs {
+            // libsignal ships a test-only native library alongside the real one - 82 MB per ABI on
+            // arm64. Nothing in the app references it.
+            excludes += ['**/libsignal_jni_testing.so']
+        }
+    }
+
+    splits {
+        abi {
+            // libsignal 0.86.5 is ~74 MB of native code per ABI. A universal APK carrying all four
+            // would be unusable, so ship one APK per ABI.
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk false
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             debuggable false
-            renderscriptDebuggable false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        // Required by libsignal 0.86.5, which uses JDK APIs not present at minSdk 26.
+        coreLibraryDesugaringEnabled true
     }
+
+    testOptions {
+        unitTests {
+            // Required by Robolectric. Deliberately does NOT set returnDefaultValues: unmocked
+            // android.jar calls must keep throwing loudly rather than silently returning 0/null.
+            includeAndroidResources = true
+
+            all {
+                systemProperty 'kryptey.writeFixtures',
+                        System.getProperty('kryptey.writeFixtures', 'false')
+            }
+        }
+    }
+
 }
 
 dependencies {
-    implementation 'org.signal:libsignal-android:0.21.1'
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.14.1'
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.14.1'
-    implementation 'com.google.protobuf:protobuf-javalite:3.21.12'
-    testImplementation "junit:junit:4.13.2"
+    // Jackson versions are aligned by the BOM so databind/core/annotations/jsr310
+    // can never drift apart. Bumping the BOM bumps the whole family.
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.2')
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
+    implementation 'org.signal:libsignal-android:0.86.5'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+
+    testImplementation 'junit:junit:4.13.2'
+    // Runs the real SharedPreferences implementation on the JVM, so the storage layer that actually
+    // touches Android APIs is covered by tests that execute rather than tests that only compile.
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+
+    // Instrumentation tests. These are the ONLY way to exercise AndroidKeystoreCryptoBox: a desktop
+    // JCE key and a Keystore key have materially different semantics (a Keystore key rejects a
+    // caller-supplied IV, which already hid one production-only failure), so JVM tests cannot
+    // stand in for them. They need a device or an emulator.
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test:core:1.7.0'
 }

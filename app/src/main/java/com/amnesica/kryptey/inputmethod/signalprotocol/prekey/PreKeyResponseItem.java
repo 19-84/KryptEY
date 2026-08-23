@@ -20,11 +20,15 @@ public class PreKeyResponseItem {
   @JsonProperty
   public PreKeyEntity preKey;
 
-  public PreKeyResponseItem(int deviceId, int registrationId, SignedPreKeyEntity signedPreKey, PreKeyEntity preKey) {
+  @JsonProperty
+  public KyberPreKeyEntity kyberPreKey;
+
+  public PreKeyResponseItem(int deviceId, int registrationId, SignedPreKeyEntity signedPreKey, PreKeyEntity preKey, KyberPreKeyEntity kyberPreKey) {
     this.deviceId = deviceId;
     this.registrationId = registrationId;
     this.signedPreKey = signedPreKey;
     this.preKey = preKey;
+    this.kyberPreKey = kyberPreKey;
   }
 
   public PreKeyResponseItem() {
@@ -47,16 +51,20 @@ public class PreKeyResponseItem {
     return preKey;
   }
 
+  public KyberPreKeyEntity getKyberPreKey() {
+    return kyberPreKey;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     PreKeyResponseItem that = (PreKeyResponseItem) o;
-    return deviceId == that.deviceId && registrationId == that.registrationId && Objects.equals(signedPreKey, that.signedPreKey) && Objects.equals(preKey, that.preKey);
+    return deviceId == that.deviceId && registrationId == that.registrationId && Objects.equals(signedPreKey, that.signedPreKey) && Objects.equals(preKey, that.preKey) && Objects.equals(kyberPreKey, that.kyberPreKey);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(deviceId, registrationId, signedPreKey, preKey);
+    return Objects.hash(deviceId, registrationId, signedPreKey, preKey, kyberPreKey);
   }
 }

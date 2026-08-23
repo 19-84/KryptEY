@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -28,7 +29,7 @@ public class SessionStoreImplTest {
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     assertEquals(1, sessionStore.getSize());
@@ -43,9 +44,9 @@ public class SessionStoreImplTest {
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
     SessionRecord sessionRecord2 = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     sessionStore.storeSession(signalProtocolAddress2, sessionRecord2);
@@ -57,13 +58,16 @@ public class SessionStoreImplTest {
 
   @Test
   public void getSubDeviceSessionsTest() {
+    // Device id is pinned below rather than generated: getSubDeviceSessions excludes id 1, and
+    // ProtocolAddresses.generateDeviceId() draws from [1,127], so a random fixture failed roughly
+    // one run in 127 - looking like a regression in an unrelated class.
     Log.i(TAG, "------------ getSubDeviceSessionsTest: ------------");
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), 42);
     SessionRecord sessionRecord2 = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), 42);
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     sessionStore.storeSession(signalProtocolAddress2, sessionRecord2);
@@ -71,6 +75,8 @@ public class SessionStoreImplTest {
 
     List<Integer> deviceIds = sessionStore.getSubDeviceSessions(signalProtocolAddress.getName());
     assertEquals(1, deviceIds.size());
+    assertNotEquals("getSubDeviceSessions filters out device id 1, so this fixture must avoid it",
+        1, signalProtocolAddress.getDeviceId());
   }
 
   @Test
@@ -79,9 +85,9 @@ public class SessionStoreImplTest {
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
     SessionRecord sessionRecord2 = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     sessionStore.storeSession(signalProtocolAddress2, sessionRecord2);
@@ -99,9 +105,9 @@ public class SessionStoreImplTest {
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
     SessionRecord sessionRecord2 = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     sessionStore.storeSession(signalProtocolAddress2, sessionRecord2);
@@ -118,9 +124,9 @@ public class SessionStoreImplTest {
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
     SessionRecord sessionRecord2 = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     sessionStore.storeSession(signalProtocolAddress2, sessionRecord2);
@@ -136,9 +142,9 @@ public class SessionStoreImplTest {
     SessionStoreImpl sessionStore = new SessionStoreImpl();
 
     SessionRecord sessionRecord = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
     SessionRecord sessionRecord2 = new SessionRecord();
-    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), new Random().nextInt(10000));
+    SignalProtocolAddress signalProtocolAddress2 = new SignalProtocolAddress(UUID.randomUUID().toString(), com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.generateDeviceId());
 
     sessionStore.storeSession(signalProtocolAddress, sessionRecord);
     sessionStore.storeSession(signalProtocolAddress2, sessionRecord2);

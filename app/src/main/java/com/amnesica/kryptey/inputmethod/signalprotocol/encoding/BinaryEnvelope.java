@@ -1,0 +1,377 @@
+package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
+
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.KyberPreKeyEntity;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyEntity;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.SignedPreKeyEntity;
+
+import org.signal.libsignal.protocol.IdentityKey;
+import org.signal.libsignal.protocol.InvalidKeyException;
+import org.signal.libsignal.protocol.ecc.ECPublicKey;
+import org.signal.libsignal.protocol.kem.KEMPublicKey;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedList;
+import java.util.List;
+
+/**
+ * Compact binary encoding for {@link MessageEnvelope}, replacing base64(minified JSON).
+ *
+ * <p>Two problems with the JSON form, both measured rather than assumed:
+ *
+ * <ul>
+ *   <li><b>Size — a modest win, and smaller than it first appears.</b> Measured against what the
+ *       app actually transmits (raw JSON via the identity {@code RawEncoder}, 2517 characters),
+ *       binary-plus-base64 is 2484 — about 1%. The raw binary is 1863 bytes versus 2517, but
+ *       base64's 4/3 expansion hands most of that back. Do not justify this format on size.
+ *   <li><b>Metadata.</b> Every message carried plaintext JSON field names plus a wall-clock
+ *       {@code timestamp}, and the timestamp is not encoded here at all.
+ *       <p>Correcting an earlier version of this note, which claimed nothing read that field: it
+ *       <em>was</em> read, at {@code SignalProtocolMain.decrypt}, and used as the stored time of a
+ *       received message. Dropping it therefore changes behaviour — received messages are now
+ *       stamped with the local decode time rather than a time the sender asserted. That is the
+ *       better default, and deliberate: a sender-supplied timestamp let a peer backdate or
+ *       post-date entries and so reorder the recipient's local history.
+ * </ul>
+ *
+ * <p>The real justifications are the metadata and parsing points above, plus one forward-looking
+ * one: masking the envelope later is natural over a byte string and awkward over a JSON document.
+ *
+ * <p>This is <em>not</em> confidentiality — the payload is a Signal ciphertext that is already
+ * authenticated and encrypted, and everything here is recoverable by anyone who knows the format.
+ * It removes gratuitous structure and gratuitous metadata. Masking the envelope so it is not
+ * recognisable as KryptEY output needs a secret shared before the first message, which this app
+ * does not have until out-of-band key exchange exists.
+ *
+ * <p>Layout — all integers big-endian, all variable-length fields length-prefixed:
+ *
+ * <pre>
+ *   u8   version          = 1
+ *   u8   flags            bit0 = has pre-key response, bit1 = has ciphertext
+ *   u8   senderNameLen    followed by that many UTF-8 bytes
+ *   u8   deviceId         libsignal constrains this to [1,127]
+ *   [if bit1]  u8 ciphertextType, u16 ciphertextLen, ciphertext
+ *   [if bit0]  u8 identityKeyLen, identityKey,
+ *              u8 deviceCount, then per device:
+ *                u8 deviceId, u32 registrationId,
+ *                u32 signedPreKeyId, u8 len + key, u8 len + signature,
+ *                u8 hasPreKey, [u32 preKeyId, u8 len + key],
+ *                u8 hasKyber,  [u32 kyberId, u16 len + key, u8 len + signature]
+ * </pre>
+ */
+public final class BinaryEnvelope {
+
+  static final byte VERSION = 1;
+  private static final int FLAG_PRE_KEY_RESPONSE = 0x01;
+  private static final int FLAG_CIPHERTEXT = 0x02;
+
+  /**
+   * The parser is the right place to enforce protocol constraints, because everything downstream
+   * takes these values on trust. libsignal validates them too — but it does so by throwing
+   * <em>unchecked</em> {@code IllegalArgumentException} ("device ID is out of range", "integer
+   * overflow during conversion"), and no caller on the clipboard path catches unchecked exceptions.
+   * A hostile bundle with an inner deviceId of 0, or a registrationId with the high bit set, decoded
+   * cleanly here and then killed the IME process inside {@code new PreKeyBundle(...)}.
+   */
+  private static void requireValidDeviceId(final int deviceId) throws IOException {
+    if (deviceId < 1 || deviceId > 127) {
+      throw new IOException("device id out of libsignal's range [1,127]: " + deviceId);
+    }
+  }
+
+  /** libsignal treats these as unsigned; a sign-extended negative overflows during conversion. */
+  private static void requireUnsigned(final int value, final String what) throws IOException {
+    if (value < 0) throw new IOException(what + " must be non-negative, got " + value);
+  }
+
+  private static final int MAX_SENDER_NAME_CHARS = 64;
+
+  /**
+   * Constrains the sender name to characters that cannot misrepresent themselves on screen.
+   *
+   * <p>This value is attacker-supplied and reaches the contact list and the info banner
+   * ("Detected contact: …"). Left unchecked it admits C0/C1 control characters, and bidirectional
+   * overrides such as U+202E, which reorder surrounding text when rendered — a cheap way to make
+   * one contact display as another. Invalid UTF-8 also silently becomes U+FFFD rather than being
+   * rejected.
+   *
+   * <p>The constraint is tight because it can be: every name this app generates is a
+   * {@code UUID.randomUUID().toString()}, so printable ASCII costs nothing legitimate. If the
+   * naming scheme ever changes — deriving it from the identity key fingerprint, say — this is the
+   * place to widen, and the envelope's version byte is how to do it compatibly.
+   */
+  private static void requireDisplaySafeName(final String name) throws IOException {
+    if (name.isEmpty()) throw new IOException("sender name is empty");
+    if (name.length() > MAX_SENDER_NAME_CHARS) {
+      throw new IOException("sender name too long: " + name.length());
+    }
+    for (int i = 0; i < name.length(); i++) {
+      final char c = name.charAt(i);
+      if (c < 0x20 || c > 0x7E) {
+        throw new IOException("sender name contains a non-printable or non-ASCII character at "
+            + i + " (U+" + String.format("%04X", (int) c) + ")");
+      }
+    }
+  }
+
+  private BinaryEnvelope() {
+  }
+
+  public static byte[] encode(final MessageEnvelope envelope) throws IOException {
+    if (envelope == null) throw new IOException("envelope is null");
+
+    final ByteArrayOutputStream out = new ByteArrayOutputStream(2048);
+    final boolean hasBundle = envelope.getPreKeyResponse() != null;
+    final boolean hasCiphertext = envelope.getCiphertextMessage() != null;
+    if (!hasBundle && !hasCiphertext) throw new IOException("envelope carries nothing");
+
+    out.write(VERSION);
+    out.write((hasBundle ? FLAG_PRE_KEY_RESPONSE : 0) | (hasCiphertext ? FLAG_CIPHERTEXT : 0));
+
+    requireDisplaySafeName(nonNull(envelope.getSignalProtocolAddressName(), "sender name"));
+    final byte[] name = envelope.getSignalProtocolAddressName().getBytes(StandardCharsets.UTF_8);
+    out.write(name.length);
+    out.write(name, 0, name.length);
+
+    requireValidDeviceId(envelope.getDeviceId());
+    writeU8(out, envelope.getDeviceId(), "deviceId");
+
+    if (hasCiphertext) {
+      writeU8(out, envelope.getCiphertextType(), "ciphertextType");
+      writeVarU16(out, envelope.getCiphertextMessage());
+    }
+
+    if (hasBundle) writeBundle(out, envelope.getPreKeyResponse());
+
+    return out.toByteArray();
+  }
+
+  public static MessageEnvelope decode(final byte[] bytes) throws IOException {
+    final Cursor c = new Cursor(bytes);
+
+    final int version = c.u8("version");
+    if (version != VERSION) throw new IOException("unsupported envelope version: " + version);
+    final int flags = c.u8("flags");
+    if ((flags & ~(FLAG_PRE_KEY_RESPONSE | FLAG_CIPHERTEXT)) != 0) {
+      throw new IOException("unknown envelope flags: " + flags);
+    }
+    if ((flags & (FLAG_PRE_KEY_RESPONSE | FLAG_CIPHERTEXT)) == 0) {
+      // encode() refuses to emit an envelope carrying nothing; decode must not accept one either,
+      // or the parser admits a shape the encoder cannot produce.
+      throw new IOException("envelope carries nothing");
+    }
+
+    final String name = new String(c.bytes(c.u8("nameLen"), "senderName"), StandardCharsets.UTF_8);
+    requireDisplaySafeName(name);
+    final int deviceId = c.u8("deviceId");
+    requireValidDeviceId(deviceId);
+
+    byte[] ciphertext = null;
+    int ciphertextType = 0;
+    if ((flags & FLAG_CIPHERTEXT) != 0) {
+      ciphertextType = c.u8("ciphertextType");
+      final int ciphertextLen = c.u16("ciphertextLen");
+      if (ciphertextLen == 0) throw new IOException("ciphertext flag set but length is zero");
+      ciphertext = c.bytes(ciphertextLen, "ciphertext");
+    }
+
+    PreKeyResponse bundle = null;
+    if ((flags & FLAG_PRE_KEY_RESPONSE) != 0) bundle = readBundle(c);
+
+    c.requireExhausted();
+
+    final MessageEnvelope envelope;
+    if (ciphertext != null) {
+      envelope = new MessageEnvelope(ciphertext, ciphertextType, name, deviceId);
+      if (bundle != null) envelope.setPreKeyResponse(bundle);
+    } else {
+      envelope = new MessageEnvelope(bundle, name, deviceId);
+    }
+    return envelope;
+  }
+
+  // ------------------------------------------------------------------ bundle
+
+  private static void writeBundle(final ByteArrayOutputStream out, final PreKeyResponse bundle)
+      throws IOException {
+    writeVarU8(out, nonNull(bundle.getIdentityKey(), "identityKey").serialize());
+
+    final List<PreKeyResponseItem> devices = bundle.getDevices();
+    if (devices == null || devices.isEmpty()) throw new IOException("bundle has no devices");
+    if (devices.size() > 255) throw new IOException("too many devices: " + devices.size());
+    out.write(devices.size());
+
+    for (final PreKeyResponseItem device : devices) {
+      requireValidDeviceId(device.getDeviceId());
+      writeU8(out, device.getDeviceId(), "device deviceId");
+      requireUnsigned(device.getRegistrationId(), "registrationId");
+      writeU32(out, device.getRegistrationId());
+
+      final SignedPreKeyEntity signed = nonNull(device.getSignedPreKey(), "signedPreKey");
+      writeU32(out, signed.getKeyId());
+      writeVarU8(out, nonNull(signed.getPublicKey(), "signedPreKey.publicKey").serialize());
+      writeVarU8(out, nonNull(signed.getSignature(), "signedPreKey.signature"));
+
+      final PreKeyEntity preKey = device.getPreKey();
+      out.write(preKey == null ? 0 : 1);
+      if (preKey != null) {
+        writeU32(out, preKey.getKeyId());
+        writeVarU8(out, nonNull(preKey.getPublicKey(), "preKey.publicKey").serialize());
+      }
+
+      final KyberPreKeyEntity kyber = device.getKyberPreKey();
+      out.write(kyber == null ? 0 : 1);
+      if (kyber != null) {
+        writeU32(out, kyber.getKeyId());
+        // u16: a Kyber-1024 public key is 1569 bytes and does not fit a u8 length.
+        writeVarU16(out, nonNull(kyber.getPublicKey(), "kyberPreKey.publicKey").serialize());
+        writeVarU8(out, nonNull(kyber.getSignature(), "kyberPreKey.signature"));
+      }
+    }
+  }
+
+  private static PreKeyResponse readBundle(final Cursor c) throws IOException {
+    final IdentityKey identityKey;
+    try {
+      identityKey = new IdentityKey(c.bytes(c.u8("identityKeyLen"), "identityKey"), 0);
+    } catch (InvalidKeyException e) {
+      throw new IOException("malformed identity key", e);
+    }
+
+    final int deviceCount = c.u8("deviceCount");
+    if (deviceCount == 0) throw new IOException("bundle has no devices");
+
+    final List<PreKeyResponseItem> devices = new LinkedList<>();
+    for (int i = 0; i < deviceCount; i++) {
+      final int deviceId = c.u8("device deviceId");
+      requireValidDeviceId(deviceId);
+      final int registrationId = c.u32("registrationId");
+      requireUnsigned(registrationId, "registrationId");
+
+      final int signedId = c.u32("signedPreKeyId");
+      requireUnsigned(signedId, "signedPreKeyId");
+      final ECPublicKey signedKey = ec(c.bytes(c.u8("signedKeyLen"), "signedPreKey"));
+      final byte[] signedSig = c.bytes(c.u8("signedSigLen"), "signedPreKey.signature");
+
+      PreKeyEntity preKey = null;
+      if (c.u8("hasPreKey") != 0) {
+        final int preKeyId = c.u32("preKeyId");
+        requireUnsigned(preKeyId, "preKeyId");
+        preKey = new PreKeyEntity(preKeyId, ec(c.bytes(c.u8("preKeyLen"), "preKey")));
+      }
+
+      KyberPreKeyEntity kyber = null;
+      if (c.u8("hasKyber") != 0) {
+        final int kyberId = c.u32("kyberPreKeyId");
+        requireUnsigned(kyberId, "kyberPreKeyId");
+        final byte[] kyberKey = c.bytes(c.u16("kyberKeyLen"), "kyberPreKey");
+        final byte[] kyberSig = c.bytes(c.u8("kyberSigLen"), "kyberPreKey.signature");
+        try {
+          kyber = new KyberPreKeyEntity(kyberId, new KEMPublicKey(kyberKey), kyberSig);
+        } catch (InvalidKeyException e) {
+          throw new IOException("malformed kyber pre key", e);
+        }
+      }
+
+      devices.add(new PreKeyResponseItem(deviceId, registrationId,
+          new SignedPreKeyEntity(signedId, signedKey, signedSig), preKey, kyber));
+    }
+    return new PreKeyResponse(identityKey, devices);
+  }
+
+  private static ECPublicKey ec(final byte[] serialized) throws IOException {
+    try {
+      return new ECPublicKey(serialized, 0);
+    } catch (InvalidKeyException e) {
+      throw new IOException("malformed EC public key", e);
+    }
+  }
+
+  // ------------------------------------------------------------------- write
+
+  private static void writeU8(final ByteArrayOutputStream out, final int value, final String what)
+      throws IOException {
+    if (value < 0 || value > 255) throw new IOException(what + " out of range: " + value);
+    out.write(value);
+  }
+
+  private static void writeU32(final ByteArrayOutputStream out, final int value) {
+    out.write((value >>> 24) & 0xFF);
+    out.write((value >>> 16) & 0xFF);
+    out.write((value >>> 8) & 0xFF);
+    out.write(value & 0xFF);
+  }
+
+  private static void writeVarU8(final ByteArrayOutputStream out, final byte[] value)
+      throws IOException {
+    if (value.length > 255) throw new IOException("field too long for u8 length: " + value.length);
+    out.write(value.length);
+    out.write(value, 0, value.length);
+  }
+
+  private static void writeVarU16(final ByteArrayOutputStream out, final byte[] value)
+      throws IOException {
+    if (value.length > 65535) throw new IOException("field too long: " + value.length);
+    out.write((value.length >>> 8) & 0xFF);
+    out.write(value.length & 0xFF);
+    out.write(value, 0, value.length);
+  }
+
+  private static <T> T nonNull(final T value, final String what) throws IOException {
+    if (value == null) throw new IOException(what + " is null");
+    return value;
+  }
+
+  /** Bounds-checked reader: a truncated or hostile envelope must raise IOException, never AIOOBE. */
+  private static final class Cursor {
+    private final byte[] buf;
+    private int pos;
+
+    Cursor(final byte[] buf) throws IOException {
+      if (buf == null) throw new IOException("envelope is null");
+      this.buf = buf;
+    }
+
+    int u8(final String what) throws IOException {
+      require(1, what);
+      return buf[pos++] & 0xFF;
+    }
+
+    int u16(final String what) throws IOException {
+      require(2, what);
+      return ((buf[pos++] & 0xFF) << 8) | (buf[pos++] & 0xFF);
+    }
+
+    int u32(final String what) throws IOException {
+      require(4, what);
+      return ((buf[pos++] & 0xFF) << 24) | ((buf[pos++] & 0xFF) << 16)
+          | ((buf[pos++] & 0xFF) << 8) | (buf[pos++] & 0xFF);
+    }
+
+    byte[] bytes(final int length, final String what) throws IOException {
+      require(length, what);
+      final byte[] value = new byte[length];
+      System.arraycopy(buf, pos, value, 0, length);
+      pos += length;
+      return value;
+    }
+
+    void requireExhausted() throws IOException {
+      // Trailing bytes mean the sender and receiver disagree about the format. Refusing keeps a
+      // hostile envelope from smuggling data past the parser.
+      if (pos != buf.length) {
+        throw new IOException("trailing bytes in envelope: " + (buf.length - pos));
+      }
+    }
+
+    private void require(final int n, final String what) throws IOException {
+      if (n < 0 || pos + n > buf.length) {
+        throw new IOException("truncated envelope reading " + what);
+      }
+    }
+  }
+}

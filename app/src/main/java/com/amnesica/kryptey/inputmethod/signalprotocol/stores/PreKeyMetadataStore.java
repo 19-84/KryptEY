@@ -11,6 +11,9 @@ public abstract class PreKeyMetadataStore {
   int signedPreKeyFailureCount = 0;
   int nextOneTimePreKeyId = 0;
 
+  int nextKyberPreKeyId = 0;
+  int activeKyberPreKeyId = 0;
+
   long nextSignedPreKeyRefreshTime = 0L;
   long oldSignedPreKeyDeletionTime = 0L; // lastSignedPreKeyRotationTime + 48h
 
@@ -47,6 +50,22 @@ public abstract class PreKeyMetadataStore {
   }
 
   // get bound
+  public int getNextKyberPreKeyId() {
+    return nextKyberPreKeyId;
+  }
+
+  public void setNextKyberPreKeyId(int nextKyberPreKeyId) {
+    this.nextKyberPreKeyId = nextKyberPreKeyId;
+  }
+
+  public int getActiveKyberPreKeyId() {
+    return activeKyberPreKeyId;
+  }
+
+  public void setActiveKyberPreKeyId(int activeKyberPreKeyId) {
+    this.activeKyberPreKeyId = activeKyberPreKeyId;
+  }
+
   public int getNextOneTimePreKeyId() {
     return nextOneTimePreKeyId;
   }

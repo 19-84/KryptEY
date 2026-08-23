@@ -68,6 +68,34 @@ public class PreKeyStoreImpl implements PreKeyStore {
         .filter(p -> !p.getValue().isUsed()).count();
   }
 
+  /** Lowest id still unused, or null when every stored pre-key has been consumed. */
+  public Integer findUnusedPreKeyId() {
+    return store.entrySet().stream()
+        .filter(e -> !e.getValue().isUsed())
+        .map(Map.Entry::getKey)
+        .min(Integer::compareTo)
+        .orElse(null);
+  }
+
+  /**
+   * Drops the oldest <em>used</em> pre-keys, keeping the most recent {@code keep}.
+   *
+   * <p>Used records are deliberately retained rather than deleted on use: a peer's first message
+   * arrives after the bundle was handed out, so the key must still be there to decrypt it. But they
+   * cannot be kept forever - the whole store is serialized into SharedPreferences on every message.
+   */
+  public void pruneUsedPreKeys(final int keep) {
+    final java.util.List<Integer> used = store.entrySet().stream()
+        .filter(e -> e.getValue().isUsed())
+        .map(Map.Entry::getKey)
+        .sorted()
+        .collect(java.util.stream.Collectors.toList());
+    for (int i = 0; i < used.size() - keep; i++) {
+      Log.d(TAG, "Pruning used PreKeyRecord with id: " + used.get(i));
+      store.remove(used.get(i));
+    }
+  }
+
   public Boolean checkPreKeyAvailable(final int preKeyId) {
     return store.containsKey(preKeyId) ? Objects.requireNonNull(store.get(preKeyId)).isUsed() : null;
   }
