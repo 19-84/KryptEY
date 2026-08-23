@@ -160,6 +160,17 @@
       android:layout_gravity="center"
       android:layout_marginRight="15dp" />
 
+    <!-- "The number does not match." The mirror of confirm, and the only way to un-pin a key.
+         Deliberately reachable ONLY from this screen, where the user has just compared numbers -
+         never from a decryption-failure message, because those are attacker-inducible. -->
+    <ImageButton
+      android:id="@+id/e2ee_verify_contact_reject_button"
+      style="?attr/e2eeStripActionButtonCancelStyle"
+      android:layout_width="50dp"
+      android:layout_height="50dp"
+      android:layout_gravity="center"
+      android:layout_marginRight="15dp" />
+
     <ImageButton
       android:id="@+id/e2ee_verify_contact_return_button"
       style="?attr/e2eeStripActionButtonReturnStyle"

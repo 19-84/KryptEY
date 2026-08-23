@@ -161,11 +161,54 @@ public class SignalProtocolMain {
    * @return true if the pinned key was replaced
    */
   /**
+   * Forgets a contact's pinned key, because the user compared safety numbers and they did NOT
+   * match.
+   *
+   * <p>This is the case the rest of the trust model does not cover. Everything else here assumes
+   * the pinned key is the genuine one and treats any newly offered key as hostile — which is right
+   * whenever the pin was established honestly. But the pin is set by trust-on-first-use, through
+   * the same messenger the threat model says can forge anything, so at first contact it can just as
+   * easily be the attacker's. In that mirror case every other control does the wrong thing:
+   * dismissing throws away the peer's real key, deletion keeps the impostor's, and the badge ends up
+   * green over the wrong identity. Without this, a user who does exactly the right thing — compares
+   * numbers, finds a mismatch — has no action available, and the wrong pin is permanent for the
+   * life of the install.
+   *
+   * <p>Why this does not reopen the fail-open that made contact deletion an unsafe exit: that path
+   * was reachable from generic decryption-failure advice, and an attacker can induce a decryption
+   * failure at will by replaying a message or flipping a bit. This is reachable only from the verify
+   * screen, only after the user has been shown a number to compare. An attacker cannot deliver the
+   * user to it, and cannot make the comparison fail for a genuine peer.
+   *
+   * <p>Drops the session and the verified badge with the key, so nothing downstream keeps treating
+   * the old identity as current.
+   *
+   * @return true if a pinned key was forgotten.
+   */
+  public static boolean rejectContactKey(final Contact contact) {
+    if (sInstance.mAccount == null || contact == null) return false;
+    final SignalProtocolAddress address = contact.getSignalProtocolAddress();
+
+    final boolean hadPin = sInstance.mAccount.getSignalProtocolStore()
+        .getIdentityKeyStore().getIdentity(address) != null;
+    sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore().removeIdentity(address);
+    if (sInstance.mAccount.getSignalProtocolStore().containsSession(address)) {
+      sInstance.mAccount.getSignalProtocolStore().deleteSession(address);
+    }
+    contact.setVerified(false);
+    sInstance.clearVerificationFor(address);
+    Log.w(TAG, "Forgot the pinned key for " + contact.getSignalProtocolAddressName()
+        + ": the user reported the safety number did not match");
+    sInstance.storeAllAccountInformationInSharedPreferences();
+    return hadPin;
+  }
+
+  /**
    * Discards a pending identity change, keeping the pinned key. The safe exit from the state an
    * attacker can force; see {@code IdentityKeyStoreImpl.dismissIdentityChange}.
    */
   public static boolean dismissIdentityChange(final SignalProtocolAddress address) {
-    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    if (sInstance.mAccount == null || address == null) return false;
     final boolean dismissed = sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .dismissIdentityChange(address);
     if (dismissed) {
@@ -175,6 +218,16 @@ public class SignalProtocolMain {
     return dismissed;
   }
 
+  /**
+   * Adopts a pending identity in place of the pin, taking the key the user was actually shown.
+   *
+   * <p><b>Deliberately unwired.</b> No production caller, and adding one needs an argument first:
+   * a peer who reinstalls arrives at a fresh address, so a change at a pinned address is never a
+   * legitimate re-key, and a screen offering to adopt one is an attack surface. The two wired exits
+   * are {@link #dismissIdentityChange} (the pin is right; discard what was offered) and
+   * {@link #rejectContactKey} (the pin is wrong; forget it). Between them they cover both
+   * directions, which is what this was reached for before those existed.
+   */
   public static boolean acceptIdentityChange(final SignalProtocolAddress address,
                                              final IdentityKey shown) {
     if (address == null || sInstance.mAccount == null) return false;
@@ -342,14 +395,17 @@ public class SignalProtocolMain {
     // contact's badge with no way back. Deleting the contact as the exit is worse still, because it
     // surrenders the pin and opens a substitution window on the app's generic "delete and
     // re-invite" advice, which an attacker can trigger by replaying any message.
+    // Update the contact row FIRST: it throws UnknownContactException, and dismissing before it
+    // left the store mutated in memory and never persisted when it did.
+    contact.setVerified(true);
+    mAccount.updateContactInContactList(contact);
+
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .dismissIdentityChange(contact.getSignalProtocolAddress())) {
       Log.i(TAG, "Discarded an offered identity for " + contact.getSignalProtocolAddressName()
           + " because the user confirmed the number of the key already pinned");
     }
 
-    contact.setVerified(true);
-    mAccount.updateContactInContactList(contact);
     storeAllAccountInformationInSharedPreferences();
     return true;
   }

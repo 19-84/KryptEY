@@ -54,7 +54,10 @@ public class E2EEStrip {
    * reinstall and exactly the wrong one for an impersonation attempt, and the app cannot tell which
    * this is - only the user can, by comparing the safety number out of band.
    */
-  private final String INFO_IDENTITY_CHANGED = "%s's security number has changed. This happens if they reinstalled the app - but it is also what an impersonation attempt looks like. Verify their new number with them through another channel before sending anything.";
+  // Does not name a reinstall as the cause: a reinstall mints a fresh address and cannot collide
+  // with an existing pin, so a changed key at a pinned address is never one. See the matching
+  // comment on INFO_IDENTITY_CHANGED_EXISTING in E2EEStripView.
+  private final String INFO_IDENTITY_CHANGED = "Someone offered a different key for %s. It was refused and is not in use. Open them in your contact list and compare the number with them by voice before sending anything.";
 
   private final int CHAR_THRESHOLD_RAW = 500;
   private final int CHAR_THRESHOLD_FAIRYTALE = 500;
@@ -221,6 +224,15 @@ public class E2EEStrip {
 
   public Fingerprint getFingerprint(Contact contact) {
     return SignalProtocolMain.getFingerprint(contact);
+  }
+
+  /**
+   * Forgets a contact's pinned key after the user compared safety numbers and they did not match.
+   * See {@code SignalProtocolMain.rejectContactKey} for why this is safe here and would not be safe
+   * on any failure path.
+   */
+  public boolean rejectContactKey(Contact contact) {
+    return SignalProtocolMain.rejectContactKey(contact);
   }
 
   /** @return false if verification was refused because a substituted identity is pending. */

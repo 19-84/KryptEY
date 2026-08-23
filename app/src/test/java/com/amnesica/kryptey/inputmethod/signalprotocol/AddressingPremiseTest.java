@@ -18,9 +18,9 @@ import java.util.UUID;
  * Pins the addressing premise the whole Phase 4 trust design rests on.
  *
  * <p>The design says: a pending identity change is <em>always</em> hostile — a substitution or a
- * store rollback — never a legitimate peer. That is why {@code verifyContact} refuses while a
- * change is pending it is dismissed rather than accepted, why there is deliberately no one-tap
- * "accept this new key" button, and why contact removal does not surrender the pin.
+ * store rollback — never a legitimate peer. That is why confirming the number dismisses the offered
+ * key rather than adopting it, why there is deliberately no one-tap "accept this new key" button,
+ * and why contact removal does not surrender the pin.
  *
  * <p>All of that follows from one property of addressing, and nothing else: <b>a fresh install
  * mints a brand-new random address</b>, so a peer who reinstalls comes back as a different address

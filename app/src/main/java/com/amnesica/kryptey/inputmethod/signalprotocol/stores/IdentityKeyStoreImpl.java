@@ -73,7 +73,7 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    * no recovery — deleting them did not help, because contact removal never touched this list.
    *
    * <p>Replacing is not the same as trusting. A displaced key is remembered in
-   * {@code changedIdentities} and {@link #isTrustedIdentity} keeps refusing to <em>send</em> to it
+   * {@code pendingIdentities} and {@link #isTrustedIdentity} keeps refusing to <em>send</em> to it
    * until {@link #acceptIdentityChange} is called, so an identity swap cannot be silently accepted.
    */
   @Override
@@ -163,15 +163,6 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   }
 
   /**
-   * Accepts the pending identity for {@code address}, replacing the pin.
-   *
-   * <p>Takes the key the user was actually shown and refuses if it no longer matches what is
-   * pending, so a change that arrives between display and confirmation cannot be accepted by
-   * mistake.
-   *
-   * @return true if the pin was replaced.
-   */
-  /**
    * Discards a pending identity change and keeps the pinned key.
    *
    * <p>This is the safe exit from a pending change, and the only one a user should normally need.
@@ -198,6 +189,15 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
     return pendingIdentities.remove(addressKey(address)) != null;
   }
 
+  /**
+   * Accepts the pending identity for {@code address}, replacing the pin.
+   *
+   * <p>Takes the key the user was actually shown and refuses if it no longer matches what is
+   * pending, so a change that arrives between display and confirmation cannot be accepted by
+   * mistake.
+   *
+   * @return true if the pin was replaced.
+   */
   public boolean acceptIdentityChange(final SignalProtocolAddress address, final IdentityKey shown) {
     final IdentityKey pending = getPendingIdentity(address);
     if (pending == null || shown == null || !pending.equals(shown)) return false;
@@ -214,11 +214,16 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   /**
    * Forgets everything known about {@code address}.
    *
-   * <p>Reached from contact removal, and only from there. That is the sole exit from a pending
-   * identity change: without it, one forged bundle from anyone who knows the address permanently
-   * destroys that contact's verified badge with no way back. See the rationale in
-   * {@code SignalProtocolMain.removeContact} - in particular why the exit is discard and never
-   * adopt, and why the fail-open this used to guard is now closed in the UI advice instead.
+   * <p>Reached only from {@code SignalProtocolMain.rejectContactKey}, i.e. only when the user
+   * compared safety numbers on the verify screen and reported that they did NOT match. Contact
+   * removal deliberately does not reach it — a pin must outlive the contact row, or the app's
+   * attacker-inducible failure advice becomes a route to substituting a key.
+   *
+   * <p>An earlier revision of this comment described contact removal as the caller and as "the sole
+   * exit from a pending identity change". Both were true only of a design that was reverted; a
+   * maintainer acting on that text would reintroduce the substitution window. The exit from a
+   * pending change is {@code dismissIdentityChange}, which keeps the pin. This method is for the
+   * opposite case: the pin itself is wrong.
    */
   public void removeIdentity(final SignalProtocolAddress address) {
     trustedKeys.removeIf(k -> k != null && k.getSignalProtocolAddress().equals(address));

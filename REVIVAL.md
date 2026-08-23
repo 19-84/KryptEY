@@ -126,6 +126,29 @@ rather than turning verify into a one-tap adopt.
 
 Deletion keeps the pin, as it did before. `acceptIdentityChange` stays unwired.
 
+**The mirror case: the pin itself is wrong.** Everything above assumes the pinned key is genuine and
+treats a newly offered key as hostile — right whenever the pin was set honestly. But the pin is set
+by trust-on-first-use, through the same messenger the threat model says can forge anything. A
+messenger that swaps the very first invite, keeping the peer's real address name and device id (both
+plaintext envelope fields it can read off the genuine bundle), gets its own key pinned with **no
+warning of any kind** — there is no earlier key for TOFU to notice a change from.
+
+In that case every control did the wrong thing: dismissing discards the peer's real key, deletion
+keeps the impostor's, and confirming paints the badge green over the wrong identity. The genuine
+peer was then unreachable at their real address for the life of the install, the only recovery being
+to clear app data and destroy the user's own identity. A user doing exactly the right thing —
+comparing numbers and finding a mismatch — had no action available.
+
+`rejectContactKey` is that action, wired to a "does not match" control on the verify screen. It
+forgets the pin, the session and the badge. It is reachable **only** from that screen, after the user
+has been shown a number to compare — never from a failure message, because those are
+attacker-inducible, which is exactly what made contact deletion an unsafe exit. Between dismiss (the
+pin is right) and reject (the pin is wrong) both directions are now covered, which is what
+`acceptIdentityChange` was being reached for before either existed.
+
+This does not *detect* a swapped first invite — nothing can, from inside the app. It makes the
+detection the user performs actionable.
+
 As it now stands: a displaced key is refused in **both** directions; the change is recorded from the
 `UntrustedIdentityException` path, taking the offered key from the bundle (libsignal raises that
 exception with a null identity, so `getUntrustedIdentity()` is useless); contact removal does **not**
@@ -221,10 +244,17 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
    now a decision rather than a gap — the exit is discard via deletion, and adopt-in-place stays
    unavailable on purpose.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
-   supplies it. The user is told a number changed but cannot yet see what it changed to, which is
-   what they would need to recognise a peer who genuinely reinstalled onto the same address (only
-   reachable today via a store rollback).
-3. **Run the instrumentation tests.** The single largest remaining unknown — see below.
+   supplies it. Until it exists, no warning text should ask the user to check "their new number" —
+   they cannot see it. The strings were corrected accordingly.
+3. **Contacts are listed by display name only.** Two rows both reading "Alice" at different
+   addresses are indistinguishable, so the whole pin mechanism is sidestepped by inviting the user
+   to add a second contact rather than by substituting a key for the first. Needs the address (or a
+   duplicate-name warning) surfaced in `ListAdapterContacts`.
+4. **Safety numbers are bound to the peer-supplied address name**, which is covered by neither the
+   bundle signatures nor the message MAC. A messenger that rewrites that field consistently in both
+   directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a
+   server-attested identifier; there is no equivalent here.
+5. **Run the instrumentation tests.** The single largest remaining unknown — see below.
 
 ## Known-deferred defects
 
@@ -234,7 +264,8 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
 - **Bundle replay.** No freshness check, so replaying a captured envelope forces a session rebuild.
   Halved (the bundle was being processed twice per message) but not eliminated.
 - **No user-visible signal when the Keystore key is gone** — it currently looks identical to
-  "no data". `destroyMasterKey()` has no caller, so there is no reset path.
+  "no data". `destroyMasterKey()` has no production caller (only instrumentation tests), so there is
+  no reset path.
 - **Non-atomic account write** — 7 independent `commit()`s per save, on the IME main thread.
 - ~~`E2EEStripView` enables the *encrypt* button on detecting an encrypted message.~~ Resolved: it
   was a copy-paste slip, and inert — `setInfoTextViewMessage` fires a `TextWatcher` that enables

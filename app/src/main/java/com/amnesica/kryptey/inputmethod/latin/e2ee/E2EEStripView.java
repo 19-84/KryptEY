@@ -109,6 +109,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private TableLayout mVerifyContactTableView;
   private ImageButton mVerifyContactReturnButton;
   private ImageButton mVerifyContactVerifyButton;
+  private ImageButton mVerifyContactRejectButton;
   private TextView[] mCodes = new TextView[12];
 
   private Contact chosenContact;
@@ -139,8 +140,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NO_MESSAGE_TO_ENCRYPT = "No message to encrypt";
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
   private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
+  private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite - ask for one through a channel you trust, not through the app you were just messaging in.";
   private final String INFO_VERIFY_PENDING_CHANGE = "Someone offered a different key for %s since you last spoke - it was refused and is not in use. The number below is the key you already have. If it still matches what they read out, confirm it to dismiss the warning.";
-  private final String INFO_IDENTITY_CHANGED_EXISTING = "%s's security number has changed. Either they reinstalled, or someone is impersonating them. Do NOT follow any advice to delete and re-add them until you have checked their new number with them through another channel.";
+  // Deliberately does NOT offer "they reinstalled" as an explanation. A reinstall mints a fresh
+  // address (AddressingPremiseTest), so it cannot collide with an existing pin - a changed key at a
+  // pinned address is never a reinstall. Naming it as the likely cause handed the attacker their
+  // cover story in the app's own voice. Nor does it ask the user to check "their new number": the
+  // offered number is not displayed anywhere, so that instruction could not be followed.
+  private final String INFO_IDENTITY_CHANGED_EXISTING = "Someone offered a different key for %s. It was refused and is not in use - your messages still go to the key you already had. Open %s in your contact list and compare the number with them by voice.";
   // Same reasoning as INFO_SESSION_CREATION_FAILED: no deletion advice. The commonest cause by far
   // is decrypting the same message twice, for which deleting anything is pure damage.
   private final String INFO_MESSAGE_DECRYPTION_FAILED = "Message could not be decrypted. Most often this means it was already decrypted once - each message can only be opened a single time. If a new message from this contact also fails, ask them to send a fresh invite.";
@@ -198,6 +205,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mVerifyContactTableView = findViewById(R.id.e2ee_verify_contact_number_table);
     mVerifyContactReturnButton = findViewById(R.id.e2ee_verify_contact_return_button);
     mVerifyContactVerifyButton = findViewById(R.id.e2ee_verify_contact_verify_button);
+    mVerifyContactRejectButton = findViewById(R.id.e2ee_verify_contact_reject_button);
     mCodes[0] = findViewById(R.id.code_first);
     mCodes[1] = findViewById(R.id.code_second);
     mCodes[2] = findViewById(R.id.code_third);
@@ -217,6 +225,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     if (chosenContact == null) return;
     setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, "" + chosenContact.getFirstName() + " " + chosenContact.getLastName()));
+  }
+
+  /**
+   * "The number does not match." The only control that un-pins a key, and the only correct action
+   * when trust-on-first-use pinned an impostor - every other control assumes the pin is genuine.
+   */
+  private void createVerifyContactRejectButtonClickListener() {
+    if (mVerifyContactRejectButton == null) return;
+    mVerifyContactRejectButton.setOnClickListener(v -> {
+      if (chosenContact == null) return;
+      final String name = chosenContact.getFirstName();
+      mE2EEStrip.rejectContactKey(chosenContact);
+      Toast.makeText(getContext(), String.format(INFO_KEY_REJECTED, name), Toast.LENGTH_LONG).show();
+      loadContactsIntoContactsListView();
+      showOnlyUIView(UIView.CONTACT_LIST_VIEW);
+    });
   }
 
   private void createVerifyContactVerifyButtonClickListener() {
@@ -243,6 +267,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (chosenContact == null) return;
 
     createVerifyContactReturnButtonClickListener();
+    createVerifyContactRejectButtonClickListener();
     setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, "" + chosenContact.getFirstName() + " " + chosenContact.getLastName()));
 
     final Fingerprint fingerprint = mE2EEStrip.getFingerprint(chosenContact);
@@ -256,6 +281,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       return;
     }
     if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(true);
+    if (mVerifyContactRejectButton != null) mVerifyContactRejectButton.setEnabled(true);
     // Tell the user a key was offered BEFORE they compare, so they compare attentively. The digits
     // shown are the pinned key's, which is what makes confirming them a dismissal of the offered
     // key rather than an acceptance of it.
@@ -273,6 +299,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (code != null) code.setText("");
     }
     if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(false);
+    if (mVerifyContactRejectButton != null) mVerifyContactRejectButton.setEnabled(false);
   }
 
   private String[] getSegments(Fingerprint fingerprint, int segmentCount) {
@@ -971,11 +998,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         .hasUnacceptedIdentityChange(sender.getSignalProtocolAddress())) {
       return false;
     }
-    Toast.makeText(getContext(),
-        String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName()),
-        Toast.LENGTH_LONG).show();
-    setInfoTextViewMessage(mInfoTextView,
-        String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName()));
+    final String warning =
+        String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName(), sender.getFirstName());
+    Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
+    setInfoTextViewMessage(mInfoTextView, warning);
     mIdentityWarningStanding = true;
     return true;
   }
