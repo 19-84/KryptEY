@@ -84,11 +84,24 @@ backwards.
 ### Phase 4 — trust model
 
 `trustedKeys` **appended** while the lookup returned the first match, so a changed identity was
-recorded and permanently ignored, and contact deletion did not clear it. Now replaces — but
-replacing is not trusting: a displaced key is flagged and `isTrustedIdentity` refuses **SENDING**
-until acknowledged, while **RECEIVING** stays allowed so the message can be shown with a warning.
+recorded and permanently ignored. Now replaces — but replacing is not trusting.
 
-The naive fix here fails open. The broken version at least failed closed.
+The first attempt at this was wrong in a way worth recording, because a green test suite hid it.
+`isTrustedIdentity` refused a displaced key for SENDING and allowed RECEIVING, intending to show the
+message with a warning. libsignal calls `isTrustedIdentity` **before** `saveIdentity`, so refusing
+there means `saveIdentity` never runs — the pending-change flag was never set, `REPLACED_EXISTING`
+was unreachable, and the whole mechanism was dead code. The tests passed only because they called
+`saveIdentity` directly, producing a state libsignal cannot.
+
+Worse, that version also cleared the pinned identity on contact removal, which opened a fail-open
+path that did not exist before: substitute a key, the user is shown generic "delete and re-invite"
+advice, follows it, and the attacker's key is accepted as a clean first sighting.
+
+As it now stands: a displaced key is refused in **both** directions; the change is recorded from the
+`UntrustedIdentityException` path, taking the offered key from the bundle (libsignal raises that
+exception with a null identity, so `getUntrustedIdentity()` is useless); contact removal does **not**
+surrender the pin; and `acceptIdentityChange` takes the key the user was actually shown and refuses
+anything else, so a key arriving between display and confirmation cannot slip through.
 
 **Out-of-band exchange** now exists as a mechanism: `exportOwnKeyBundle()` produces transferable
 text and `importOutOfBandKeyBundle()` consumes it, with the result recorded on the contact as

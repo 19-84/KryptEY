@@ -153,12 +153,27 @@ public class SignalProtocolMain {
         .hasUnacceptedIdentityChange(address);
   }
 
-  /** Records that the user has seen and accepted a contact's changed identity key. */
-  public static void acceptIdentityChange(final SignalProtocolAddress address) {
-    if (address == null || sInstance.mAccount == null) return;
-    sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
-        .acceptIdentityChange(address);
-    sInstance.storeAllAccountInformationInSharedPreferences();
+  /**
+   * Accepts a contact's changed identity key after the user has compared it out of band.
+   *
+   * @param shown the key the user was actually shown; the change is refused if it no longer matches
+   *     what is pending, so a key that arrives between display and confirmation cannot slip through
+   * @return true if the pinned key was replaced
+   */
+  public static boolean acceptIdentityChange(final SignalProtocolAddress address,
+                                             final IdentityKey shown) {
+    if (address == null || sInstance.mAccount == null) return false;
+    final boolean accepted = sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .acceptIdentityChange(address, shown);
+    if (accepted) sInstance.storeAllAccountInformationInSharedPreferences();
+    return accepted;
+  }
+
+  /** The identity key offered for this address and refused, or null if no change is pending. */
+  public static IdentityKey getPendingIdentity(final SignalProtocolAddress address) {
+    if (address == null || sInstance.mAccount == null) return null;
+    return sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .getPendingIdentity(address);
   }
 
   public static MessageType getMessageType(final MessageEnvelope messageEnvelope) {
@@ -266,11 +281,10 @@ public class SignalProtocolMain {
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
 
-    // Comparing safety numbers out of band is precisely the acknowledgement a pending identity
-    // change is waiting for, so clear it here rather than making the user perform two separate
-    // confirmations for one decision.
-    mAccount.getSignalProtocolStore().getIdentityKeyStore()
-        .acceptIdentityChange(contact.getSignalProtocolAddress());
+    // Deliberately does NOT clear a pending identity change. The fingerprint the user compared is
+    // built from the *pinned* key, so accepting a different, pending key on the strength of it
+    // would have them confirm one key and trust another. Accepting a change is its own action,
+    // against the key actually displayed.
 
     storeAllAccountInformationInSharedPreferences();
   }
@@ -364,12 +378,13 @@ public class SignalProtocolMain {
     Log.d(TAG, "Deleting unencrypted messages from contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 
-    // Also forget the pinned identity. Without this the app's own recovery advice - delete the
-    // contact and ask for a new invite - cannot work: the stale identity survives contact removal
-    // and keeps refusing the new key, leaving the contact permanently unreachable.
-    Log.d(TAG, "Deleting stored identity for contact: " + contactToRemove.getSignalProtocolAddress().getName());
-    mAccount.getSignalProtocolStore().getIdentityKeyStore()
-        .removeIdentity(contactToRemove.getSignalProtocolAddress());
+    // Deliberately does NOT clear the pinned identity.
+    //
+    // Clearing it here opened a fail-open path: an attacker substitutes their key, libsignal
+    // refuses, the user is shown generic "delete the contact and ask for a new invite" advice,
+    // follows it, and the attacker's key is then accepted as a clean first sighting. The pin
+    // surviving deletion is what makes that attack fail closed. The sanctioned way to move to a new
+    // key is acceptIdentityChange, after comparing safety numbers out of band.
 
     storeAllAccountInformationInSharedPreferences();
   }
@@ -439,7 +454,13 @@ public class SignalProtocolMain {
       storeAllAccountInformationInSharedPreferences();
 
       return messageEnvelope;
-    } catch (UntrustedIdentityException | InvalidContactException e) {
+    } catch (UntrustedIdentityException e) {
+      // No key to record here — the exception carries none, and unlike the bundle path there is no
+      // offered key to hand. The change is recorded where a substituted bundle is processed; this
+      // is the downstream refusal, which must simply not send.
+      Log.e(TAG, "Identity key mismatch while encrypting to " + signalProtocolAddress.getName());
+      return null;
+    } catch (InvalidContactException e) {
       e.printStackTrace();
     }
     return null;
@@ -679,11 +700,22 @@ public class SignalProtocolMain {
       sessionBuilder.process(preKeyBundle);
       storeAllAccountInformationInSharedPreferences();
       return true;
-    } catch (InvalidKeyException | UntrustedIdentityException e) {
-      // libsignal verifies the signed and kyber pre key signatures against the bundle's identity
-      // key and raises here when either fails, or when the peer's identity key has changed. That
-      // is the single most important security event in the protocol; swallowing it into a log made
-      // a forged bundle and a MITM identity swap both report "session created" to the user.
+    } catch (UntrustedIdentityException e) {
+      // This is where an identity change actually surfaces. libsignal calls isTrustedIdentity
+      // before saveIdentity, so refusing there means saveIdentity never runs — recording the change
+      // here is the only way the flag can ever be set.
+      Log.e(TAG, "Identity key for " + recipientSignalProtocolAddress.getName()
+          + " does not match the pinned one");
+      // Take the offered key from the bundle, not from the exception: libsignal 0.86 raises this
+      // from its Rust layer with a null identity, so getUntrustedIdentity() is empty here. The
+      // bundle we just failed to process is the thing that carried the substituted key.
+      mAccount.getSignalProtocolStore().getIdentityKeyStore()
+          .recordIdentityChange(recipientSignalProtocolAddress, preKeyBundle.getIdentityKey());
+      storeAllAccountInformationInSharedPreferences();
+      return false;
+    } catch (InvalidKeyException e) {
+      // Signature verification on the bundle failed. Swallowing this into a log made a forged
+      // bundle report "session created" to the user.
       Log.e(TAG, "Error: Building session with recipient id " + recipientSignalProtocolAddress.getName() + " failed");
       e.printStackTrace();
       return false;

@@ -92,26 +92,73 @@ public class IdentityChangeTest {
    * Replacing is not trusting. A man in the middle who substitutes their own identity must not be
    * accepted silently, so sending is refused until the user acknowledges the change.
    */
+  /**
+   * A displaced key is refused in BOTH directions.
+   *
+   * <p>An earlier version allowed RECEIVING, intending to show the message with a warning. That was
+   * unworkable: libsignal calls isTrustedIdentity before saveIdentity, so refusing in either
+   * direction means saveIdentity never runs — which made the whole pending-change mechanism dead
+   * code. The change is now recorded from the exception path instead.
+   */
   @Test
-  public void sendingIsRefusedUntilAnIdentityChangeIsAccepted() {
+  public void aDisplacedKeyIsRefusedInBothDirections() {
     final IdentityKeyStoreImpl store = newStore();
-    final IdentityKey replacement = someIdentity();
+    final IdentityKey original = someIdentity();
+    final IdentityKey attacker = someIdentity();
+    store.saveIdentity(PEER, original);
 
-    store.saveIdentity(PEER, someIdentity());
-    store.saveIdentity(PEER, replacement);
+    assertFalse(store.isTrustedIdentity(PEER, attacker, IdentityKeyStore.Direction.SENDING));
+    assertFalse(store.isTrustedIdentity(PEER, attacker, IdentityKeyStore.Direction.RECEIVING));
+    assertTrue("the pinned key itself must stay trusted",
+        store.isTrustedIdentity(PEER, original, IdentityKeyStore.Direction.SENDING));
+  }
 
-    assertTrue("the change should be flagged", store.hasUnacceptedIdentityChange(PEER));
-    assertFalse("sending to an unaccepted changed identity must be refused",
-        store.isTrustedIdentity(PEER, replacement, IdentityKeyStore.Direction.SENDING));
+  @Test
+  public void recordingAChangeDoesNotGrantTrust() {
+    final IdentityKeyStoreImpl store = newStore();
+    final IdentityKey original = someIdentity();
+    final IdentityKey attacker = someIdentity();
+    store.saveIdentity(PEER, original);
 
-    // Receiving stays allowed so the message can be shown alongside a warning rather than vanish.
-    assertTrue("receiving should still be possible",
-        store.isTrustedIdentity(PEER, replacement, IdentityKeyStore.Direction.RECEIVING));
+    store.recordIdentityChange(PEER, attacker);
 
-    store.acceptIdentityChange(PEER);
+    assertTrue(store.hasUnacceptedIdentityChange(PEER));
+    assertEquals("the pin must not move until the user accepts", original, store.getIdentity(PEER));
+    assertFalse("recording must not make the offered key usable",
+        store.isTrustedIdentity(PEER, attacker, IdentityKeyStore.Direction.SENDING));
+    assertEquals(attacker, store.getPendingIdentity(PEER));
+  }
+
+  @Test
+  public void acceptingReplacesThePinOnlyForTheKeyTheUserWasShown() {
+    final IdentityKeyStoreImpl store = newStore();
+    final IdentityKey original = someIdentity();
+    final IdentityKey offered = someIdentity();
+    store.saveIdentity(PEER, original);
+    store.recordIdentityChange(PEER, offered);
+
+    assertFalse("accepting some other key must be refused",
+        store.acceptIdentityChange(PEER, someIdentity()));
+    assertEquals(original, store.getIdentity(PEER));
+
+    assertTrue(store.acceptIdentityChange(PEER, offered));
+    assertEquals(offered, store.getIdentity(PEER));
     assertFalse(store.hasUnacceptedIdentityChange(PEER));
-    assertTrue("sending should resume once the user accepts",
-        store.isTrustedIdentity(PEER, replacement, IdentityKeyStore.Direction.SENDING));
+    assertTrue(store.isTrustedIdentity(PEER, offered, IdentityKeyStore.Direction.SENDING));
+  }
+
+  @Test
+  public void recordingIsIgnoredWhenNothingIsActuallyDisplaced() {
+    final IdentityKeyStoreImpl store = newStore();
+    final IdentityKey key = someIdentity();
+
+    store.recordIdentityChange(PEER, key); // nothing pinned yet
+    assertFalse(store.hasUnacceptedIdentityChange(PEER));
+
+    store.saveIdentity(PEER, key);
+    store.recordIdentityChange(PEER, key); // same key
+    assertFalse("re-offering the pinned key is not a change",
+        store.hasUnacceptedIdentityChange(PEER));
   }
 
   @Test
@@ -127,7 +174,7 @@ public class IdentityChangeTest {
   public void removingAnIdentityRestoresFirstUseBehaviour() {
     final IdentityKeyStoreImpl store = newStore();
     store.saveIdentity(PEER, someIdentity());
-    store.saveIdentity(PEER, someIdentity());
+    store.recordIdentityChange(PEER, someIdentity());
     assertTrue(store.hasUnacceptedIdentityChange(PEER));
 
     store.removeIdentity(PEER);
@@ -146,7 +193,7 @@ public class IdentityChangeTest {
   public void anUnacceptedChangeSurvivesSerialization() throws Exception {
     final IdentityKeyStoreImpl store = newStore();
     store.saveIdentity(PEER, someIdentity());
-    store.saveIdentity(PEER, someIdentity());
+    store.recordIdentityChange(PEER, someIdentity());
 
     final IdentityKeyStoreImpl reloaded = com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil
         .fromJson(com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil.toJson(store),
@@ -177,7 +224,7 @@ public class IdentityChangeTest {
   @Test
   public void theQueryIsSafeBeforeAnAccountExists() {
     assertFalse(SignalProtocolMain.hasUnacceptedIdentityChange(null));
-    SignalProtocolMain.acceptIdentityChange(null); // must not throw
+    assertFalse(SignalProtocolMain.acceptIdentityChange(null, null)); // must not throw
   }
 
   @Test
@@ -194,11 +241,13 @@ public class IdentityChangeTest {
     assertFalse("a first sighting is not a change",
         SignalProtocolMain.hasUnacceptedIdentityChange(PEER));
 
-    store.saveIdentity(PEER, someIdentity());
+    final IdentityKey offered = someIdentity();
+    store.recordIdentityChange(PEER, offered);
     assertTrue("a displaced identity must be reported to the UI",
         SignalProtocolMain.hasUnacceptedIdentityChange(PEER));
+    assertEquals(offered, SignalProtocolMain.getPendingIdentity(PEER));
 
-    SignalProtocolMain.acceptIdentityChange(PEER);
+    assertTrue(SignalProtocolMain.acceptIdentityChange(PEER, offered));
     assertFalse("accepting must clear the flag",
         SignalProtocolMain.hasUnacceptedIdentityChange(PEER));
   }
