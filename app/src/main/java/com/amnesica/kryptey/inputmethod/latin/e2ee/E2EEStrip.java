@@ -226,6 +226,12 @@ public class E2EEStrip {
     return SignalProtocolMain.getFingerprint(contact);
   }
 
+  /** @see SignalProtocolMain#hasContactWithSameDisplayName */
+  public boolean hasContactWithSameDisplayName(final String firstName, final String lastName,
+      final org.signal.libsignal.protocol.SignalProtocolAddress excluding) {
+    return SignalProtocolMain.hasContactWithSameDisplayName(firstName, lastName, excluding);
+  }
+
   /**
    * Forgets a contact's pinned key after the user compared safety numbers and they did not match.
    * See {@code SignalProtocolMain.rejectContactKey} for why this is safe here and would not be safe

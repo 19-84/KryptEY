@@ -246,10 +246,11 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
    supplies it. Until it exists, no warning text should ask the user to check "their new number" —
    they cannot see it. The strings were corrected accordingly.
-3. **Contacts are listed by display name only.** Two rows both reading "Alice" at different
-   addresses are indistinguishable, so the whole pin mechanism is sidestepped by inviting the user
-   to add a second contact rather than by substituting a key for the first. Needs the address (or a
-   duplicate-name warning) surfaced in `ListAdapterContacts`.
+3. ~~**Contacts are listed by display name only.**~~ Addressed: adding a contact whose display name
+   already exists at another address now warns at the moment it happens, and the contact list
+   appends a short address tag to every row sharing a name. The app cannot *refuse* this — a genuine
+   reinstall really does arrive as a second contact at a new address, which is exactly what makes
+   the attacker's "I reinstalled" story credible — so the goal is visibility, not prevention.
 4. **Safety numbers are bound to the peer-supplied address name**, which is covered by neither the
    bundle signatures nor the message MAC. A messenger that rewrites that field consistently in both
    directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a

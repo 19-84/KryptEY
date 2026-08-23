@@ -106,4 +106,23 @@ public class Contact {
   public String toString() {
     return firstName + '.' + lastName + '.' + deviceId + '.' + signalProtocolAddressName + '.' + signalProtocolAddress + '.' + verified;
   }
+
+  /**
+   * A short, stable tag for this contact's address, for telling apart two contacts a user has given
+   * the same display name.
+   *
+   * <p>The pin mechanism protects one address. It does nothing about a second contact at a
+   * <em>different</em> address carrying the same name, and the contact list renders names only - so
+   * two rows both reading "Alice" are indistinguishable, and a messenger can sidestep every trust
+   * control by getting the user to add a second Alice rather than by substituting a key for the
+   * first. This is what makes those rows distinguishable.
+   *
+   * <p>Derived from the address, not the key: it must stay the same when a key is legitimately
+   * rejected and re-pinned, or it would read as a change when nothing about the identity moved.
+   */
+  public String getAddressTag() {
+    final String name = getSignalProtocolAddressName();
+    final String head = name == null ? "?" : name.replace("-", "");
+    return "#" + (head.length() >= 6 ? head.substring(0, 6) : head) + "." + getDeviceId();
+  }
 }

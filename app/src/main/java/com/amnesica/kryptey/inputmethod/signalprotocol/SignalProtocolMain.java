@@ -487,6 +487,28 @@ public class SignalProtocolMain {
     return contacts.stream().filter(c -> c.getSignalProtocolAddress().equals(signalProtocolAddress)).findFirst().orElse(null);
   }
 
+  /**
+   * Whether the contact list already holds someone under this display name at a different address.
+   *
+   * <p>The pin mechanism protects one address, and says nothing about a second contact at another
+   * one. That is the cheapest way past the whole trust model: rather than substituting a key for an
+   * existing contact - refused, recorded and warned about - a messenger fabricates a reinstall story
+   * and invites the user to add a second contact with the same name at an address it controls. That
+   * is a clean first sighting, so nothing fires. This is the only moment the app can notice.
+   */
+  public static boolean hasContactWithSameDisplayName(final String firstName,
+      final String lastName, final SignalProtocolAddress excluding) {
+    if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return false;
+    for (final Contact existing : sInstance.mAccount.getContactList()) {
+      if (existing.getSignalProtocolAddress().equals(excluding)) continue;
+      if (java.util.Objects.equals(existing.getFirstName(), firstName)
+          && java.util.Objects.equals(existing.getLastName(), lastName)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private Contact createAndAddContactToList(final CharSequence firstName, final CharSequence lastName, final String signalProtocolAddressName, final int deviceId) throws DuplicateContactException, InvalidContactException {
     if (firstName == null || firstName.length() == 0 || signalProtocolAddressName == null || deviceId == 0)
       throw new InvalidContactException("Error: Contact is invalid. Some information is missing!");

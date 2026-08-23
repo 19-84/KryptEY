@@ -28,6 +28,23 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     this.mContacts = contacts;
   }
 
+  /** True when some other contact in the list renders under the same first and last name. */
+  private boolean hasDuplicateDisplayName(final Contact contact) {
+    if (mContacts == null) return false;
+    int seen = 0;
+    for (final Object other : mContacts) {
+      if (!(other instanceof Contact)) continue;
+      final Contact c = (Contact) other;
+      if (sameDisplayName(c, contact) && ++seen > 1) return true;
+    }
+    return false;
+  }
+
+  private static boolean sameDisplayName(final Contact a, final Contact b) {
+    return java.util.Objects.equals(a.getFirstName(), b.getFirstName())
+        && java.util.Objects.equals(a.getLastName(), b.getLastName());
+  }
+
   public View getView(final int position, View convertView, ViewGroup parent) {
     if (convertView == null) {
       LayoutInflater layoutInflater = (LayoutInflater) getContext().getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
@@ -41,7 +58,14 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     firstNameTextView.setOnClickListener(v -> mListener.selectContact(contact));
 
     final TextView lastNameTextView = convertView.findViewById(R.id.e2ee_contact_last_name_element);
-    lastNameTextView.setText(contact.getLastName());
+    // Append the address tag when another contact shares this display name. Two rows both reading
+    // "Alice" are otherwise indistinguishable, which lets a messenger bypass the whole pin
+    // mechanism: rather than substituting a key for the existing Alice - which is refused and
+    // warned about - it invites the user to add a second one at an address it controls, which is a
+    // clean first sighting with no warning anywhere.
+    lastNameTextView.setText(hasDuplicateDisplayName(contact)
+        ? contact.getLastName() + "  " + contact.getAddressTag()
+        : contact.getLastName());
     lastNameTextView.setOnClickListener(v -> mListener.selectContact(contact));
 
     final ImageButton deleteContactButton = convertView.findViewById(R.id.e2ee_contact_button_delete_contact);

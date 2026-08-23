@@ -140,6 +140,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NO_MESSAGE_TO_ENCRYPT = "No message to encrypt";
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
   private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
+  private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. If they told you they reinstalled, check with them by voice before sending anything: a reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address.";
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite - ask for one through a channel you trust, not through the app you were just messaging in.";
   private final String INFO_VERIFY_PENDING_CHANGE = "Someone offered a different key for %s since you last spoke - it was refused and is not in use. The number below is the key you already have. If it still matches what they read out, confirm it to dismiss the warning.";
   // Deliberately does NOT offer "they reinstalled" as an explanation. A reinstall mints a fresh
@@ -502,6 +503,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final SignalProtocolAddress recipientProtocolAddress = ProtocolAddresses.of(signalProtocolAddressName, deviceId);
 
     if (!providedContactInformationIsValid(firstName, lastName)) return;
+
+    // The one moment the app can notice the cheapest bypass of the whole trust model. Substituting
+    // a key for an existing contact is refused, recorded and warned about; adding a SECOND contact
+    // with the same name at an address the messenger controls is a clean first sighting that fires
+    // nothing. The story that gets a user there - "phone died, had to reinstall, here's my new
+    // invite" - is also true behaviour for a genuine reinstall, so this cannot refuse. It says what
+    // happened and lets the user decide.
+    final boolean duplicateName = mE2EEStrip.hasContactWithSameDisplayName(
+        String.valueOf(firstName), String.valueOf(lastName), recipientProtocolAddress);
     // Store the FOLDED device id, not the raw one. Keeping the raw value here left
     // Contact.deviceId and Contact.signalProtocolAddress.getDeviceId() disagreeing for any legacy
     // peer - and the contact list keys off the former while the identity store keys off the latter.
@@ -518,9 +528,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     resetAddContactInputTextFields();
     showOnlyUIView(UIView.MAIN_VIEW);
 
+    if (duplicateName) {
+      Toast.makeText(getContext(),
+          String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()),
+          Toast.LENGTH_LONG).show();
+    }
+
     if (messageEnvelope.getPreKeyResponse() != null) {
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
-      if (successful) {
+      if (successful && duplicateName) {
+        setInfoTextViewMessage(mInfoTextView,
+            String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()));
+      } else if (successful) {
         setInfoTextViewMessage(mInfoTextView, "Contact " + chosenContact.getFirstName() + " " + chosenContact.getLastName() + " created. You can send messages now");
       } else if (!warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
