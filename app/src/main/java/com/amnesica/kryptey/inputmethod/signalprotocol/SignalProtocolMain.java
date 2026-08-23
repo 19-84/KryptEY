@@ -276,15 +276,45 @@ public class SignalProtocolMain {
 
   private void verifyContactInContactList(Contact contact) throws UnknownContactException {
     if (contact == null || mAccount == null) return;
+
+    // Deliberately does NOT adopt a pending identity change.
+    //
+    // An earlier attempt made it do so, reasoning that a legitimately reinstalled contact otherwise
+    // has no route forward. That reasoning was wrong: initializeProtocol mints a fresh
+    // UUID.randomUUID() address per install, so a reinstalled peer arrives as a NEW address and
+    // never collides with an existing pin. A pending change therefore only ever arises from a
+    // substitution or a store rollback - so a one-tap "accept" on this screen would be an attack
+    // surface, not a recovery path. The honest recovery is a new invite from the peer's new
+    // identity.
+    if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .hasUnacceptedIdentityChange(contact.getSignalProtocolAddress())) {
+      Log.w(TAG, "Refusing to mark " + contact.getSignalProtocolAddressName()
+          + " verified while a substituted identity is pending");
+      return;
+    }
+
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
-
-    // Deliberately does NOT clear a pending identity change. The fingerprint the user compared is
-    // built from the *pinned* key, so accepting a different, pending key on the strength of it
-    // would have them confirm one key and trust another. Accepting a change is its own action,
-    // against the key actually displayed.
-
     storeAllAccountInformationInSharedPreferences();
+  }
+
+  /**
+   * Drops a contact's verified badge when a different identity is offered for them.
+   *
+   * <p>{@code verified} is a sticky boolean on the contact row that nothing ever reset, and
+   * {@code isContactKeyTrustworthy} short-circuits on it without consulting the store — so a
+   * contact verified against one key kept showing a green badge after somebody presented another.
+   * "Verified" has to mean the key in use was compared, not that some key once was.
+   */
+  private void clearVerificationFor(final SignalProtocolAddress address) {
+    if (mAccount == null || mAccount.getContactList() == null) return;
+    for (final Contact contact : mAccount.getContactList()) {
+      if (contact.getSignalProtocolAddress().equals(address) && contact.isVerified()) {
+        Log.w(TAG, "Clearing verification for " + contact.getSignalProtocolAddressName()
+            + ": a different identity key was offered");
+        contact.setVerified(false);
+      }
+    }
   }
 
   private Fingerprint createFingerprint(Contact contact) {
@@ -292,10 +322,10 @@ public class SignalProtocolMain {
 
     final IdentityKey localIdentity = getAccount().getIdentityKeyPair().getPublicKey();
 
-    // Prefer the session's copy, but fall back to the stored identity. Verification should be
-    // possible as soon as a contact's bundle has been processed - before any message is exchanged -
-    // because that is exactly when a user ought to compare safety numbers, and requiring a session
-    // first means the check happens only after they have already sent something.
+    // Always the PINNED key, never a pending one: the number on screen must describe the key
+    // actually in use. Prefer the session's copy, falling back to the stored identity, so
+    // verification is possible as soon as a bundle has been processed - before any message is
+    // exchanged, which is when a user ought to compare safety numbers.
     IdentityKey remoteIdentity = getAccount().getSignalProtocolStore().getSessionStore()
         .getPublicKeyFromSession(contact.getSignalProtocolAddress());
     if (remoteIdentity == null) {
@@ -502,8 +532,14 @@ public class SignalProtocolMain {
 
     final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
 
-    // update session with new signed pre key from recipient
-    if (messageEnvelope.getCiphertextMessage() != null && messageEnvelope.getPreKeyResponse() != null) {
+    // Process an attached bundle whenever there IS one - not only when a ciphertext accompanies it.
+    //
+    // The narrower guard was a regression: E2EEStrip.decryptMessage used to call this for any
+    // envelope carrying a bundle, and removing that call on the grounds that "decrypt performs
+    // exactly this check" was wrong, because this check also required a ciphertext. A bundle-only
+    // re-invite from an existing contact therefore fell through to the UnknownMessageException
+    // below and the UI showed nothing at all - so a substituted re-invite was a silent no-op.
+    if (messageEnvelope.getPreKeyResponse() != null) {
       Log.d(TAG, "Message with cipherText and updated preKeyResponse received...");
       processPreKeyResponseMessage(messageEnvelope, signalProtocolAddress);
     }
@@ -517,7 +553,20 @@ public class SignalProtocolMain {
 
       Log.d(TAG, "PreKeySignalMessage: Used signed prekey id: " + preKeySignalMessage.getSignedPreKeyId());
 
-      plaintext = sessionCipher.decrypt(preKeySignalMessage);
+      try {
+        plaintext = sessionCipher.decrypt(preKeySignalMessage);
+      } catch (UntrustedIdentityException e) {
+        // The other substitution path, and the one an attacker would choose: a PreKeySignalMessage
+        // carries its own identity key and needs no attached bundle, so refusing here without
+        // recording left hasUnacceptedIdentityChange false and no warning was ever shown. The
+        // offered key is on the message itself.
+        Log.e(TAG, "Identity key on an incoming pre-key message does not match the pinned one");
+        mAccount.getSignalProtocolStore().getIdentityKeyStore()
+            .recordIdentityChange(signalProtocolAddress, preKeySignalMessage.getIdentityKey());
+        clearVerificationFor(signalProtocolAddress);
+        storeAllAccountInformationInSharedPreferences();
+        throw e;
+      }
       decryptedMessage = new String(plaintext);
 
       if (preKeySignalMessage.getPreKeyId().isPresent())
@@ -531,6 +580,11 @@ public class SignalProtocolMain {
       decryptedMessage = new String(plaintext);
       Log.d(TAG, "Amount of pre key ids: " + mAccount.getSignalProtocolStore().getPreKeyStore().getSize());
     } else {
+      if (messageEnvelope.getPreKeyResponse() != null) {
+        // A bundle with no ciphertext is legitimate - it is what a re-invite looks like. The bundle
+        // was handled above; there is simply no plaintext to return.
+        return null;
+      }
       throw new UnknownMessageException("Received message is not of type PRE_KEY or WHISPER_TYPE");
     }
 
@@ -709,6 +763,7 @@ public class SignalProtocolMain {
       // bundle we just failed to process is the thing that carried the substituted key.
       mAccount.getSignalProtocolStore().getIdentityKeyStore()
           .recordIdentityChange(recipientSignalProtocolAddress, preKeyBundle.getIdentityKey());
+      clearVerificationFor(recipientSignalProtocolAddress);
       storeAllAccountInformationInSharedPreferences();
       return false;
     } catch (InvalidKeyException e) {

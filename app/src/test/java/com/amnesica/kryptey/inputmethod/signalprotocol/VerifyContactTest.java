@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -100,21 +101,22 @@ public class VerifyContactTest {
   }
 
   /**
-   * Verification must NOT double as accepting a pending identity change.
+   * Verification must NOT adopt a pending identity change, and must refuse outright while one is
+   * pending.
    *
-   * <p>The fingerprint the user compares is built from the <em>pinned</em> key. Clearing a pending
-   * change on the strength of it would have them confirm one key and trust another — accepting a
-   * change is its own action, against the key actually displayed.
+   * <p>An earlier version of this test asserted the opposite. The argument then was that a
+   * legitimately reinstalled contact otherwise has no route forward — but that case cannot arise:
+   * {@code initializeProtocol} mints a fresh {@code UUID.randomUUID()} per install, so a
+   * reinstalled peer appears as a NEW address and never collides with an existing pin. Every
+   * pending change is therefore a substitution or a store rollback, which makes a one-tap accept on
+   * the verify screen an attack surface rather than a recovery path.
    */
   @Test
-  public void verifyingDoesNotAcceptAPendingIdentityChange() throws Exception {
+  public void verifyingIsRefusedWhileASubstitutedIdentityIsPending() throws Exception {
     final Contact contact = storedContact();
 
-    // Somebody offers a different identity for this address; it is refused and recorded.
     SignalProtocolMain.initialize(null);
-    final Account attacker = SignalProtocolMain.getInstance().getAccount();
     final String attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
-
     SignalProtocolMain.getInstance().setAccount(me);
     assertFalse(SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress));
     assertTrue(SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
@@ -124,13 +126,42 @@ public class VerifyContactTest {
 
     SignalProtocolMain.verifyContact(contact);
 
-    assertTrue("verifying must not silently accept a key the user never saw",
+    assertTrue("verifying must not silently adopt a substituted key",
         SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
-    assertEquals("the pinned key must be untouched by verification", pinnedBefore,
+    assertEquals("the pinned key must be untouched", pinnedBefore,
         me.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+    assertFalse("and the contact must not be marked verified", contact.isVerified());
   }
 
-  /** The safety number a user compares must come from the pinned key, not the offered one. */
+  /**
+   * A substituted identity must invalidate an existing verification.
+   *
+   * <p>{@code verified} was a sticky boolean nothing ever reset, and {@code isContactKeyTrustworthy}
+   * short-circuits on it — so a contact verified against one key kept its green badge after
+   * somebody presented another.
+   */
+  @Test
+  public void aSubstitutedIdentityClearsAnExistingVerification() throws Exception {
+    final Contact contact = storedContact();
+    SignalProtocolMain.verifyContact(contact);
+    assertTrue(contact.isVerified());
+    assertTrue(SignalProtocolMain.isContactKeyTrustworthy(contact));
+
+    SignalProtocolMain.initialize(null);
+    final String attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(me);
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+
+    assertFalse("a substituted key must revoke the verified badge",
+        me.getContactList().get(0).isVerified());
+    assertFalse(SignalProtocolMain.isContactKeyTrustworthy(me.getContactList().get(0)));
+  }
+
+  /**
+   * With a change pending, the number shown must remain the PINNED key's — the key actually in use.
+   * Showing the offered key's number would invite the user to compare, and thereby legitimise, the
+   * substituted key.
+   */
   @Test
   public void theDisplayedFingerprintTracksThePinnedKeyNotThePendingOne() throws Exception {
     storedContact();
@@ -146,7 +177,6 @@ public class VerifyContactTest {
         .getDisplayableFingerprint().getDisplayText();
 
     assertNotNull(after);
-    assertEquals("a refused key must not change the safety number shown to the user",
-        before, after);
+    assertEquals("a refused key must not change the number shown to the user", before, after);
   }
 }
