@@ -10,13 +10,10 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-
 import org.junit.Before;
 import org.junit.Test;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 
-import java.util.ArrayList;
 
 /**
  * Out-of-band key exchange, which is the only thing that closes the first-contact gap.
@@ -44,8 +41,19 @@ public class OutOfBandExchangeTest {
     SignalProtocolMain.getInstance().setAccount(account);
   }
 
+  /** Assign to a local before use: this switches the active account as a side effect. */
+  private String bundleOf(final Account a) throws Exception {
+    activate(a);
+    return SignalProtocolMain.exportOwnKeyBundle();
+  }
+
   private static SignalProtocolAddress addressOf(final Account a) {
     return ProtocolAddresses.of(a.getSignalProtocolAddress().getName(), a.getDeviceId());
+  }
+
+  private static Contact contactFor(final Account a) {
+    return new Contact("Peer", "Account", a.getSignalProtocolAddress().getName(),
+        a.getDeviceId(), false);
   }
 
   // --------------------------------------------------------------- mechanism
@@ -105,82 +113,95 @@ public class OutOfBandExchangeTest {
 
   // -------------------------------------------------------------- provenance
 
-  @Test
-  public void aContactDefaultsToInBand() {
-    final Contact contact = new Contact("A", "B", "peer-uuid", 42, false);
-    assertEquals(Contact.KeyOrigin.IN_BAND, contact.getKeyOrigin());
-    assertFalse("an in-band unverified contact is not trustworthy", contact.isTrustworthy());
-  }
-
-  @Test
-  public void anOutOfBandContactIsTrustworthyWithoutASeparateVerification() {
-    final Contact contact = new Contact("A", "B", "peer-uuid", 42, false,
-        Contact.KeyOrigin.OUT_OF_BAND);
-
-    assertTrue("obtaining the key through a trusted channel is itself the assurance",
-        contact.isTrustworthy());
-    assertFalse("but it is not the same as an explicit safety-number comparison",
-        contact.isVerified());
-  }
-
-  @Test
-  public void anExplicitlyVerifiedInBandContactIsAlsoTrustworthy() {
-    final Contact contact = new Contact("A", "B", "peer-uuid", 42, true);
-    assertEquals(Contact.KeyOrigin.IN_BAND, contact.getKeyOrigin());
-    assertTrue(contact.isTrustworthy());
-  }
-
   /**
-   * Provenance has to participate in equality, or updating it silently no-ops: the contact list is
-   * updated by matching on equals.
+   * Provenance is recorded by the import that observed the transfer, not asserted on a Contact.
+   *
+   * <p>It used to be a settable field on Contact, which meant the strongest trust signal in the app
+   * could be granted by constructing an object. It now lives beside the pinned key and can only be
+   * set by the code path that actually performed an out-of-band import.
    */
   @Test
-  public void provenanceParticipatesInEquality() {
-    final Contact inBand = new Contact("A", "B", "peer-uuid", 42, false);
-    final Contact outOfBand = new Contact("A", "B", "peer-uuid", 42, false,
-        Contact.KeyOrigin.OUT_OF_BAND);
+  public void anOutOfBandImportRecordsProvenanceAgainstTheKey() throws Exception {
+    final String aliceBundle = bundleOf(alice);
+    final SignalProtocolAddress aliceAddress = addressOf(alice);
 
-    assertFalse("contacts differing only in provenance compared equal", inBand.equals(outOfBand));
+    activate(bob);
+    final Contact contact = contactFor(alice);
+    assertFalse("nothing imported yet", SignalProtocolMain.isContactKeyTrustworthy(contact));
+
+    assertTrue(SignalProtocolMain.importOutOfBandKeyBundle(aliceBundle, aliceAddress));
+
+    assertTrue("an out-of-band import must record provenance",
+        bob.getSignalProtocolStore().getIdentityKeyStore().isKeyOutOfBand(aliceAddress));
+    assertTrue("and that alone should make the contact trustworthy",
+        SignalProtocolMain.isContactKeyTrustworthy(contact));
   }
 
-  // ------------------------------------------------------------ persistence
+  /** The in-band path must NOT confer it. */
+  @Test
+  public void anInBandImportDoesNotRecordProvenance() throws Exception {
+    final String aliceBundle = bundleOf(alice);
+    final SignalProtocolAddress aliceAddress = addressOf(alice);
+
+    activate(bob);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(aliceBundle), aliceAddress));
+
+    assertFalse("a bundle through the messenger is not out-of-band",
+        bob.getSignalProtocolStore().getIdentityKeyStore().isKeyOutOfBand(aliceAddress));
+    assertFalse(SignalProtocolMain.isContactKeyTrustworthy(contactFor(alice)));
+  }
+
+  @Test
+  public void anExplicitlyVerifiedContactIsTrustworthyWithoutOutOfBandImport() {
+    activate(bob);
+    final Contact verified = new Contact("A", "B", alice.getSignalProtocolAddress().getName(),
+        alice.getDeviceId(), true);
+    assertTrue(SignalProtocolMain.isContactKeyTrustworthy(verified));
+  }
+
+  @Test
+  public void aFailedImportRecordsNothing() throws Exception {
+    final SignalProtocolAddress aliceAddress = addressOf(alice);
+    activate(bob);
+
+    assertFalse(SignalProtocolMain.importOutOfBandKeyBundle("not a bundle", aliceAddress));
+    assertFalse("a failed import must not confer provenance",
+        bob.getSignalProtocolStore().getIdentityKeyStore().isKeyOutOfBand(aliceAddress));
+  }
+
+  /** Provenance must not survive a key it no longer describes. */
+  @Test
+  public void provenanceIsDroppedWhenTheKeyIsForgotten() throws Exception {
+    final String aliceBundle = bundleOf(alice);
+    final SignalProtocolAddress aliceAddress = addressOf(alice);
+    activate(bob);
+    SignalProtocolMain.importOutOfBandKeyBundle(aliceBundle, aliceAddress);
+
+    bob.getSignalProtocolStore().getIdentityKeyStore().removeIdentity(aliceAddress);
+
+    assertFalse(bob.getSignalProtocolStore().getIdentityKeyStore().isKeyOutOfBand(aliceAddress));
+  }
 
   @Test
   public void provenanceSurvivesSerialization() throws Exception {
-    final ArrayList<Contact> contacts = new ArrayList<>();
-    contacts.add(new Contact("A", "B", "peer-uuid", 42, false, Contact.KeyOrigin.OUT_OF_BAND));
+    final String aliceBundle = bundleOf(alice);
+    final SignalProtocolAddress aliceAddress = addressOf(alice);
+    activate(bob);
+    SignalProtocolMain.importOutOfBandKeyBundle(aliceBundle, aliceAddress);
 
-    final ArrayList<Contact> restored = JsonUtil.fromJson(
-        JsonUtil.toJson(contacts), new TypeReference<ArrayList<Contact>>() {});
+    final var reloaded = JsonUtil.fromJson(
+        JsonUtil.toJson(bob.getSignalProtocolStore()),
+        com.amnesica.kryptey.inputmethod.signalprotocol.stores.SignalProtocolStoreImpl.class);
 
-    assertEquals(Contact.KeyOrigin.OUT_OF_BAND, restored.get(0).getKeyOrigin());
-    assertTrue(restored.get(0).isTrustworthy());
-  }
-
-  /**
-   * A contact stored before this field existed has no {@code keyOrigin} in its JSON. It must load,
-   * and it must default to IN_BAND — the safe direction, since it under-claims trust rather than
-   * over-claiming it.
-   */
-  @Test
-  public void aLegacyContactWithoutProvenanceLoadsAsInBand() throws Exception {
-    final String legacyJson = "[{\"firstName\":\"Ada\",\"lastName\":\"Lovelace\","
-        + "\"signalProtocolAddressName\":\"peer-uuid\",\"deviceId\":42,\"verified\":false}]";
-
-    final ArrayList<Contact> restored =
-        JsonUtil.fromJson(legacyJson, new TypeReference<ArrayList<Contact>>() {});
-
-    assertEquals(1, restored.size());
-    assertEquals("a contact predating this field must not be assumed out-of-band",
-        Contact.KeyOrigin.IN_BAND, restored.get(0).getKeyOrigin());
-    assertFalse(restored.get(0).isTrustworthy());
+    assertTrue("provenance was lost across a restart",
+        reloaded.getIdentityKeyStore().isKeyOutOfBand(aliceAddress));
   }
 
   @Test
-  public void markingProvenanceIsSafeWhenThereIsNoAccount() {
+  public void theTrustQueryIsSafeWithNoAccount() {
     SignalProtocolMain.getInstance().setAccount(null);
-    SignalProtocolMain.markContactKeyAsOutOfBand(
-        new Contact("A", "B", "peer-uuid", 42, false)); // must not throw
-    SignalProtocolMain.markContactKeyAsOutOfBand(null);
+    assertFalse(SignalProtocolMain.isContactKeyTrustworthy(contactFor(alice)));
+    assertFalse(SignalProtocolMain.isContactKeyTrustworthy(null));
   }
 }

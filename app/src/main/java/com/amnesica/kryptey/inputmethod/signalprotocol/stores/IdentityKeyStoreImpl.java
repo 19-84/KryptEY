@@ -27,6 +27,17 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   @JsonProperty
   private java.util.Map<String, String> pendingIdentities = new java.util.HashMap<>();
 
+  /**
+   * Addresses whose pinned key was obtained out of band.
+   *
+   * <p>Provenance lives here, next to the key it describes, rather than on the {@code Contact} row.
+   * On the row it was settable by anyone holding a Contact object — including from a plain
+   * constructor — which made the strongest trust signal in the app assertable rather than earned.
+   * Here it can only be set by the import path that actually observed the out-of-band transfer.
+   */
+  @JsonProperty
+  private java.util.List<String> outOfBandAddresses = new java.util.ArrayList<>();
+
   @JsonProperty
   @JsonSerialize(using = JsonUtil.IdentityKeyPairSerializer.class)
   @JsonDeserialize(using = JsonUtil.IdentityKeyPairDeserializer.class)
@@ -122,6 +133,18 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
             .encodeBytesWithoutPadding(offered.serialize()));
   }
 
+  /** Records that this address's pinned key arrived through a channel outside the messenger. */
+  public void markKeyOutOfBand(final SignalProtocolAddress address) {
+    if (address == null) return;
+    final String key = addressKey(address);
+    if (!outOfBandAddresses.contains(key)) outOfBandAddresses.add(key);
+  }
+
+  /** True when the pinned key for this address was obtained out of band. */
+  public boolean isKeyOutOfBand(final SignalProtocolAddress address) {
+    return address != null && outOfBandAddresses.contains(addressKey(address));
+  }
+
   /** True when a different identity key has been offered for this address and not yet accepted. */
   public boolean hasUnacceptedIdentityChange(final SignalProtocolAddress address) {
     return address != null && pendingIdentities.containsKey(addressKey(address));
@@ -155,6 +178,9 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
     trustedKeys.removeIf(k -> k != null && k.getSignalProtocolAddress().equals(address));
     trustedKeys.add(new TrustedKey(address, pending));
     pendingIdentities.remove(addressKey(address));
+    // The new key did not come through the original trusted channel, so the provenance does not
+    // carry over to it.
+    outOfBandAddresses.remove(addressKey(address));
     return true;
   }
 
@@ -167,6 +193,7 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   public void removeIdentity(final SignalProtocolAddress address) {
     trustedKeys.removeIf(k -> k != null && k.getSignalProtocolAddress().equals(address));
     pendingIdentities.remove(addressKey(address));
+    outOfBandAddresses.remove(addressKey(address));
   }
 
   private static String addressKey(final SignalProtocolAddress address) {

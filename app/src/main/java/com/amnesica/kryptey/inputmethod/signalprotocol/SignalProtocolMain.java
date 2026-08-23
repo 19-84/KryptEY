@@ -200,26 +200,6 @@ public class SignalProtocolMain {
     return sInstance.extractContactFromEnvelope(messageEnvelope);
   }
 
-  /**
-   * Records that a contact's key bundle was obtained out of band.
-   *
-   * <p>This is the only thing that closes the first-contact gap. Trust-on-first-use cannot detect a
-   * hostile messenger substituting keys at first contact, because there is no earlier key to have
-   * changed — so the assurance has to come from the bundle not travelling through that messenger at
-   * all. After the fact the two are indistinguishable from the stored key, which is why it is
-   * recorded at import time rather than inferred later.
-   */
-  public static void markContactKeyAsOutOfBand(final Contact contact) {
-    if (contact == null || sInstance.mAccount == null) return;
-    contact.setKeyOrigin(Contact.KeyOrigin.OUT_OF_BAND);
-    try {
-      sInstance.mAccount.updateContactInContactList(contact);
-    } catch (UnknownContactException e) {
-      Log.e(TAG, "Cannot record out-of-band provenance for an unknown contact", e);
-      return;
-    }
-    sInstance.storeAllAccountInformationInSharedPreferences();
-  }
 
   /** The bundle text a user hands to a contact through a channel they trust. */
   public static String exportOwnKeyBundle() throws java.io.IOException {
@@ -248,7 +228,25 @@ public class SignalProtocolMain {
       Log.e(TAG, "Out-of-band text is not a key bundle");
       return false;
     }
-    return processPreKeyResponseMessage(envelope, address);
+    if (!processPreKeyResponseMessage(envelope, address)) return false;
+
+    // Record provenance only here, where the out-of-band transfer was actually observed, and only
+    // after the session genuinely established.
+    sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore().markKeyOutOfBand(address);
+    sInstance.storeAllAccountInformationInSharedPreferences();
+    return true;
+  }
+
+  /**
+   * Whether this contact's key can be relied on without a further safety-number comparison: either
+   * the user verified it, or it never travelled through the messenger.
+   */
+  public static boolean isContactKeyTrustworthy(final Contact contact) {
+    if (contact == null) return false;
+    if (contact.isVerified()) return true;
+    if (sInstance.mAccount == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .isKeyOutOfBand(contact.getSignalProtocolAddress());
   }
 
   public static Contact addContact(final CharSequence firstName, final CharSequence lastName, final String signalProtocolAddressName, final int deviceId) throws DuplicateContactException, InvalidContactException {

@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 222, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 240, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -114,8 +114,20 @@ cases are indistinguishable from the stored key alone, hence recording it at imp
 came out of band; treating an out-of-band exchange as still-unverified would ask for the same work
 twice. Legacy contacts default to `IN_BAND`, which under-claims rather than over-claims trust.
 
+**Provenance lives with the key, not the contact row.** It was briefly a settable field on
+`Contact`, which meant the strongest trust signal in the app could be granted by constructing an
+object — and, because `Contact.equals` then depended on it, mutating a copy silently no-opped the
+contact-list update. It is now recorded in the identity store by the import that actually observed
+the transfer, dropped when the key is forgotten, and not carried over to a replacement key accepted
+after a change.
+
 Still missing: any UI invoking these. The mechanism and its provenance are done and tested; the
 buttons are not. QR is purely a UX layer over the same string and needs a dependency decision.
+
+**One known equivalent mutant.** Swapping the local/remote identifiers in the fingerprint survives
+every test, and correctly so: `NumericFingerprintGenerator` sorts the two halves, so both sides
+compute the same value either way. It is a genuine symmetry, not a coverage gap, and chasing it
+would mean pinning a golden fingerprint against a hard-coded key pair.
 
 ---
 
@@ -123,7 +135,8 @@ buttons are not. QR is purely a UX layer over the same string and needs a depend
 
 **Verified by execution:**
 
-- 222 JVM tests, including an end-to-end conversation across all four phases
+- 240 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+  identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
 - Negative controls on the highest-stakes regressions (legacy-peer crash, one-time pre-key

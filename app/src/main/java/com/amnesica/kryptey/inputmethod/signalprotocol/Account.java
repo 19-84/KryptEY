@@ -119,17 +119,18 @@ public class Account {
   }
 
   public void updateContactInContactList(Contact contact) throws UnknownContactException {
-    if (this.contactList.contains(contact)) {
-      int indexContact = 0;
-      for (int i = 0; i < contactList.size(); i++) {
-        if (contactList.get(i).getSignalProtocolAddressName().equals(contact.getSignalProtocolAddressName())) {
-          indexContact = i;
-        }
+    // Match on the full address, not the name alone. Two entries can share a name and differ by
+    // device id - exactly what a legacy peer's folded device id produces - and matching by name
+    // took the last one, so verifying one contact overwrote the other.
+    for (int i = 0; i < contactList.size(); i++) {
+      final Contact candidate = contactList.get(i);
+      if (candidate.getSignalProtocolAddressName().equals(contact.getSignalProtocolAddressName())
+          && candidate.getDeviceId() == contact.getDeviceId()) {
+        this.contactList.set(i, contact);
+        return;
       }
-      this.contactList.set(indexContact, contact);
-    } else {
-      throw new UnknownContactException("Contact does not exist in contact list");
     }
+    throw new UnknownContactException("Contact does not exist in contact list");
   }
 
   @Override
