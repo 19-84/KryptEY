@@ -121,8 +121,16 @@ contact-list update. It is now recorded in the identity store by the import that
 the transfer, dropped when the key is forgotten, and not carried over to a replacement key accepted
 after a change.
 
-Still missing: any UI invoking these. The mechanism and its provenance are done and tested; the
-buttons are not. QR is purely a UX layer over the same string and needs a dependency decision.
+**What is and is not wired to UI**, precisely, because an earlier version of this note overstated
+it. The contact list badge does consult `isContactKeyTrustworthy` (`ListAdapterContacts:52`), so an
+out-of-band contact displays as trusted. Nothing invokes `exportOwnKeyBundle`,
+`importOutOfBandKeyBundle`, `acceptIdentityChange` or `getPendingIdentity` — so the mechanisms exist
+and are tested, but a user has no way to perform an out-of-band exchange or to accept a changed
+identity from inside the keyboard. A legitimately reinstalled contact therefore has no in-app route
+forward: sends fail with an explanatory message, and deleting the contact deliberately no longer
+helps (that was the fail-open path). Closing this needs UI work.
+
+QR is purely a UX layer over the same string and needs a dependency decision.
 
 **One known equivalent mutant.** Swapping the local/remote identifiers in the fingerprint survives
 every test, and correctly so: `NumericFingerprintGenerator` sorts the two halves, so both sides
