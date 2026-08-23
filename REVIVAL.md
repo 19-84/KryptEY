@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 240, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 248, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -135,7 +135,7 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
 
 **Verified by execution:**
 
-- 240 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 248 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
