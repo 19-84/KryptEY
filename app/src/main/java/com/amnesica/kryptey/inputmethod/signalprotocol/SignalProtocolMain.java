@@ -238,15 +238,37 @@ public class SignalProtocolMain {
   }
 
   /**
-   * Whether this contact's key can be relied on without a further safety-number comparison: either
-   * the user verified it, or it never travelled through the messenger.
+   * Whether this contact's key has actually been checked against the peer.
+   *
+   * <p>Only an explicit safety-number comparison counts. An earlier version also accepted
+   * out-of-band provenance as equivalent, on the reasoning that a key which never touched the
+   * messenger needs no further check. That was wrong in a way worth spelling out, because the two
+   * look similar and are not:
+   *
+   * <ul>
+   *   <li>A comparison is verified <em>against the peer's own device</em>. Somebody reads the
+   *       number back and it either matches or it does not.
+   *   <li>A transfer is verified against nothing. The bundle text is byte-identical either way —
+   *       {@code exportOwnKeyBundle} produces exactly what the invite flow sends — so the code can
+   *       only observe that the import method was called, not how the bytes travelled. A user who
+   *       copies an invite out of the messenger and pastes it into an import field produces a key
+   *       that travelled entirely in-band and is stamped out-of-band.
+   * </ul>
+   *
+   * <p>Worse, granting trust here <em>suppressed</em> the prompt to compare, so on first contact a
+   * substituted bundle imported this way was promoted from "unverified pin" to "checked" — the
+   * mechanism intended to close the first-contact gap widened it.
+   *
+   * <p>Provenance is still recorded; it is simply information about how a key arrived, not a
+   * substitute for checking it.
    */
   public static boolean isContactKeyTrustworthy(final Contact contact) {
     if (contact == null) return false;
-    if (contact.isVerified()) return true;
+    if (!contact.isVerified()) return false;
     if (sInstance.mAccount == null) return false;
-    return sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
-        .isKeyOutOfBand(contact.getSignalProtocolAddress());
+    // A verified badge must not outlive the key it was granted for.
+    return !sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .hasUnacceptedIdentityChange(contact.getSignalProtocolAddress());
   }
 
   public static Contact addContact(final CharSequence firstName, final CharSequence lastName, final String signalProtocolAddressName, final int deviceId) throws DuplicateContactException, InvalidContactException {

@@ -114,14 +114,18 @@ public class OutOfBandExchangeTest {
   // -------------------------------------------------------------- provenance
 
   /**
-   * Provenance is recorded by the import that observed the transfer, not asserted on a Contact.
+   * Provenance is recorded — as information, not as trust.
    *
-   * <p>It used to be a settable field on Contact, which meant the strongest trust signal in the app
-   * could be granted by constructing an object. It now lives beside the pinned key and can only be
-   * set by the code path that actually performed an out-of-band import.
+   * <p>An earlier version asserted that an out-of-band import alone made a contact trustworthy.
+   * That was unsound: the exported bundle is byte-identical to the one the invite flow sends, so
+   * the code can only observe that the import method was called, never how the bytes travelled. A
+   * user who copies an invite out of the messenger and pastes it here produces a key that went
+   * entirely in-band. Granting trust on that basis also suppressed the prompt to compare safety
+   * numbers, so on first contact it promoted a substituted bundle from "unverified pin" to
+   * "checked".
    */
   @Test
-  public void anOutOfBandImportRecordsProvenanceAgainstTheKey() throws Exception {
+  public void anOutOfBandImportRecordsProvenanceButNotTrust() throws Exception {
     final String aliceBundle = bundleOf(alice);
     final SignalProtocolAddress aliceAddress = addressOf(alice);
 
@@ -131,9 +135,9 @@ public class OutOfBandExchangeTest {
 
     assertTrue(SignalProtocolMain.importOutOfBandKeyBundle(aliceBundle, aliceAddress));
 
-    assertTrue("an out-of-band import must record provenance",
+    assertTrue("the import must still be recorded",
         bob.getSignalProtocolStore().getIdentityKeyStore().isKeyOutOfBand(aliceAddress));
-    assertTrue("and that alone should make the contact trustworthy",
+    assertFalse("but an unverifiable transfer must not substitute for comparing the number",
         SignalProtocolMain.isContactKeyTrustworthy(contact));
   }
 
@@ -152,8 +156,9 @@ public class OutOfBandExchangeTest {
     assertFalse(SignalProtocolMain.isContactKeyTrustworthy(contactFor(alice)));
   }
 
+  /** Comparison is the only thing that confers trust, whichever way the key arrived. */
   @Test
-  public void anExplicitlyVerifiedContactIsTrustworthyWithoutOutOfBandImport() {
+  public void onlyAnExplicitComparisonConfersTrust() {
     activate(bob);
     final Contact verified = new Contact("A", "B", alice.getSignalProtocolAddress().getName(),
         alice.getDeviceId(), true);

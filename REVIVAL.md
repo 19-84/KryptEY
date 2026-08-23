@@ -110,9 +110,15 @@ messenger substituting keys at first contact, because there is no earlier key to
 the assurance has to come from the bundle not travelling through that messenger. Afterwards the two
 cases are indistinguishable from the stored key alone, hence recording it at import time.
 
-`Contact.isTrustworthy()` is true when the user explicitly verified the safety number *or* the key
-came out of band; treating an out-of-band exchange as still-unverified would ask for the same work
-twice. Legacy contacts default to `IN_BAND`, which under-claims rather than over-claims trust.
+**Out-of-band provenance is recorded but does not confer trust.** It briefly did, on the reasoning
+that a key which never touched the messenger needs no further check. That was unsound: the exported
+bundle is byte-identical to the one the invite flow sends, so the code can only observe that the
+import method was called, never how the bytes travelled — a user copying an invite out of WhatsApp
+and pasting it into an import field produces an in-band key stamped out-of-band. Granting trust also
+*suppressed* the prompt to compare, so on first contact it promoted a substituted bundle from
+"unverified pin" to "checked". A comparison is checked against the peer's own device; a transfer is
+checked against nothing. Only comparison counts now, and a verified badge is dropped as soon as a
+different key is offered.
 
 **Provenance lives with the key, not the contact row.** It was briefly a settable field on
 `Contact`, which meant the strongest trust signal in the app could be granted by constructing an

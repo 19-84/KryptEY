@@ -126,6 +126,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_MESSAGES_LIST_DEFAULT = "Choose a contact first to see messages here";
   private final String INFO_NO_SAVED_MESSAGES = "There are no saved messages for this contact";
   private final String INFO_VERIFY_CONTACT = "To verify the security of your end-to-end encryption with %s, compare the numbers above with their device";
+  private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
 
   private final String INFO_SESSION_CREATION_FAILED = "Session creation failed. If possible delete sender in contact list and ask for a new keybundle";
   private final String INFO_CONTACT_CREATION_FAILED = "Could not create contact. Abort";
@@ -230,8 +231,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, "" + chosenContact.getFirstName() + " " + chosenContact.getLastName()));
 
     final Fingerprint fingerprint = mE2EEStrip.getFingerprint(chosenContact);
-    if (fingerprint == null) return;
+    if (fingerprint == null) {
+      // The digit views are members that persist across contact selections. Returning without
+      // clearing them left the PREVIOUS contact's twelve numbers on screen under text naming this
+      // one - so a user could "compare" and confirm a number belonging to somebody else, for a
+      // contact with no key at all.
+      clearFingerprintViews();
+      setInfoTextViewMessage(mVerifyContactInfoTextView, INFO_NO_FINGERPRINT);
+      return;
+    }
+    if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(true);
     setFingerprintViews(fingerprint, true);
+  }
+
+  /** Blanks the safety-number digits and disables confirmation. */
+  private void clearFingerprintViews() {
+    for (final TextView code : mCodes) {
+      if (code != null) code.setText("");
+    }
+    if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(false);
   }
 
   private String[] getSegments(Fingerprint fingerprint, int segmentCount) {
@@ -434,7 +452,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final SignalProtocolAddress recipientProtocolAddress = ProtocolAddresses.of(signalProtocolAddressName, deviceId);
 
     if (!providedContactInformationIsValid(firstName, lastName)) return;
-    chosenContact = mE2EEStrip.createAndAddContactToContacts(firstName, lastName, recipientProtocolAddress.getName(), deviceId);
+    // Store the FOLDED device id, not the raw one. Keeping the raw value here left
+    // Contact.deviceId and Contact.signalProtocolAddress.getDeviceId() disagreeing for any legacy
+    // peer - and the contact list keys off the former while the identity store keys off the latter.
+    chosenContact = mE2EEStrip.createAndAddContactToContacts(firstName, lastName,
+        recipientProtocolAddress.getName(), recipientProtocolAddress.getDeviceId());
 
     if (chosenContact == null) {
       abortContactAdding();
