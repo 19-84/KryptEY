@@ -32,12 +32,13 @@ import com.amnesica.kryptey.inputmethod.latin.e2ee.adapter.ListAdapterMessages;
 import com.amnesica.kryptey.inputmethod.latin.e2ee.util.HTMLHelper;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageType;
+import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.Encoder;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.TooManyCharsException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.UnknownContactException;
-import com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil;
+import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 import org.signal.libsignal.protocol.fingerprint.Fingerprint;
@@ -429,7 +430,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     final String signalProtocolAddressName = messageEnvelope.getSignalProtocolAddressName();
     final int deviceId = messageEnvelope.getDeviceId();
-    final SignalProtocolAddress recipientProtocolAddress = new SignalProtocolAddress(signalProtocolAddressName, deviceId);
+    // Same hazard as above: this device id is peer-supplied, so it must be folded into range.
+    final SignalProtocolAddress recipientProtocolAddress = ProtocolAddresses.of(signalProtocolAddressName, deviceId);
 
     if (!providedContactInformationIsValid(firstName, lastName)) return;
     chosenContact = mE2EEStrip.createAndAddContactToContacts(firstName, lastName, recipientProtocolAddress.getName(), deviceId);
@@ -544,7 +546,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
             (clipboardManager.getPrimaryClipDescription().hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) ||
                 clipboardManager.getPrimaryClipDescription().hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML))) {
           isHTML = clipboardManager.getPrimaryClipDescription().hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML);
-          item = String.valueOf(clipboardManager.getPrimaryClip().getItemAt(0).getText());
+          // getPrimaryClip() can be null even when getPrimaryClipDescription() is not - since
+          // Android 10 it returns null whenever this IME is not the active input method - and a
+          // clip can legitimately hold zero items.
+          final android.content.ClipData clip = clipboardManager.getPrimaryClip();
+          if (clip == null || clip.getItemCount() == 0) return;
+          item = String.valueOf(clip.getItemAt(0).getText());
         }
 
         if (item == null || item.isEmpty()) return;
@@ -555,21 +562,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String decodedItem = mE2EEStrip.decodeMessage(item);
         if (decodedItem == null) return;
 
-        if (mE2EEStrip.getMessageType(JsonUtil.fromJson(decodedItem, MessageEnvelope.class))
-            .equals(MessageType.UPDATED_PRE_KEY_RESPONSE_MESSAGE_AND_SIGNAL_MESSAGE)) {
+        // Parse once. This ran on every clipboard change and used to deserialize up to three
+        // times, and getMessageType returns null for anything unrecognised - which then NPE'd on
+        // .equals() inside a system clipboard callback.
+        final MessageType clipboardType =
+            mE2EEStrip.getMessageType(EnvelopeCodec.fromWire(decodedItem));
+        if (clipboardType == MessageType.UPDATED_PRE_KEY_RESPONSE_MESSAGE_AND_SIGNAL_MESSAGE) {
           changeImageButtonState(mDecryptButton, ButtonState.ENABLED);
           setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_AND_SIGNAL_MESSAGE_DETECTED);
-        } else if (mE2EEStrip.getMessageType(JsonUtil.fromJson(decodedItem, MessageEnvelope.class))
-            .equals(MessageType.PRE_KEY_RESPONSE_MESSAGE)) {
+        } else if (clipboardType == MessageType.PRE_KEY_RESPONSE_MESSAGE) {
           changeImageButtonState(mDecryptButton, ButtonState.ENABLED);
           setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_DETECTED);
-        } else if (mE2EEStrip.getMessageType(JsonUtil.fromJson(decodedItem, MessageEnvelope.class))
-            .equals(MessageType.SIGNAL_MESSAGE)) {
+        } else if (clipboardType == MessageType.SIGNAL_MESSAGE) {
           changeImageButtonState(mEncryptButton, ButtonState.ENABLED);
           setInfoTextViewMessage(mInfoTextView, INFO_SIGNAL_MESSAGE_DETECTED);
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        // Expected constantly: the clipboard usually holds ordinary text.
+        Log.d(TAG, "Clipboard content is not a KryptEY message");
+      } catch (Exception e) {
+        // Nothing may escape a system clipboard callback: an unchecked exception here takes the
+        // whole input-method process down, in every app, on an ordinary copy.
+        Log.e(TAG, "Unexpected failure inspecting the clipboard", e);
       }
     });
   }
@@ -774,8 +788,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void sendPreKeyResponseMessageToApplication() {
     final String encoded;
-    final String message = mE2EEStrip.getPreKeyResponseMessage();
     try {
+      // Serialization can now fail (the binary codec validates what it is given), so it belongs
+      // inside the try rather than ahead of it.
+      final String message = mE2EEStrip.getPreKeyResponseMessage();
+      if (message == null) throw new IOException("Could not build a key bundle");
       mE2EEStrip.checkMessageLengthForEncodingMethod(message, encodingMethod, true);
       encoded = mE2EEStrip.encode(message, encodingMethod);
     } catch (TooManyCharsException e) {
@@ -803,7 +820,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     try {
       final String encodedMessage = mE2EEStrip.decodeMessage(mEncryptedMessageFromClipboard.toString());
 
-      final MessageEnvelope messageEnvelope = JsonUtil.fromJson(encodedMessage, MessageEnvelope.class);
+      final MessageEnvelope messageEnvelope = EnvelopeCodec.fromWire(encodedMessage);
       if (messageEnvelope == null) throw new IOException("Message is null. Abort!");
 
       final MessageType messageType = mE2EEStrip.getMessageType(messageEnvelope);

@@ -16,6 +16,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EncodeHelper;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.Encoder;
+import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.FairyTaleEncoder;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.RawEncoder;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.DuplicateContactException;
@@ -23,7 +24,6 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.InvalidContact
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.TooManyCharsException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.UnknownContactException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.UnknownMessageException;
-import com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil;
 
 import org.signal.libsignal.protocol.DuplicateMessageException;
 import org.signal.libsignal.protocol.InvalidKeyException;
@@ -49,9 +49,33 @@ public class E2EEStrip {
   private final String INFO_CONTACT_ALREADY_EXISTS = "Contact already exists and was not saved";
   private final String INFO_CONTACT_INVALID = "Contact is invalid and was not saved";
   private final String INFO_SESSION_CREATION_FAILED = "Session creation failed. If possible delete sender in contact list and ask for a new keybundle";
+  /**
+   * Deliberately does NOT tell the user to just delete and re-add. That is the right remedy for a
+   * reinstall and exactly the wrong one for an impersonation attempt, and the app cannot tell which
+   * this is - only the user can, by comparing the safety number out of band.
+   */
+  private final String INFO_IDENTITY_CHANGED = "%s's security number has changed. This happens if they reinstalled the app - but it is also what an impersonation attempt looks like. Verify their new number with them through another channel before sending anything.";
 
   private final int CHAR_THRESHOLD_RAW = 500;
   private final int CHAR_THRESHOLD_FAIRYTALE = 500;
+
+  /**
+   * Separate, much larger limit for a key bundle.
+   *
+   * <p>A PQXDH bundle is irreducibly large: a Kyber-1024 public key is 1568 bytes, and the whole
+   * base64 envelope measures 3352 characters (see {@code PreKeyBundleSizeTest}, which measures it
+   * rather than estimating). High-entropy key material does not compress, so this cannot be tuned
+   * down — it is the cost of the post-quantum handshake. Under the old 500-character limit no user
+   * could send an invite at all.
+   *
+   * <p>4096 is chosen to clear the measured size with headroom while still fitting the per-message
+   * limit of the messengers this keyboard is used with (Telegram 4096, WhatsApp and Signal far
+   * higher). It does NOT fit SMS — but neither did the previous 500-character limit, so that is not
+   * a regression.
+   *
+   * <p>Normal messages keep the smaller limit: they are user-typed and have no reason to be large.
+   */
+  public static final int CHAR_THRESHOLD_PRE_KEY_RESPONSE = 4096;
 
   public E2EEStrip(Context context) {
     mContext = context;
@@ -60,16 +84,17 @@ public class E2EEStrip {
   CharSequence encryptMessage(final String unencryptedMessage, final SignalProtocolAddress signalProtocolAddress, Encoder encoder) throws IOException {
     checkMessageLengthForEncodingMethod(unencryptedMessage, encoder, false);
     final MessageEnvelope messageEnvelope = SignalProtocolMain.encryptMessage(unencryptedMessage, signalProtocolAddress);
-    String json = JsonUtil.toJson(messageEnvelope);
-    if (json == null) return null;
-    return encode(json, encoder);
+    if (messageEnvelope == null) return null;
+    return encode(EnvelopeCodec.toWire(messageEnvelope), encoder);
   }
 
   CharSequence decryptMessage(final MessageEnvelope messageEnvelope, final Contact sender) {
     CharSequence decryptedMessage = null;
     try {
-      updateSessionWithNewSignedPreKeyIfNecessary(messageEnvelope, sender);
-
+      // An attached bundle is processed by SignalProtocolMain.decrypt, which performs exactly this
+      // check itself. Doing it here as well drove SessionBuilder.process twice for every message
+      // carrying a bundle, and each run archives the previous session state - so a message with an
+      // attached bundle burned two of libsignal's limited archived-state slots instead of one.
       decryptedMessage = SignalProtocolMain.decryptMessage(messageEnvelope, sender.getSignalProtocolAddress());
     } catch (InvalidMessageException | NoSessionException | InvalidContactException |
              UnknownMessageException |
@@ -90,11 +115,6 @@ public class E2EEStrip {
     return encodedMessage;
   }
 
-  private void updateSessionWithNewSignedPreKeyIfNecessary(MessageEnvelope messageEnvelope, Contact sender) {
-    if (messageEnvelope.getPreKeyResponse() != null && messageEnvelope.getCiphertextMessage() != null) {
-      SignalProtocolMain.processPreKeyResponseMessage(messageEnvelope, sender.getSignalProtocolAddress());
-    }
-  }
 
   CharSequence getEncryptedMessageFromClipboard() {
     ClipboardManager clipboardManager =
@@ -160,15 +180,23 @@ public class E2EEStrip {
     boolean successful = SignalProtocolMain.processPreKeyResponseMessage(messageEnvelope, recipientProtocolAddress);
     if (successful) {
       Toast.makeText(mContext, "Session with " + chosenContact.getFirstName() + " " + chosenContact.getLastName() + " created", Toast.LENGTH_SHORT).show();
+    } else if (SignalProtocolMain.hasUnacceptedIdentityChange(recipientProtocolAddress)) {
+      // Distinguish this from a generic failure. A changed safety number means the contact
+      // reinstalled - or someone is impersonating them - and the generic "delete and re-invite"
+      // advice would talk a user straight past a possible man-in-the-middle.
+      Toast.makeText(mContext,
+          String.format(INFO_IDENTITY_CHANGED, chosenContact.getFirstName()),
+          Toast.LENGTH_LONG).show();
     } else {
       Toast.makeText(mContext, INFO_SESSION_CREATION_FAILED, Toast.LENGTH_SHORT).show();
     }
     return successful;
   }
 
-  public String getPreKeyResponseMessage() {
+  public String getPreKeyResponseMessage() throws IOException {
     final MessageEnvelope messageEnvelope = SignalProtocolMain.getPreKeyResponseMessage();
-    return JsonUtil.toJson(messageEnvelope);
+    if (messageEnvelope == null) return null;
+    return EnvelopeCodec.toWire(messageEnvelope);
   }
 
   public Object getContactFromEnvelope(MessageEnvelope messageEnvelope) {
@@ -199,19 +227,47 @@ public class E2EEStrip {
     SignalProtocolMain.verifyContact(contact);
   }
 
+  /**
+   * Maximum wire text we will even attempt to decode.
+   *
+   * <p>The send side caps a message at {@link #CHAR_THRESHOLD_RAW} and a key bundle at
+   * {@link #CHAR_THRESHOLD_PRE_KEY_RESPONSE}, so anything materially larger did not come from a
+   * peer. The cap matters because the FairyTale path feeds an unbounded {@code InflaterOutputStream}:
+   * a ~390 KB clipboard payload inflates to 64 MB, on the IME main thread, inside a system clipboard
+   * callback — and {@code OutOfMemoryError} is an {@code Error}, so nothing on that path catches it.
+   */
+  public static final int MAX_DECODABLE_CHARS = 8192;
+
   public String decodeMessage(String encodedMessage) throws IOException {
-    if (EncodeHelper.encodedTextContainsInvisibleCharacters(encodedMessage)) {
-      return FairyTaleEncoder.decode(encodedMessage);
-    } else {
-      return RawEncoder.decode(encodedMessage);
+    if (encodedMessage == null) throw new IOException("nothing to decode");
+    if (encodedMessage.length() > MAX_DECODABLE_CHARS) {
+      throw new IOException("input too large to decode: " + encodedMessage.length()
+          + " characters (limit " + MAX_DECODABLE_CHARS + ")");
+    }
+    try {
+      if (EncodeHelper.encodedTextContainsInvisibleCharacters(encodedMessage)) {
+        return FairyTaleEncoder.decode(encodedMessage);
+      } else {
+        return RawEncoder.decode(encodedMessage);
+      }
+    } catch (RuntimeException e) {
+      // The decoders raise unchecked exceptions on input that merely looks encoded - ordinary
+      // multi-line text is the common case. Convert at this boundary so it cannot reach
+      // LatinIME.setInputView() and kill the process.
+      throw new IOException("could not decode message", e);
     }
   }
 
   public void checkMessageLengthForEncodingMethod(String message, Encoder encodingMethod, boolean isPreKeyResponse) throws TooManyCharsException {
     if (message == null || encodingMethod == null) return;
     final int messageBytes = message.getBytes(StandardCharsets.UTF_8).length;
-    if (isPreKeyResponse && messageBytes > CHAR_THRESHOLD_RAW)
-      throw new TooManyCharsException(String.format("Too many characters for invite or update message (%s characters, only %s characters allowed)", messageBytes, CHAR_THRESHOLD_RAW));
+    if (isPreKeyResponse) {
+      // Key bundles are sized by the protocol, not by the user, so they get their own limit.
+      if (messageBytes > CHAR_THRESHOLD_PRE_KEY_RESPONSE) {
+        throw new TooManyCharsException(String.format("Too many characters for invite or update message (%s characters, only %s characters allowed)", messageBytes, CHAR_THRESHOLD_PRE_KEY_RESPONSE));
+      }
+      return;
+    }
     if (encodingMethod.equals(Encoder.RAW) && messageBytes > CHAR_THRESHOLD_RAW) {
       throw new TooManyCharsException(String.format("Too many characters for raw message (%s characters, only %s characters allowed)", messageBytes, CHAR_THRESHOLD_RAW));
     } else if (encodingMethod.equals(Encoder.FAIRYTALE) && messageBytes > CHAR_THRESHOLD_FAIRYTALE) {

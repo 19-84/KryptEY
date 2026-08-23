@@ -34,6 +34,13 @@ public class EncodeHelper {
   }
 
   public static byte[] convertBinaryToByteArray(String binary) {
+    // BigInteger("", 2) throws NumberFormatException, which is unchecked. Ordinary multi-line text
+    // reaches here: decodeMessage routes anything containing a \p{C} character - including a plain
+    // newline or tab - to the FairyTale decoder, and text with no zero-width characters yields an
+    // empty bit string. Copying any two-line message therefore killed the IME process.
+    if (binary == null || binary.isEmpty()) {
+      throw new IllegalArgumentException("no encoded bits present");
+    }
     return new BigInteger(binary, 2).toByteArray();
   }
 
