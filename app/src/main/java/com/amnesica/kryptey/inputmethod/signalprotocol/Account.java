@@ -174,6 +174,16 @@ public class Account {
    *
    * <p>Bounded, because it is a warning aid rather than a security record - unlike
    * {@code rejectedAddresses}, which must never be forgotten.
+   *
+   * <p><b>What this does NOT cover.</b> It matches the folded name exactly. For a LIVE duplicate
+   * that is enough, because a name the fold misses still leaves two rows the user can tell apart by
+   * their address tags - the argument {@code ListAdapterContacts} makes. After a deletion there is
+   * no second row, so a dodge costs the attacker nothing: measured, "Bob", "Bob J", "Bob Jones Jr",
+   * "Robert Jones" and "Bob Jones (new phone)" all pass without a warning after "Bob Jones" is
+   * deleted. Matching more loosely would fire on ordinary names and habituate the user, which is
+   * the failure mode this whole control is trying to avoid. So the gap is real and stated rather
+   * than papered over - the address tag remains the thing that distinguishes, and comparing the
+   * safety number remains the only thing that proves anything.
    */
   private LinkedList<String[]> retiredDisplayNames = new LinkedList<>();
 
@@ -189,12 +199,29 @@ public class Account {
     this.retiredDisplayNames = retiredDisplayNames;
   }
 
-  /** Records a deleted contact's name, dropping the oldest once the bound is reached. */
-  public void retireDisplayName(final String firstName, final String lastName) {
+  /**
+   * Records a deleted contact's name and the address it was deleted from.
+   *
+   * <p>The address matters as much as the name. Deletion keeps the pin, so a re-add at the SAME
+   * address is provably the same identity - a substituted bundle for it is still refused. Warning
+   * there is a false alarm, and it is the commonest firing of this control, because the app's own
+   * decryption-failure advice sends users round exactly that loop.
+   *
+   * <p>De-duplicated, so the bound counts DISTINCT names. Without that, a hundred delete-and-re-add
+   * cycles of one unrelated contact evict the name an attacker cares about - user work rather than
+   * attacker work, but it is the loop the app's advice creates.
+   */
+  public void retireDisplayName(final String firstName, final String lastName,
+                                final String addressName) {
     if (firstName == null && lastName == null) return;
+    final String first = firstName == null ? "" : firstName;
+    final String last = lastName == null ? "" : lastName;
+    final String address = addressName == null ? "" : addressName;
+
     final LinkedList<String[]> retired = getRetiredDisplayNames();
-    retired.addLast(new String[] {firstName == null ? "" : firstName,
-        lastName == null ? "" : lastName});
+    retired.removeIf(entry -> entry.length > 2
+        && first.equals(entry[0]) && last.equals(entry[1]) && address.equals(entry[2]));
+    retired.addLast(new String[] {first, last, address});
     while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();
   }
 

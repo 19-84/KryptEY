@@ -154,6 +154,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NAME_LOOKS_LIKE_A_TAG = "Names cannot contain '#'. The app shows a tag starting with # beside each contact to tell similar names apart, and a name that imitates one would defeat that.";
   private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Not added: this invite is for the identity you already have saved as \"%2$s\", so \"%1$s\" would be a second name for the same person. If you meant to rename them, delete the old contact first. If someone told you this is a different person, they are using an identity you already have to introduce themselves as somebody else.";
   private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. If they told you they reinstalled, check with them by voice before sending anything: a reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address.";
+
+  /**
+   * The deleted-contact case needs its own words.
+   *
+   * <p>It used to reuse the message above, which says "You already have a contact called %s" and
+   * "Both now appear in your list". After a deletion neither is true, and the user can see that
+   * both are false - there is one row and no other contact of that name. Habituation is the
+   * documented failure mode of this control, so a warning that is provably wrong where it fires is
+   * worse than the gap it closes.
+   */
+  static final String INFO_RETIRED_CONTACT_NAME = "You deleted a contact called %s, and this new one has a different address - so it is not the same person coming back. If they told you they reinstalled, check the security number with them by voice before sending anything.";
   // Does not tell the user to obtain the invite "out of band": there is no import path for one -
   // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
   // the only way a bundle can enter the app. Advising a route that does not exist is the same
@@ -594,7 +605,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       mIdentityWarningStanding = true;
     } else if (duplicateName) {
       Toast.makeText(getContext(),
-          String.format(INFO_DUPLICATE_CONTACT_NAME, labelFor(chosenContact)),
+          String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact)),
           Toast.LENGTH_LONG).show();
     }
 
@@ -605,7 +616,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
             String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact)));
       } else if (successful && duplicateName) {
         setInfoTextViewMessage(mInfoTextView,
-            String.format(INFO_DUPLICATE_CONTACT_NAME, labelFor(chosenContact)));
+            String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact)));
       } else if (successful) {
         setInfoTextViewMessage(mInfoTextView, "Contact " + labelFor(chosenContact) + " created. You can send messages now");
       } else if (!warnIfIdentityChanged(chosenContact)) {
@@ -845,6 +856,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   static String openingMessage(final StorageHelper.StorageState state) {
     return state == StorageHelper.StorageState.UNREADABLE
         ? INFO_STORAGE_UNREADABLE : INFO_NO_CONTACT_CHOSEN_TEXT;
+  }
+
+  /**
+   * Which duplicate-name wording applies: a live contact of that name, or a deleted one.
+   *
+   * <p>Separated so the choice can be tested without an inflated IME.
+   */
+  private String duplicateNameMessage(final Contact contact) {
+    final boolean live = SignalProtocolMain.hasContactWithSameDisplayName(
+        contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress())
+        && !SignalProtocolMain.hasRetiredDisplayName(contact.getFirstName(),
+            contact.getLastName(), contact.getSignalProtocolAddress());
+    return live ? INFO_DUPLICATE_CONTACT_NAME : INFO_RETIRED_CONTACT_NAME;
   }
 
   private void setInfoTextViewMessage(final TextView textView, final String message) {

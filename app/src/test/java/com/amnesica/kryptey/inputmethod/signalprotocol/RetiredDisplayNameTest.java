@@ -94,7 +94,7 @@ public class RetiredDisplayNameTest {
   @Test
   public void theListIsBoundedAndKeepsTheMostRecent() {
     for (int i = 0; i < 150; i++) {
-      me.retireDisplayName("Person" + i, "Surname" + i);
+      me.retireDisplayName("Person" + i, "Surname" + i, "uuid-" + i);
     }
 
     assertTrue("the list must be bounded, and held " + me.getRetiredDisplayNames().size(),
@@ -121,5 +121,68 @@ public class RetiredDisplayNameTest {
         .toJson(me.getRetiredDisplayNames());
     assertTrue("the retired names must serialise to something non-trivial: " + json,
         json != null && json.contains("Bob"));
+  }
+
+  /**
+   * A re-add at the SAME address must not warn.
+   *
+   * <p>Deletion keeps the pin, so a re-add there is provably the same identity - a substituted
+   * bundle for that address is still refused. Warning is a false alarm, and it was the commonest
+   * firing of this control: the app's own decryption-failure advice tells users to ask for a fresh
+   * invite, which sends them round exactly this loop.
+   *
+   * <p>It matters more than an ordinary false positive because the banner it reused says "You
+   * already have a contact called X ... Both now appear in your list" - two things the user can see
+   * are untrue. Habituation is the documented failure mode of this whole control, and a warning
+   * that is provably wrong in its commonest firing is worse than the gap it closes.
+   */
+  @Test
+  public void areAddAtTheSameAddressDoesNotWarn() {
+    SignalProtocolMain.removeContactFromContactListAndProtocol(me.getContactList().get(0));
+
+    assertFalse("re-adding the same person at the same address must not warn - the surviving pin "
+            + "already proves it is them",
+        SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", peerAddress));
+  }
+
+  /** But the same name at a DIFFERENT address is the attack, and must still warn. */
+  @Test
+  public void thesameNameAtAdifferentAddressStillWarns() {
+    SignalProtocolMain.removeContactFromContactListAndProtocol(me.getContactList().get(0));
+
+    assertTrue("an attacker offering the deleted name at its own address must still warn",
+        SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", elsewhere()));
+  }
+
+  /**
+   * The bound counts DISTINCT names, so it cannot be exhausted by repetition.
+   *
+   * <p>Without de-duplication, exactly 100 delete-and-re-add cycles of one unrelated contact evict
+   * the name an attacker cares about. That is user work rather than attacker work, which caps the
+   * severity - but it is the loop the app's own failure advice creates.
+   */
+  @Test
+  public void repeatedDeletionsOfOneNameDoNotEvictAnother() {
+    SignalProtocolMain.removeContactFromContactListAndProtocol(me.getContactList().get(0));
+    assertTrue(SignalProtocolMain.hasRetiredDisplayName("Bob", "Jones"));
+
+    for (int i = 0; i < 250; i++) {
+      me.retireDisplayName("Churn", "Contact", "churn-uuid");
+    }
+
+    assertEquals("repeating one name must not consume the bound", 2,
+        me.getRetiredDisplayNames().size());
+    assertTrue("the name an attacker would reuse must survive the churn",
+        SignalProtocolMain.hasRetiredDisplayName("Bob", "Jones"));
+  }
+
+  /** And the limit itself is a decision, not an incidental constant. */
+  @Test
+  public void theboundIsWhatItIsDocumentedToBe() {
+    for (int i = 0; i < 150; i++) {
+      me.retireDisplayName("Person" + i, "Surname" + i, "uuid-" + i);
+    }
+    assertEquals("the bound on remembered names is a product decision", 100,
+        me.getRetiredDisplayNames().size());
   }
 }

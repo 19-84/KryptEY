@@ -408,10 +408,12 @@ public class SignalProtocolMain {
   /**
    * Marks a contact verified after the user compared safety numbers.
    *
-   * @return false only when there is no contact or no account loaded. It does NOT mean "refused":
-   *     an earlier design refused while a substituted identity was pending, and this doc outlived
-   *     it. Verification now dismisses the offered key instead. The caller must still report false,
-   *     but as "nothing is loaded" - rendering it as a security claim would fabricate one.
+   * @return false when there is no contact or no account loaded, AND when nothing is pinned for the
+   *     contact's address - there is no key to have compared, so there is nothing to record. This
+   *     javadoc used to say "only when there is no contact or no account loaded ... it does NOT mean
+   *     refused", and a refusal was added below it without the doc being updated. A caller
+   *     rendering false as "nothing is loaded" is now sometimes wrong; it should say that
+   *     verification could not be recorded.
    */
   public static boolean verifyContact(Contact contact) throws UnknownContactException {
     Log.d(TAG, "Verifying contact...");
@@ -1026,7 +1028,7 @@ public class SignalProtocolMain {
         return true;
       }
     }
-    return hasRetiredDisplayName(firstName, lastName);
+    return hasRetiredDisplayName(firstName, lastName, excluding);
   }
 
   /**
@@ -1043,9 +1045,24 @@ public class SignalProtocolMain {
    * number - which is the only thing that ever could.
    */
   public static boolean hasRetiredDisplayName(final String firstName, final String lastName) {
+    return hasRetiredDisplayName(firstName, lastName, null);
+  }
+
+  /**
+   * @param excluding the address the name is being added at; a retirement from that same address is
+   *     not a warning, because deletion kept the pin and a substituted bundle for it is refused
+   */
+  public static boolean hasRetiredDisplayName(final String firstName, final String lastName,
+                                              final SignalProtocolAddress excluding) {
     if (sInstance.mAccount == null) return false;
+    final String excludedName = excluding == null ? null : excluding.getName();
+
     for (final String[] retired : sInstance.mAccount.getRetiredDisplayNames()) {
-      if (displayNamesMatch(retired[0], retired[1], firstName, lastName)) return true;
+      if (!displayNamesMatch(retired[0], retired[1], firstName, lastName)) continue;
+      // Entries written before the address was recorded have length 2; treat those as matching
+      // nothing in particular rather than silently suppressing.
+      if (excludedName != null && retired.length > 2 && excludedName.equals(retired[2])) continue;
+      return true;
     }
     return false;
   }
@@ -1267,7 +1284,8 @@ public class SignalProtocolMain {
     //
     // rejectedAddresses was deliberately made to outlive removeIdentity on exactly this reasoning.
     // The display name got no such treatment and was erased by one tap, with no confirmation.
-    mAccount.retireDisplayName(contactToRemove.getFirstName(), contactToRemove.getLastName());
+    mAccount.retireDisplayName(contactToRemove.getFirstName(), contactToRemove.getLastName(),
+        contactToRemove.getSignalProtocolAddressName());
 
     Log.d(TAG, "Deleting session for contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
     if (mAccount.getSignalProtocolStore().getSessionStore().containsSession(contactToRemove.getSignalProtocolAddress())) {
