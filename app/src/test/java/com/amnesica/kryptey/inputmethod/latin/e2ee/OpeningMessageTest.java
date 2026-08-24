@@ -91,4 +91,29 @@ public class OpeningMessageTest {
     assertFalse("an ordinary informational message must leave them enabled",
         E2EEStripView.disablesActionButtons("Encrypted message detected"));
   }
+
+  /**
+   * Every message the clipboard listener can post must leave the buttons enabled - which is why
+   * the listener has to stop before posting one at all when storage is unreadable.
+   *
+   * <p>The listener's three messages are ordinary informational text, so the watcher enables both
+   * buttons for each of them. That is right in the normal case and wrong in the unreadable one,
+   * where there is no account to encrypt with and the warning being overwritten is the part that
+   * protects the user's pins. The predicate cannot express that - the fix is that the listener
+   * returns early - so this pins the premise the fix rests on.
+   */
+  @Test
+  public void theclipboardMessagesAllEnableTheButtons() {
+    final String[] clipboardMessages = {
+        "Keybundle detected: click on decrypt to save the content",
+        "Encrypted message detected: click on decrypt to view message",
+        "Encrypted update message detected: click on decrypt to view message",
+    };
+
+    for (final String message : clipboardMessages) {
+      assertFalse("\"" + message + "\" enables both buttons, so posting it in the unreadable "
+              + "state would re-enable them and wipe the warning - the listener must not reach it",
+          E2EEStripView.disablesActionButtons(message));
+    }
+  }
 }

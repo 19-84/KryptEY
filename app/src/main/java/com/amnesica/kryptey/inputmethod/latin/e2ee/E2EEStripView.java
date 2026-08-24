@@ -767,6 +767,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String decodedItem = mE2EEStrip.decodeMessage(item);
         if (decodedItem == null) return;
 
+        // An unreadable store must keep its warning.
+        //
+        // decodeMessage and getMessageType need no account, so they run happily in that state -
+        // and the first KryptEY-shaped thing the user copies used to overwrite the info text,
+        // which re-enabled both buttons through the TextWatcher and wiped the "do NOT re-invite
+        // anyone" line. That line is the part that actually protects their pins, and the copy that
+        // erased it is the attacker's invite: the whole workflow is copy-then-paste, so the
+        // warning survived exactly until the moment it mattered.
+        if (storageIsUnreadable()) {
+          Log.i(TAG, "Storage cannot be decrypted; leaving the warning in place");
+          return;
+        }
+
         // Parse once. This ran on every clipboard change and used to deserialize up to three
         // times, and getMessageType returns null for anything unrecognised - which then NPE'd on
         // .equals() inside a system clipboard callback.
@@ -838,6 +851,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         }
       }
     });
+  }
+
+  /**
+   * Whether the account on disk cannot be decrypted.
+   *
+   * <p>Read live rather than cached at construction: the strip is built once and the state can only
+   * be discovered when storage is next touched.
+   */
+  private boolean storageIsUnreadable() {
+    return SignalProtocolMain.storageState() == StorageHelper.StorageState.UNREADABLE;
   }
 
   /**

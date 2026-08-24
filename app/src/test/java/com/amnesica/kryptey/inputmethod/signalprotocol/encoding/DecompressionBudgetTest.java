@@ -41,12 +41,35 @@ public class DecompressionBudgetTest {
   }
 
   /**
-   * And the relationship still has to hold, so a future change to one is caught if the other is
-   * updated to match without thinking about the product.
+   * The property, not the relationship: a payload at the wire cap inflates, one past the budget is
+   * refused.
+   *
+   * <p>This asserted {@code MAX_DECOMPRESSED_BYTES >= MAX_WIRE_CHARS} where the budget is DEFINED
+   * as twice the cap - {@code 2X >= X}, true for every X. That is the same defect the javadoc above
+   * describes killing six lines earlier, and its claim to catch "a change to one if the other is
+   * updated to match" is the one thing a definitional identity structurally cannot do. Two
+   * constants that move together are not a bound on each other.
    */
   @Test
-  public void thebudgetCoversTheLargestPayloadTheCodecAccepts() {
-    assertTrue("a budget below the wire cap would reject payloads EnvelopeCodec accepts",
-        EncodeHelper.MAX_DECOMPRESSED_BYTES >= EnvelopeCodec.MAX_WIRE_CHARS);
+  public void alargestLegitimatePayloadInflatesAndAbomberIsRefused() throws java.io.IOException {
+    final StringBuilder builder = new StringBuilder();
+    final String alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    final java.util.Random random = new java.util.Random(20260824L);
+    while (builder.length() < EnvelopeCodec.MAX_WIRE_CHARS) {
+      builder.append(alphabet.charAt(random.nextInt(alphabet.length())));
+    }
+    final String largest = builder.toString();
+
+    assertEquals("a payload the size of the wire cap must inflate without hitting the budget",
+        largest, EncodeHelper.decompressString(EncodeHelper.compressString(largest)));
+
+    // And something that would expand past the budget is refused. "a" repeated compresses to
+    // almost nothing and inflates without bound, which is what the budget exists for.
+    final byte[] bomb = EncodeHelper.compressString("a".repeat(4 * 1024 * 1024));
+    final java.io.IOException refused = org.junit.Assert.assertThrows(java.io.IOException.class,
+        () -> EncodeHelper.decompressString(bomb));
+    assertTrue("the refusal must name the budget: " + refused.getMessage(),
+        refused.getMessage() != null && refused.getMessage().contains("exceeds"));
   }
 }

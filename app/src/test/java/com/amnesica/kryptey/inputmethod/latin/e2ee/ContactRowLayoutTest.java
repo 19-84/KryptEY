@@ -338,23 +338,42 @@ public class ContactRowLayoutTest {
         {"Maria del Carmen Fernandez", "", "María del Carmen Fernandez", ""},
     };
 
+    int namesCollided = 0;
+
     for (final int widthDp : WIDTHS_DP) {
       for (final float fontScale : FONT_SCALES) {
         for (final String[] pair : pairs) {
           // Distinct contacts have distinct addresses, so they have distinct tags. That is the
           // whole reason the tag exists; a sweep that gave both rows the same tag would be
           // testing a situation the app cannot produce.
+          // The real property is a DISJUNCTION: the names differ, or the tag is legible.
+          //
+          // Comparing whole rows with different tags was a tautology - the tag view has no
+          // ellipsize, so visibleText returns its whole string by construction, the third component
+          // always differed, and assertNotEquals held for all 160 cells whatever the names did.
+          //
+          // And "the names always differ" is simply false: "Maria del Carmen Fernandez" and
+          // "...Fernandes" both truncate to "Maria del Carmen Ferna" at 320dp. That is exactly the
+          // case the address tag exists for, so the honest claim is that when the names collide,
+          // the thing that separates the rows must be readable.
           final String a = renderedRow(widthDp, fontScale, pair[0], pair[1], "#ab12-cd34");
           final String b = renderedRow(widthDp, fontScale, pair[2], pair[3], "#ef56-7890");
 
-          org.junit.Assert.assertNotEquals(
-              "two distinct contacts rendered identically at " + widthDp + "dp, fontScale "
-                  + fontScale + " - \"" + pair[0] + "\"/\"" + pair[1] + "\" vs \"" + pair[2]
-                  + "\"/\"" + pair[3] + "\" both show [" + escape(a) + "]",
-              a, b);
+          final String namesA = a.substring(0, a.lastIndexOf('|'));
+          final String namesB = b.substring(0, b.lastIndexOf('|'));
+
+          if (namesA.equals(namesB)) {
+            namesCollided++;
+            assertTagFullyDrawn(widthDp, fontScale, pair[0]);
+            assertTagFullyDrawn(widthDp, fontScale, pair[2]);
+          }
         }
       }
     }
+
+    assertTrue("no pair in the grid ever collided on names, so the tag half of the disjunction was "
+        + "never exercised - this would pass on a layout that never draws the tag at all",
+        namesCollided > 0);
   }
 
   /**

@@ -134,21 +134,29 @@ public class Base64AgreementTest {
         "\u0000\u0000\u0000\u0000",   // control characters
     };
 
+    int rejected = 0;
     for (final String input : malformed) {
       Throwable thrown = null;
       try {
         Base64.decode(input);
       } catch (Throwable t) {
         thrown = t;
+        rejected++;
       }
 
-      if (thrown == null) continue;   // accepted as valid; the decrypt below it will reject it
+      // No silent skip. This used to "continue" when nothing was thrown, so a decoder that
+      // ACCEPTED all five malformed inputs skipped every iteration and the test passed having
+      // asserted nothing - on a javadoc claiming malformed input "must be refused". The count
+      // below is what makes the claim real.
+      if (thrown == null) continue;
       assertTrue("decoding \"" + escape(input) + "\" threw " + thrown.getClass().getName()
               + ", which EncryptedKeyValueStore.decode does not catch - it would reach "
               + "setInputView() and kill the IME",
           thrown instanceof IOException || thrown instanceof RuntimeException);
     }
 
+    assertTrue("no malformed input was refused at all, so this asserted nothing - the decoder "
+            + "accepted every one of " + malformed.length, rejected > 0);
     assertThrows(NullPointerException.class, () -> Base64.decode((String) null));
   }
 
