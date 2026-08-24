@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 426, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 432, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -268,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 426 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 432 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -304,10 +304,19 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
    supplies it. Until it exists, no warning text should ask the user to check "their new number" —
    they cannot see it. The strings were corrected accordingly.
-3. **`SignalProtocolMain` has never been mutation-tested.** `IdentityKeyStoreImpl` has now been
-   swept — 52 mutants, and everything behavioural was killed; the only survivors were one arm of a
-   null guard and its `equals`, both since closed. That is a good result for the file holding every
-   identity pin. `SignalProtocolMain` is the last unswept class and by far the largest.
+3. ~~**`SignalProtocolMain` has never been mutation-tested.**~~ Done. Every class in
+   `signalprotocol/` has now been swept, which closes the last coverage gap reachable in this
+   environment. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
+   them were one pattern: guards written `a == null || b == null` where every test supplies both, so
+   only the both-present arm ever runs. Nine of those were closed with tests; the rest were either
+   already covered by later commits (the sweep runs against a snapshot, so re-verifying before
+   chasing is essential) or genuinely equivalent — `logMessageType`'s branches emit only log lines,
+   and `reloadAccount`'s write-back guard is redundant with the null check inside the method it
+   calls.
+
+   The pattern is worth recording because it is systematic rather than incidental: **fixtures
+   construct the healthy state, so guards that fire on the unhealthy state are never
+   discriminated.** Line coverage reports those lines as covered.
 
 ## Settled during review
 
