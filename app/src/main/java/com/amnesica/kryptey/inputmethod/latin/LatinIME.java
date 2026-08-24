@@ -314,7 +314,18 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     // Register to receive ringer mode change.
     final IntentFilter filter = new IntentFilter();
     filter.addAction(AudioManager.RINGER_MODE_CHANGED_ACTION);
-    registerReceiver(mRingerModeChangeReceiver, filter);
+    // NOT_EXPORTED explicitly, where the platform can express it.
+    //
+    // A runtime receiver registered without a flag is implicitly exported below targetSdk 34 and
+    // throws SecurityException at or above it - so this runs today at targetSdk 33 and would crash
+    // the keyboard on the first ringer-mode change the moment anyone raises the target.
+    // RINGER_MODE_CHANGED_ACTION is a protected system broadcast so nothing else can deliver it
+    // either way; declaring it costs nothing and stops the upgrade being a surprise.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(mRingerModeChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+    } else {
+      registerReceiver(mRingerModeChangeReceiver, filter);
+    }
   }
 
   private boolean isFirstRunAfterInstall() {
@@ -455,6 +466,18 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
   void onStartInputViewInternal(final EditorInfo editorInfo, final boolean restarting) {
     super.onStartInputView(editorInfo, restarting);
+
+    // Tell the strip what kind of field it is sitting over.
+    //
+    // Decrypting writes the plaintext into whatever has focus, so over another app's password box
+    // it would hand a decrypted message to that app's storage, autofill and anything it syncs.
+    // Nothing checked this - the strip is inlined into the keyboard, so it appears over every field
+    // the keyboard serves.
+    if (mE2EEStripView != null) {
+      mE2EEStripView.setHostFieldIsPassword(editorInfo != null
+          && com.amnesica.kryptey.inputmethod.latin.utils.InputTypeUtils
+              .isPasswordInputType(editorInfo.inputType));
+    }
 
     // Switch to the null consumer to handle cases leading to early exit below, for which we
     // also wouldn't be consuming gesture data.

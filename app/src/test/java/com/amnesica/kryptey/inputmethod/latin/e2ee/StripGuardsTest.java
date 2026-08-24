@@ -270,4 +270,48 @@ public class StripGuardsTest {
     assertTrue("a decrypted message in the field is exactly what must not be captured",
         strip.isShowingSensitiveContent());
   }
+
+  /**
+   * Encrypt and decrypt must be refused over a password field.
+   *
+   * <p>Decrypting writes the plaintext into whatever field has focus. Over another app's password
+   * box that hands a decrypted message to that app's own storage, its autofill, and anything it
+   * syncs - and the user asked for none of it. Nothing checked: the strip is inlined into the
+   * keyboard, so it appears over every field the keyboard serves and offered both actions there.
+   */
+  @Test
+  public void theActionsAreRefusedOverApasswordField() {
+    assertTrue("precondition: actions are available over an ordinary field",
+        strip.actionsAreAvailable());
+
+    strip.setHostFieldIsPassword(true);
+
+    assertFalse("encrypt and decrypt must be off over a password field",
+        strip.actionsAreAvailable());
+    assertEquals("and the strip must say why, or the buttons look broken",
+        E2EEStripView.INFO_PASSWORD_FIELD, infoField().getText().toString());
+  }
+
+  /** And anything already staged is dropped, not left addressed to a password box. */
+  @Test
+  public void enteringApasswordFieldDropsStagedContent() {
+    strip.selectContact(bob());
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_input_field))
+        .setText("a decrypted message");
+
+    strip.setHostFieldIsPassword(true);
+
+    assertEquals("staged plaintext must not survive into a password field", "",
+        ((android.widget.EditText) strip.findViewById(R.id.e2ee_input_field))
+            .getText().toString());
+  }
+
+  /** Leaving the password field restores them. */
+  @Test
+  public void leavingApasswordFieldRestoresTheActions() {
+    strip.setHostFieldIsPassword(true);
+    strip.setHostFieldIsPassword(false);
+
+    assertTrue("the refusal must not be sticky", strip.actionsAreAvailable());
+  }
 }

@@ -356,6 +356,38 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
+  /**
+   * Whether the field the user is typing into is a password field.
+   *
+   * <p>Set by {@code LatinIME} as each input session starts. When it is, encrypt and decrypt are
+   * refused: decrypting writes the plaintext into whatever field has focus, and writing a decrypted
+   * message into another app's password box hands it to that app's own storage, autofill and
+   * whatever it syncs. Encrypting is the mirror - a password typed into the compose box would be
+   * encrypted and pasted somewhere as ciphertext nobody wants.
+   *
+   * <p>Nothing checked this. The strip is inlined into the keyboard, so it appears over every field
+   * the keyboard serves, including password fields, and offered both actions there.
+   */
+  private boolean mHostFieldIsPassword;
+
+  /** Called by the IME as each input session starts. */
+  public void setHostFieldIsPassword(final boolean isPassword) {
+    mHostFieldIsPassword = isPassword;
+    if (isPassword) {
+      clearDecryptedContent();
+      setInfoTextViewMessage(mInfoTextView, INFO_PASSWORD_FIELD);
+    }
+  }
+
+  /** Whether the E2EE actions may run against the field that currently has focus. */
+  boolean actionsAreAvailable() {
+    return !mHostFieldIsPassword;
+  }
+
+  static final String INFO_PASSWORD_FIELD =
+      "This is a password field. Encryption and decryption are turned off here, so a decrypted "
+          + "message is never written into another app's password box.";
+
   /** Screen switches, for tests that drive the real showOnlyUIView rather than the visibilities. */
   void showMessagesListForTest() { showOnlyUIView(UIView.MESSAGES_LIST_VIEW); }
 
@@ -971,6 +1003,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void encryptAndSendInputFieldContent() {
+    if (!actionsAreAvailable()) {
+      Toast.makeText(getContext(), INFO_PASSWORD_FIELD, Toast.LENGTH_LONG).show();
+      return;
+    }
     if (chosenContact == null) {
       Toast.makeText(getContext(), INFO_CHOOSE_CONTACT_FIRST, Toast.LENGTH_SHORT).show();
       return;
@@ -1166,6 +1202,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void decryptMessageInClipboard() {
+    if (!actionsAreAvailable()) {
+      Toast.makeText(getContext(), INFO_PASSWORD_FIELD, Toast.LENGTH_LONG).show();
+      return;
+    }
     final CharSequence mEncryptedMessageFromClipboard = mE2EEStrip.getEncryptedMessageFromClipboard();
     if (mEncryptedMessageFromClipboard == null || mEncryptedMessageFromClipboard.length() == 0) {
       Toast.makeText(getContext(), INFO_NO_MESSAGE_TO_DECRYPT, Toast.LENGTH_SHORT).show();
