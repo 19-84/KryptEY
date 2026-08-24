@@ -294,6 +294,15 @@ public class PostRejectWindowTest {
     assertEquals("a tag needs an account to be keyed with", "",
         SignalProtocolMain.displayTagFor(storedContactDetached()));
     assertEquals(0, SignalProtocolMain.contactCount());
+    org.junit.Assert.assertNull(SignalProtocolMain.getFingerprint(storedContactDetached()));
+    org.junit.Assert.assertNull(SignalProtocolMain.extractContactFromMessageEnvelope(
+        new MessageEnvelope(new byte[] {1}, 3, peerAddress.getName(), peerAddress.getDeviceId())));
+    // The label is still the NAME - only the tag needs an account to key it. Asserting "" here was
+    // wrong about the contract, not about the code.
+    final String labelWithNoAccount = SignalProtocolMain.displayLabelFor(storedContactDetached());
+    assertTrue("the name must still be shown", labelWithNoAccount.contains("Real"));
+    assertFalse("but no tag can be derived without an account",
+        labelWithNoAccount.contains("#"));
   }
 
   /** And with an account but no address, which is the other arm. */
@@ -306,6 +315,10 @@ public class PostRejectWindowTest {
     assertFalse(SignalProtocolMain.acceptIdentityChange(null, null));
     org.junit.Assert.assertNull(SignalProtocolMain.getPendingIdentity(null));
     assertEquals("", SignalProtocolMain.displayTagFor(null));
+    org.junit.Assert.assertNull("a fingerprint for no contact must be null, not a crash",
+        SignalProtocolMain.getFingerprint(null));
+    assertEquals("", SignalProtocolMain.displayLabelFor(null));
+    org.junit.Assert.assertNull(SignalProtocolMain.extractContactFromMessageEnvelope(null));
   }
 
   private Contact storedContactDetached() {
@@ -384,5 +397,28 @@ public class PostRejectWindowTest {
         SignalProtocolMain.importOutOfBandKeyBundle(validBundle, null));
     assertFalse(SignalProtocolMain.importOutOfBandKeyBundle("some text", null));
     assertFalse(SignalProtocolMain.importOutOfBandKeyBundle(null, null));
+  }
+
+  /**
+   * Looking a contact up when the list is empty must return nothing, not throw.
+   *
+   * <p>{@code getContactFromAddressInContactList} and {@code getContactListFromAccount} are private
+   * helpers whose guards were never executed: every test loads an account and populates the list, so
+   * the empty-list and no-account arms only run in states the tests never construct. Both are
+   * reachable from the clipboard path — an envelope arrives before the user has added anyone.
+   */
+  @Test
+  public void anEnvelopeFromAnUnknownPeerResolvesToNothing() {
+    victim.setContactList(new ArrayList<>());
+
+    assertNull("no contacts means no match, not a crash",
+        SignalProtocolMain.extractContactFromMessageEnvelope(
+            new MessageEnvelope(new byte[] {1}, 3, peerAddress.getName(),
+                peerAddress.getDeviceId())));
+
+    // And with one unrelated contact present, an envelope from elsewhere still resolves to nothing.
+    storedContact();
+    assertNull(SignalProtocolMain.extractContactFromMessageEnvelope(
+        new MessageEnvelope(new byte[] {1}, 3, "stranger-uuid", 9)));
   }
 }

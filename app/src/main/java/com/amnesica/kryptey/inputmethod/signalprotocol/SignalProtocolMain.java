@@ -558,6 +558,11 @@ public class SignalProtocolMain {
   }
 
   private Contact extractContactFromEnvelope(MessageEnvelope messageEnvelope) {
+    // Guarded like every sibling. Not reachable from the clipboard path today - getMessageType
+    // returns null for a null envelope and the callers branch on that first - but this is public
+    // API, it is the one method here that did not check, and the failure mode is an NPE out of a
+    // clipboard callback where nothing catches it.
+    if (messageEnvelope == null) return null;
     // The device id here comes straight off the wire from the peer. A 0.1.5 peer generated it with
     // nextInt(10000), so ~99% are outside libsignal's [1,127] and the raw constructor throws an
     // unchecked IllegalArgumentException - which nothing on the clipboard-decrypt path catches, so
