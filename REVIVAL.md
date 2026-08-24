@@ -6,7 +6,14 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 470, all passing.** Debug and release both assemble; dependency verification pins 387
+**PQXDH is asserted, not assumed.** libsignal records the handshake in the session version - 3 is
+X3DH, 4 is PQXDH - and until late in the revival nothing checked it. Every test asserted that a
+session could be built and that messages round-tripped, all of which is equally true of X3DH. If the
+Kyber pre-key were dropped, ignored, or silently unusable, sessions would still establish and the
+suite would stay green while the post-quantum property the upgrade exists for was absent. The
+session version is asserted now, on both sides and on the out-of-band path.
+
+**Tests: 31 → 474, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -268,7 +275,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 470 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 474 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
