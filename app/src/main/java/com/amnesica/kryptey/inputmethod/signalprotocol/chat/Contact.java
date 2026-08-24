@@ -29,8 +29,15 @@ public class Contact {
     this.firstName = firstName;
     this.lastName = lastName;
     this.signalProtocolAddressName = signalProtocolAddressName;
-    this.deviceId = deviceId;
-    this.signalProtocolAddress = com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.of(signalProtocolAddressName, deviceId);
+    this.signalProtocolAddress = com.amnesica.kryptey.inputmethod.signalprotocol.util
+        .ProtocolAddresses.of(signalProtocolAddressName, deviceId);
+    // Store the FOLDED id, not the raw argument. ProtocolAddresses.of() folds a legacy device id
+    // into libsignal's [1,127]; keeping the raw value here left this field and the assembled
+    // address disagreeing for every 0.1.5 peer, and different parts of the app key off different
+    // ones - the contact list matches on this scalar, the identity and session stores on the
+    // address. The add path was fixed to pass an already-folded id, but deserialising a stored
+    // contact comes straight through here with the raw value, so every upgrading user hit it.
+    this.deviceId = this.signalProtocolAddress.getDeviceId();
     this.verified = verified;
   }
 
@@ -61,8 +68,30 @@ public class Contact {
     return deviceId;
   }
 
+  /**
+   * Keeps the three views of one address consistent.
+   *
+   * <p>A contact carries the address three ways — {@code signalProtocolAddressName},
+   * {@code deviceId}, and the assembled {@code signalProtocolAddress} — and different parts of the
+   * app key off different ones: the contact list matches on the first two, the identity store and
+   * session store on the third. Letting a setter move one without the others makes those disagree,
+   * and that exact desync has already shipped once, when a raw peer-supplied device id was stored
+   * while the address held the folded value. No production code calls these setters today (they
+   * exist for Jackson), so this is here to stop the next caller reintroducing it rather than to fix
+   * a live bug.
+   */
   public void setDeviceId(int deviceId) {
     this.deviceId = deviceId;
+    resyncAddress();
+  }
+
+  private void resyncAddress() {
+    if (signalProtocolAddressName == null) return;
+    this.signalProtocolAddress = com.amnesica.kryptey.inputmethod.signalprotocol.util
+        .ProtocolAddresses.of(signalProtocolAddressName, deviceId);
+    // of() folds the device id into libsignal's range; keep the scalar in step with it, or the two
+    // still disagree for any legacy value.
+    this.deviceId = this.signalProtocolAddress.getDeviceId();
   }
 
   public String getSignalProtocolAddressName() {
@@ -71,6 +100,7 @@ public class Contact {
 
   public void setSignalProtocolAddressName(String signalProtocolAddressName) {
     this.signalProtocolAddressName = signalProtocolAddressName;
+    resyncAddress();
   }
 
   public SignalProtocolAddress getSignalProtocolAddress() {
@@ -79,6 +109,10 @@ public class Contact {
 
   public void setSignalProtocolAddress(SignalProtocolAddress signalProtocolAddress) {
     this.signalProtocolAddress = signalProtocolAddress;
+    if (signalProtocolAddress != null) {
+      this.signalProtocolAddressName = signalProtocolAddress.getName();
+      this.deviceId = signalProtocolAddress.getDeviceId();
+    }
   }
 
   public boolean isVerified() {
