@@ -320,7 +320,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     });
   }
 
-  private void loadFingerprintInVerifyContactView() {
+  /** Package-visible so a test can drive the real verify screen rather than the pieces. */
+  void loadFingerprintInVerifyContactView() {
     if (chosenContact == null) return;
 
     createVerifyContactReturnButtonClickListener();
@@ -680,7 +681,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private static final int MAX_DISPLAY_NAME_CHARS = 96;
 
-  private boolean providedContactInformationIsValid(CharSequence firstName, CharSequence lastName) {
+  /** Package-visible so a test can drive the real validation rather than the predicate alone. */
+  boolean providedContactInformationIsValid(CharSequence firstName, CharSequence lastName) {
     if (firstName == null || firstName.length() == 0) {
       Toast.makeText(getContext(), INFO_ADD_FIRSTNAME_ADD_CONTACT, Toast.LENGTH_SHORT).show();
       return false;
@@ -1325,7 +1327,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
    *     move for an impersonation attempt, which at a pinned address is the only possibility.
    */
-  private boolean warnIfIdentityChanged(final Contact sender) {
+  /** Package-visible so a test can drive it; the warning it posts is the app's only lasting one. */
+  boolean warnIfIdentityChanged(final Contact sender) {
     if (sender == null) return false;
     if (!com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain
         .hasUnacceptedIdentityChange(sender.getSignalProtocolAddress())) {
