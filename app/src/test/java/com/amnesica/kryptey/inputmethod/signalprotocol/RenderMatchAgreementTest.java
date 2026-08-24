@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
@@ -93,6 +94,7 @@ public class RenderMatchAgreementTest {
   private List<String> sweepBmpAgainst(final String baseline) {
     final String baselineRender = rendered(baseline);
     final List<String> divergences = new ArrayList<>();
+    int renderedTheSame = 0;
 
     for (int cp = 1; cp <= 0xFFFF; cp++) {
       if (Character.isSurrogate((char) cp)) continue;
@@ -112,11 +114,23 @@ public class RenderMatchAgreementTest {
       // must match - otherwise an impostor's row is visually indistinguishable from the genuine
       // contact's and the warning never fires. A first version of this test asserted equivalence in
       // both directions and failed on fifteen confusables doing exactly what they are for.
+      if (rendersTheSame) renderedTheSame++;
+
       if (rendersTheSame && !matchesTheSame) {
         divergences.add(String.format("U+%04X renders as \"%s\" but does not match it",
             cp, baseline));
       }
     }
+
+    // How many candidates reached the interesting half of the predicate.
+    //
+    // The whole sweep hangs on rendersTheSame. A regression making the DISPLAY normaliser less
+    // aggressive - folding fewer characters away - makes it false everywhere, the divergence list
+    // comes back empty, and the test that exists to prove the two normalisers agree reports success
+    // having compared them nowhere.
+    assertTrue("no candidate rendered the same as \"" + baseline + "\", so the two normalisers "
+            + "were never actually compared - the display normaliser has stopped folding",
+        renderedTheSame > 10);
     return divergences;
   }
 
@@ -164,7 +178,14 @@ public class RenderMatchAgreementTest {
         divergences.isEmpty());
   }
 
-  /** A surrogate pair must survive both normalisers intact, not be split or dropped. */
+  /**
+   * A surrogate pair must survive both normalisers intact - not split, and not dropped.
+   *
+   * <p>The assertion used to be "no lone surrogate appears OR the code point is still there", and
+   * the first disjunct is true whenever the character was DROPPED entirely - so "not dropped", half
+   * of what the name promises, was never checked. It also only ran the display normaliser, while
+   * the class exists to compare that against the matching one.
+   */
   @Test
   public void surrogatePairsAreNotCorrupted() {
     seedBaseline(BASELINES[0]);
@@ -172,10 +193,35 @@ public class RenderMatchAgreementTest {
       final String name = "Bob" + new String(Character.toChars(cp)) + "Jones";
       final String label = rendered(name);
 
-      assertTrue("a lone surrogate must never appear in a rendered label for U+"
-              + Integer.toHexString(cp),
-          label.chars().noneMatch(c -> Character.isSurrogate((char) c))
-              || label.codePoints().anyMatch(c -> c == cp));
+      // UNPAIRED surrogates, not any surrogate: a valid supplementary character IS a surrogate
+      // pair in UTF-16, so "no char is a surrogate" is false for every correct rendering of one.
+      // My first attempt asserted exactly that and failed on U+1D400 rendering perfectly.
+      assertFalse("an unpaired surrogate reached the rendered label for U+"
+              + Integer.toHexString(cp) + ": \"" + label + "\"",
+          hasUnpairedSurrogate(label));
+
+      // Split and dropped are different failures and the old disjunct conflated them. A character
+      // NFKC maps to something else is fine; one that vanishes without a trace is not, because a
+      // name carrying it would then render as one the user has already seen.
+      final boolean survives = label.codePoints().anyMatch(c -> c == cp);
+      final boolean normalised = !label.equals("BobJones") && !label.equals(rendered("BobJones"));
+      assertTrue("U+" + Integer.toHexString(cp) + " vanished entirely from \"" + label
+              + "\" - it must survive, or be normalised to something, but not disappear",
+          survives || normalised);
     }
+  }
+
+  /** Whether any surrogate in the string is not part of a well-formed pair. */
+  private static boolean hasUnpairedSurrogate(final String text) {
+    for (int i = 0; i < text.length(); i++) {
+      final char c = text.charAt(i);
+      if (Character.isHighSurrogate(c)) {
+        if (i + 1 >= text.length() || !Character.isLowSurrogate(text.charAt(i + 1))) return true;
+        i++;   // consumed the pair
+      } else if (Character.isLowSurrogate(c)) {
+        return true;   // a low surrogate with no high before it
+      }
+    }
+    return false;
   }
 }
