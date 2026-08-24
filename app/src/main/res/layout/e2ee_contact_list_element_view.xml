@@ -44,11 +44,11 @@
     android:id="@+id/e2ee_contact_name_container"
     android:layout_width="0dp"
     android:layout_height="wrap_content"
-    android:layout_centerVertical="true"
+    android:layout_alignParentTop="true"
     android:layout_marginStart="10dp"
     android:layout_marginEnd="5dp"
     android:layout_toEndOf="@id/e2ee_verify_contact_unverified_button"
-    android:layout_toStartOf="@id/e2ee_contact_address_tag_element"
+    android:layout_toStartOf="@id/e2ee_contact_button_delete_contact"
     android:orientation="horizontal">
 
     <!--
@@ -62,6 +62,11 @@
       for the last name that was true only in the sense that it was truncated to nothing.
 
       Weights make the truncation visible in both, which is the property that was claimed.
+
+      A minEms floor was tried here and removed: reserving two characters for each view fixes a
+      long CJK first name starving the last name, and breaks the empty-last-name case, because the
+      floor is reserved whether or not the view holds anything. Trading one defect for another is
+      not a fix. What remains is recorded in REVIVAL.md.
 
       They are wrap_content rather than 0dp, which is the difference between weights distributing
       the LEFTOVER and weights dividing the whole column. At 0dp each view took exactly half
@@ -124,9 +129,9 @@
     style="?attr/e2eeStripContactListNameFieldStyle"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:layout_centerVertical="true"
+    android:layout_below="@id/e2ee_contact_name_container"
+    android:layout_alignStart="@id/e2ee_contact_name_container"
     android:layout_marginEnd="5dp"
-    android:layout_toStartOf="@id/e2ee_contact_button_delete_contact"
     android:maxLines="1"
     android:textSize="12sp" />
 

@@ -83,8 +83,16 @@ public class ContactRowLayoutTest {
     final String where = widthDp + "dp, name=\"" + first.substring(0, Math.min(12, first.length()))
         + "\"";
     assertTrue("the tag must have non-zero width at " + where, tag.getWidth() > 0);
-    assertTrue("the name container must end before the tag begins at " + where,
-        container.getRight() <= tag.getLeft());
+    // The tag sits BELOW the names now, not beside them, so the separation is vertical.
+    //
+    // This asserted "the name container must end before the tag begins" - a horizontal adjacency
+    // invariant. That was the right check while the two shared a line and a long name could
+    // overprint the tag in the same colour. It is meaningless once they are on separate lines, and
+    // keeping it would have blocked the change that actually fixed the thing it was protecting
+    // against: at 320dp and fontScale 2.0 the names had been squeezed to nothing at all.
+    assertTrue("the names must end before the tag begins at " + where + " - they must not overlap, "
+            + "whichever way round the layout puts them",
+        container.getBottom() <= tag.getTop());
     assertTrue("the tag must fit inside the row at " + where, tag.getRight() <= widthPx);
   }
 
@@ -476,5 +484,53 @@ public class ContactRowLayoutTest {
     final CharSequence text = view.getText();
     final int keep = Math.max(0, text.length() - cut);
     return text.subSequence(0, keep).toString();
+  }
+
+  /**
+   * Every name shows something, at every width and font scale in the grid.
+   *
+   * <p>This was recorded in REVIVAL.md as a deferred defect and could not be asserted before: at
+   * 320dp with fontScale 2.0 both name views measured narrower than the ellipsis glyph, so nothing
+   * was drawn at all - no characters, no "...". The rows stayed distinguishable by their tags, so
+   * the security property held, but a contact list showing no names is unusable, and fontScale 2.0
+   * is set by exactly the people who most need to read it.
+   *
+   * <p>The fix was structural: the tag moved onto its own line, which gives the names the full
+   * column instead of whatever the tag left them. Rows are taller - 55px instead of 40 at default
+   * scale - which is the trade this buys.
+   *
+   * <p>Non-ASCII is included deliberately. CJK advances are about twice Latin ones, so an
+   * ASCII-only sweep does not reach the cells where a column actually runs out; the earlier claim
+   * that every cell showed a character was measured over ASCII and was false for CJK.
+   */
+  @Test
+  public void everyNameShowsAtLeastOneCharacterEverywhere() {
+    // Ordinary names, including non-Latin scripts. NOT the pathological case of a ten-character
+    // CJK first name beside a last name at 320dp: CJK advances are about twice Latin ones, so the
+    // two weighted views run out of column before the last name gets a character, and no
+    // attribute fixes that without breaking the empty-last-name case. That limit is recorded in
+    // REVIVAL.md rather than asserted away here.
+    final String[][] names = {
+        {"Alice", "Smith"},
+        {"Maria del Carmen Fernandez", "Gonzalez"},
+        {"山田", "太郎"},
+        {"אליס", "שמית"},
+    };
+
+    for (final int widthDp : WIDTHS_DP) {
+      for (final float fontScale : FONT_SCALES) {
+        for (final String[] name : names) {
+          final String shown = renderedRow(widthDp, fontScale, name[0], name[1], "#ab12-cd34");
+          final String first = shown.substring(0, shown.indexOf('|'));
+          final String last = shown.substring(shown.indexOf('|') + 1, shown.lastIndexOf('|'));
+
+          assertTrue("the first name rendered nothing at " + widthDp + "dp, fontScale " + fontScale
+                  + " for \"" + escape(name[0]) + "\" - no characters and no ellipsis, so the row "
+                  + "says nothing about who it is", !first.isEmpty());
+          assertTrue("the last name rendered nothing at " + widthDp + "dp, fontScale " + fontScale
+                  + " for \"" + escape(name[1]) + "\"", !last.isEmpty());
+        }
+      }
+    }
   }
 }

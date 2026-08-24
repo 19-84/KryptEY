@@ -1787,6 +1787,25 @@ public class SignalProtocolMain {
     storageHelperFactory = factory;
   }
 
+  /**
+   * Drops the singleton's account and storage helper, for tests only.
+   *
+   * <p>This is a static singleton and the JVM is shared across test classes, so a class that ran
+   * earlier with a real context leaves a live {@code mStorageHelper} behind. The next class calling
+   * {@code initialize(null)} does NOT get a fresh identity: {@code initializeStorageHelper} returns
+   * early on a null context without clearing the field, so the stale helper answers
+   * {@code hasExistingProtocolData()} and initialize takes its reload branch instead - handing back
+   * a null account for reasons that have nothing to do with the test being run.
+   *
+   * <p>That has now produced two rounds of confusing failures. Making it explicit is cheaper than
+   * each test class discovering it again.
+   */
+  public static void resetForTest() {
+    sInstance.mStorageHelper = null;
+    sInstance.mAccount = null;
+    storageHelperFactory = null;
+  }
+
   // needed for testing only
   public Account getAccount() {
     return mAccount;

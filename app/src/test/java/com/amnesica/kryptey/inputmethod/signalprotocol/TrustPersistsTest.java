@@ -63,6 +63,11 @@ public class TrustPersistsTest {
 
   @Before
   public void setUp() throws Exception {
+    // Before anything else: a class that ran earlier with a real context leaves a live storage
+    // helper on this singleton, and initialize(null) then reloads that account instead of minting
+    // a fresh one - handing back null for reasons unrelated to this test.
+    SignalProtocolMain.resetForTest();
+
     context = RuntimeEnvironment.getApplication();
     final SharedPreferences preferences =
         context.getSharedPreferences("protocol", Context.MODE_PRIVATE);
@@ -105,7 +110,9 @@ public class TrustPersistsTest {
 
   @After
   public void tearDown() {
-    SignalProtocolMain.setStorageHelperFactoryForTest(null);
+    // Leave nothing behind for the next class, for the same reason setUp cannot trust what it
+    // inherited.
+    SignalProtocolMain.resetForTest();
   }
 
   /** Pins a peer and returns the contact, with everything persisted. */

@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 601 (600 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 602 (601 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -287,7 +287,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 601 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 602 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -504,18 +504,21 @@ negative control proving something still fails without it, or it does not go in.
   any value writes none of them. The torn state it prevented was the dangerous kind: every value
   individually well-formed, so reload could not detect that a new protocol store sat beside an old
   contact list.
-- **At 320dp with fontScale 2.0 the contact row shows no name at all** — both name views measure
-  narrower than the ellipsis glyph, so nothing is drawn: no characters, no `…`. The rows stay
-  distinguishable because the address tag is `wrap_content` and is never truncated
-  (`theTagIsNeverTruncatedAtAnyWidthOrFontScale`), which is what the tag exists for. So this is safe
-  under the stated property and still poor. Fixing it properly means wrapping the tag onto a second
-  line when the column is too narrow, which is a layout restructure rather than an attribute change.
-  This is not the only such cell: 360dp at fontScale 2.0 renders the last name as nothing for a
-  CJK name (`龘龘龘龘龘龘龘龘龘龘`), because CJK glyphs are about twice the advance of Latin ones. An
-  earlier version of this paragraph claimed every other cell in the
-  {320,360,411,480}dp × {1.0,1.15,1.3,1.5,2.0} grid showed at least one character of each name; that
-  was measured only over ASCII names and is false. What holds across the whole grid is the weaker
-  and actually-asserted property — the rows stay distinguishable, by tag where not by name.
+- ~~**At 320dp with fontScale 2.0 the contact row shows no name at all.**~~ Resolved. The tag moved
+  onto its own line, so the names get the full column instead of whatever the tag left them.
+  Measured, "Alice"/"Smith" now renders in full at every cell of the
+  {320,360,411,480}dp × {1.0,1.15,1.3,1.5,2.0} grid, where at 320dp/2.0 it previously drew nothing
+  at all — no characters, no ellipsis. Rows are taller: 55px instead of 40 at default scale, 97px at
+  fontScale 2.0. That is the trade, and it is worth it — fontScale 2.0 is set by the people who most
+  need to read the names.
+- **A long CJK first name still starves the last name at 320dp.** Ten CJK characters want about
+  twice the advance of ten Latin ones, so the two weighted name views run out of column before the
+  last name gets a single character. A `minEms` floor fixes it and breaks the empty-last-name case,
+  because the floor is reserved whether or not the view holds anything — trading one defect for
+  another. The real fix is probably to render the two fields as one ellipsised string, which is what
+  most contact lists do, but that changes the adapter and the sanitiser together and is not
+  something to do with reviews in flight. `everyNameShowsAtLeastOneCharacterEverywhere` covers
+  ordinary names in four scripts and deliberately excludes this case rather than asserting it away.
 - ~~`E2EEStripView` enables the *encrypt* button on detecting an encrypted message.~~ Resolved: it
   was a copy-paste slip, and inert — `setInfoTextViewMessage` fires a `TextWatcher` that enables
   both buttons for any info text other than `INFO_NO_CONTACT_CHOSEN`, so all three sibling
