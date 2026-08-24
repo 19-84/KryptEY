@@ -71,6 +71,14 @@ public class FairyTaleEncoder {
    * messages, which is a real cost to the steganographic variety this encoder exists for - but a
    * message that cannot be sent has no variety at all, and the pool only narrows near the cap.
    */
+  // Nothing here logs the payload.
+  //
+  // These lines printed the whole wire envelope, its minified form, and its complete bit string on
+  // every send and every decode. That is the ciphertext of every message the user has ever sent,
+  // written to logcat by an input method - readable over adb, captured in bug reports, and a
+  // correlation oracle for anyone who can read it even without breaking the encryption. They dated
+  // to the initial commit and survived twenty-four review rounds, including one that edited this
+  // very method to fix a decode bug and left the Log.d printing the ciphertext beside it.
   public static String encode(final String message, final Context context, final int maxChars)
       throws IOException {
     if (message == null) return null;
@@ -94,21 +102,15 @@ public class FairyTaleEncoder {
       throw new IOException("no decoy sentences loaded; cannot encode");
     }
 
-    Log.d(TAG, "message: " + message);
-    Log.d(TAG, "length message (bytes): " + message.getBytes().length);
 
     final String minifiedJson = EncodeHelper.minifyJSON(message);
-    Log.d(TAG, "minifiedJson message: " + minifiedJson);
 
     final byte[] compressedMessage = EncodeHelper.compressString(minifiedJson);
     final String decoySentence = pickDecoy(invisibleLengthOf(compressedMessage), maxChars);
     final String binaryMessage = EncodeHelper.convertByteArrayToBinary(compressedMessage);
 
-    Log.d(TAG, "binary message: " + binaryMessage);
-    Log.d(TAG, "binary message (bytes): " + binaryMessage.getBytes().length);
 
     final String invisibleMessage = EncodeHelper.convertBinaryToInvisibleString(binaryMessage);
-    Log.d(TAG, "length invisible message: " + invisibleMessage.length());
 
     return decoySentence + invisibleMessage;
   }
@@ -143,8 +145,6 @@ public class FairyTaleEncoder {
   public static String decode(final String encodedText) throws IOException {
     if (encodedText == null) return null;
     final String binary = EncodeHelper.convertInvisibleStringToBinary(encodedText);
-    Log.d(TAG, "binary message: " + binary);
-    Log.d(TAG, "length invisible message: " + binary.length());
     final byte[] compressedResult = EncodeHelper.convertBinaryToByteArray(binary);
     final String decompressedResult = EncodeHelper.decompressString(compressedResult);
     return EncodeHelper.deSimplifyJsonKeys(decompressedResult);

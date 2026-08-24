@@ -1304,7 +1304,7 @@ public class SignalProtocolMain {
     ArrayList<Contact> contacts = getContactListFromAccount();
     if (contacts == null) return;
 
-    Log.d(TAG, "Deleting contact from contact list: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
+    Log.d(TAG, "Deleting contact from contact list");
     ArrayList<Contact> newContacts = new ArrayList<>();
     for (Contact contact : contacts) {
       if (!contact.equals(contactToRemove)) {
@@ -1326,12 +1326,12 @@ public class SignalProtocolMain {
     mAccount.retireDisplayName(contactToRemove.getFirstName(), contactToRemove.getLastName(),
         contactToRemove.getSignalProtocolAddressName());
 
-    Log.d(TAG, "Deleting session for contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
+    Log.d(TAG, "Deleting session for contact");
     if (mAccount.getSignalProtocolStore().getSessionStore().containsSession(contactToRemove.getSignalProtocolAddress())) {
       mAccount.getSignalProtocolStore().getSessionStore().deleteSession(contactToRemove.getSignalProtocolAddress());
     }
 
-    Log.d(TAG, "Deleting unencrypted messages from contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
+    Log.d(TAG, "Deleting unencrypted messages for contact");
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 
     // Deliberately does NOT clear the pinned identity.

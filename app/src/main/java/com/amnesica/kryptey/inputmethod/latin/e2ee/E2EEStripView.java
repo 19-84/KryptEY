@@ -936,7 +936,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final CharSequence encryptedMessage;
       try {
         encryptedMessage = mE2EEStrip.encryptMessage(mInputEditText.getText().toString(), chosenContact.getSignalProtocolAddress(), encodingMethod);
-        Log.d(TAG, String.valueOf(encryptedMessage));
 
         if (encryptedMessage != null) {
           mInputEditText.setText(encryptedMessage);
@@ -1410,7 +1409,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     clearStandingWarning();   // the user chose this contact; they have seen whatever was on screen
     setChosenContact(contact);
     showChosenContactInMainInfoField();
-    Log.d(TAG, chosenContact.toString());
     showOnlyUIView(UIView.MAIN_VIEW);
   }
 
@@ -1425,7 +1423,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   public void verifyContact(Contact contact) {
     clearStandingWarning();   // going to compare the number is the deliberate response to a warning
     setChosenContact(contact);
-    Log.d(TAG, chosenContact.toString());
     loadFingerprintInVerifyContactView();
     showOnlyUIView(UIView.VERIFY_CONTACT_VIEW);
   }
