@@ -541,6 +541,13 @@ public class DuplicateContactNameTest {
   /**
    * A name must not be able to break a warning across lines.
    *
+   * <p>Asserted on the label string, not on a rendered banner. I tried the rendering route - inflate
+   * the info view under NATIVE graphics and count lines, the way the row layout is checked - and it
+   * does not discriminate: Java's {@code \s} already matches {@code \n} and {@code \r} so the
+   * whitespace collapse covers them either way, and Robolectric's line breaking does not break on
+   * U+2028/U+2029/U+0085, so the mutants survive a line-count assertion. A rendering test there
+   * would have been decorative, and a test that passes whatever the code does is worse than no test.
+   *
    * <p>The info views are {@code wrap_content} with no {@code maxLines}, and both name fields
    * declare {@code inputType="textMultiLine"} — so newlines are ordinary input, the length cap
    * counts them as ordinary characters, and twenty of them render
