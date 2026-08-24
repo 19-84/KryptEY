@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 481, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 484, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -275,7 +275,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 481 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 484 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -418,6 +418,30 @@ configure at all — while dozens of ticks reported a clean verified build.
 So a build claim needs a run from empty caches, not just a `clean` task. `scratchpad/build/verify-cold`
 does that: fresh volume, no warm `~/.gradle`, discarded afterwards. It takes a few minutes, which is
 the only reason to reach for the warm path at all.
+
+## The comment-drift problem, and why it has no test
+
+Nine review rounds found a security comment the code contradicts, several written in the very commit
+that introduced the behaviour they misdescribe. The failure is not ignorance — knowing about it has
+not reduced the rate — it is that a comment written at edit time is never re-read when the next edit
+invalidates it.
+
+I tried to make it mechanical: flag any javadoc naming a code point that the method it documents no
+longer references. It does not work, and the reason is worth keeping. Every citation it flagged in
+the current tree is legitimate — `normalizeForDisplay` names Cyrillic А and Greek Α to explain that
+NFKC does *not* fold them, and `rendersAsNothing` names U+3164 to say it is deliberately handled
+elsewhere. The detector cannot tell "cites as handled" from "cites as explicitly not handled", and
+that distinction is the whole property. Tuning the exemption list until it passed would have been
+fitting the test to the code.
+
+It did teach one thing before being deleted. Its first version read no files at all — Gradle runs
+unit tests with the working directory at the module, not the repository root, so every source path
+resolved to nothing and the test passed without checking anything. A file-count assertion turns that
+class of vacuity into a failure, and any test that reads paths from disk should carry one.
+
+So this stays a review-caught defect rather than a test-caught one. The honest mitigation is that the
+claims which *are* checkable have been turned into assertions — the fold rule, the layout invariant,
+the session version — so the comments increasingly point at tests rather than restate them.
 
 ## Known-deferred defects
 

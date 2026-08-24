@@ -101,4 +101,47 @@ public class KeyCandidateLadderTest {
       }
     }
   }
+
+  // ------------------------------------------------- what a pre-28 device may grant
+
+  /**
+   * On a device below API 28 a request for extra protections must be refused, not quietly ignored.
+   *
+   * <p>If it were ignored, the ladder's first rung would report success and the log would claim
+   * StrongBox and unlocked-device-required for a key that had neither - the worst outcome
+   * available, because it is indistinguishable from the good one. Refusing sends the ladder down to
+   * a candidate that is honest about what it is.
+   */
+  @Test
+  public void everyProtectedCandidateNeedsApi28() {
+    assertTrue("StrongBox needs API 28",
+        AndroidKeystoreCryptoBox.needsApi28(true, false));
+    assertTrue("unlocked-device-required needs API 28",
+        AndroidKeystoreCryptoBox.needsApi28(false, true));
+    assertTrue("and both together certainly do",
+        AndroidKeystoreCryptoBox.needsApi28(true, true));
+  }
+
+  /** The plain candidate must NOT need it, or a pre-28 device could never mint a key at all. */
+  @Test
+  public void theUnprotectedCandidateWorksBelowApi28() {
+    assertFalse("the last-resort rung has to be available on every supported device",
+        AndroidKeystoreCryptoBox.needsApi28(false, false));
+  }
+
+  /** Every rung of the ladder except the last needs API 28 - which is what makes it a ladder. */
+  @Test
+  public void onlyTheFinalRungSurvivesBelowApi28() {
+    final List<AndroidKeystoreCryptoBox.KeyCandidate> ladder =
+        AndroidKeystoreCryptoBox.candidateLadder(true);
+
+    int usable = 0;
+    for (final AndroidKeystoreCryptoBox.KeyCandidate candidate : ladder) {
+      if (!AndroidKeystoreCryptoBox.needsApi28(candidate.strongBox, candidate.requireUnlocked)) {
+        usable++;
+      }
+    }
+    assertEquals("exactly one rung may be usable below API 28, and it must be the weakest",
+        1, usable);
+  }
 }

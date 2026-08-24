@@ -177,12 +177,24 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       if (requireUnlocked) spec.setUnlockedDeviceRequired(true);
       if (strongBox) spec.setIsStrongBoxBacked(true);
-    } else if (strongBox || requireUnlocked) {
+    } else if (needsApi28(strongBox, requireUnlocked)) {
       throw new IllegalStateException("StrongBox / unlocked-device-required need API 28");
     }
 
     generator.init(spec.build());
     return generator.generateKey();
+  }
+
+  /**
+   * Whether this candidate asks for anything only API 28 can grant.
+   *
+   * <p>Extracted so the refusal can be tested. It has to be a refusal, not a silent downgrade: if a
+   * pre-28 device quietly produced a key without the protections requested, the ladder's first rung
+   * would report success and the log would claim StrongBox and unlocked-device-required for a key
+   * that had neither. Failing sends the ladder down to a candidate that is honest about what it is.
+   */
+  static boolean needsApi28(final boolean strongBox, final boolean requireUnlocked) {
+    return strongBox || requireUnlocked;
   }
 
   /**
