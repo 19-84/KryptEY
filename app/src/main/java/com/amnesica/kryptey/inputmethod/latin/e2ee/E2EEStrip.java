@@ -183,7 +183,11 @@ public class E2EEStrip {
   public boolean createSessionWithContact(Contact chosenContact, MessageEnvelope messageEnvelope, SignalProtocolAddress recipientProtocolAddress) {
     boolean successful = SignalProtocolMain.processPreKeyResponseMessage(messageEnvelope, recipientProtocolAddress);
     if (successful) {
-      Toast.makeText(mContext, "Session with " + chosenContact.getFirstName() + " " + chosenContact.getLastName() + " created", Toast.LENGTH_SHORT).show();
+      // Tagged like every other place a contact is named: a bare name here is one more surface
+      // where two contacts under one name are indistinguishable.
+      final String label = chosenContact.getFirstName() + " " + chosenContact.getLastName()
+          + (hasMoreThanOneContact() ? "  " + chosenContact.getAddressTag() : "");
+      Toast.makeText(mContext, "Session with " + label + " created", Toast.LENGTH_SHORT).show();
     } else if (SignalProtocolMain.hasUnacceptedIdentityChange(recipientProtocolAddress)) {
       // Distinguish this from a generic failure. A changed safety number means the contact
       // being impersonated - a reinstall arrives at a fresh address and cannot land here - and

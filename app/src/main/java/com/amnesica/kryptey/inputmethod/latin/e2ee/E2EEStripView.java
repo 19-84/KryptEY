@@ -388,7 +388,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void refreshContactInMessageInfoField() {
     if (mMessagesListInfoTextView == null) return;
     if (chosenContact != null) {
-      setInfoTextViewMessage(mMessagesListInfoTextView, "Message log with: " + chosenContact.getFirstName() + " " + chosenContact.getLastName());
+      setInfoTextViewMessage(mMessagesListInfoTextView, "Message log with: " + labelFor(chosenContact));
     } else {
       setInfoTextViewMessage(mMessagesListInfoTextView, INFO_MESSAGES_LIST_DEFAULT);
     }
@@ -589,7 +589,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         setInfoTextViewMessage(mInfoTextView,
             String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()));
       } else if (successful) {
-        setInfoTextViewMessage(mInfoTextView, "Contact " + chosenContact.getFirstName() + " " + chosenContact.getLastName() + " created. You can send messages now");
+        setInfoTextViewMessage(mInfoTextView, "Contact " + labelFor(chosenContact) + " created. You can send messages now");
       } else if (!warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
         // and this used to overwrite it with INFO_SESSION_CREATION_FAILED - the same delete-and-
