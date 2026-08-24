@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 366, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 369, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -238,6 +238,18 @@ well as the version byte), and every path out of it — bad base64, short envelo
 failed tag, even a null value — raises `StorageCryptoException`, which `canDecrypt` converts to
 false. The two expressions therefore agree on every input.
 
+*Sweep 3 — `EncodeHelper`, `FairyTaleEncoder`, `EnvelopeCodec`, `KeyUtil` (51 mutants, 14
+survivors).* Killed by new tests: both arms of the two `x == null || x.isEmpty()` guards in
+`EncodeHelper` (one of which exists to stop a crash that already shipped — copying any two-line
+message reached `new BigInteger("", 2)` and killed the IME process), the partial-group skip in
+`convertBinaryToInvisibleString`, the wire-size cap boundary, the one-time pre-key batch size, the
+`refreshSignedPreKeyIfNecessary` null guard, and the allocator's bounded search — weakening its
+`&&` to `||` turns a step-to-the-next-free-id into a full scan of the id space on the IME main
+thread. Recorded as equivalent: the group loop's own bound (the partial-group skip is the real
+bound, and the extra iteration it admits is immediately rejected), and the null guard inside the
+private `deleteOlderSignedPreKeysIfNecessary`, whose single caller already returns on null. The
+`FairyTaleEncoder` lazy-init survivors are not yet closed.
+
 *Sweep 2 — the pre-key/session stores and `StorageHelper` (88 mutants).* Clean through
 `KyberPreKeyStoreImpl`, `PreKeyStoreImpl`, `SignedPreKeyStoreImpl`, `SessionStoreImpl` and
 `PreKeyMetadataStoreImpl`. Two survivors in `StorageHelper`, both now killed: a partial read
@@ -256,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 366 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 369 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences

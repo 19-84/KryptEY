@@ -191,6 +191,11 @@ public class KeyUtil {
   }
 
   private static void deleteOlderSignedPreKeysIfNecessary(final SignalProtocolStoreImpl protocolStore, final PreKeyMetadataStore metadataStore) {
+    // Unreachable defensive guard, kept deliberately. This method is private with exactly one
+    // caller, refreshSignedPreKeyIfNecessary, which returns before reaching it if either store is
+    // null - so no test can distinguish this line from its absence, and mutation testing flags it
+    // as a survivor. Recorded here rather than removed: it costs nothing and a second caller would
+    // otherwise inherit the hazard silently.
     if (protocolStore == null || metadataStore == null) return;
 
     // Compare against the stored deletion *timestamp*, not against SIGNED_PRE_KEY_ARCHIVE_AGE.

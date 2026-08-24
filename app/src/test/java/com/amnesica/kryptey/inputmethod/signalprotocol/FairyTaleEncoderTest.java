@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import android.util.Log;
 
@@ -413,6 +414,44 @@ public class FairyTaleEncoderTest {
     assertNotNull(FairyTaleEncoder.mSentencesMap);
   }
 
+  /**
+   * Both stories must land in the decoy pool, not one on top of the other.
+   *
+   * <p>The extractor restarted its index at 0 for each text, so the second story overwrote the
+   * first's entries at the same keys and the map ended up holding roughly one story's worth —
+   * halving the decoy pool with no sign of it. {@code assertNotNull} on the map could not see that,
+   * which is why the mutation survived.
+   */
+  @Test
+  public void bothStoriesContributeToTheDecoyPool() {
+    FairyTaleEncoder.initForTest(rapunzelText, "");
+    final int rapunzelOnly = FairyTaleEncoder.mSentencesMap.size();
+    FairyTaleEncoder.initForTest("", cinderellaText);
+    final int cinderellaOnly = FairyTaleEncoder.mSentencesMap.size();
+
+    FairyTaleEncoder.initForTest(rapunzelText, cinderellaText);
+
+    assertTrue("neither story may be empty for this test to mean anything",
+        rapunzelOnly > 0 && cinderellaOnly > 0);
+    org.junit.Assert.assertEquals(
+        "both stories must be present; one must not overwrite the other",
+        rapunzelOnly + cinderellaOnly, FairyTaleEncoder.mSentencesMap.size());
+  }
+
+  /**
+   * And the pool must not grow across calls: the map is static, so an accumulating initForTest
+   * leaves one test's sentences visible to the next.
+   */
+  @Test
+  public void reinitialisingReplacesTheDecoyPoolRatherThanAddingToIt() {
+    FairyTaleEncoder.initForTest(rapunzelText, cinderellaText);
+    final int first = FairyTaleEncoder.mSentencesMap.size();
+    FairyTaleEncoder.initForTest(rapunzelText, cinderellaText);
+
+    org.junit.Assert.assertEquals("re-initialising must replace, not accumulate",
+        first, FairyTaleEncoder.mSentencesMap.size());
+  }
+
   @Test
   public void encodeDecodeTest() throws IOException {
     Log.d(TAG, "------------ encodeDecodeTest: ------------");
@@ -428,5 +467,27 @@ public class FairyTaleEncoderTest {
     String decodedMessage = FairyTaleEncoder.decode(encodedMessage);
     assertNotNull(decodedMessage);
     assertEquals(messageDeSimplified, decodedMessage);
+  }
+
+  /**
+   * With no decoy sentences loaded, encoding must fail as a checked {@code IOException}.
+   *
+   * <p>The decoy is picked with {@code Random.nextInt(mSentencesMap.size())}, which throws
+   * {@code IllegalArgumentException} for an empty map — unchecked, on the IME main thread, inside a
+   * clipboard callback where nothing catches it. The map is empty whenever init could not run: no
+   * context, or assets that failed to load. Callers already handle {@code IOException} here, so the
+   * difference is between an ordinary encode failure and a dead keyboard.
+   *
+   * <p>Found via a mutation survivor on the lazy-init guard: weakening it skipped initialisation and
+   * the suite stayed green, because no test ever reached the encoder with an empty map.
+   */
+  @org.junit.Test
+  public void encodingWithNoSentencesLoadedFailsCleanly() {
+    FairyTaleEncoder.initForTest("", "");
+
+    final java.io.IOException e = org.junit.Assert.assertThrows(
+        "an empty sentence map must not reach Random.nextInt(0)",
+        java.io.IOException.class, () -> FairyTaleEncoder.encode("hello", null));
+    org.junit.Assert.assertTrue(e.getMessage(), e.getMessage().contains("decoy"));
   }
 }
