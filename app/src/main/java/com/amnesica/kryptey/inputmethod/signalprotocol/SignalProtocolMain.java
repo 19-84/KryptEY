@@ -446,6 +446,33 @@ public class SignalProtocolMain {
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
 
+    // There must be a key to have verified.
+    //
+    // Placed AFTER updateContactInContactList so an unknown contact still raises
+    // UnknownContactException rather than being reported as an ordinary refusal - those are
+    // different failures and the caller renders them differently.
+    //
+    // Nothing here checked, so verifying a contact with no pinned identity set the badge, and
+    // isContactKeyTrustworthy then returned true - over a key nobody had compared, because there
+    // was no key. When the peer's bundle later arrived and trust-on-first-use pinned it, the
+    // contact was ALREADY green. A hostile messenger substituting that first bundle inherits a
+    // verified badge it never earned.
+    //
+    // The only thing preventing it was one runtime setEnabled(false) in the verify screen, in a
+    // different file, with no test: deleting both of those lines left the whole suite green, and
+    // the layout declares no android:enabled so the default is enabled. An invariant this class
+    // depends on has to be enforced by this class.
+    //
+    // The number the user compares is derived from the pinned key, so with no pin there is
+    // literally nothing on screen to have compared - getFingerprint returns null in that state.
+    if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .getIdentity(contact.getSignalProtocolAddress()) == null) {
+      Log.w(TAG, "Refusing to mark a contact verified with no pinned identity key");
+      contact.setVerified(false);
+      mAccount.updateContactInContactList(contact);
+      return false;
+    }
+
     // A fresh comparison is the only thing that retires a rejection warning. Nothing an attacker
     // can trigger clears it.
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()

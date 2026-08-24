@@ -173,6 +173,23 @@ public class ContactRowLayoutTest {
     assertTrue("nor a line separator: " + escape(shownLast),
         shownLast.indexOf((char) 0x000A) < 0);
     assertTrue("and the name itself must survive", shownFirst.contains("ecilA"));
+
+    // The tag, which nothing asserted. Every other test in this file sets the tag text ITSELF and
+    // then measures geometry, so replacing the adapter's setText with setText("") left the whole
+    // suite green - on the one surface the tag exists for. This file's own javadoc makes exactly
+    // this argument for the name ("a test that calls the sanitiser proves the sanitiser works; it
+    // says nothing about whether the row uses it") and did not apply it here.
+    final TextView tag = row.findViewById(R.id.e2ee_contact_address_tag_element);
+    final String shownTag = tag.getText().toString();
+
+    assertTrue("the adapter must put the address tag in the row - it is the only thing that "
+            + "distinguishes two contacts whose names a reader cannot tell apart, and it was \""
+            + shownTag + "\"",
+        shownTag.length() >= 8);
+    assertEquals("and it must be the tag for THIS contact, not some other row's",
+        com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.displayTagFor(
+            ((com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact) contacts.get(0))),
+        shownTag);
   }
 
   private static String escape(final String value) {
