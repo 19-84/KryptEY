@@ -725,6 +725,23 @@ public class SignalProtocolMain {
       i += Character.charCount(cp);
 
       if (rendersAsNothing(cp)) continue;
+      // Everything that has no glyph anywhere draws the SAME box, so it must fold to one value.
+      //
+      // This was a live substitution collision. Two invites, "Alice<U+0080>Smith" and
+      // "Alice<U+0081>Smith", at two different addresses: both rows read "Alice[]Smith" in
+      // pixel-identical ink, and no duplicate warning fired on the second because the two code
+      // points are distinct and neither is deleted. Measured, 8520 BMP code points render
+      // identically to "Alice<U+0080>Smith" - unassigned code points, private use, lone surrogates,
+      // C1, and the format characters no font has a glyph for.
+      //
+      // Every pixel sweep missed it for one structural reason: they all compare candidates against
+      // a single fixed baseline, so they test pairs of the form (baseline, baseline+X) and never
+      // (baseline+X, baseline+Y). The property being claimed is about pairs of names, and only one
+      // shape of pair was being generated.
+      if (rendersAsTofu(cp)) {
+        skeleton.append(TOFU);
+        continue;
+      }
       // Case-fold BEFORE mapping confusables. The two interact: uppercase I and lowercase l draw
       // the same stroke, so mapping I onto l ahead of case folding made "ALICE" fold to "allce"
       // while "Alice" folded to "alice" - the two most ordinary spellings of one name stopped
@@ -752,82 +769,100 @@ public class SignalProtocolMain {
    * fails a test rather than hiding. The explicit cases below are the ones no category expresses.
    */
   private static boolean rendersAsNothing(final int cp) {
-    // Format characters that actually DRAW something. Category Cf is not a promise of invisibility:
-    // the Arabic and Kaithi number signs are Cf and render as visible marks - measured, they leave
-    // ink where a truly ignorable character leaves none. Deleting them folds two names a reader can
-    // plainly tell apart onto one key, and a duplicate warning that fires on those teaches the user
-    // to dismiss it, which costs as much as never firing at all. Enumerable and decidable, unlike
-    // the homoglyph tail.
-    if ((cp >= 0x0600 && cp <= 0x0605) || cp == 0x06DD || cp == 0x070F || cp == 0x08E2
-        || cp == 0x110BD || cp == 0x110CD) {
-      return false;
-    }
-
-    // C1 (U+0080-U+009F) and U+007F are category Cc, but they are not invisible: measured, they
-    // paint a tofu box - ink 349, no glyph. The blanket CONTROL deletion below was folding 32 code
-    // points' worth of visibly different names onto one key. They stay.
+    // C1 (U+0080-U+009F) and U+007F are category Cc but are not invisible: they have no glyph, so
+    // they paint a notdef box. They are not deleted here - rendersAsTofu folds them instead.
     //
     // U+0085 never reaches here: it is a line separator by definition and is mapped to a space
     // earlier, a deliberate one-character over-fold, because a renderer that honours it would
     // break the banner in two.
     //
-    // C0 below U+0020 is still deleted by the CONTROL branch, and correctly: the ones that draw a
-    // gap became spaces before this point, and the two that reach here - U+0000 and U+0002 -
-    // measure zero ink AND zero advance.
-    if (cp >= 0x7F && cp <= 0x9F) {
-      return false;
-    }
+    // C0 below U+0020 IS deleted: the ones that draw a gap became spaces before this point, and the
+    // two that reach here - U+0000 and U+0002 - measure zero ink AND zero advance.
+    if (cp < 0x20) return true;
+    if (cp >= 0x7F && cp <= 0x9F) return false;
+
+    // Deletion is decided by Default_Ignorable_Code_Point, not by category Cf.
+    //
+    // It used to be "type == FORMAT || isIdentifierIgnorable", with a hand-written list of Cf
+    // characters to keep. That list was taken from a Unicode 13 view of the world and was 21 code
+    // points short: U+FFF9-FFFB and U+13430-1343F are Cf, are NOT default-ignorable, and were being
+    // deleted, while U+0890/U+0891 - Prepended_Concatenation_Marks, the same class as the
+    // U+0600-0605 the list did except - escaped only because this JDK's Character tables predate
+    // them and report UNASSIGNED.
+    //
+    // Default_Ignorable is the property the comment always claimed to be computing: Unicode
+    // subtracts exactly these characters from it so that a non-supporting renderer shows a fallback
+    // glyph rather than nothing. Deriving the rule from it closes the whole class at once instead
+    // of chasing the next range by hand, and stops the answer depending on how new the platform's
+    // Unicode tables happen to be.
+    return isDefaultIgnorable(cp);
+  }
+
+  /** The canonical stand-in for every code point that has no glyph. */
+  private static final char TOFU = '\uFFFF';
+
+  /**
+   * Whether a code point has no glyph in any font, and therefore draws the notdef box.
+   *
+   * <p>All of these render identically - measured, ink 349 and advance 21, the same box - so two
+   * names differing only in which one they contain are indistinguishable to a reader and must fold
+   * together. They are NOT deleted: a box is something the user can see, so a name containing one
+   * must still differ from a name without it.
+   *
+   * <p>Only font-independent members are listed. Unassigned code points, lone surrogates and C1 can
+   * never acquire a glyph. Private use is font-dependent in principle - a device with a matching
+   * icon font would draw something - and is included anyway, because folding it is the cry-wolf
+   * direction while leaving it out is the bypass direction, and 6400 BMP private-use code points is
+   * far too large a hole to leave open on that reasoning.
+   *
+   * <p>Format characters that are not default-ignorable are included for the same reason. Some of
+   * them do have glyphs (the Arabic number signs draw real marks), so folding them together
+   * over-folds by a few code points; the alternative is leaving U+FFF9-FFFB and U+13430-1343F -
+   * which have no glyph - able to carry a substitution.
+   */
+  private static boolean rendersAsTofu(final int cp) {
+    if (cp >= 0x7F && cp <= 0x9F) return true;
 
     final int type = Character.getType(cp);
-    // Not ENCLOSING_MARK: an Me mark draws a visible ring around the preceding character, so
-    // dropping it here contradicted this method's own name and quietly folded two names that look
-    // different. Removed after review pointed it out.
-    if (type == Character.FORMAT || type == Character.CONTROL
-        || Character.isIdentifierIgnorable(cp)) {
+    if (type == Character.UNASSIGNED || type == Character.PRIVATE_USE
+        || type == Character.SURROGATE) {
       return true;
     }
-    // Combining marks are deliberately NOT stripped wholesale. Doing so removes every vowel sign,
-    // nukta and virama in Indic and South-East Asian scripts, so रीता and रुत both reduce to रत and
-    // two unrelated Hindi names collide - firing a duplicate warning for a non-event. A control
-    // that cries wolf on ordinary names teaches the user to dismiss it, which costs more than the
-    // narrow spoofing case stripping them would have caught. UTS-39 does not remove matras either.
-    // Marks that are genuinely invisible are already covered by the ignorable checks above.
-    // Ranges first: variation selectors and the Mongolian free variation selectors are
-    // default-ignorable but are category Mn, which isIdentifierIgnorable does not cover. These are
-    // the cheapest dodge of all - one appended character in the invite text the user copies.
-    if ((cp >= 0xFE00 && cp <= 0xFE0F)        // VARIATION SELECTOR-1..16
-        || (cp >= 0xE0100 && cp <= 0xE01EF)   // VARIATION SELECTOR-17..256
-        || (cp >= 0x180B && cp <= 0x180F)) {  // Mongolian FVS
+    return type == Character.FORMAT && !isDefaultIgnorable(cp);
+  }
+
+  /**
+   * Unicode's Default_Ignorable_Code_Point, which the JDK does not expose.
+   *
+   * <p>{@code Character.isIdentifierIgnorable} is not the same property and does not cover the
+   * variation selectors, which are the cheapest dodge of all - one appended character in the invite
+   * text the user copies.
+   */
+  private static boolean isDefaultIgnorable(final int cp) {
+    // Exclusions first: Unicode explicitly subtracts these from the property so a renderer without
+    // support for them shows a fallback glyph instead of nothing.
+    if (cp >= 0xFFF9 && cp <= 0xFFFB) return false;              // interlinear annotation
+    if (cp >= 0x13430 && cp <= 0x1343F) return false;            // Egyptian format controls
+    if ((cp >= 0x0600 && cp <= 0x0605) || cp == 0x06DD || cp == 0x070F || cp == 0x0890
+        || cp == 0x0891 || cp == 0x08E2 || cp == 0x110BD || cp == 0x110CD) {
+      return false;                                              // prepended concatenation marks
+    }
+    if (Character.isSpaceChar(cp)) return false;
+
+    if (Character.getType(cp) == Character.FORMAT) return true;
+
+    // Other_Default_Ignorable_Code_Point.
+    if (cp == 0x034F || (cp >= 0x115F && cp <= 0x1160) || (cp >= 0x17B4 && cp <= 0x17B5)
+        || cp == 0x2065 || cp == 0x3164 || cp == 0xFFA0 || (cp >= 0xFFF0 && cp <= 0xFFF8)
+        || cp == 0xE0000 || (cp >= 0xE0002 && cp <= 0xE001F)
+        || (cp >= 0xE0080 && cp <= 0xE00FF) || (cp >= 0xE01F0 && cp <= 0xE0FFF)) {
       return true;
     }
-    // Unassigned code points that Unicode reserves as Default_Ignorable.
-    //
-    // Character.getType reports these as UNASSIGNED, so none of the category checks above sees
-    // them - but the property is deliberate and the shaper hides them regardless of font, so they
-    // draw literally nothing on every Android device. Appending one to a name made the row render
-    // pixel-identically while folding differently, which is a silent impersonation aid.
-    //
-    // Worth being clear that this is not another homoglyph gap. Homoglyph coverage is open-ended
-    // and a judgement call; "renders as nothing" is a closed, decidable Unicode property that this
-    // method exists to compute, and these six ranges are the whole of what it was missing.
-    if (cp == 0x2065
-        || (cp >= 0xFFF0 && cp <= 0xFFF8)
-        || cp == 0xE0000
-        || (cp >= 0xE0002 && cp <= 0xE001F)
-        || (cp >= 0xE0080 && cp <= 0xE00FF)
-        || (cp >= 0xE01F0 && cp <= 0xE0FFF)) {
-      return true;
-    }
-    switch (cp) {
-      case 0x034F:   // COMBINING GRAPHEME JOINER - draws nothing, category Mn
-      case 0x17B4: case 0x17B5:  // Khmer inherent vowels, invisible
-      // Not U+3000 IDEOGRAPHIC SPACE: NFKC runs first and maps it to an ordinary space, so this
-      // never saw it - and it draws a 1em blank rather than nothing, which is the same
-      // miscategorisation as the enclosing marks removed above.
-        return true;
-      default:
-        return false;
-    }
+
+    // Variation selectors, including the Mongolian free variation selectors, which are category Mn
+    // and so are missed by every category-based test.
+    return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF)
+        || (cp >= 0x180B && cp <= 0x180D) || cp == 0x180F;
   }
 
   /**

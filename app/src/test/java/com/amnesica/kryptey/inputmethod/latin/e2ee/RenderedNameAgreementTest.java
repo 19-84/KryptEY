@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.graphics.Bitmap;
@@ -20,6 +21,7 @@ import org.robolectric.annotation.GraphicsMode;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -400,15 +402,16 @@ public class RenderedNameAgreementTest {
       0x0085, "NEXT LINE - line separator, folded to a space deliberately",
       0x2028, "LINE SEPARATOR - folded to a space deliberately",
       0x2029, "PARAGRAPH SEPARATOR - folded to a space deliberately",
-      // Artefacts. These are Default_Ignorable or interlinear-annotation format characters that
-      // conforming fonts render as nothing; deleting them is correct. The Robolectric font simply
-      // has no support for them and falls back to tofu, so they measure as ink here and nowhere a
-      // user would see. Unlike C1, which is unassigned to any glyph in every font, these have a
-      // defined invisible rendering.
-      0x180F, "MONGOLIAN FREE VARIATION SELECTOR FOUR - default-ignorable, tofu in the test font",
-      0xFFF9, "INTERLINEAR ANNOTATION ANCHOR - format character, tofu in the test font",
-      0xFFFA, "INTERLINEAR ANNOTATION SEPARATOR - format character, tofu in the test font",
-      0xFFFB, "INTERLINEAR ANNOTATION TERMINATOR - format character, tofu in the test font");
+      // Artefact. U+180F is genuinely Default_Ignorable, so a conforming renderer draws nothing
+      // and deleting it is correct; the Robolectric font has no support for it and falls back to
+      // tofu, so it measures as ink here and nowhere a user would see.
+      //
+      // U+FFF9-FFFB were listed here too, with the reason "these have a defined invisible
+      // rendering". That was false - Unicode explicitly SUBTRACTS the interlinear annotation
+      // characters from Default_Ignorable precisely so a non-supporting renderer shows a fallback
+      // glyph. They are no longer deleted, so they no longer need excepting, and the exception was
+      // doing what the canRender filter used to do for C1: keeping a wrong answer out of view.
+      0x180F, "MONGOLIAN FREE VARIATION SELECTOR FOUR - default-ignorable, tofu in the test font");
 
   /**
    * The other direction: a character the user can SEE must not be folded away.
@@ -467,5 +470,113 @@ public class RenderedNameAgreementTest {
             + (overFolded.size() > 25
                 ? "\n  ... and " + (overFolded.size() - 25) + " more" : ""),
         overFolded.isEmpty());
+  }
+
+  /**
+   * A compact fingerprint of a rendering. Keying the map on the pixel array itself exhausts the
+   * heap at 65536 entries; SHA-256 is small, and a collision here would have to be a preimage
+   * attack on the test rather than an accident.
+   */
+  private static String digestOf(final int[] pixels) {
+    try {
+      final java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(pixels.length * 4);
+      for (final int pixel : pixels) buffer.putInt(pixel);
+      return java.util.Base64.getEncoder().encodeToString(
+          java.security.MessageDigest.getInstance("SHA-256").digest(buffer.array()));
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new AssertionError(e);
+    }
+  }
+
+  /**
+   * Every code point with no glyph paints the SAME notdef box, so they must all fold to one key.
+   *
+   * <p>This is the pair-shaped property no other sweep in this file tests. All the others compare
+   * candidates against one fixed baseline, generating pairs of the form (baseline, baseline+X) and
+   * never (baseline+X, baseline+Y) - and the claim being made is about pairs of names in general.
+   *
+   * <p>What that hid: measured, 8520 BMP code points render pixel-identically to
+   * "Alice&lt;U+0080&gt;Smith". A hostile messenger issues two invites, "Alice&lt;U+0080&gt;Smith" and
+   * "Alice&lt;U+0081&gt;Smith", at two addresses. Both rows read "Alice[]Smith" in identical ink, and
+   * no duplicate warning fired on the second because the code points are distinct and neither is
+   * deleted. Two invites rather than one, so it is not a plain-name impersonation - but it was live,
+   * and nothing in the suite could see it.
+   *
+   * <p>Scope, stated rather than implied - twice over.
+   *
+   * <p>First, the class here is the font-INDEPENDENT one: unassigned code points, private use, lone
+   * surrogates, C1, and format characters that are not default-ignorable. Those can never acquire a
+   * glyph on any device. "Has no glyph in the Robolectric font" is a different and much larger set -
+   * it includes U+0560 Armenian, U+05EF Hebrew, U+07FD NKo, U+0860 Syriac and hundreds more, which
+   * are perfectly ordinary letters on a device carrying the font for their script. Folding those
+   * would be an over-fold everywhere the script is actually supported, so the residual is real and
+   * irreducible: on a device missing a script's font, two names in that script are boxes either way.
+   *
+   * <p>Second, running the general form of this property - group every rendering by pixels, require
+   * each pixel-class to be one fold class - fails on pairs like U+0048 LATIN CAPITAL H and U+0397
+   * GREEK CAPITAL ETA. That is the homoglyph tail: open-ended, a judgement call, deliberately out of
+   * scope, and mitigated by the keyed address tag (REVIVAL.md records why).
+   */
+  @Test
+  public void everyGlyphlessCodePointFoldsToTheSameKey() {
+    Integer representative = null;
+    final List<String> violations = new ArrayList<>();
+    int paintingTheBox = 0;
+
+    for (int cp = 0; cp <= 0xFFFF; cp++) {
+      if (Character.isSurrogate((char) cp)) continue;
+      if (!hasNoGlyphAnywhere(cp)) continue;
+      if (OVER_FOLD_EXCEPTIONS.containsKey(cp)) continue;
+
+      // Measured, not imported: some code points in the class above are reserved by Unicode as
+      // default-ignorable even though the JDK reports them UNASSIGNED (U+2065, U+FFF0-FFF8). The
+      // shaper hides those rather than drawing a box, so they are deleted by the fold, not folded
+      // to the box. Filtering on measured ink separates the two without this test having to
+      // restate the production rule and agree with it by construction.
+      final String ch = String.valueOf((char) cp);
+      if (inkPixels(ch) == 0) continue;
+      paintingTheBox++;
+
+      if (representative == null) {
+        representative = cp;
+        continue;
+      }
+
+      final String other = "Bob" + (char) (int) representative + "Jones";
+      if (!SignalProtocolMain.hasContactWithSameDisplayName(
+          "Bob" + (char) cp + "Jones", "", elsewhere2(other))) {
+        violations.add(String.format("U+%04X is in the glyphless class with U+%04X but folds "
+            + "differently", cp, representative));
+      }
+    }
+
+    assertNotNull("no glyphless code point was found, so this proved nothing", representative);
+    assertTrue("the class must actually paint boxes in this font, or it is not the class this "
+            + "test thinks it is", paintingTheBox > 1000);
+    assertTrue("code points that paint the identical notdef box folded to different keys, so no "
+            + "duplicate warning fires between two names a reader cannot tell apart:\n  "
+            + String.join("\n  ", violations.subList(0, Math.min(20, violations.size())))
+            + (violations.size() > 20
+                ? "\n  ... and " + (violations.size() - 20) + " more" : ""),
+        violations.isEmpty());
+  }
+
+  /**
+   * The font-independent glyphless class, derived here rather than imported from the production
+   * code so the two can disagree. Default-ignorable format characters are excluded: they render as
+   * nothing rather than as a box, and are deleted by the fold, not folded to the box.
+   */
+  private static boolean hasNoGlyphAnywhere(final int cp) {
+    if (cp >= 0x7F && cp <= 0x9F) return true;
+    final int type = Character.getType(cp);
+    if (type == Character.UNASSIGNED || type == Character.PRIVATE_USE
+        || type == Character.SURROGATE) {
+      return true;
+    }
+    // Format characters Unicode subtracts from Default_Ignorable so a renderer shows a fallback.
+    return type == Character.FORMAT
+        && ((cp >= 0xFFF9 && cp <= 0xFFFB)
+            || (cp >= 0x0600 && cp <= 0x0605) || cp == 0x06DD || cp == 0x070F
+            || cp == 0x0890 || cp == 0x0891 || cp == 0x08E2);
   }
 }
