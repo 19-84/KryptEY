@@ -65,8 +65,63 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
     }
   }
 
+  /**
+   * The device-dependent operations {@link #resolve} needs, behind a seam.
+   *
+   * <p>Every one of these requires an Android Keystore, which needs hardware or a KVM runner, so
+   * for as long as they were called directly the DECISIONS around them could not be executed by any
+   * test either. The decisions are the security-critical part: refusing to generate a replacement
+   * key when ciphertext already exists, walking the ladder strongest-first, and clearing a
+   * half-created alias before the next attempt. This does not pretend the Keystore calls themselves
+   * are tested - it stops them from making everything around them untestable too.
+   */
+  interface KeystoreOps {
+    /** The existing master key, or null if the alias is absent. */
+    SecretKey load() throws StorageCryptoException;
+
+    boolean isDeviceSecure();
+
+    SecretKey generate(boolean strongBox, boolean requireUnlocked) throws Exception;
+
+    /** Must exercise the same seal/open path production uses. */
+    void selfTest(SecretKey candidate) throws Exception;
+
+    void deleteAlias();
+  }
+
   private SecretKey resolve() throws StorageCryptoException {
-    final SecretKey existing = load();
+    return resolve(new KeystoreOps() {
+      @Override
+      public SecretKey load() throws StorageCryptoException {
+        return AndroidKeystoreCryptoBox.this.load();
+      }
+
+      @Override
+      public boolean isDeviceSecure() {
+        return AndroidKeystoreCryptoBox.this.isDeviceSecure();
+      }
+
+      @Override
+      public SecretKey generate(final boolean strongBox, final boolean requireUnlocked)
+          throws Exception {
+        return AndroidKeystoreCryptoBox.this.generate(strongBox, requireUnlocked);
+      }
+
+      @Override
+      public void selfTest(final SecretKey candidate) throws Exception {
+        selfTestViaRealCallPath(candidate);
+      }
+
+      @Override
+      public void deleteAlias() {
+        AndroidKeystoreCryptoBox.this.deleteAlias();
+      }
+    }, hasExistingData);
+  }
+
+  static SecretKey resolve(final KeystoreOps ops, final boolean hasExistingData)
+      throws StorageCryptoException {
+    final SecretKey existing = ops.load();
     if (existing != null) return existing;
 
     // The alias is gone but ciphertext remains. This is the dangerous case: silently generating a
@@ -79,24 +134,22 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
               + "replacement key that could not decrypt it");
     }
 
-    final boolean deviceSecure = isDeviceSecure();
+    final boolean deviceSecure = ops.isDeviceSecure();
     StorageCryptoException last = null;
     for (final KeyCandidate candidate1 : candidateLadder(deviceSecure)) {
-      {
-        final boolean requireUnlocked = candidate1.requireUnlocked;
-        final boolean strongBox = candidate1.strongBox;
-        try {
-          final SecretKey candidate = generate(strongBox, requireUnlocked);
-          selfTestViaRealCallPath(candidate);
-          Log.i(TAG, "master key created (strongBox=" + strongBox
-              + ", unlockedDeviceRequired=" + requireUnlocked + ")");
-          return candidate;
-        } catch (Exception e) {
-          last = new StorageCryptoException("key candidate rejected (strongBox=" + strongBox
-              + ", unlockedDeviceRequired=" + requireUnlocked + ")", e);
-          // A half-created alias would shadow the next attempt, so clear it before retrying.
-          deleteAlias();
-        }
+      final boolean requireUnlocked = candidate1.requireUnlocked;
+      final boolean strongBox = candidate1.strongBox;
+      try {
+        final SecretKey candidate = ops.generate(strongBox, requireUnlocked);
+        ops.selfTest(candidate);
+        Log.i(TAG, "master key created (strongBox=" + strongBox
+            + ", unlockedDeviceRequired=" + requireUnlocked + ")");
+        return candidate;
+      } catch (Exception e) {
+        last = new StorageCryptoException("key candidate rejected (strongBox=" + strongBox
+            + ", unlockedDeviceRequired=" + requireUnlocked + ")", e);
+        // A half-created alias would shadow the next attempt, so clear it before retrying.
+        ops.deleteAlias();
       }
     }
     throw new StorageCryptoException("no usable Keystore configuration on this device", last);

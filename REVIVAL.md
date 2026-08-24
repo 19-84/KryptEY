@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 546, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 556, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -287,7 +287,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 546 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 556 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -296,7 +296,8 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Reasoned but NOT verified:**
 
-- `AndroidKeystoreCryptoBox` is executed by **zero** tests. 11 instrumentation tests are written and
+- `AndroidKeystoreCryptoBox`'s Keystore CALLS are executed by zero JVM tests; its key-resolution
+  DECISIONS now are (`KeyResolutionTest`, 10 tests, via a `KeystoreOps` seam). 11 instrumentation tests are written and
   compile, but need hardware or a KVM runner. This includes the `CALLER_NONCE_PROHIBITED` fix — an
   Android Keystore key rejects a caller-supplied IV, so `seal()` would have thrown on every call on
   every real device while all JVM crypto tests passed. That fix is sound in principle and untested
