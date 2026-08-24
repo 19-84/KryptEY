@@ -320,6 +320,51 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     });
   }
 
+  /**
+   * Whether anything on screen must not appear in a screenshot or screen recording.
+   *
+   * <p>Every screen this strip shows holds something the messenger is not supposed to have: the
+   * main view holds decrypted plaintext in its input field, the message list holds the entire
+   * decrypted conversation, the verify screen holds the safety-number digits a user is about to
+   * compare, and the contact list holds who they talk to and the tags that distinguish them.
+   *
+   * <p>An app whose whole premise is that the messenger cannot read the message should not paint
+   * the message into a capturable window. Nothing in this project had ever set {@code FLAG_SECURE}
+   * - there was not one occurrence in the source - and the E2EE surface is not an Activity but a
+   * view inlined into the IME, so it never inherited one from anywhere either.
+   *
+   * <p>The flag is applied only while one of these is up, rather than for the keyboard's whole
+   * life, so ordinary typing in other apps still screenshots normally. That is a product judgement
+   * as much as a security one and it is stated here rather than buried.
+   */
+  boolean isShowingSensitiveContent() {
+    return isUp(mLayoutE2EEMessagesListView)
+        || isUp(mLayoutE2EEVerifyContactView)
+        || isUp(mLayoutE2EEContactListView)
+        || (isUp(mLayoutE2EEMainView) && mInputEditText != null
+            && mInputEditText.getText().length() > 0);
+  }
+
+  private static boolean isUp(final View view) {
+    return view != null && view.getVisibility() == VISIBLE;
+  }
+
+  /** Tells the IME whether the window should carry FLAG_SECURE right now. */
+  private void notifySensitiveVisibility() {
+    if (mListener != null) {
+      mListener.onSensitiveContentVisibilityChanged(isShowingSensitiveContent());
+    }
+  }
+
+  /** Screen switches, for tests that drive the real showOnlyUIView rather than the visibilities. */
+  void showMessagesListForTest() { showOnlyUIView(UIView.MESSAGES_LIST_VIEW); }
+
+  void showContactListForTest() { showOnlyUIView(UIView.CONTACT_LIST_VIEW); }
+
+  void showMainViewForTest() { showOnlyUIView(UIView.MAIN_VIEW); }
+
+  void showVerifyContactForTest(final Contact contact) { verifyContact(contact); }
+
   /** Package-visible so a test can drive the real verify screen rather than the pieces. */
   void loadFingerprintInVerifyContactView() {
     if (chosenContact == null) return;
@@ -977,6 +1022,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mLayoutE2EEMainView == null || mLayoutE2EEAddContactView == null ||
         mLayoutE2EEContactListView == null || mLayoutE2EEMessagesListView == null)
       return;
+    try {
+      showOnlyUIViewInternal(uiView);
+    } finally {
+      notifySensitiveVisibility();
+    }
+  }
+
+  private void showOnlyUIViewInternal(final UIView uiView) {
 
     if (uiView.equals(UIView.MAIN_VIEW)) {
       mLayoutE2EEMainView.setVisibility(VISIBLE);
@@ -1452,5 +1505,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   public interface Listener {
     void onTextInput(final String rawText);
+
+    /**
+     * The strip is now showing, or has stopped showing, content that must not be captured.
+     *
+     * <p>The strip cannot set window flags itself - it is a view inside the IME's input view, and
+     * the window belongs to {@code LatinIME}. This is how the decision reaches it.
+     */
+    default void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
   }
 }

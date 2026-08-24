@@ -229,4 +229,45 @@ public class StripGuardsTest {
             + infoField().getText(),
         infoField().getText().toString().contains("Bob"));
   }
+
+  /**
+   * Every screen holding plaintext, a conversation, safety numbers or contact identities must be
+   * marked as not-for-capture.
+   *
+   * <p>Nothing in this project had ever set {@code FLAG_SECURE} - not one occurrence in the whole
+   * source tree - and the E2EE surface is a view inlined into the IME rather than an Activity, so
+   * it never inherited one either. For an app whose premise is that the messenger cannot read the
+   * message, painting the message into a screen-recordable window undoes the property at the last
+   * step.
+   *
+   * <p>This tests WHICH screens count, which is the decision. Whether the window flag then behaves
+   * is a device question and is stated as unverified where it is applied.
+   */
+  @Test
+  public void everySensitiveScreenIsMarkedForProtection() {
+    strip.showMessagesListForTest();
+    assertTrue("the chat log holds the whole decrypted conversation",
+        strip.isShowingSensitiveContent());
+
+    strip.showVerifyContactForTest(bob());
+    assertTrue("the verify screen holds the digits the user is about to compare by voice",
+        strip.isShowingSensitiveContent());
+
+    strip.showContactListForTest();
+    assertTrue("the contact list holds who the user talks to, and the tags telling them apart",
+        strip.isShowingSensitiveContent());
+  }
+
+  /** And a main view with decrypted text in it counts; an empty one does not. */
+  @Test
+  public void themainViewCountsOnlyWhileItHoldsSomething() {
+    strip.showMainViewForTest();
+    assertFalse("an empty compose field is not sensitive - and marking it so would block "
+            + "screenshots of ordinary typing for no gain", strip.isShowingSensitiveContent());
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_input_field))
+        .setText("meet me at the safe house");
+    assertTrue("a decrypted message in the field is exactly what must not be captured",
+        strip.isShowingSensitiveContent());
+  }
 }

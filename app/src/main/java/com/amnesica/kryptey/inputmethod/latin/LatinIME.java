@@ -40,6 +40,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup.LayoutParams;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 
 import com.amnesica.kryptey.inputmethod.R;
@@ -566,6 +567,32 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     super.onWindowShown();
     if (isInputViewShown())
       setNavigationBarColor();
+  }
+
+  /**
+   * Applies or clears {@code FLAG_SECURE} as the E2EE strip shows or hides sensitive content.
+   *
+   * <p>The decrypted message, the whole chat log, the safety-number digits and the contact list all
+   * render inside this window, and nothing in this project had ever set the flag - there was not
+   * one occurrence in the source. The E2EE surface is a view inlined into the IME rather than an
+   * Activity, so it never inherited the flag from anywhere either.
+   *
+   * <p>Applied only while such a screen is up, not for the keyboard's whole life, so ordinary
+   * typing elsewhere still screenshots normally.
+   *
+   * <p>NOT verified on hardware. Window flags on an IME window behave differently across vendors
+   * and nothing in this environment can run the keyboard; this is the one change in the branch that
+   * most needs a device before it is trusted.
+   */
+  @Override
+  public void onSensitiveContentVisibilityChanged(final boolean sensitive) {
+    final android.app.Dialog dialog = getWindow();
+    if (dialog == null || dialog.getWindow() == null) return;
+    if (sensitive) {
+      dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+    } else {
+      dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+    }
   }
 
   @Override

@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 657 (656 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 386
+**Tests: 31 → 659 (658 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 386
 artifacts by SHA-256.
 
 ---
@@ -315,7 +315,7 @@ whole control exists to avoid.
 
 **Verified by execution:**
 
-- 657 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 659 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -541,6 +541,22 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## Not verified on hardware, and most needing it
+
+`FLAG_SECURE` is applied to the IME window while the strip shows decrypted plaintext, the chat log,
+the verify screen or the contact list. Window flags on an IME window behave differently across
+vendors, and nothing in this environment can run the keyboard — so *which* screens are protected is
+tested and *whether the flag takes effect* is not. Of everything in this branch, this is the change
+that most needs a device before it is trusted.
+
+The wider point stands on its own: there was not one occurrence of `FLAG_SECURE` in the source. The
+E2EE surface is a view inlined into the IME rather than an Activity, so it never inherited one, and
+an app whose premise is that the messenger cannot read the message was painting the message into a
+screen-recordable window. Whether it should be a user setting, as Signal makes it, is a product
+decision nobody had made — because nobody had been in that file.
 
 ---
 
