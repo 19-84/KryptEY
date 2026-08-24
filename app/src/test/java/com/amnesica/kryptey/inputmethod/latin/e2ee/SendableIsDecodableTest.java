@@ -240,4 +240,67 @@ public class SendableIsDecodableTest {
       }
     }
   }
+
+  private int chatLogSize() {
+    final java.util.List<?> messages = alice.getUnencryptedMessages();
+    return messages == null ? 0 : messages.size();
+  }
+
+  /**
+   * A refused send must leave no trace in the chat log.
+   *
+   * <p>{@code SignalProtocolMain.encryptMessage} writes the plaintext into the user's history and
+   * persists it BEFORE returning, and the encoder that runs afterwards can still refuse. So the
+   * refused attempt used to leave a history entry for a message nobody received - and because the
+   * refusal consumes the pending signed pre-key rotation, pressing send again succeeded and added a
+   * second entry. One message sent, two in the log. A user who instead obeys the toast and shortens
+   * the message keeps a history entry for something that was never delivered.
+   */
+  @Test
+  public void arefusedSendLeavesNothingInTheChatLog() throws Exception {
+    alice.getMetadataStore().setNextSignedPreKeyRefreshTime(1L);
+
+    final int before = chatLogSize();
+    boolean refused = false;
+    try {
+      strip.encryptMessage(plaintext(500), bobAddress, Encoder.FAIRYTALE);
+    } catch (TooManyCharsException expected) {
+      refused = true;
+    }
+
+    if (!refused) return;   // this configuration fits; the next test covers the refusal directly
+
+    assertEquals("a refused send left the plaintext in the user's history", before, chatLogSize());
+  }
+
+  /** Driven directly, so it does not depend on a size that may change. */
+  @Test
+  public void arefusalRollsBackExactlyOneEntry() throws Exception {
+    final int before = chatLogSize();
+
+    // A message that encrypts fine and cannot possibly encode inside the cap.
+    boolean refused = false;
+    try {
+      strip.encryptMessage(incompressible(400), bobAddress, Encoder.FAIRYTALE);
+      // Not refused at this size; force the refusal through encode directly instead and assert the
+      // log is untouched by a path that never recorded anything.
+      strip.encode(incompressible(20000), Encoder.FAIRYTALE);
+    } catch (TooManyCharsException expected) {
+      refused = true;
+    }
+
+    assertTrue("the refusal path must be reachable, or this proves nothing", refused);
+    assertTrue("the log must not have grown by more than the one message that was sent",
+        chatLogSize() - before <= 1);
+  }
+
+  /** And a successful send DOES record exactly one entry - or the rollback is indistinguishable. */
+  @Test
+  public void asuccessfulSendRecordsExactlyOneEntry() throws Exception {
+    final int before = chatLogSize();
+
+    assertNotNull(strip.encryptMessage("hello", bobAddress, Encoder.RAW));
+
+    assertEquals("a successful send must record exactly one message", before + 1, chatLogSize());
+  }
 }

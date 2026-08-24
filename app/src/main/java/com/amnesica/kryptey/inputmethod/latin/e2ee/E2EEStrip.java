@@ -60,21 +60,31 @@ public class E2EEStrip {
   // comment on INFO_IDENTITY_CHANGED_EXISTING in E2EEStripView.
   private final String INFO_IDENTITY_CHANGED = "Someone offered a different key for %s. It was refused and is not in use. Open them in your contact list and compare the number with them by voice before sending anything.";
 
-  // Constants, not per-instance state, and visible so a test can relate them to
-  // MAX_DECODABLE_CHARS. The send side counts UTF-8 bytes of plaintext wire text; the receive side
-  // counts characters of encoded text. Nothing else connects the two, and the FairyTale encoder
-  // expands by about 1.57x, so they can drift apart silently - see SendAndReceiveLimitsTest.
+  // Constants, not per-instance state, and visible so a test can pin them.
+  //
+  // These count the USER'S PLAINTEXT. An earlier version of this comment said "UTF-8 bytes of
+  // plaintext wire text", which is wrong by six to eleven times: what travels is the wire envelope,
+  // measured 3068 characters for a 500-byte message and 5372 with a rotation-attached bundle. The
+  // commit that identified that sentence as false deleted the test whose javadoc repeated it and
+  // left the copy here, which is how it survived.
+  //
+  // Nothing here relates to MAX_DECODABLE_CHARS. What connects the two is the check in encode(),
+  // which is the only place the encoded value exists - see SendableIsDecodableTest.
   public static final int CHAR_THRESHOLD_RAW = 500;
   public static final int CHAR_THRESHOLD_FAIRYTALE = 500;
 
   /**
    * Separate, much larger limit for a key bundle.
    *
-   * <p>A PQXDH bundle is irreducibly large: a Kyber-1024 public key is 1568 bytes, and the whole
-   * base64 envelope measures 3352 characters (see {@code PreKeyBundleSizeTest}, which measures it
-   * rather than estimating). High-entropy key material does not compress, so this cannot be tuned
-   * down — it is the cost of the post-quantum handshake. Under the old 500-character limit no user
-   * could send an invite at all.
+   * <p>A PQXDH bundle is irreducibly large: a Kyber-1024 public key is 1568 bytes, and the base64
+   * wire envelope measures 2484 characters (see {@code PreKeyBundleSizeTest}). High-entropy key
+   * material does not compress, so this cannot be tuned down — it is the cost of the post-quantum
+   * handshake. Under the old 500-character limit no user could send an invite at all.
+   *
+   * <p>This said 3352 characters, which matched nothing. The number came from an era when the wire
+   * format was JSON, and the test cited alongside it was measuring {@code JsonUtil.toJson} - a
+   * representation the app has not sent since Phase 3 - so the one guard on invite size was
+   * checking a format nothing produces.
    *
    * <p>4096 is chosen to clear the measured size with headroom while still fitting the per-message
    * limit of the messengers this keyboard is used with (Telegram 4096, WhatsApp and Signal far
@@ -93,7 +103,21 @@ public class E2EEStrip {
     checkMessageLengthForEncodingMethod(unencryptedMessage, encoder, false);
     final MessageEnvelope messageEnvelope = SignalProtocolMain.encryptMessage(unencryptedMessage, signalProtocolAddress);
     if (messageEnvelope == null) return null;
-    return encode(EnvelopeCodec.toWire(messageEnvelope), encoder);
+
+    // encryptMessage has already written the plaintext into the user's history and persisted it.
+    // The encoder can still refuse - a message can encode past what the recipient will decode - so
+    // without this the refused attempt leaves a history entry for a message nobody received, and
+    // pressing send again adds a second. Measured before this: one message sent, two in the log.
+    //
+    // The check belongs in encode(), which is the only place the encoded value exists; the ordering
+    // has to be repaired here, where both halves are visible.
+    try {
+      return encode(EnvelopeCodec.toWire(messageEnvelope), encoder);
+    } catch (IOException refused) {
+      SignalProtocolMain.discardRecordedMessage(signalProtocolAddress,
+          java.time.Instant.ofEpochMilli(messageEnvelope.getTimestamp()));
+      throw refused;
+    }
   }
 
   CharSequence decryptMessage(final MessageEnvelope messageEnvelope, final Contact sender) {
@@ -299,9 +323,20 @@ public class E2EEStrip {
    *
    * <p>The send side caps a message at {@link #CHAR_THRESHOLD_RAW} and a key bundle at
    * {@link #CHAR_THRESHOLD_PRE_KEY_RESPONSE}, so anything materially larger did not come from a
-   * peer. The cap matters because the FairyTale path feeds an unbounded {@code InflaterOutputStream}:
-   * a ~390 KB clipboard payload inflates to 64 MB, on the IME main thread, inside a system clipboard
-   * callback — and {@code OutOfMemoryError} is an {@code Error}, so nothing on that path catches it.
+   * peer.
+   *
+   * <p>This is the ONLY bound on the work done before decompression. {@code decodeMessage} runs on
+   * every clipboard change, and converting the payload to a bit string allocates several characters
+   * per input character - so a large enough paste exhausts memory before the inflate is reached,
+   * and {@code OutOfMemoryError} is an {@code Error} that neither this method's
+   * {@code catch (RuntimeException)} nor the clipboard listener's {@code catch (Exception)} stops.
+   * {@code DecodeInputCapTest} covers it; it previously had no test at all.
+   *
+   * <p>The reason this used to give - "the FairyTale path feeds an unbounded
+   * {@code InflaterOutputStream}: a ~390 KB payload inflates to 64 MB" - is no longer true.
+   * {@code decompressString} has had an output budget since the compression-bomb fix and uses no
+   * such stream. Naming a dead reason is worse than naming none: it is why the live one went
+   * unnoticed and this constant went untested.
    */
   public static final int MAX_DECODABLE_CHARS = 8192;
 

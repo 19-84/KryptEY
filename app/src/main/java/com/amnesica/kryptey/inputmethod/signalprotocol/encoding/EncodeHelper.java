@@ -250,8 +250,11 @@ public class EncodeHelper {
    * <p>Whatever comes out of here has to be a wire envelope, and {@code EnvelopeCodec} refuses
    * anything longer than {@link EnvelopeCodec#MAX_WIRE_CHARS}. So output past that point cannot be
    * a message under any circumstances - it can only be an attempt to exhaust memory - and there is
-   * no legitimate payload this rejects. Doubled once for the UTF-8/UTF-16 slack so the bound is on
-   * the codec's terms rather than a coincidence of encoding.
+   * no legitimate payload this rejects.
+   *
+   * <p>Doubled purely as headroom. An earlier version of this sentence said "for the UTF-8/UTF-16
+   * slack", which is not a thing that applies here: what comes out is base64 ASCII, one byte per
+   * character. The factor is fine; the reason given for it was invented.
    */
   static final int MAX_DECOMPRESSED_BYTES = 2 * EnvelopeCodec.MAX_WIRE_CHARS;
 

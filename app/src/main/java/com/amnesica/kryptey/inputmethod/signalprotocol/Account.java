@@ -13,6 +13,7 @@ import org.signal.libsignal.protocol.SignalProtocolAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.time.Instant;
 
 public class Account {
 
@@ -133,6 +134,27 @@ public class Account {
     if (mUnencryptedMessages == null)
       throw new RuntimeException("Error: UnencryptedMessage could not be saved. mUnencryptedMessages is null");
     mUnencryptedMessages.add(storageMessage);
+  }
+
+  /**
+   * Remove one message this account sent, identified by recipient and exact timestamp.
+   *
+   * <p>Exists so a send that was refused after the plaintext had already been recorded can be
+   * undone. Matching on the timestamp rather than removing "the last" entry matters: a message from
+   * the contact can arrive between the two, and removing that instead would delete something the
+   * user actually received.
+   */
+  public boolean removeUnencryptedMessage(final String recipientUUID, final Instant timestamp) {
+    if (mUnencryptedMessages == null || recipientUUID == null || timestamp == null) return false;
+    for (int i = mUnencryptedMessages.size() - 1; i >= 0; i--) {
+      final StorageMessage candidate = mUnencryptedMessages.get(i);
+      if (recipientUUID.equals(candidate.getRecipientUUID())
+          && timestamp.equals(candidate.getTimestamp())) {
+        mUnencryptedMessages.remove(i);
+        return true;
+      }
+    }
+    return false;
   }
 
   public void removeAllUnencryptedMessages(Contact contact) {

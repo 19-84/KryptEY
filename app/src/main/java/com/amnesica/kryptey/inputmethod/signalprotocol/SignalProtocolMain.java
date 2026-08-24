@@ -1474,6 +1474,31 @@ public class SignalProtocolMain {
     recipient.ifPresent(contact -> account.addUnencryptedMessage(contact, storageMessage));
   }
 
+  /**
+   * Undo the chat-log entry written by a send that was never handed to the messenger.
+   *
+   * <p>{@code encryptMessage} records the plaintext in the user's history and persists it before
+   * returning, and the encoder that runs afterwards can still refuse - a message can encode past
+   * what the recipient will decode. The refused attempt therefore left a history entry for a
+   * message nobody received, and pressing send again added a second one. Measured: one message
+   * sent, two in the log.
+   *
+   * <p>Keyed on the exact envelope timestamp rather than "the last one", so a message that arrived
+   * in between cannot be removed by mistake.
+   *
+   * @return whether an entry was found and removed
+   */
+  public static boolean discardRecordedMessage(final SignalProtocolAddress signalProtocolAddress,
+                                               final Instant timestamp) {
+    if (sInstance.mAccount == null || signalProtocolAddress == null || timestamp == null) {
+      return false;
+    }
+    final boolean removed = sInstance.mAccount.removeUnencryptedMessage(
+        signalProtocolAddress.getName(), timestamp);
+    if (removed) sInstance.storeAllAccountInformationInSharedPreferences();
+    return removed;
+  }
+
   private boolean sessionExists(SignalProtocolAddress signalProtocolAddress) {
     return mAccount.getSignalProtocolStore().containsSession(signalProtocolAddress);
   }
