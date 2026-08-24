@@ -428,9 +428,21 @@ so regenerating the metadata cannot record them and every warm build passes rega
 they are pinned. Two such artifacts were missing for the whole revival, and a fresh clone could not
 configure at all — while dozens of ticks reported a clean verified build.
 
-So a build claim needs a run from empty caches, not just a `clean` task. `scratchpad/build/verify-cold`
-does that: fresh volume, no warm `~/.gradle`, discarded afterwards. It takes a few minutes, which is
-the only reason to reach for the warm path at all.
+So a build claim needs a run from empty caches, not just a `clean` task. `tools/verify-cold` does
+that: fresh volume, no warm `~/.gradle`, discarded afterwards. It takes a few minutes, which is the
+only reason to reach for the warm path at all.
+
+The environment itself is now in `tools/` and versioned with the code — it previously lived only in
+a scratch directory, so this section pointed at something that was not part of the repository and
+every reviewer had to be handed its location out of band. `tools/README.md` records what is pinned
+and why. The image also installs build-tools 36.0.0, which AGP actually selects; it previously
+carried only 35.0.0, and everyone working here relabelled a copy of the 35.0.0 directory to get
+past it — which worked, and meant nobody was building with the tools AGP chooses.
+
+Last cold verification: `assembleDebug` from an empty cache, BUILD SUCCESSFUL, zero verification
+failures across all 387 pinned components. Every declared dependency is at its latest stable
+release; Robolectric's only newer version is a beta, which is not appropriate for the harness that
+decides whether the security tests measure anything.
 
 ## The comment-drift problem, and why it has no test
 
