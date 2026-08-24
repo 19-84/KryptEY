@@ -88,7 +88,10 @@
     column on a 320dp screen - "Alice Smith" rendered as "Alice ..." - and nothing at all at font
     scale 2.0, where the column computed negative. Priority (tag over name) is right, but "a
     truncated name is visibly truncated" stops being true when there is no room for any of it.
-    Trimmed to 10dp a side and the tag to 12sp.
+    Trimmed to 10dp on the END side and the tag to 12sp. Note the START side is still 30dp, on the
+    verify buttons above - so the name column begins at 65dp (30 + 25 + 10), not 35dp. Reclaiming
+    that would widen the name column by another 20dp, which matters most at 320dp and large font
+    scales where it is around 57dp.
 
     Anchored here, and with BOTH name views inside a container bounded by it, the tag always
     renders and the names are what get ellipsised. That is the right way round: a truncated name is

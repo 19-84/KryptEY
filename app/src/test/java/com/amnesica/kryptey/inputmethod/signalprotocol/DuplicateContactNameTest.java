@@ -608,4 +608,60 @@ public class DuplicateContactNameTest {
     assertEquals("", SignalProtocolMain.sanitizeForBanner(null));
     assertEquals("Bob Jones", SignalProtocolMain.sanitizeForBanner("  Bob   Jones  "));
   }
+
+  /**
+   * What is RENDERED and what is MATCHED must agree about line separators.
+   *
+   * <p>They diverged, and the divergence was the bug. The display path maps a newline to a space so
+   * a name cannot break a banner across lines; the matching path deleted the same characters as
+   * "invisible". So "Bob" + LF + "Jones" rendered as "Bob Jones" - identical to a contact of that
+   * name - while folding to "bobjones", which does not match "bob jones". The duplicate-name
+   * warning therefore stayed silent for nine characters, with no homoglyph and nothing to grind.
+   *
+   * <p>The adjacent space family was always handled correctly, because NFKC folds U+00A0 and
+   * U+2003 to an ordinary space before the whitespace collapse. Only the separators the display path
+   * had started rewriting were wrong.
+   */
+  @Test
+  public void namesThatRenderTheSameMatchTheSameAcrossLineSeparators() {
+    addAs("Bob", "Jones", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    final int[] separators = {
+        0x000A, 0x000D, 0x0085, 0x2028, 0x2029, 0x0009, 0x000B, 0x000C, 0x1680,
+    };
+    for (final int cp : separators) {
+      final String split = "Bob" + ((char) cp) + "Jones";
+      assertTrue(String.format("U+%04X renders as a space but did not match", cp),
+          SignalProtocolMain.hasContactWithSameDisplayName(split, "", elsewhere));
+    }
+  }
+
+  /** The space family too, which was already correct - kept so a regression there is visible. */
+  @Test
+  public void namesDifferingOnlyBySpaceCharactersMatch() {
+    addAs("Bob", "Jones", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    for (final int cp : new int[] {0x0020, 0x00A0, 0x2003, 0x2002, 0x3000}) {
+      final String spaced = "Bob" + ((char) cp) + "Jones";
+      assertTrue(String.format("U+%04X should fold to an ordinary space", cp),
+          SignalProtocolMain.hasContactWithSameDisplayName(spaced, "", elsewhere));
+    }
+  }
+
+  /** And the rendered label for such a name is byte-identical to the genuine one. */
+  @Test
+  public void aSplitNameRendersIdenticallyToTheGenuineOne() {
+    final Contact genuine = addAs("Bob", "Jones", realAlice);
+    final Contact split = addAs("Bob" + ((char) 0x000A) + "Jones", "", attacker);
+
+    final String genuineLabel = SignalProtocolMain.displayLabelFor(genuine);
+    final String splitLabel = SignalProtocolMain.displayLabelFor(split);
+
+    assertEquals("the names must render identically - that is why matching has to agree",
+        genuineLabel.substring(0, genuineLabel.indexOf('#')),
+        splitLabel.substring(0, splitLabel.indexOf('#')));
+    assertNotEquals("and only the tag may tell them apart", genuineLabel, splitLabel);
+  }
 }

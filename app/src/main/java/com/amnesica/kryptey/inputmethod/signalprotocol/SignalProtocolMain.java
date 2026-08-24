@@ -626,7 +626,25 @@ public class SignalProtocolMain {
   private static String normalizeForDisplay(final String value) {
     if (value == null) return "";
 
-    final String normalized = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC);
+    // Line separators become a SPACE here, exactly as the display path does - not dropped.
+    //
+    // The two paths diverged and that divergence was itself the bug. sanitizeForInlineDisplay maps
+    // \n \r U+0085 U+2028 U+2029 to a space so a name cannot break a banner; this path deleted the
+    // same characters as "invisible". So "Bob<LF>Jones" RENDERED as "Bob Jones", identical to a
+    // contact of that name, while folding to "bobjones" - which does not match "bob jones", so the
+    // duplicate-name warning stayed silent. Nine characters, no homoglyphs, no cap to beat.
+    //
+    // The space family was always right (NFKC folds U+00A0, U+2003 and friends to U+0020 before the
+    // whitespace collapse below). It was only the separators the display path had started treating
+    // differently. Matching what is rendered is the invariant; anything else is a gap by
+    // construction.
+    final String separatorsAsSpaces = value
+        .replace('\n', ' ').replace('\r', ' ')
+        .replace('\u0085', ' ').replace('\u2028', ' ').replace('\u2029', ' ')
+        .replace('\u000B', ' ').replace('\f', ' ').replace('\t', ' ')
+        .replace('\u1680', ' ');
+    final String normalized =
+        java.text.Normalizer.normalize(separatorsAsSpaces, java.text.Normalizer.Form.NFKC);
     final StringBuilder skeleton = new StringBuilder(normalized.length());
     for (int i = 0; i < normalized.length(); ) {
       final int cp = normalized.codePointAt(i);

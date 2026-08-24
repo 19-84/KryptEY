@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 435, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 438, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -268,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 435 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 438 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -343,11 +343,14 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
      The tag is now an HMAC under a per-install secret. There is nothing to aim at, which in turn
      lets it be short enough to read end to end — and the bits a person actually compares are the
      only ones that were ever protecting anyone.
-   - **A name cannot attack the tag it sits beside.** Names are capped in length and may not contain
-     `#`. Unbounded names pushed the tag out of its row entirely (the view is `wrap_content` with
-     only a start constraint, so it measures zero width and silently does not render — and an
-     untagged row reads as the ordinary one); a `#` in the name let an attacker's invite text
-     supply a counterfeit tag in the same field, same style, same size.
+   - **A name cannot attack the tag it sits beside.** Names may not contain `#`, which stopped an
+     attacker's invite text supplying a counterfeit tag in the same field, same style, same size.
+     They are also length-capped, but **the cap is not what protects the tag** and an earlier version
+     of this bullet said it was. A cap counts characters while the layout consumes width, so eleven
+     EM SPACEs beat any cap on any device. What protects the tag is the layout: it has its own view
+     anchored to the row's end, with both name views inside a container bounded by it, so the name
+     ellipsises and the tag always renders. That invariant is asserted by a test that measures the
+     rendered row, because it was got wrong twice and neither time could the suite see it.
    - **One address is one identity.** Adding a second contact at an address already in use is
      refused outright — an exact check on the address rather than a name heuristic, so it cannot be
      dodged. It has to refuse rather than warn: `updateContactInContactList` matches by address and
@@ -358,8 +361,11 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
      missing warning. The tag is a pure function of the address, so it now renders whenever there is
      more than one contact. Folding gaps are inevitable — homoglyphs are open-ended — and this is
      what keeps each one partial.
-   - **The tag renders where the user acts**, not only on the contact-list row: the "Detected
-     contact" banner and the standing "Chosen contact" label both carry it when a name is shared.
+   - **The tag renders where the user acts**, not only on the contact-list row: every surface that
+     names a contact goes through one label builder, so the set is checkable rather than a claim.
+     It is shown whenever the account holds any contact — deliberately *not* gated on whether a name
+     is shared, which is the same structural error as gating it on the folding, and an earlier
+     version of this bullet described the gated behaviour.
 **Safety numbers were bound to the peer-supplied address name**, which is covered by neither the
    bundle signatures nor the message MAC. A messenger that rewrites that field consistently in both
    directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a
