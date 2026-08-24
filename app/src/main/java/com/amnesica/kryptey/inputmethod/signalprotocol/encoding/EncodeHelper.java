@@ -4,7 +4,6 @@ import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,14 +33,49 @@ public class EncodeHelper {
   }
 
   public static byte[] convertBinaryToByteArray(String binary) {
-    // BigInteger("", 2) throws NumberFormatException, which is unchecked. Ordinary multi-line text
+    // An empty bit string throws below rather than being decoded as zero bytes. Ordinary multi-line text
     // reaches here: decodeMessage routes anything containing a \p{C} character - including a plain
     // newline or tab - to the FairyTale decoder, and text with no zero-width characters yields an
     // empty bit string. Copying any two-line message therefore killed the IME process.
     if (binary == null || binary.isEmpty()) {
       throw new IllegalArgumentException("no encoded bits present");
     }
-    return new BigInteger(binary, 2).toByteArray();
+
+    // Byte by byte, NOT via BigInteger.
+    //
+    // This used to be new BigInteger(binary, 2).toByteArray(), which is arithmetic where the job is
+    // transport. BigInteger is signed, so it corrupted the payload in both directions:
+    //
+    //   - first byte >= 0x80: toByteArray() prepends a 0x00 sign byte, handing Inflater one byte
+    //     more than was compressed. Measured, "{\"hello\":\"world\"}" compresses to 19 bytes and
+    //     came back as 20, and decode died with ZipException: invalid stored block lengths.
+    //   - leading 0x00 bytes: they are not significant digits of an integer, so they are dropped
+    //     and the payload comes back short.
+    //
+    // The first byte of a DEFLATE stream is >= 0x80 for a large share of inputs, so roughly half of
+    // all FAIRYTALE-encoded messages could not be decoded by the recipient. It survived every test
+    // because the one round-trip fixture in the suite happens to compress to a first byte under
+    // 0x80 - the bug is a property of the message, and only ever one message was tried.
+    //
+    // convertByteArrayToBinary writes exactly 8 padded bits per byte, so the inverse is exact and
+    // needs no sign handling at all.
+    if (binary.length() % 8 != 0) {
+      throw new IllegalArgumentException(
+          "encoded bits are not a whole number of bytes: " + binary.length());
+    }
+    final byte[] bytes = new byte[binary.length() / 8];
+    for (int i = 0; i < bytes.length; i++) {
+      int value = 0;
+      for (int bit = 0; bit < 8; bit++) {
+        final char c = binary.charAt(i * 8 + bit);
+        if (c != '0' && c != '1') {
+          throw new IllegalArgumentException("not a bit at index " + (i * 8 + bit) + ": " + c);
+        }
+        value = (value << 1) | (c - '0');
+      }
+      bytes[i] = (byte) value;
+    }
+    return bytes;
   }
 
   public static String convertInvisibleStringToBinary(String encodedMessage) {

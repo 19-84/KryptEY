@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 489, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 504, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -254,8 +254,18 @@ message reached `new BigInteger("", 2)` and killed the IME process), the partial
 `&&` to `||` turns a step-to-the-next-free-id into a full scan of the id space on the IME main
 thread. Recorded as equivalent: the group loop's own bound (the partial-group skip is the real
 bound, and the extra iteration it admits is immediately rejected), and the null guard inside the
-private `deleteOlderSignedPreKeysIfNecessary`, whose single caller already returns on null. The
-`FairyTaleEncoder` lazy-init survivors are not yet closed.
+private `deleteOlderSignedPreKeysIfNecessary`, whose single caller already returns on null. Both `FairyTaleEncoder` lazy-init survivors are now closed, and closing them found a
+shipped defect. The deferral said the context arm "can only be exercised with a real Android
+Context and the string assets behind it, which needs an instrumentation run" - that was
+assumed, not measured. `init` calls `context.getResources().getString(R.string.e2ee_rapunzel)`,
+and Robolectric serves string resources from the real `strings.xml`. Writing the test took one
+file, and the first run failed with `ZipException: invalid stored block lengths`:
+`convertBinaryToByteArray` was `new BigInteger(binary, 2).toByteArray()`, which prepends a
+0x00 sign byte whenever the leading byte is >= 0x80 and drops leading zero bytes in the other
+direction. The first byte of a DEFLATE stream is >= 0x80 for a large share of inputs, so
+roughly half of all FAIRYTALE-encoded messages could not be decoded by the recipient. It
+survived every sweep because the suite had one round-trip fixture and the bug is a property of
+the message, not the encoder.
 
 *Sweep 2 — the pre-key/session stores and `StorageHelper` (88 mutants).* Clean through
 `KyberPreKeyStoreImpl`, `PreKeyStoreImpl`, `SignedPreKeyStoreImpl`, `SessionStoreImpl` and
@@ -275,7 +285,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 489 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 504 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
