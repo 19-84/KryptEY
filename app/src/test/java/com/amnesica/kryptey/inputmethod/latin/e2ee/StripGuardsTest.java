@@ -13,6 +13,8 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
+import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 
 import org.junit.Before;
@@ -22,6 +24,10 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
+
+import java.time.Instant;
 import java.util.ArrayList;
 
 /**
@@ -39,6 +45,7 @@ public class StripGuardsTest {
   private Account victim;
   private SignalProtocolAddress peerAddress;
   private String attackerBundle;
+  private String peerBundle;
 
   @Before
   public void setUp() throws Exception {
@@ -51,7 +58,7 @@ public class StripGuardsTest {
     final Account peer = SignalProtocolMain.getInstance().getAccount();
     peerAddress = ProtocolAddresses.of(peer.getSignalProtocolAddress().getName(),
         peer.getDeviceId());
-    final String peerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    peerBundle = SignalProtocolMain.exportOwnKeyBundle();
 
     SignalProtocolMain.initialize(null);
     attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
@@ -313,5 +320,172 @@ public class StripGuardsTest {
     strip.setHostFieldIsPassword(false);
 
     assertTrue("the refusal must not be sticky", strip.actionsAreAvailable());
+  }
+
+  /**
+   * The whole decrypted conversation must not survive the keyboard being dismissed.
+   *
+   * <p>Clearing the compose field left the chat-log screen visible and its adapter populated with
+   * every decrypted message. The IME view is not recreated when the user switches apps, so the full
+   * history was still on screen the next time the keyboard rose, in whatever app that was.
+   * {@code FLAG_SECURE} stops a screenshot of that; it does nothing about the person next to you.
+   */
+  @Test
+  public void thechatLogDoesNotSurviveTheKeyboardBeingHidden() {
+    victim.addUnencryptedMessage(bob(), new StorageMessage(
+        peerAddress.getName(), peerAddress.getName(),
+        victim.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
+        "the plaintext that must not outlive the keyboard"));
+
+    strip.selectContact(bob());
+    // The button the user presses, not a test-only door - the load happens on the click.
+    assertTrue(strip.findViewById(R.id.e2ee_button_chat_logs).performClick());
+
+    final android.widget.ListView list = strip.findViewById(R.id.e2ee_messages_list);
+    assertNotNull("the chat-log list must exist", list);
+    assertTrue("the log must actually be populated, or this test proves nothing",
+        list.getAdapter() != null && list.getAdapter().getCount() > 0);
+
+    strip.clearDecryptedContent();
+
+    assertFalse("the chat log must not still be on screen",
+        strip.isShowingSensitiveContent());
+    assertTrue("and its contents must be gone, not merely hidden one press away",
+        list.getAdapter() == null || list.getAdapter().getCount() == 0);
+  }
+
+  /**
+   * The identity-change warning must STAND, driven through the real production writer.
+   *
+   * <p>{@code asubstitutionIsWarnedAboutOnScreen} checks the banner appears. It does not check the
+   * warning is marked as standing - and replacing {@code setWarningMessage} with a plain
+   * {@code setInfoTextViewMessage} in {@code warnIfIdentityChanged} survived the whole suite,
+   * because the standing behaviour was only ever exercised through the test-only door. A test that
+   * goes in by the side entrance proves the side entrance works.
+   */
+  @Test
+  public void thesubstitutionWarningStandsAgainstClipboardTraffic() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+    final String warned = infoField().getText().toString();
+
+    strip.onClipboardChangedForTest();
+
+    assertEquals("the warning posted by warnIfIdentityChanged must survive the messenger's next "
+        + "post - erasing it costs the attacker one extra message", warned,
+        infoField().getText().toString());
+  }
+
+  /** And a failed paste must not erase it either - that is one ordinary chat line. */
+  @Test
+  public void anundecodablePasteDoesNotEraseTheWarning() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+    final String warned = infoField().getText().toString();
+
+    strip.resetChosenContactAndInfoTextForTest();
+
+    assertEquals("a paste that fails to decode must not clear a security warning", warned,
+        infoField().getText().toString());
+  }
+
+  /**
+   * The post-rejection warning must stand too - it guards the exact replay it names.
+   *
+   * <p>The user reported a mismatched safety number, so the pin was dropped. The forged bundle that
+   * provoked that is still in the messenger's hands, and re-delivering it is a clean first sighting
+   * as far as the store is concerned. The banner saying so is the only thing between the user and
+   * silently pinning the attacker - a warning the next chat line may not wipe.
+   */
+  @Test
+  public void thepostRejectionWarningStandsAgainstClipboardTraffic() throws Exception {
+    SignalProtocolMain.rejectContactKey(bob());
+    victim.setContactList(new ArrayList<>());
+
+    final MessageEnvelope replayed = new MessageEnvelope(
+        EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse(),
+        peerAddress.getName(), peerAddress.getDeviceId());
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(replayed);
+
+    final String warned = infoField().getText().toString();
+    assertTrue("re-pinning at an address the user rejected must say so: " + warned,
+        warned.toLowerCase().contains("reject") || warned.toLowerCase().contains("did not match"));
+
+    // Unreadable storage suppresses a passive overwrite on its own, and this fixture reads that way
+    // once a contact has been written - so without pinning the state here, the assertion below
+    // would hold whether the warning was marked as standing or not.
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.onClipboardChangedForTest();
+
+    assertEquals("and that warning must survive the messenger's next post", warned,
+        infoField().getText().toString());
+  }
+
+  /**
+   * The duplicate-name warning must stand as well.
+   *
+   * <p>It is the only control covering the case the pin cannot: a SECOND contact under a name the
+   * user already knows, at an address the messenger owns. A clean first sighting fires nothing else,
+   * so if this banner can be wiped by the next line of chat it is worth very little.
+   */
+  @Test
+  public void theduplicateNameWarningStandsAgainstOneMorePost() throws Exception {
+    final MessageEnvelope secondInvite = EnvelopeCodec.fromWire(attackerBundle);
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(secondInvite);
+
+    final String warned = infoField().getText().toString();
+    assertTrue("a second Bob Jones at a different address must be called out: " + warned,
+        warned.contains("Bob"));
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.onClipboardChangedForTest();
+
+    assertEquals("and saying so once, erasable by the attacker's next message, is not saying so",
+        warned, infoField().getText().toString());
+  }
+
+  /**
+   * A failed session must not paint generic advice over a warning that is already standing.
+   *
+   * <p>The post-rejection banner is posted before the session attempt. When that attempt then fails
+   * - a spliced bundle is one way, and it is exactly what the rejected attacker would send next -
+   * the failure branch used to overwrite it with "delete the contact and ask for a new invite":
+   * the same advice the warning exists to talk the user out of, and it left the standing flag set
+   * over text that is not a warning at all, so nothing passive could correct it afterwards.
+   */
+  @Test
+  public void afailedSessionDoesNotOverwriteAStandingWarning() throws Exception {
+    SignalProtocolMain.rejectContactKey(bob());
+    victim.setContactList(new ArrayList<>());
+
+    // The peer's real identity key over the attacker's signed pre-key: the signature no longer
+    // verifies, so session creation fails after the warning has already been posted.
+    final PreKeyResponse spliced = new PreKeyResponse(
+        EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse().getIdentityKey(),
+        EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse().getDevices());
+    final MessageEnvelope envelope =
+        new MessageEnvelope(spliced, peerAddress.getName(), peerAddress.getDeviceId());
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(envelope);
+
+    final String shown = infoField().getText().toString();
+    assertFalse("a standing warning must not be replaced by the generic failure advice: " + shown,
+        shown.contains("send a fresh one"));
+    assertTrue("the post-rejection warning must still be the thing on screen: " + shown,
+        shown.toLowerCase().contains("did not match"));
   }
 }

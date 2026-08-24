@@ -705,24 +705,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
       setWarningMessage(warning);
     } else if (duplicateName) {
-      Toast.makeText(getContext(),
-          String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact)),
-          Toast.LENGTH_LONG).show();
+      final String duplicate =
+          String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact));
+      Toast.makeText(getContext(), duplicate, Toast.LENGTH_LONG).show();
+      // A warning, not an informational line: it is the only control covering the case the pin
+      // cannot, and it cost the attacker one extra post to erase.
+      setWarningMessage(duplicate);
     }
 
     if (messageEnvelope.getPreKeyResponse() != null) {
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
-      if (successful && previouslyRejected) {
-        setWarningMessage(String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact)));
-      } else if (successful && duplicateName) {
-        setInfoTextViewMessage(mInfoTextView,
-            String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact)));
-      } else if (successful) {
-        setInfoTextViewMessage(mInfoTextView, "Contact " + labelFor(chosenContact) + " created. You can send messages now");
-      } else if (!warnIfIdentityChanged(chosenContact)) {
+      if (successful) {
+        // Both warnings are already standing, posted above with their toasts. Re-posting them here
+        // was not belt-and-braces: it meant each copy masked the other's deletion, so removing
+        // either one on its own changed nothing any test could see.
+        if (!previouslyRejected && !duplicateName) {
+          setInfoTextViewMessage(mInfoTextView, "Contact " + labelFor(chosenContact) + " created. You can send messages now");
+        }
+      } else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
         // and this used to overwrite it with INFO_SESSION_CREATION_FAILED - the same delete-and-
-        // re-invite advice - defeating its own guard.
+        // re-invite advice - defeating its own guard. The standing check covers the same mistake
+        // from the other direction: a failed session must not paint generic advice over the
+        // post-rejection or duplicate-name warning, which would leave the flag set over text that
+        // is not a warning at all - and nothing passive could then correct it.
         setInfoTextViewMessage(mInfoTextView, INFO_SESSION_CREATION_FAILED);
       }
     }
@@ -1288,7 +1294,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void resetChosenContactAndInfoText() {
     setChosenContact(null);
-    setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
+    // Not over a standing warning.
+    //
+    // This is reached when a paste fails to decode and when the user cancels the add-contact
+    // screen, and both are messenger-reachable: the messenger chooses the payload, and cancelling
+    // an unexpected invite is the CORRECT response. Writing the neutral banner there erased the
+    // identity-change warning and left the strip wedged - the flag still said a warning was on
+    // screen, so nothing could replace the text, while the text itself said "No contact chosen",
+    // which the watcher reads as a reason to disable both buttons.
+    //
+    // The javadoc on mWarningStanding says it is never cleared by anything the messenger can
+    // cause. These two paths were the exception, and the exception was reachable with one ordinary
+    // chat line.
+    if (!mWarningStanding) {
+      setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
+    }
   }
 
   private void showAddContactView(MessageEnvelope messageEnvelope) {
@@ -1366,6 +1386,34 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mInputEditText != null && mInputEditText.getText().length() > 0) {
       mInputEditText.setText("");
     }
+
+    // The compose field is not the only thing rendering plaintext.
+    //
+    // The chat-log screen holds the ENTIRE decrypted conversation in an adapter, and clearing the
+    // compose box left it both visible and populated. The IME view is not recreated when the user
+    // switches apps, so the whole history was still on screen the next time the keyboard rose - in
+    // whatever app that happened to be. FLAG_SECURE stops a screenshot of it; it does nothing about
+    // the person next to you.
+    //
+    // Leave the screen AND drop the adapter: going back to the main view alone would keep the
+    // plaintext one button-press away with no further decryption.
+    if (mMessagesList != null) {
+      mMessagesList.setAdapter(null);
+    }
+    if (mLayoutE2EEMessagesListView != null
+        && mLayoutE2EEMessagesListView.getVisibility() == VISIBLE) {
+      showOnlyUIView(UIView.MAIN_VIEW);
+    }
+  }
+
+  /** The real add-contact path, entered as the Add button enters it. */
+  void addContactForTest(final MessageEnvelope messageEnvelope) {
+    addContact(messageEnvelope);
+  }
+
+  /** The reset an undecodable paste and a cancelled add both reach, for tests. */
+  void resetChosenContactAndInfoTextForTest() {
+    resetChosenContactAndInfoText();
   }
 
   /** Posts a warning, for tests that drive the strip. */
