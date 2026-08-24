@@ -577,6 +577,15 @@ public class SignalProtocolMain {
     // Not a wire-format change - the fingerprint is computed independently on both sides and never
     // transmitted. It does change the digits shown for existing contacts once, so anyone who
     // already compared has to compare again.
+    //
+    // This argument is INERT in libsignal 0.86.5. Measured: versions 0, 1, 2, 3 and 99 all produce
+    // byte-identical digits. It is passed because the API demands it, not because it does anything.
+    //
+    // Worth stating plainly, because the obvious use for it is exactly the thing it cannot do: a
+    // maintainer who changes a key-derivation detail here and bumps this number to force everyone
+    // to re-compare will achieve nothing, and the two sides will silently agree on a number that no
+    // longer means what they think. Forcing a re-comparison has to be done by changing what goes
+    // INTO the hash, as the switch from addresses to keys above did.
     final int version = 2;
     final byte[] localId = localIdentity.serialize();
     final byte[] remoteId = remoteIdentity.serialize();
@@ -1257,8 +1266,16 @@ public class SignalProtocolMain {
     // the pinned key changed, the safety number on screen is still computed from it, so the badge
     // can be restored by re-comparing the very same number. See its javadoc.
     //
-    // The sanctioned ways out of a pending change are therefore: dismiss (keep the pinned key), or
-    // acceptIdentityChange after comparing the offered number out of band - never deletion.
+    // The sanctioned way out of a pending change is therefore to dismiss it, keeping the pinned
+    // key - never deletion.
+    //
+    // This used to offer "or acceptIdentityChange after comparing the offered number out of band"
+    // as a second route. That instruction cannot be followed: the offered number is never displayed
+    // anywhere. createFingerprint reads the PINNED key by design, and the verify screen says so
+    // explicitly. It also contradicts acceptIdentityChange's own javadoc, which calls the method
+    // deliberately unwired because a screen offering to adopt an offered key is an attack surface.
+    // A comment that points a maintainer at wiring it up is pointing them at the thing the design
+    // rejected.
 
     storeAllAccountInformationInSharedPreferences();
   }

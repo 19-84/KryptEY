@@ -25,9 +25,14 @@ import org.signal.libsignal.protocol.fingerprint.Fingerprint;
  *
  * <p>Mutation testing found these unguarded: accepting one contact's identity change could clear
  * every contact's; the change flag ignored the device id; and the safety number the user compares
- * could be computed over the wrong key entirely — a fingerprint of your own identity, with the
- * halves swapped, or at the wrong protocol version — because the only assertion was
- * {@code assertNotNull}.
+ * could be computed over the wrong key entirely — a fingerprint of your own identity — because the
+ * only assertion was {@code assertNotNull}.
+ *
+ * <p>This used to claim it also caught "the halves swapped, or at the wrong protocol version".
+ * Neither is observable in libsignal 0.86.5, and saying so implied coverage that cannot exist:
+ * measured, the generator ignores the version argument entirely (0, 1, 2, 3 and 99 give identical
+ * digits) and the fingerprint is symmetric under swapping the two halves — necessarily so, since
+ * both sides must arrive at the same number. Only the own-identity case is actually covered.
  *
  * <p>Everything here uses more than one address or asserts on actual content, which is exactly what
  * the single-address, non-null-only tests could not do.
@@ -144,8 +149,9 @@ public class TrustScopingTest {
    * The safety number must actually be over the peer's key, and must match what the peer computes.
    *
    * <p>Previously the only assertion anywhere was {@code assertNotNull}, so a fingerprint over the
-   * user's own identity, with the local and remote halves swapped, or at the wrong protocol
-   * version, all passed.
+   * user's own identity passed. Swapping the halves and changing the version are NOT caught here
+   * and cannot be: measured against libsignal 0.86.5, the version argument is ignored and the
+   * fingerprint is symmetric in its two halves.
    */
   @Test
   public void bothSidesComputeTheSameSafetyNumber() throws Exception {
@@ -371,5 +377,51 @@ public class TrustScopingTest {
     assertTrue("the key actually offered must be accepted",
         store.acceptIdentityChange(ALICE, offered));
     assertEquals(offered, store.getIdentity(ALICE));
+  }
+
+  /**
+   * What the fingerprint generator's {@code version} argument actually does, which is nothing.
+   *
+   * <p>Pinned as an interop guard rather than as an assertion about our code. The obvious use for
+   * that argument is the one thing it cannot do: bump it to force everyone to re-compare after a
+   * derivation change. Measured against libsignal 0.86.5, versions 0, 1, 2, 3 and 99 all produce
+   * byte-identical digits.
+   *
+   * <p>If a future libsignal makes it meaningful, this fails - which is exactly when someone needs
+   * to know, because at that moment the constant in {@code createFingerprint} starts deciding what
+   * users compare, and two installs on different versions would silently disagree.
+   */
+  @Test
+  public void thefingerprintVersionArgumentIsInertInThisLibsignal() throws Exception {
+    SignalProtocolMain.initialize(null);
+    final org.signal.libsignal.protocol.IdentityKey alice =
+        SignalProtocolMain.getInstance().getAccount()
+            .getSignalProtocolStore().getIdentityKeyPair().getPublicKey();
+    SignalProtocolMain.initialize(null);
+    final org.signal.libsignal.protocol.IdentityKey bob =
+        SignalProtocolMain.getInstance().getAccount()
+            .getSignalProtocolStore().getIdentityKeyPair().getPublicKey();
+
+    final org.signal.libsignal.protocol.fingerprint.NumericFingerprintGenerator generator =
+        new org.signal.libsignal.protocol.fingerprint.NumericFingerprintGenerator(5200);
+
+    String first = null;
+    for (final int version : new int[] {0, 1, 2, 3, 99}) {
+      final String digits = generator
+          .createFor(version, alice.serialize(), alice, bob.serialize(), bob)
+          .getDisplayableFingerprint().getDisplayText();
+      if (first == null) first = digits;
+      assertEquals("libsignal now distinguishes fingerprint version " + version
+              + " - the constant in createFingerprint has become load-bearing, and two installs on "
+              + "different values would show different numbers for the same pair of keys",
+          first, digits);
+    }
+
+    // And symmetric in its halves, which is why "swapped halves" cannot be tested either.
+    assertEquals("the fingerprint must be symmetric, or the two sides could never agree",
+        generator.createFor(2, alice.serialize(), alice, bob.serialize(), bob)
+            .getDisplayableFingerprint().getDisplayText(),
+        generator.createFor(2, bob.serialize(), bob, alice.serialize(), alice)
+            .getDisplayableFingerprint().getDisplayText());
   }
 }

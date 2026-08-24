@@ -127,11 +127,19 @@ public class IdentitySubstitutionTest {
   }
 
   /**
-   * The recovery path. Comparing safety numbers out of band and accepting must move the pin — and
-   * must refuse a key other than the one displayed.
+   * What {@code acceptIdentityChange} does IF it is ever called - not a recovery path users have.
+   *
+   * <p>This was named and documented as "the recovery path", which contradicted the method's own
+   * javadoc: it is deliberately unwired, because a screen offering to adopt an offered key is an
+   * attack surface. It also could not be followed even by a developer, since the offered number is
+   * never displayed - {@code createFingerprint} reads the pinned key by design.
+   *
+   * <p>The test is kept because the behaviour still has to be right for anyone who does wire it up:
+   * accepting must move the pin to the key that was actually offered, and must refuse any other.
+   * What is corrected is the claim that this is something a user can do.
    */
   @Test
-  public void acceptingTheOfferedKeyIsTheSanctionedRecovery() throws Exception {
+  public void acceptingAnOfferedKeyMovesThePinToThatExactKey() throws Exception {
     final SignalProtocolAddress peerAddress = addressOf(realPeer);
 
     final String genuine = bundleFrom(realPeer);
