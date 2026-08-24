@@ -576,13 +576,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     if (previouslyRejected) {
       final String warning =
-          String.format(INFO_PINNED_AFTER_REJECT, chosenContact.getFirstName());
+          String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact));
       Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
       setInfoTextViewMessage(mInfoTextView, warning);
       mIdentityWarningStanding = true;
     } else if (duplicateName) {
       Toast.makeText(getContext(),
-          String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()),
+          String.format(INFO_DUPLICATE_CONTACT_NAME, labelFor(chosenContact)),
           Toast.LENGTH_LONG).show();
     }
 
@@ -590,10 +590,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
       if (successful && previouslyRejected) {
         setInfoTextViewMessage(mInfoTextView,
-            String.format(INFO_PINNED_AFTER_REJECT, chosenContact.getFirstName()));
+            String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact)));
       } else if (successful && duplicateName) {
         setInfoTextViewMessage(mInfoTextView,
-            String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()));
+            String.format(INFO_DUPLICATE_CONTACT_NAME, labelFor(chosenContact)));
       } else if (successful) {
         setInfoTextViewMessage(mInfoTextView, "Contact " + labelFor(chosenContact) + " created. You can send messages now");
       } else if (!warnIfIdentityChanged(chosenContact)) {
@@ -622,8 +622,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mAddContactLastNameInputEditText.setText("");
   }
 
-  /** Longest display name accepted, so a name cannot crowd the address tag off its row. */
-  private static final int MAX_DISPLAY_NAME_CHARS = 32;
+  /**
+   * Longest display name accepted.
+   *
+   * <p>No longer load-bearing, and deliberately generous. It was 32, chosen to stop a long name
+   * crowding the address tag off its row — which was the wrong lever twice over: the cap counts
+   * characters while the layout consumes width, so eleven EM SPACEs beat any character cap on any
+   * device; and it rejected ordinary names outright, "Maria del Carmen Fernández" among them. The
+   * tag now has its own anchored view and the name ellipsises instead, so this only exists to keep
+   * a pathological paste out of the banners.
+   */
+  private static final int MAX_DISPLAY_NAME_CHARS = 96;
 
   private boolean providedContactInformationIsValid(CharSequence firstName, CharSequence lastName) {
     if (firstName == null || firstName.length() == 0) {
@@ -1102,11 +1111,32 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private String labelFor(final Contact contact) {
     if (contact == null) return "";
-    final String name = contact.getFirstName() + " " + contact.getLastName();
+    // Bidi controls stripped before concatenation. A single U+202E in the name renders the tag
+    // appended after it mirrored - "#ab12-cd34" becomes "43dc-21ba#" - on every surface that joins
+    // the two into one string. It cannot forge a specific tag, but it reliably stops the user
+    // matching the strip line against the contact row, and mirrored hex does not look like an
+    // attack. The list row is unaffected (separate views), but these banners are not.
+    final String name = stripBidiControls(contact.getFirstName())
+        + " " + stripBidiControls(contact.getLastName());
     // Ungated, for the reason given in ListAdapterContacts.shouldShowTags: gating the tag on the
     // name comparison made every dodge of that comparison a total blackout rather than a missing
     // warning. Shown whenever there is anyone else to be confused with.
     return mE2EEStrip.hasMoreThanOneContact() ? name + "  " + contact.getAddressTag() : name;
+  }
+
+  /** Removes the bidi overrides and isolates that would let a name reorder text placed after it. */
+  private static String stripBidiControls(final String value) {
+    if (value == null) return "";
+    final StringBuilder out = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+      final char c = value.charAt(i);
+      if ((c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069)
+          || c == 0x200E || c == 0x200F || c == 0x061C) {
+        continue;
+      }
+      out.append(c);
+    }
+    return out.toString();
   }
 
   private boolean warnIfIdentityChanged(final Contact sender) {
@@ -1116,7 +1146,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       return false;
     }
     final String warning =
-        String.format(INFO_IDENTITY_CHANGED_EXISTING, sender.getFirstName(), sender.getFirstName());
+        String.format(INFO_IDENTITY_CHANGED_EXISTING, labelFor(sender), labelFor(sender));
     Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
     setInfoTextViewMessage(mInfoTextView, warning);
     mIdentityWarningStanding = true;

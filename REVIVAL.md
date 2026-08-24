@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 373, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 395, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -268,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 373 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 395 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -304,12 +304,10 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
    supplies it. Until it exists, no warning text should ask the user to check "their new number" —
    they cannot see it. The strings were corrected accordingly.
-3. **The trust core has never been mutation-tested.** `IdentityKeyStoreImpl` and
-   `SignalProtocolMain` are the two files that have had the most *review* attention and the least
-   *mutation* attention — every other class in `signalprotocol/` has now been swept. Review finds
-   design errors; mutation finds assertions that cannot fail, and this session produced five of
-   those in code that had already been reviewed. Sweeping these two is the largest remaining
-   coverage gap that can be closed in this environment.
+3. **`SignalProtocolMain` has never been mutation-tested.** `IdentityKeyStoreImpl` has now been
+   swept — 52 mutants, and everything behavioural was killed; the only survivors were one arm of a
+   null guard and its `equals`, both since closed. That is a good result for the file holding every
+   identity pin. `SignalProtocolMain` is the last unswept class and by far the largest.
 
 ## Settled during review
 

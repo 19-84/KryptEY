@@ -352,4 +352,57 @@ public class StorageHelperTest {
         1, reloaded.getContactList().size());
     assertEquals("Real", reloaded.getContactList().get(0).getFirstName());
   }
+
+  // -------------------------------------------------------- display-tag secret
+
+  /**
+   * The tag secret must survive a store/reload cycle.
+   *
+   * <p>It did not. The field existed and was documented as "per-install", but nothing wrote it and
+   * the {@code Account} constructor mints a fresh one on every load — and {@code reloadAccount}
+   * runs on every {@code setInputView}, so every contact tag changed on rotation, on a theme flip,
+   * and on every IME restart. A tag is only useful because it is the same next time you look.
+   *
+   * <p>The test that was supposed to cover this asserted the tag <em>changes</em> after
+   * re-initialising, which passed <em>because of</em> the bug. Nothing round-tripped an account
+   * through storage, which is the only way to see it.
+   */
+  @Test
+  public void theDisplayTagSecretSurvivesAStoreAndReload() {
+    final Account original = newAccount();
+    final byte[] secret = original.getDisplayTagSecret();
+    assertNotNull(secret);
+    assertEquals("the secret must be 32 bytes", 32, secret.length);
+
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(original);
+    final Account reloaded =
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
+
+    assertNotNull(reloaded);
+    org.junit.Assert.assertArrayEquals(
+        "a reload must keep the secret, or every contact tag changes",
+        secret, reloaded.getDisplayTagSecret());
+  }
+
+  /** Two separate accounts must not share one - that is what makes a tag unpredictable. */
+  @Test
+  public void twoAccountsGetDifferentSecrets() {
+    assertFalse("two accounts must not share a tag secret",
+        java.util.Arrays.equals(newAccount().getDisplayTagSecret(),
+            newAccount().getDisplayTagSecret()));
+  }
+
+  /** A store written before the field existed must still load, minting a secret rather than failing. */
+  @Test
+  public void aStoreWithoutASecretStillLoads() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+    preferences.edit().remove(ProtocolIdentifier.DISPLAY_TAG_SECRET.toString()).commit();
+
+    final Account reloaded =
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
+
+    assertNotNull("an upgrade from a store predating the field must not fail", reloaded);
+    assertEquals(32, reloaded.getDisplayTagSecret().length);
+  }
 }

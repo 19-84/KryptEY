@@ -124,6 +124,24 @@ public class StorageHelper {
     account.setUnencryptedMessages(unencryptedMessages);
     account.setContactList(contactList);
 
+    // Restore the display-tag secret, or every contact tag changes on this load.
+    //
+    // The constructor mints a fresh one, which is right for a new account and wrong for a reload -
+    // and reloadAccount runs on every setInputView, so without this the tags changed on every
+    // rotation, every theme flip, and every IME restart. That is worse than cosmetic: a tag is only
+    // useful because it is the same next time you look, and constant churn is exactly the
+    // cries-wolf failure this codebase argues against elsewhere.
+    final String storedSecret = (String) getClassFromSharedPreferences(
+        ProtocolIdentifier.DISPLAY_TAG_SECRET);
+    if (storedSecret != null && !storedSecret.isEmpty()) {
+      try {
+        account.setDisplayTagSecret(com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64
+            .decode(storedSecret));
+      } catch (java.io.IOException e) {
+        Log.w(TAG, "Stored display-tag secret is unreadable; a new one will be minted");
+      }
+    }
+
     return account;
   }
 
@@ -135,6 +153,13 @@ public class StorageHelper {
     storeDeviceIdInSharedPreferences(account.getDeviceId());
     storeUnencryptedMessagesMapInSharedPreferences(account.getUnencryptedMessages());
     storeContactListInSharedPreferences(account.getContactList());
+    storeDisplayTagSecretInSharedPreferences(account.getDisplayTagSecret());
+  }
+
+  private void storeDisplayTagSecretInSharedPreferences(final byte[] secret) {
+    if (secret == null) return;
+    storeInSharedPreferences(ProtocolIdentifier.DISPLAY_TAG_SECRET,
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64.encodeBytes(secret));
   }
 
   private void storeUnencryptedMessagesMapInSharedPreferences(List<StorageMessage> unencryptedMessages) {

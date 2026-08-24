@@ -14,7 +14,9 @@ public enum ProtocolIdentifier {
   PROTOCOL_ADDRESS(SignalProtocolAddress.class),
   DEVICE_ID(Integer.class),
   UNENCRYPTED_MESSAGES(ArrayList.class),
-  CONTACTS(ArrayList.class);
+  CONTACTS(ArrayList.class),
+  /** Per-install secret keying the contact display tags. See {@code Account.displayTagSecret}. */
+  DISPLAY_TAG_SECRET(String.class);
 
   public final Class className;
 

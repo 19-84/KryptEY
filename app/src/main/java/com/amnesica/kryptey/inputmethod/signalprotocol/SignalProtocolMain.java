@@ -670,7 +670,9 @@ public class SignalProtocolMain {
       case 0x034F:   // COMBINING GRAPHEME JOINER - draws nothing, category Mn
       case 0x17B4: case 0x17B5:  // Khmer inherent vowels, invisible
       case 0x1680:   // OGHAM SPACE MARK - blank in most fonts
-      case 0x3000:   // IDEOGRAPHIC SPACE
+      // Not U+3000 IDEOGRAPHIC SPACE: NFKC runs first and maps it to an ordinary space, so this
+      // never saw it - and it draws a 1em blank rather than nothing, which is the same
+      // miscategorisation as the enclosing marks removed above.
         return true;
       default:
         return false;

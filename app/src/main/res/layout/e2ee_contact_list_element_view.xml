@@ -48,7 +48,34 @@
     android:layout_marginVertical="5dp"
     android:layout_marginEnd="5dp"
     android:layout_toEndOf="@id/e2ee_contact_first_name_element"
+    android:layout_toStartOf="@id/e2ee_contact_address_tag_element"
+    android:ellipsize="end"
+    android:maxLines="1"
     android:textSize="20sp" />
+
+  <!--
+    The address tag has its own view, anchored to the END of the row.
+
+    It used to be appended to the last-name TextView, which is wrap_content with only a start
+    constraint - so a long enough name made the tag measure zero width and simply not render, with
+    no ellipsis and nothing to say it was missing. An untagged row then reads as the plain original
+    one, which is exactly the confusion the tag exists to prevent. Capping the name length did not
+    fix it: the cap counts characters and the layout consumes width, so eleven EM SPACEs beat any
+    character cap on any device.
+
+    Anchored here, the tag always renders and the NAME is what gets ellipsised. That is the right
+    way round: a truncated name is visibly truncated, a missing tag is invisible.
+  -->
+  <TextView
+    android:id="@+id/e2ee_contact_address_tag_element"
+    style="?attr/e2eeStripContactListNameFieldStyle"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_centerVertical="true"
+    android:layout_marginEnd="5dp"
+    android:layout_toStartOf="@id/e2ee_contact_button_delete_contact"
+    android:maxLines="1"
+    android:textSize="14sp" />
 
   <ImageButton
     android:id="@+id/e2ee_contact_button_delete_contact"

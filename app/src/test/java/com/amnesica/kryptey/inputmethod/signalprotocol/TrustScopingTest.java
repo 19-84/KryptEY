@@ -259,4 +259,117 @@ public class TrustScopingTest {
     assertNull(SignalProtocolMain.getFingerprint(
         new Contact("Nobody", "Here", "unknown-uuid", 42, false)));
   }
+
+  // ------------------------------------------------------------- null guards
+
+  /**
+   * Both arms of the identity-store null guards.
+   *
+   * <p>These are written {@code a == null || b == null}, and every existing test passes two real
+   * values — so only the both-non-null path ever ran and weakening the {@code ||} to {@code &&}
+   * survived. With {@code &&}, one null reaches {@code addressKey(null)} or an {@code equals} on a
+   * null pin: an NPE out of the decrypt path, which on this codebase means a keyboard that dies
+   * mid-message rather than a refusal.
+   */
+  @Test
+  public void recordingAChangeIsSafeWithEitherArgumentMissing() {
+    final IdentityKey key = someIdentity();
+    store.saveIdentity(ALICE, someIdentity());
+
+    store.recordIdentityChange(null, key);      // must not throw
+    store.recordIdentityChange(ALICE, null);    // must not throw
+
+    assertFalse("a guarded call must not have recorded anything",
+        store.hasUnacceptedIdentityChange(ALICE));
+  }
+
+  @Test
+  public void acceptingAChangeIsSafeWithEitherArgumentMissing() {
+    final IdentityKey offered = someIdentity();
+    store.saveIdentity(ALICE, someIdentity());
+    store.recordIdentityChange(ALICE, offered);
+
+    assertFalse("a null address must be refused, not dereferenced",
+        store.acceptIdentityChange(null, offered));
+    assertFalse("a null key must be refused", store.acceptIdentityChange(ALICE, null));
+    assertTrue("and the pending change must survive both refusals",
+        store.hasUnacceptedIdentityChange(ALICE));
+  }
+
+  @Test
+  public void theQueriesAreSafeWithNoAddress() {
+    assertFalse(store.hasUnacceptedIdentityChange(null));
+    assertFalse(store.wasKeyRejected(null));
+    assertFalse(store.isKeyOutOfBand(null));
+    assertNull(store.getPendingIdentity(null));
+    store.removeIdentity(null);      // must not throw
+    store.markKeyRejected(null);     // must not throw
+    assertFalse(store.dismissIdentityChange(null));
+  }
+
+  // ------------------------------------------------- equals completeness
+
+  /**
+   * Every field of the identity store must participate in {@code equals}.
+   *
+   * <p>Nothing in production compares two stores — but the serialisation tests do, to prove the
+   * store survives a JSON round trip. An {@code equals} that ignores a field makes that assertion
+   * vacuous for the field it ignores, so the round trip could silently drop the pinned keys, the
+   * pending changes, or the rejection records and no test would notice. A mutation sweep of this
+   * class killed everything behavioural and left only these.
+   */
+  @Test
+  public void everyFieldOfTheStoreParticipatesInEquals() {
+    final IdentityKeyPair own = KeyUtil.generateIdentityKeyPair();
+    final int registrationId = KeyUtil.generateRegistrationId();
+
+    final IdentityKeyStoreImpl a = new IdentityKeyStoreImpl(own, registrationId);
+    final IdentityKeyStoreImpl b = new IdentityKeyStoreImpl(own, registrationId);
+    assertEquals("two identically built stores must be equal", a, b);
+
+    // registration id
+    assertNotEquals(a, new IdentityKeyStoreImpl(own, registrationId + 1));
+
+    // pinned keys
+    final IdentityKey pin = someIdentity();
+    a.saveIdentity(ALICE, pin);
+    assertNotEquals("a pinned key must count", a, b);
+    b.saveIdentity(ALICE, pin);
+    assertEquals(a, b);
+
+    // pending changes
+    a.recordIdentityChange(ALICE, someIdentity());
+    assertNotEquals("a pending identity change must count", a, b);
+    a.dismissIdentityChange(ALICE);
+    assertEquals(a, b);
+
+    // out-of-band provenance
+    a.markKeyOutOfBand(ALICE);
+    assertNotEquals("out-of-band provenance must count", a, b);
+    b.markKeyOutOfBand(ALICE);
+    assertEquals(a, b);
+
+    // rejection records - the one thing that must outlive removeIdentity
+    a.markKeyRejected(ALICE);
+    assertNotEquals("a rejection record must count", a, b);
+  }
+
+  /** And accepting a change requires the key the user was actually shown, in both directions. */
+  @Test
+  public void acceptingRequiresExactlyTheShownKey() {
+    final IdentityKey offered = someIdentity();
+    store.saveIdentity(ALICE, someIdentity());
+    store.recordIdentityChange(ALICE, offered);
+
+    assertFalse("a different key must not be accepted",
+        store.acceptIdentityChange(ALICE, someIdentity()));
+    assertTrue("and the change must still be pending", store.hasUnacceptedIdentityChange(ALICE));
+
+    assertFalse("nothing pending at another address means nothing to accept",
+        store.acceptIdentityChange(BOB, offered));
+
+    assertTrue("the key actually offered must be accepted",
+        store.acceptIdentityChange(ALICE, offered));
+    assertEquals(offered, store.getIdentity(ALICE));
+  }
 }

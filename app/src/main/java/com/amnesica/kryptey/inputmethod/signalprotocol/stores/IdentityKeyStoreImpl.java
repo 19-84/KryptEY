@@ -201,6 +201,7 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    * @return true if a change was pending and has been discarded.
    */
   public boolean dismissIdentityChange(final SignalProtocolAddress address) {
+    if (address == null) return false;
     return pendingIdentities.remove(addressKey(address)) != null;
   }
 
@@ -231,6 +232,7 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    * Kept separately from the pin so it outlives {@link #removeIdentity}.
    */
   public void markKeyRejected(final SignalProtocolAddress address) {
+    if (address == null) return;
     final String key = addressKey(address);
     if (!rejectedAddresses.contains(key)) rejectedAddresses.add(key);
   }
@@ -265,12 +267,23 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    * opposite case: the pin itself is wrong.
    */
   public void removeIdentity(final SignalProtocolAddress address) {
+    if (address == null) return;
     trustedKeys.removeIf(k -> k != null && k.getSignalProtocolAddress().equals(address));
     pendingIdentities.remove(addressKey(address));
     outOfBandAddresses.remove(addressKey(address));
   }
 
+  /**
+   * The map key for an address.
+   *
+   * <p>Null-tolerant on purpose. Every method here reaches this, and several used to do so without
+   * a guard, so a null address became an NPE thrown out of the trust store — on this codebase that
+   * means a keyboard that dies mid-message rather than a refusal. The sentinel cannot collide with
+   * a real key: address names are UUIDs and the separator is a dot, so nothing legitimate produces
+   * a leading NUL. Mutating methods still refuse a null outright rather than writing under it.
+   */
   private static String addressKey(final SignalProtocolAddress address) {
+    if (address == null) return "\u0000-no-address";
     return address.getName() + "." + address.getDeviceId();
   }
 
@@ -292,12 +305,24 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     IdentityKeyStoreImpl that = (IdentityKeyStoreImpl) o;
-    return localRegistrationId == that.localRegistrationId && Objects.equals(trustedKeys, that.trustedKeys) && Objects.equals(identityKeyPair, that.identityKeyPair);
+    // All six persisted fields, not three. This used to compare only the registration id, the
+    // pinned keys and the key pair - omitting the pending changes, the out-of-band provenance and
+    // the rejection records, every one of which is @JsonProperty state that survives a restart. A
+    // round trip that silently dropped all three still compared equal, so any test asserting
+    // "the store survived serialisation" was blind to exactly the trust state this class exists to
+    // hold.
+    return localRegistrationId == that.localRegistrationId
+        && Objects.equals(trustedKeys, that.trustedKeys)
+        && Objects.equals(identityKeyPair, that.identityKeyPair)
+        && Objects.equals(pendingIdentities, that.pendingIdentities)
+        && Objects.equals(outOfBandAddresses, that.outOfBandAddresses)
+        && Objects.equals(rejectedAddresses, that.rejectedAddresses);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(trustedKeys, identityKeyPair, localRegistrationId);
+    return Objects.hash(trustedKeys, identityKeyPair, localRegistrationId, pendingIdentities,
+        outOfBandAddresses, rejectedAddresses);
   }
 
   public List<TrustedKey> getTrustedKeys() {

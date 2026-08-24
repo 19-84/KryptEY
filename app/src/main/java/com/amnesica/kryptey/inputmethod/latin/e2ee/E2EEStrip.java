@@ -239,7 +239,9 @@ public class E2EEStrip {
 
   /** True once the user has more than one contact, i.e. once names can be confused at all. */
   public boolean hasMoreThanOneContact() {
-    return SignalProtocolMain.contactCount() > 1;
+    // Named for its callers; the threshold is one, so a user has a tag to remember from their very
+    // first contact rather than only once a second one appears. See ListAdapterContacts.
+    return SignalProtocolMain.contactCount() >= 1;
   }
 
   /** @see SignalProtocolMain#existingContactAtSameAddress */

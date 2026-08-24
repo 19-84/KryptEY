@@ -36,10 +36,15 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
    * contact has nothing to be confused with.
    */
   private boolean shouldShowTags() {
+    // From the FIRST contact, not the second.
+    //
+    // Waiting for a second contact means tags appear on both rows at the moment an impostor is
+    // added - precisely when the user needs a remembered value and has none. Worse, it inverts the
+    // cue: the genuine long-standing contact is the row that suddenly grew a tag. Showing it from
+    // the start costs nothing and gives the user something to have seen before.
     if (mContacts == null) return false;
-    int contacts = 0;
     for (final Object other : mContacts) {
-      if (other instanceof Contact && ++contacts > 1) return true;
+      if (other instanceof Contact) return true;
     }
     return false;
   }
@@ -71,9 +76,18 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     // turned every gap in the folding - and there will always be gaps, homoglyphs are an infinite
     // regress - from a missing warning into a total blackout. Ungated, a dodge costs the attacker
     // the warning but leaves the rows distinguishable.
-    lastNameTextView.setText(shouldShowTags()
-        ? contact.getLastName() + "  " + contact.getAddressTag()
-        : contact.getLastName());
+    lastNameTextView.setText(contact.getLastName());
+
+    // The tag goes in its OWN view, anchored to the end of the row, so a long name can no longer
+    // push it out of existence - the name ellipsises instead. Appending it to the name view meant a
+    // name wide enough to fill the row made the tag measure zero width and silently vanish, and an
+    // untagged row reads as the plain original one.
+    final TextView addressTagTextView =
+        convertView.findViewById(R.id.e2ee_contact_address_tag_element);
+    if (addressTagTextView != null) {
+      addressTagTextView.setText(shouldShowTags() ? contact.getAddressTag() : "");
+      addressTagTextView.setOnClickListener(v -> mListener.selectContact(contact));
+    }
     lastNameTextView.setOnClickListener(v -> mListener.selectContact(contact));
 
     final ImageButton deleteContactButton = convertView.findViewById(R.id.e2ee_contact_button_delete_contact);
