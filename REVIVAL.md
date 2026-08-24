@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 504, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 506, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -265,7 +265,9 @@ file, and the first run failed with `ZipException: invalid stored block lengths`
 direction. The first byte of a DEFLATE stream is >= 0x80 for a large share of inputs, so
 roughly half of all FAIRYTALE-encoded messages could not be decoded by the recipient. It
 survived every sweep because the suite had one round-trip fixture and the bug is a property of
-the message, not the encoder.
+the message, not the encoder. Scope: `Encoder.RAW` is the default and FAIRYTALE is an opt-in
+toggle, so this hit users who switched encoders - but decoding is chosen by sniffing the text
+for invisible characters, so a default-RAW user *receiving* a FairyTale message hit it too.
 
 *Sweep 2 — the pre-key/session stores and `StorageHelper` (88 mutants).* Clean through
 `KyberPreKeyStoreImpl`, `PreKeyStoreImpl`, `SignedPreKeyStoreImpl`, `SessionStoreImpl` and
@@ -285,7 +287,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 504 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 506 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
