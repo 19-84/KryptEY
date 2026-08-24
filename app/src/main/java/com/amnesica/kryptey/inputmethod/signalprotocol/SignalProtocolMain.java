@@ -1026,6 +1026,27 @@ public class SignalProtocolMain {
         return true;
       }
     }
+    return hasRetiredDisplayName(firstName, lastName);
+  }
+
+  /**
+   * Whether this name belonged to a contact the user deleted.
+   *
+   * <p>Deletion keeps the pinned key, which closes the same-address door. It cannot close the other
+   * one: an attacker offering its OWN address under a deleted contact's name meets no pin at all,
+   * and trust-on-first-use accepts it silently. Remembering the name is what keeps the duplicate
+   * warning firing there.
+   *
+   * <p>The cost is a warning when a user deletes someone and legitimately re-adds them. That is the
+   * right side to err on: re-adding a contact is precisely the moment where the app cannot tell the
+   * real person from someone claiming to be them, and the warning routes the user to compare the
+   * number - which is the only thing that ever could.
+   */
+  public static boolean hasRetiredDisplayName(final String firstName, final String lastName) {
+    if (sInstance.mAccount == null) return false;
+    for (final String[] retired : sInstance.mAccount.getRetiredDisplayNames()) {
+      if (displayNamesMatch(retired[0], retired[1], firstName, lastName)) return true;
+    }
     return false;
   }
 
@@ -1235,6 +1256,18 @@ public class SignalProtocolMain {
       }
     }
     mAccount.setContactList(newContacts);
+
+    // Remember the name, for the same reason the pin is kept.
+    //
+    // Keeping the pin closes the same-address door: a substituted bundle for this address still
+    // fails. It does nothing about the other door - the attacker's OWN fresh address carrying this
+    // contact's name, where nothing is pinned and trust-on-first-use accepts silently. With the
+    // name gone from the contact list, hasContactWithSameDisplayName returns false and the
+    // duplicate warning has nothing to fire on, so a warned attack becomes an unwarned one.
+    //
+    // rejectedAddresses was deliberately made to outlive removeIdentity on exactly this reasoning.
+    // The display name got no such treatment and was erased by one tap, with no confirmation.
+    mAccount.retireDisplayName(contactToRemove.getFirstName(), contactToRemove.getLastName());
 
     Log.d(TAG, "Deleting session for contact: " + contactToRemove.getFirstName() + " " + contactToRemove.getLastName());
     if (mAccount.getSignalProtocolStore().getSessionStore().containsSession(contactToRemove.getSignalProtocolAddress())) {

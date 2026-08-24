@@ -192,6 +192,29 @@ public class StorageHelper {
       }
     }
 
+    // Names of deleted contacts, for the duplicate warning.
+    //
+    // Persisted for the same reason the tag secret is: a defence that resets on every reload is not
+    // a defence. reloadAccount runs on every setInputView, so an in-memory-only list would be empty
+    // by the time the attacker's invite arrives - which is after the user has put the keyboard away
+    // and picked it up again, every time.
+    final Object storedRetired = getClassFromSharedPreferences(
+        ProtocolIdentifier.RETIRED_DISPLAY_NAMES);
+    if (storedRetired instanceof java.util.List) {
+      final java.util.LinkedList<String[]> retired = new java.util.LinkedList<>();
+      for (final Object entry : (java.util.List<?>) storedRetired) {
+        if (entry instanceof java.util.List) {
+          final java.util.List<?> pair = (java.util.List<?>) entry;
+          retired.add(new String[] {
+              pair.size() > 0 && pair.get(0) != null ? String.valueOf(pair.get(0)) : "",
+              pair.size() > 1 && pair.get(1) != null ? String.valueOf(pair.get(1)) : ""});
+        } else if (entry instanceof String[]) {
+          retired.add((String[]) entry);
+        }
+      }
+      account.setRetiredDisplayNames(retired);
+    }
+
     return account;
   }
 
@@ -221,6 +244,8 @@ public class StorageHelper {
     put(batch, ProtocolIdentifier.DEVICE_ID, account.getDeviceId());
     put(batch, ProtocolIdentifier.UNENCRYPTED_MESSAGES, account.getUnencryptedMessages());
     put(batch, ProtocolIdentifier.CONTACTS, account.getContactList());
+
+    put(batch, ProtocolIdentifier.RETIRED_DISPLAY_NAMES, account.getRetiredDisplayNames());
 
     final byte[] secret = account.getDisplayTagSecret();
     if (secret != null) {

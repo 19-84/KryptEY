@@ -786,6 +786,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     });
   }
 
+  /**
+   * Whether an info message means encrypt and decrypt cannot work.
+   *
+   * <p>Separated so it can be tested: the watcher itself needs an inflated IME, and this is the
+   * decision, not the wiring.
+   */
+  static boolean disablesActionButtons(final String message) {
+    return INFO_NO_CONTACT_CHOSEN_TEXT.equals(message) || INFO_STORAGE_UNREADABLE.equals(message);
+  }
+
   private void setMainInfoTextTextChangeListener() {
     if (mInfoTextView == null) return;
     mInfoTextView.addTextChangedListener(new TextWatcher() {
@@ -799,7 +809,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
       @Override
       public void afterTextChanged(Editable s) {
-        if (s.toString().equals(INFO_NO_CONTACT_CHOSEN)) {
+        // The buttons are driven by the info TEXT, which means every new message added here is a
+        // decision about whether encrypt and decrypt are usable - and the default for an
+        // unrecognised message is ENABLED.
+        //
+        // Adding INFO_STORAGE_UNREADABLE re-enabled both buttons on an install whose account
+        // cannot be decrypted, because it simply was not INFO_NO_CONTACT_CHOSEN. There is no
+        // account to encrypt with in that state, so the buttons offered an action that cannot
+        // work. Coupling behaviour to a string comparison makes that the failure mode for the next
+        // message too; naming the disabled states is the least that keeps it visible.
+        if (disablesActionButtons(s.toString())) {
           changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
           changeImageButtonState(mEncryptButton, ButtonState.DISABLED);
         } else {

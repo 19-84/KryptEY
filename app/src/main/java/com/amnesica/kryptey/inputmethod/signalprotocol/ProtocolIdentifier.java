@@ -16,7 +16,12 @@ public enum ProtocolIdentifier {
   UNENCRYPTED_MESSAGES(ArrayList.class),
   CONTACTS(ArrayList.class),
   /** Per-install secret keying the contact display tags. See {@code Account.displayTagSecret}. */
-  DISPLAY_TAG_SECRET(String.class);
+  DISPLAY_TAG_SECRET(String.class),
+  /**
+   * Names of deleted contacts, so the duplicate warning survives a deletion.
+   * See {@code Account.retiredDisplayNames}.
+   */
+  RETIRED_DISPLAY_NAMES(java.util.LinkedList.class);
 
   public final Class className;
 

@@ -592,4 +592,45 @@ public class StorageHelperTest {
     assertEquals(StorageHelper.StorageState.UNREADABLE,
         new StorageHelper(context, workingBox()).storageState());
   }
+
+  /**
+   * A deleted contact's name must survive a restart, or it is not a defence.
+   *
+   * <p>{@code reloadAccount} runs on every {@code setInputView}, so an in-memory-only list is empty
+   * by the time the attacker's invite arrives - which is after the user has put the keyboard away
+   * and picked it up again. The display-tag secret had exactly this failure and it took a review
+   * round to notice, because nothing in the suite exercised the persisted half.
+   */
+  @Test
+  public void retiredDisplayNamesSurviveAstoreAndReload() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    final Account account = newAccount();
+    account.retireDisplayName("Bob", "Jones");
+    account.retireDisplayName("Carol", "Smith");
+
+    helper.storeAllInformationInSharedPreferences(account);
+    final Account reloaded = helper.getAccountFromSharedPreferences();
+
+    assertNotNull("the account must reload at all", reloaded);
+    assertEquals("both retired names must come back", 2,
+        reloaded.getRetiredDisplayNames().size());
+    assertEquals("Bob", reloaded.getRetiredDisplayNames().get(0)[0]);
+    assertEquals("Jones", reloaded.getRetiredDisplayNames().get(0)[1]);
+    assertEquals("Smith", reloaded.getRetiredDisplayNames().get(1)[1]);
+  }
+
+  /** An account stored before this field existed must still load. */
+  @Test
+  public void anaccountWithNoRetiredNamesStillLoads() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+    preferences.edit()
+        .remove(String.valueOf(ProtocolIdentifier.RETIRED_DISPLAY_NAMES))
+        .commit();
+
+    final Account reloaded = helper.getAccountFromSharedPreferences();
+    assertNotNull("a store predating this field must still load", reloaded);
+    assertTrue("and start with an empty list rather than null",
+        reloaded.getRetiredDisplayNames().isEmpty());
+  }
 }

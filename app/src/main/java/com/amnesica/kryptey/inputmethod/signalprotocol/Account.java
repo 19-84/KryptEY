@@ -11,6 +11,7 @@ import org.signal.libsignal.protocol.IdentityKeyPair;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.time.Instant;
@@ -155,6 +156,46 @@ public class Account {
       }
     }
     return false;
+  }
+
+  /**
+   * Display names of contacts the user has deleted, most recent last.
+   *
+   * <p>Deleting a contact used to erase the only defence against the cheapest impersonation there
+   * is. The pin deliberately outlives the contact, which closes the SAME-address door - a
+   * substituted bundle for that address still fails. The attacker simply uses the other door: its
+   * own fresh address, with the deleted contact's name. Nothing is pinned there, so
+   * trust-on-first-use accepts it silently, and with the name gone from the contact list the
+   * duplicate-name warning has nothing to fire on. A warned attack became an unwarned one.
+   *
+   * <p>That matters because deletion is one tap with no confirmation, and a hostile messenger can
+   * drive a user to it: replay any message, the decrypt fails, repeat until they delete the contact
+   * and start over.
+   *
+   * <p>Bounded, because it is a warning aid rather than a security record - unlike
+   * {@code rejectedAddresses}, which must never be forgotten.
+   */
+  private LinkedList<String[]> retiredDisplayNames = new LinkedList<>();
+
+  /** How many deleted names to remember. Enough to cover a user tidying their list. */
+  private static final int RETIRED_DISPLAY_NAME_LIMIT = 100;
+
+  public LinkedList<String[]> getRetiredDisplayNames() {
+    if (retiredDisplayNames == null) retiredDisplayNames = new LinkedList<>();
+    return retiredDisplayNames;
+  }
+
+  public void setRetiredDisplayNames(final LinkedList<String[]> retiredDisplayNames) {
+    this.retiredDisplayNames = retiredDisplayNames;
+  }
+
+  /** Records a deleted contact's name, dropping the oldest once the bound is reached. */
+  public void retireDisplayName(final String firstName, final String lastName) {
+    if (firstName == null && lastName == null) return;
+    final LinkedList<String[]> retired = getRetiredDisplayNames();
+    retired.addLast(new String[] {firstName == null ? "" : firstName,
+        lastName == null ? "" : lastName});
+    while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();
   }
 
   public void removeAllUnencryptedMessages(Contact contact) {

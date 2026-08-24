@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -57,12 +58,37 @@ public class OpeningMessageTest {
         warning.toLowerCase().contains("still stored"));
   }
 
-  /** Every state must be handled - a new one must not silently fall through to the empty message. */
+  /**
+   * Every state must produce a message, and the assertion says only that.
+   *
+   * <p>This was documented as "a new one must not silently fall through to the empty message",
+   * which the assertion does not check - a fall-through returns a non-empty string and passes.
+   * Checking it properly would mean enumerating what each state should say, which is what the tests
+   * above already do for the three that exist. The claim is narrowed rather than the test widened.
+   */
   @Test
-  public void everyStorageStateIsHandled() {
+  public void everyStorageStateProducesSomeMessage() {
     for (final StorageHelper.StorageState state : StorageHelper.StorageState.values()) {
       final String message = E2EEStripView.openingMessage(state);
       assertTrue("no message for " + state, message != null && !message.isEmpty());
     }
+  }
+
+  /**
+   * The buttons are driven by the info TEXT, so a new message is also a decision about whether
+   * encrypt and decrypt are usable - and the default for an unrecognised one is ENABLED.
+   *
+   * <p>Adding the unreadable-storage message re-enabled both buttons on an install whose account
+   * cannot be decrypted, because it simply was not {@code INFO_NO_CONTACT_CHOSEN}. There is no
+   * account to encrypt with in that state.
+   */
+  @Test
+  public void themessagesThatMustLeaveTheButtonsDisabledAreBothRecognised() {
+    assertTrue("the unreadable-storage message must be one the watcher disables on",
+        E2EEStripView.disablesActionButtons(E2EEStripView.INFO_STORAGE_UNREADABLE));
+    assertTrue("and so must the no-contact message",
+        E2EEStripView.disablesActionButtons(E2EEStripView.INFO_NO_CONTACT_CHOSEN_TEXT));
+    assertFalse("an ordinary informational message must leave them enabled",
+        E2EEStripView.disablesActionButtons("Encrypted message detected"));
   }
 }
