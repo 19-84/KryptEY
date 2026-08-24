@@ -650,8 +650,32 @@ public class SignalProtocolMain {
         // put them at the END of a name, where deleting happens to give the same answer.
         .replace('\u3164', ' ').replace('\u115F', ' ').replace('\u1160', ' ')
         .replace('\uFFA0', ' ').replace('\u2800', ' ');
+    // Drop combining marks that have no base character to combine with.
+    //
+    // Marks are deliberately NOT stripped in general - doing so collapses Indic vowel signs and
+    // makes unrelated names collide. But a mark at the START of a name has nothing to attach to,
+    // and what it then draws is device-dependent: nothing on some renderers, a dotted circle on
+    // others. Since it MIGHT render as nothing, folding it away is the safe reading - it makes the
+    // duplicate warning fire rather than stay silent. Nothing legitimate is lost, because a name
+    // cannot begin with a mark that modifies a character before it.
+    //
+    // Only the non-spacing (Mn) arm is covered by a test: those are the marks the pixel sweep finds
+    // painting a name identically. The Mc and Me arms are defensive - a spacing or enclosing mark
+    // at the start does render something in the test font, so nothing here can distinguish folding
+    // it from not. Stated rather than left to look like coverage.
+    String withoutLeadingMarks = separatorsAsSpaces;
+    while (!withoutLeadingMarks.isEmpty()) {
+      final int first = withoutLeadingMarks.codePointAt(0);
+      final int type = Character.getType(first);
+      if (type != Character.NON_SPACING_MARK && type != Character.COMBINING_SPACING_MARK
+          && type != Character.ENCLOSING_MARK) {
+        break;
+      }
+      withoutLeadingMarks = withoutLeadingMarks.substring(Character.charCount(first));
+    }
+
     final String normalized =
-        java.text.Normalizer.normalize(separatorsAsSpaces, java.text.Normalizer.Form.NFKC);
+        java.text.Normalizer.normalize(withoutLeadingMarks, java.text.Normalizer.Form.NFKC);
     final StringBuilder skeleton = new StringBuilder(normalized.length());
     for (int i = 0; i < normalized.length(); ) {
       final int cp = normalized.codePointAt(i);

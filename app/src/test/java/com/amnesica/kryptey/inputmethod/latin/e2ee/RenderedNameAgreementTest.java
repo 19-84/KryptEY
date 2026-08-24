@@ -91,6 +91,23 @@ public class RenderedNameAgreementTest {
     return true;
   }
 
+  /**
+   * Whether the test font can actually draw this code point.
+   *
+   * <p>Without this the sweep reports font-coverage artifacts as security findings. A character the
+   * font has no glyph for renders as nothing under Robolectric, but on a device with a fuller font
+   * it renders as a glyph, and where no font has it Android draws tofu - visible either way. A
+   * leading combining mark is the same story: no glyph here, a dotted circle on a real device.
+   *
+   * <p>So a "renders as nothing" result is only meaningful for characters the renderer could have
+   * drawn. Skipping the rest is a real limitation of measuring in Robolectric rather than on
+   * hardware, and it is better stated than silently absorbed - these are exactly the characters an
+   * instrumentation run would settle.
+   */
+  private boolean canRender(final String text) {
+    return paint.hasGlyph(text);
+  }
+
   private boolean matchesBaseline(final String name) {
     return SignalProtocolMain.hasContactWithSameDisplayName(name, "", elsewhere);
   }
@@ -103,12 +120,26 @@ public class RenderedNameAgreementTest {
     for (int cp = 1; cp <= 0xFFFF; cp++) {
       if (Character.isSurrogate((char) cp)) continue;
 
-      final String candidate = BASELINE + ((char) cp);
-      if (matchesBaseline(candidate)) continue;   // folds together: nothing to check
+      // Three positions, because they are not equivalent. A character appended after the name can
+      // only add to the end; one inserted between two letters can also join or separate words; one
+      // at the front can reorder everything that follows. A sweep that only appends is blind to the
+      // middle and leading cases, and the middle is where a separator has to sit to make
+      // "Bob<X>Jones" read as two words.
+      // Only meaningful if the renderer could have drawn it - see canRender.
+      if (!canRender(String.valueOf((char) cp))) continue;
 
-      if (samePicture(pixels(candidate), baselinePixels)) {
-        divergences.add(String.format("U+%04X paints the baseline exactly but does not match it",
-            cp));
+      for (final String candidate : new String[] {
+          BASELINE + ((char) cp),
+          BASELINE.substring(0, 2) + ((char) cp) + BASELINE.substring(2),
+          String.valueOf((char) cp) + BASELINE,
+      }) {
+        if (matchesBaseline(candidate)) continue;   // folds together: nothing to check
+
+        if (samePicture(pixels(candidate), baselinePixels)) {
+          divergences.add(String.format("U+%04X paints the baseline exactly but does not match it",
+              cp));
+          break;
+        }
       }
     }
 
@@ -161,5 +192,59 @@ public class RenderedNameAgreementTest {
               + "matching it", control),
           !samePicture(pixels(candidate), baselinePixels));
     }
+  }
+
+  /**
+   * Sequences, not just single characters.
+   *
+   * <p>A single-character sweep cannot see a combination whose parts are each handled correctly but
+   * whose composition is not - two invisibles that cancel a length check, an invisible next to a
+   * confusable, a bidi control paired with its terminator. These are the shapes an attacker would
+   * actually try after single characters stopped working.
+   */
+  @Test
+  public void noSequencePaintsTheBaselineWithoutMatchingIt() {
+    final int[] baselinePixels = pixels(BASELINE);
+    final List<String> divergences = new ArrayList<>();
+
+    final char[] invisible = {0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x00AD, 0x034F, 0x3164};
+    final char[] controls = {0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2069};
+
+    final List<String> candidates = new ArrayList<>();
+    for (final char a : invisible) {
+      for (final char b : invisible) {
+        candidates.add(BASELINE + a + b);
+        candidates.add(String.valueOf(a) + BASELINE + b);
+        candidates.add(BASELINE.substring(0, 2) + a + b + BASELINE.substring(2));
+      }
+      for (final char c : controls) {
+        candidates.add(String.valueOf(c) + BASELINE + a);
+        candidates.add(String.valueOf(a) + ((char) 0x202E)
+            + new StringBuilder(BASELINE).reverse() + c);
+      }
+    }
+
+    for (final String candidate : candidates) {
+      if (matchesBaseline(candidate)) continue;
+      if (samePicture(pixels(candidate), baselinePixels)) {
+        divergences.add("sequence paints the baseline but does not match: " + escape(candidate));
+      }
+    }
+
+    assertTrue("character sequences that draw the baseline's picture while folding to a different "
+            + "key:\n  "
+            + String.join("\n  ", divergences.subList(0, Math.min(15, divergences.size())))
+            + (divergences.size() > 15
+                ? "\n  ... and " + (divergences.size() - 15) + " more" : ""),
+        divergences.isEmpty());
+  }
+
+  private static String escape(final String value) {
+    final StringBuilder out = new StringBuilder();
+    for (final char c : value.toCharArray()) {
+      if (c < 0x20 || c > 0x7E) out.append(String.format("U+%04X", (int) c));
+      else out.append(c);
+    }
+    return out.toString();
   }
 }
