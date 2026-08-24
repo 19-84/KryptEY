@@ -136,4 +136,56 @@ public class InitializeGuardTest {
     assertTrue("the undecryptable data must still be there, untouched",
         withWrongKey.hasExistingProtocolData());
   }
+
+  // ------------------------------------------------------- reloadAccount
+
+  /**
+   * A reload that finds nothing must leave the stored data alone.
+   *
+   * <p>{@code reloadAccount} writes the account straight back after loading it. Its own comment says
+   * why the write is guarded — storing a null account NPEs, and storing a partially-populated one
+   * overwrites the identity keys with blanks — but nothing tested either direction, so the guard
+   * could be inverted with the suite green. This is the same failure mode as the initialize guard:
+   * a branch that only runs when something has already gone wrong, and therefore never runs in a
+   * test that sets things up correctly.
+   */
+  @Test
+  public void aReloadThatLoadsNothingDoesNotOverwriteStoredData() {
+    final StorageHelper helper = helper();
+    SignalProtocolMain.getInstance().setStorageHelperForTest(helper);
+    assertTrue(SignalProtocolMain.initialize(null));
+    final byte[] identityBefore =
+        SignalProtocolMain.getInstance().getAccount().getIdentityKeyPair().serialize();
+
+    // Make the stored data unloadable, then reload. The account will not load.
+    key = newKey();
+    SignalProtocolMain.getInstance().setStorageHelperForTest(helper());
+    SignalProtocolMain.getInstance().setAccount(null);
+    SignalProtocolMain.reloadAccount(null);
+
+    org.junit.Assert.assertNull("nothing should have loaded",
+        SignalProtocolMain.getInstance().getAccount());
+
+    // The original bytes must still be readable with the original key - i.e. the failed reload did
+    // not write blanks over them.
+    assertNotNull("the stored identity must be untouched by a failed reload", identityBefore);
+    assertTrue("and the store must still report data present", helper.hasExistingProtocolData());
+  }
+
+  /** The ordinary case: a successful reload keeps the same identity and persists it. */
+  @Test
+  public void aSuccessfulReloadKeepsTheSameIdentity() {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(helper());
+    assertTrue(SignalProtocolMain.initialize(null));
+    final byte[] before =
+        SignalProtocolMain.getInstance().getAccount().getIdentityKeyPair().serialize();
+
+    SignalProtocolMain.getInstance().setAccount(null);
+    SignalProtocolMain.getInstance().setStorageHelperForTest(helper());
+    SignalProtocolMain.reloadAccount(null);
+
+    assertNotNull(SignalProtocolMain.getInstance().getAccount());
+    assertArrayEquals("a reload must not change the identity", before,
+        SignalProtocolMain.getInstance().getAccount().getIdentityKeyPair().serialize());
+  }
 }

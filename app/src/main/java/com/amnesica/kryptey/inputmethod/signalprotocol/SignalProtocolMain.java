@@ -111,8 +111,14 @@ public class SignalProtocolMain {
     Log.d(TAG, "Reloading local account for signal protocol (not first app run)...");
     sInstance.initializeStorageHelper(context);
     sInstance.reloadAccountFromSharedPreferences();
-    // Only write back if we actually loaded something. Storing a null account here would NPE, and
-    // storing a partially-populated one would overwrite the user's identity keys with blanks.
+    // Only write back if we actually loaded something.
+    //
+    // Defence in depth, not the thing preventing the NPE: an earlier version of this comment said
+    // "storing a null account here would NPE", and that is not true -
+    // storeAllAccountInformationInSharedPreferences guards null itself and logs. So inverting this
+    // condition is an equivalent mutant, which is why mutation testing flags it and no test can
+    // kill it. It is kept because the inner guard is in a different method and a future refactor
+    // that removes it would otherwise turn a failed reload into an overwrite with blanks.
     if (sInstance.mAccount != null) {
       sInstance.storeAllAccountInformationInSharedPreferences();
     } else {

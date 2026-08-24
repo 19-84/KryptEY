@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
@@ -265,5 +266,45 @@ public class PostRejectWindowTest {
     final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
     assertFalse(SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Smith", elsewhere));
     assertFalse(SignalProtocolMain.hasContactWithSameDisplayName("Alice", "Jones", elsewhere));
+  }
+
+  // -------------------------------------------------- guards with no account
+
+  /**
+   * The trust queries must be safe with no account loaded, on both arms of their guards.
+   *
+   * <p>These are written {@code address == null || account == null}, and every test loads an account
+   * and passes a real address — so only the both-present path ran and the {@code ||} could be
+   * weakened to {@code &&} unnoticed. With {@code &&}, a query made before the account has loaded
+   * dereferences null. That state is ordinary, not exotic: {@code setInputView} can run before
+   * {@code reloadAccount} completes, and the E2EE strip queries trust state as soon as it is drawn.
+   */
+  @Test
+  public void trustQueriesAreSafeWithNoAccountLoaded() {
+    SignalProtocolMain.getInstance().setAccount(null);
+
+    assertFalse(SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+    assertFalse(SignalProtocolMain.hasUnacceptedIdentityChange(null));
+    assertFalse(SignalProtocolMain.dismissIdentityChange(peerAddress));
+    assertFalse(SignalProtocolMain.dismissIdentityChange(null));
+    assertFalse(SignalProtocolMain.wasKeyRejected(peerAddress));
+    assertFalse(SignalProtocolMain.rejectContactKey(storedContactDetached()));
+    assertEquals("a tag needs an account to be keyed with", "",
+        SignalProtocolMain.displayTagFor(storedContactDetached()));
+    assertEquals(0, SignalProtocolMain.contactCount());
+  }
+
+  /** And with an account but no address, which is the other arm. */
+  @Test
+  public void trustQueriesAreSafeWithNoAddress() {
+    assertFalse(SignalProtocolMain.hasUnacceptedIdentityChange(null));
+    assertFalse(SignalProtocolMain.dismissIdentityChange(null));
+    assertFalse(SignalProtocolMain.wasKeyRejected(null));
+    assertFalse(SignalProtocolMain.rejectContactKey(null));
+    assertEquals("", SignalProtocolMain.displayTagFor(null));
+  }
+
+  private Contact storedContactDetached() {
+    return new Contact("Real", "Peer", peerAddress.getName(), peerAddress.getDeviceId(), false);
   }
 }
