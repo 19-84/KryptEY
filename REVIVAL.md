@@ -304,8 +304,20 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
    supplies it. Until it exists, no warning text should ask the user to check "their new number" —
    they cannot see it. The strings were corrected accordingly.
-3. ~~**Contacts are listed by display name only.**~~ Addressed, then found bypassable and fixed
-   again. The app cannot *refuse* a second contact under a familiar name — a genuine reinstall
+3. **The trust core has never been mutation-tested.** `IdentityKeyStoreImpl` and
+   `SignalProtocolMain` are the two files that have had the most *review* attention and the least
+   *mutation* attention — every other class in `signalprotocol/` has now been swept. Review finds
+   design errors; mutation finds assertions that cannot fail, and this session produced five of
+   those in code that had already been reviewed. Sweeping these two is the largest remaining
+   coverage gap that can be closed in this environment.
+
+## Settled during review
+
+These were open and are not any more. The reasoning is kept because several of them were got wrong
+first, and the wrong version is the part worth not repeating.
+
+**Contacts were listed by display name only.** Addressed, then found bypassable, then fixed
+again — three rounds. The app cannot *refuse* a second contact under a familiar name — a genuine reinstall
    really does arrive at a new address, which is what makes the attacker's "I reinstalled" story
    credible — so the goal is visibility, not prevention. What that took:
 
@@ -329,7 +341,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
      what keeps each one partial.
    - **The tag renders where the user acts**, not only on the contact-list row: the "Detected
      contact" banner and the standing "Chosen contact" label both carry it when a name is shared.
-4. **Safety numbers are bound to the peer-supplied address name**, which is covered by neither the
+**Safety numbers were bound to the peer-supplied address name**, which is covered by neither the
    bundle signatures nor the message MAC. A messenger that rewrites that field consistently in both
    directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a
    server-attested identifier; there is no equivalent here.
@@ -344,7 +356,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
    The number now proves "these two keys are the ones in use", which is what the comparison is for;
    it does not prove the address you are sending to is your contact's. That is the duplicate-name
    problem, addressed separately by warning and tagging.
-5. **Run the instrumentation tests.** Not possible in this environment, and that is now settled
+**The instrumentation tests.** Not possible in this environment, and that is now settled
    rather than pending: there is no `/dev/kvm` and the host CPU exposes no virtualisation
    extensions at all, so an emulator cannot run here even slowly. The 11 `AndroidKeystoreCryptoBox`
    tests have therefore never executed anywhere.
