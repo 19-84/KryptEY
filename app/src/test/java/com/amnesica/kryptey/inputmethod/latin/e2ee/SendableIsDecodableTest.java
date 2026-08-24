@@ -168,11 +168,42 @@ public class SendableIsDecodableTest {
     }
   }
 
-  /** The raw encoder is a pass-through, so its own cap is what keeps it inside the door. */
+  /**
+   * The product limits are literal values, not whatever the constants happen to say.
+   *
+   * <p>{@code aplaintextPastTheProductLimitIsRefused} reads {@code CHAR_THRESHOLD_RAW + 1}, so it
+   * moves with the constant: raising the cap from 500 to 5000 left it green while every RAW message
+   * over about 4000 bytes would then be refused downstream by {@code encode}. A test that follows
+   * the value it guards is not guarding it.
+   */
   @Test
-  public void therawPathNeedsNoExpansionHeadroom() {
-    assertTrue("the raw send cap exceeds the decode cap",
-        E2EEStrip.CHAR_THRESHOLD_RAW <= E2EEStrip.MAX_DECODABLE_CHARS);
+  public void theproductLimitsAreWhatTheyAreDocumentedToBe() {
+    assertEquals("the raw message limit is a product decision, not an incidental constant",
+        500, E2EEStrip.CHAR_THRESHOLD_RAW);
+    assertEquals(500, E2EEStrip.CHAR_THRESHOLD_FAIRYTALE);
+    assertEquals(4096, E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE);
+    assertEquals(8192, E2EEStrip.MAX_DECODABLE_CHARS);
+  }
+
+  /**
+   * What the RAW path actually emits, which is not what I previously asserted.
+   *
+   * <p>The test this replaces compared {@code CHAR_THRESHOLD_RAW} (500) against
+   * {@code MAX_DECODABLE_CHARS} and its comment said "the raw encoder is a pass-through, so its own
+   * cap is what keeps it inside the door". False: RAW passes through the WIRE ENVELOPE, not the
+   * plaintext - measured 3068 characters for a 500-byte message and 5372 with a rotation-attached
+   * bundle. Six to eleven times the number it was comparing. That is exactly the category error the
+   * commit which wrote it says it is fixing, reintroduced in the replacement.
+   */
+  @Test
+  public void therawPathEmitsTheWireEnvelopeAndItStillFits() throws Exception {
+    final CharSequence encoded = strip.encryptMessage(plaintext(500), bobAddress, Encoder.RAW);
+
+    assertNotNull(encoded);
+    assertTrue("RAW emits the wire envelope, so it must be far larger than the 500-byte plaintext "
+            + "- measured " + encoded.length() + " characters", encoded.length() > 2000);
+    assertTrue("and it must still fit through the decode cap", 
+        encoded.length() <= E2EEStrip.MAX_DECODABLE_CHARS);
   }
 
   /** A real key bundle - the other send path - must also survive its own encoder. */

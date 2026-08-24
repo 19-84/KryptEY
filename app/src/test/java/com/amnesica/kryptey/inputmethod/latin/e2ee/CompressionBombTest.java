@@ -40,8 +40,14 @@ public class CompressionBombTest {
     // 4MB of 'a' compresses to a few kilobytes - comfortably inside every input cap on the way in.
     final byte[] compressed = bomb(4 * 1024 * 1024);
 
-    assertTrue("precondition: the bomb must be small enough to paste, was " + compressed.length,
-        compressed.length < 8192);
+    // The real limit is 4096 BYTES, not 8192: the encoder spends two invisible characters per
+    // byte, and the paste cap counts characters. Asserting 8192 here passed by 30 characters, by
+    // luck rather than by the assertion meaning anything.
+    assertTrue("precondition: the bomb must be small enough to paste - " + compressed.length
+            + " bytes becomes " + (compressed.length * 2) + " characters against a cap of "
+            + com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStrip.MAX_DECODABLE_CHARS,
+        compressed.length * 2 <= com.amnesica.kryptey.inputmethod.latin.e2ee
+            .E2EEStrip.MAX_DECODABLE_CHARS);
 
     final IOException refused = assertThrows(
         "an 8KB payload that expands to megabytes must be refused, not inflated",
@@ -52,18 +58,40 @@ public class CompressionBombTest {
         refused.getMessage() != null && refused.getMessage().contains("exceeds"));
   }
 
-  /** The bound has to be low enough to matter and high enough to pass real traffic. */
+  /**
+   * Refusing must be fast, on a bomb that can actually arrive.
+   *
+   * <p>This used to compress 64MB, giving 65,233 bytes - 130,466 invisible characters, sixteen
+   * times past the paste cap. No real path can deliver it, so the test was measuring something the
+   * code will never see. Sized to the cap instead, which is the largest bomb that can reach
+   * {@code decompressString} at all.
+   */
   @Test
   public void thebudgetIsBelowWhatWouldExhaustMemory() throws IOException {
-    final byte[] compressed = bomb(64 * 1024 * 1024);
+    final int maxCompressedBytes =
+        com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStrip.MAX_DECODABLE_CHARS / 2;
+
+    byte[] sized = bomb(64 * 1024 * 1024);
+    int plaintext = 64 * 1024 * 1024;
+    while (sized.length > maxCompressedBytes) {
+      plaintext /= 2;
+      sized = bomb(plaintext);
+    }
+    final byte[] compressed = sized;
+
+    assertTrue("precondition: the bomb must fit through the paste cap",
+        compressed.length * 2 <= com.amnesica.kryptey.inputmethod.latin.e2ee
+            .E2EEStrip.MAX_DECODABLE_CHARS);
 
     final long before = System.nanoTime();
-    assertThrows(IOException.class, () -> EncodeHelper.decompressString(compressed));
+    assertThrows("a bomb that fits through the paste cap must still be refused",
+        IOException.class, () -> EncodeHelper.decompressString(compressed));
     final long millis = (System.nanoTime() - before) / 1_000_000;
 
     assertTrue("refusing a bomb must be fast - it took " + millis + "ms, which means it was "
         + "expanded first", millis < 2000);
   }
+
 
   /** And a legitimate payload of the largest size the codec accepts still decompresses. */
   @Test

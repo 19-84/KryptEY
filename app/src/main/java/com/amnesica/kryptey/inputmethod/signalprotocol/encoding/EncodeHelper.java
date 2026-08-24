@@ -77,9 +77,18 @@ public class EncodeHelper {
     return bytes;
   }
 
+  /**
+   * Extract the invisible payload as a bit string.
+   *
+   * <p>This used to build a second, parallel StringBuilder of "\\u200C"-style escapes purely to
+   * hand to {@code Log.d}. That is six characters allocated per input character, on the IME main
+   * thread, for every clipboard change - and the input here is attacker-chosen and can be
+   * megabytes. Measured, the pre-inflate allocation was about ten times the paste; most of it was
+   * this. The decode path is bounded by the caller's input cap, and it should not be spending that
+   * budget on a debug string nobody reads.
+   */
   public static String convertInvisibleStringToBinary(String encodedMessage) {
     StringBuilder result = new StringBuilder();
-    StringBuilder resultUnicode = new StringBuilder();
     final String regex = "\\p{C}";
     Pattern pattern = Pattern.compile(regex);
     Matcher matcher = pattern.matcher(encodedMessage);
@@ -89,80 +98,62 @@ public class EncodeHelper {
       switch (s) {
         case "\u200C":
           result.append("0000");
-          resultUnicode.append("\\u200C");
           break;
         case "\u200D":
           result.append("0001");
-          resultUnicode.append("\\u200D");
           break;
         case "\u2060":
           result.append("0010");
-          resultUnicode.append("\\u2060");
           break;
         case "\u2062":
           result.append("0011");
-          resultUnicode.append("\\u2062");
           break;
 
         case "\u200B":
           result.append("0100");
-          resultUnicode.append("\\u200B");
           break;
         case "\u200E":
           result.append("0101");
-          resultUnicode.append("\\u200E");
           break;
         case "\u200F":
           result.append("0110");
-          resultUnicode.append("\\u200F");
           break;
         case "\u2064":
           result.append("0111");
-          resultUnicode.append("\\u2064");
           break;
 
         case "\u206A":
           result.append("1000");
-          resultUnicode.append("\\u206A");
           break;
         case "\u206B":
           result.append("1001");
-          resultUnicode.append("\\u206B");
           break;
         case "\u206C":
           result.append("1010");
-          resultUnicode.append("\\u206C");
           break;
         case "\u206D":
           result.append("1011");
-          resultUnicode.append("\\u206D");
           break;
 
         case "\u206E":
           result.append("1100");
-          resultUnicode.append("\\u206E");
           break;
         case "\u206F":
           result.append("1101");
-          resultUnicode.append("\\u206F");
           break;
         case "\uFEFF":
           result.append("1110");
-          resultUnicode.append("\\uFEFF");
           break;
         case "\u061C":
           result.append("1111");
-          resultUnicode.append("\\u061C");
           break;
       }
     }
-    Log.d(TAG, String.valueOf(resultUnicode));
     return result.toString();
   }
 
   public static String convertBinaryToInvisibleString(String binaryString) {
     StringBuilder result = new StringBuilder();
-    StringBuilder resultUnicode = new StringBuilder();
 
     for (int i = 0; i < binaryString.length(); i += 4) {
       final int startInclusive = i;
@@ -174,75 +165,58 @@ public class EncodeHelper {
       switch (binaryDigits) {
         case "0000":
           result.append("\u200C");
-          resultUnicode.append("\\u200C");
           break;
         case "0001":
           result.append("\u200D");
-          resultUnicode.append("\\u200D");
           break;
         case "0010":
           result.append("\u2060");
-          resultUnicode.append("\\u2060");
           break;
         case "0011":
           result.append("\u2062");
-          resultUnicode.append("\\u2062");
           break;
 
         case "0100":
           result.append("\u200B");
-          resultUnicode.append("\\u200B");
           break;
         case "0101":
           result.append("\u200E");
-          resultUnicode.append("\\u200E");
           break;
         case "0110":
           result.append("\u200F");
-          resultUnicode.append("\\u200F");
           break;
         case "0111":
           result.append("\u2064");
-          resultUnicode.append("\\u2064");
           break;
 
         case "1000":
           result.append("\u206A");
-          resultUnicode.append("\\u206A");
           break;
         case "1001":
           result.append("\u206B");
-          resultUnicode.append("\\u206B");
           break;
         case "1010":
           result.append("\u206C");
-          resultUnicode.append("\\u206C");
           break;
         case "1011":
           result.append("\u206D");
-          resultUnicode.append("\\u206D");
           break;
 
         case "1100":
           result.append("\u206E");
-          resultUnicode.append("\\u206E");
           break;
         case "1101":
           result.append("\u206F");
-          resultUnicode.append("\\u206F");
           break;
         case "1110":
           result.append("\uFEFF");
-          resultUnicode.append("\\uFEFF");
           break;
         case "1111":
           result.append("\u061C");
-          resultUnicode.append("\\u061C");
           break;
       }
     }
 
-    Log.d(TAG, String.valueOf(resultUnicode));
     return result.toString();
   }
 

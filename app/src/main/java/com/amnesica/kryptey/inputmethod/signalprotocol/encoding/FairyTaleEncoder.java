@@ -8,6 +8,8 @@ import com.amnesica.kryptey.inputmethod.R;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -53,6 +55,24 @@ public class FairyTaleEncoder {
   }
 
   public static String encode(final String message, final Context context) throws IOException {
+    return encode(message, context, Integer.MAX_VALUE);
+  }
+
+  /**
+   * Encode, choosing a decoy that leaves the result inside {@code maxChars}.
+   *
+   * <p>The decoy used to be drawn at random and the total checked afterwards, which made the same
+   * message land on either side of the cap depending on the draw: measured over the shipped
+   * Rapunzel and Cinderella text, the 173 sentences run from 2 to 445 characters, so one press was
+   * refused and the next succeeded. That is a bad failure on its own and it is also how a user ends
+   * up with the same message twice in their history.
+   *
+   * <p>Picking from the sentences that fit removes the coin flip. It narrows the pool for large
+   * messages, which is a real cost to the steganographic variety this encoder exists for - but a
+   * message that cannot be sent has no variety at all, and the pool only narrows near the cap.
+   */
+  public static String encode(final String message, final Context context, final int maxChars)
+      throws IOException {
     if (message == null) return null;
 
     // hint: for testing use initForTest method before calling this method
@@ -81,7 +101,7 @@ public class FairyTaleEncoder {
     Log.d(TAG, "minifiedJson message: " + minifiedJson);
 
     final byte[] compressedMessage = EncodeHelper.compressString(minifiedJson);
-    final String decoySentence = mSentencesMap.get(new Random().nextInt(mSentencesMap.size()));
+    final String decoySentence = pickDecoy(invisibleLengthOf(compressedMessage), maxChars);
     final String binaryMessage = EncodeHelper.convertByteArrayToBinary(compressedMessage);
 
     Log.d(TAG, "binary message: " + binaryMessage);
@@ -91,6 +111,33 @@ public class FairyTaleEncoder {
     Log.d(TAG, "length invisible message: " + invisibleMessage.length());
 
     return decoySentence + invisibleMessage;
+  }
+
+  /** How many invisible characters a compressed payload becomes: two per byte, four bits each. */
+  private static int invisibleLengthOf(final byte[] compressed) {
+    return compressed.length * 2;
+  }
+
+  /**
+   * A decoy that fits, chosen at random from those that do.
+   *
+   * <p>Falls back to the shortest available sentence when nothing fits, rather than throwing here:
+   * the caller owns the cap and gives the user a message it can act on, and this returning its best
+   * effort keeps that decision in one place.
+   */
+  private static String pickDecoy(final int payloadChars, final int maxChars) {
+    final int budget = maxChars - payloadChars;
+
+    final List<String> fitting = new ArrayList<>();
+    String shortest = null;
+    for (final String sentence : mSentencesMap.values()) {
+      if (sentence == null) continue;
+      if (shortest == null || sentence.length() < shortest.length()) shortest = sentence;
+      if (sentence.length() <= budget) fitting.add(sentence);
+    }
+
+    if (fitting.isEmpty()) return shortest == null ? "" : shortest;
+    return fitting.get(new Random().nextInt(fitting.size()));
   }
 
   public static String decode(final String encodedText) throws IOException {

@@ -136,7 +136,7 @@ public class E2EEStrip {
   public String encode(final String message, final Encoder encoder) throws IOException {
     String encodedMessage = null;
     if (encoder.equals(Encoder.FAIRYTALE))
-      encodedMessage = FairyTaleEncoder.encode(message, mContext);
+      encodedMessage = FairyTaleEncoder.encode(message, mContext, MAX_DECODABLE_CHARS);
     if (encoder.equals(Encoder.RAW)) encodedMessage = RawEncoder.encode(message);
 
     if (encodedMessage != null && encodedMessage.length() > MAX_DECODABLE_CHARS) {
