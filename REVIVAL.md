@@ -1,6 +1,6 @@
 # KryptEY revival — state of the work
 
-Branch `revival`, six commits on top of 0.1.5. This documents what changed, what is verified, and
+Branch `revival`, 99 commits on top of 0.1.5. This documents what changed, what is verified, and
 what is deliberately still open, because the diff is large and several decisions in it are not
 obvious from the code alone.
 
@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 656 (655 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 656 (655 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 386
 artifacts by SHA-256.
 
 ---
@@ -225,7 +225,7 @@ work.
 
 QR is purely a UX layer over the same string and needs a dependency decision.
 
-**Mutation-sweep ledger.** Two sweeps have been run, both in an isolated worktree. Recording the
+**Mutation-sweep ledger.** Four sweeps are recorded below; a fifth (151 mutants against `SignalProtocolMain`) is summarised under Open #3, and round 24's seven `E2EEStripView` mutants live only in commit messages. This ledger exists because a previous commit claimed "all 21 survivors killed or documented" with nothing to audit against - and it had itself stopped being a complete record, which is the same failure one level up. Recording the
 outcomes here because a previous commit claimed "all 21 survivors killed or documented" with nothing
 in the tree to audit that against.
 
@@ -352,9 +352,17 @@ whole control exists to avoid.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
    supplies it. Until it exists, no warning text should ask the user to check "their new number" —
    they cannot see it. The strings were corrected accordingly.
-3. ~~**`SignalProtocolMain` has never been mutation-tested.**~~ Done. Every class in
-   `signalprotocol/` has now been swept, which closes the last coverage gap reachable in this
-   environment. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
+3. ~~**`SignalProtocolMain` has never been mutation-tested.**~~ Done for `signalprotocol/`.
+   **This entry used to end "which closes the last coverage gap reachable in this environment", and
+   that was false when written and stayed at HEAD for twenty rounds.** `E2EEStripView` — 1300 lines
+   holding every decision the user makes — was reachable in this environment the whole time;
+   Robolectric inflates it cleanly, which a later round proved by doing it, and seven mutations then
+   survived the entire suite. The sentence was the most consequential in this file, because a reader
+   deciding whether review had converged would read it and conclude yes.
+   What is actually true: `signalprotocol/` is swept; `latin/e2ee/` has had two rounds against
+   `E2EEStripView` and none against `E2EEStrip` or the adapters beyond rendering; and the ~7,300
+   lines of inherited AOSP keyboard (`keyboard/`, `latin/`, `latin/settings/`, `latin/utils/`,
+   `latin/inputlogic/`) have never been examined by anyone. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
    them were one pattern: guards written `a == null || b == null` where every test supplies both, so
    only the both-present arm ever runs. Nine of those were closed with tests; the rest were either
    already covered by later commits (the sweep runs against a snapshot, so re-verifying before
@@ -468,7 +476,7 @@ carried only 35.0.0, and everyone working here relabelled a copy of the 35.0.0 d
 past it — which worked, and meant nobody was building with the tools AGP chooses.
 
 Last cold verification: `assembleDebug` from an empty cache, BUILD SUCCESSFUL, zero verification
-failures across all 387 pinned components. Every declared dependency is at its latest stable
+failures across all 386 pinned components. Every declared dependency is at its latest stable
 release; Robolectric's only newer version is a beta, which is not appropriate for the harness that
 decides whether the security tests measure anything.
 
