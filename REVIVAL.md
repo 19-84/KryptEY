@@ -454,6 +454,14 @@ the session version — so the comments increasingly point at tests rather than 
   "no data". `destroyMasterKey()` has no production caller (only instrumentation tests), so there is
   no reset path.
 - **Non-atomic account write** — 7 independent `commit()`s per save, on the IME main thread.
+- **At 320dp with fontScale 2.0 the contact row shows no name at all** — both name views measure
+  narrower than the ellipsis glyph, so nothing is drawn: no characters, no `…`. The rows stay
+  distinguishable because the address tag is `wrap_content` and is never truncated
+  (`theTagIsNeverTruncatedAtAnyWidthOrFontScale`), which is what the tag exists for. So this is safe
+  under the stated property and still poor. Fixing it properly means wrapping the tag onto a second
+  line when the column is too narrow, which is a layout restructure rather than an attribute change.
+  Every other cell in the {320,360,411,480}dp × {1.0,1.15,1.3,1.5,2.0} grid now shows at least one
+  character of each name.
 - ~~`E2EEStripView` enables the *encrypt* button on detecting an encrypted message.~~ Resolved: it
   was a copy-paste slip, and inert — `setInfoTextViewMessage` fires a `TextWatcher` that enables
   both buttons for any info text other than `INFO_NO_CONTACT_CHOSEN`, so all three sibling
