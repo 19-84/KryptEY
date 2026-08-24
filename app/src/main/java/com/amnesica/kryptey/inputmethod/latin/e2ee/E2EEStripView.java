@@ -627,7 +627,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact));
       Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
       setWarningMessage(warning);
-      mIdentityWarningStanding = true;
     } else if (duplicateName) {
       Toast.makeText(getContext(),
           String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact)),
@@ -1149,12 +1148,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       e.printStackTrace();
       resetChosenContactAndInfoText();
     }
-    // Only reset the info field if nothing more important is standing in it. This unconditionally
-    // overwrote the identity-change warning one frame after it was set, on the clipboard path -
-    // which is the only path an attacker's envelope takes - leaving a ~3.5s toast as the entire
-    // signal, over a screen that otherwise looked like an ordinary success.
-    if (!mIdentityWarningStanding) showChosenContactInMainInfoField();
-    mIdentityWarningStanding = false;
+    // showChosenContactInMainInfoField refuses over a standing warning, so this is an ordinary
+    // call. It used to be guarded here by a flag cleared on the very next line - which protected
+    // exactly one frame and left the warning overwritable by the next clipboard event.
+    showChosenContactInMainInfoField();
     mE2EEStrip.clearClipboard();
     changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
   }
@@ -1207,18 +1204,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     showOnlyUIView(UIView.ADD_CONTACT_VIEW);
   }
 
-  /** Set while an identity-change warning is on screen, so the info field is not reset over it. */
-  private boolean mIdentityWarningStanding = false;
-
   /**
    * Set while ANY security warning is on screen, and cleared only by a deliberate user action.
    *
    * <p>The info banner is the app's only persistent warning surface - a toast lasts about three and
    * a half seconds and then the screen looks like an ordinary success. {@code
-   * mIdentityWarningStanding} was added for exactly that, and it does not survive: it is cleared at
-   * the end of {@code decryptMessageInClipboard} while the warning text is still on screen, so by
-   * the time the next clipboard event arrives it is already false and the listener overwrites the
-   * banner.
+   * An earlier flag, {@code mIdentityWarningStanding}, was added for exactly that and did not
+   * survive: it was cleared at the end of {@code decryptMessageInClipboard} while the warning was
+   * still on screen, so by the next clipboard event it was already false and the listener
+   * overwrote the banner. It has been removed - two flags for one property, one of them protecting
+   * a single frame, is a footgun rather than defence in depth.
    *
    * <p>That reduces the cost of erasing every warning in the app to one extra post. The user copies
    * it as part of the ordinary copy-then-paste workflow, the listener writes "Keybundle detected",
@@ -1338,7 +1333,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         String.format(INFO_IDENTITY_CHANGED_EXISTING, labelFor(sender), labelFor(sender));
     Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
     setWarningMessage(warning);
-    mIdentityWarningStanding = true;
     return true;
   }
 
@@ -1393,7 +1387,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
-  private void showChosenContactInMainInfoField() {
+  /** Package-visible so a test can drive the real method rather than a copy of it. */
+  void showChosenContactInMainInfoField() {
+    // Never over a standing warning. The caller guards this too, with a flag it then clears
+    // immediately - so by the time a later event arrives that flag is false and only this check is
+    // left. Two guards for one property is deliberate: the outer one covers the frame it was
+    // written for, this one covers everything after it.
+    if (mWarningStanding) return;
     if (chosenContact != null) {
       setInfoTextViewMessage(mInfoTextView, "Chosen contact: " + labelFor(chosenContact));
     } else {

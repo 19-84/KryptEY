@@ -194,4 +194,39 @@ public class StripGuardsTest {
     assertNotNull("the verify screen must have digit views", code);
     return code.getText().toString();
   }
+
+  /**
+   * The contact banner must never be written over a standing warning.
+   *
+   * <p>Making the caller's {@code if (!mIdentityWarningStanding)} unconditional survived the whole
+   * suite, and that guard is a documented fix: without it the identity-change warning was
+   * overwritten one frame after being set, on the clipboard path - the only path an attacker's
+   * envelope takes - leaving a three-and-a-half-second toast as the entire signal over a screen
+   * that otherwise looked like an ordinary success.
+   *
+   * <p>The caller's flag is cleared immediately after that check, so it protects exactly one frame.
+   * This asserts the property at the place that has to hold for every frame after it.
+   */
+  @Test
+  public void thecontactBannerNeverOverwritesAstandingWarning() {
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+
+    strip.showChosenContactInMainInfoField();
+
+    assertEquals("a warning must outlive the routine banner that follows it",
+        "Someone offered a different key for Bob.", infoField().getText().toString());
+  }
+
+  /** And once the user has acted, the routine banner appears normally. */
+  @Test
+  public void thecontactBannerAppearsOnceTheWarningIsCleared() {
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+    strip.selectContact(bob());
+
+    strip.showChosenContactInMainInfoField();
+
+    assertTrue("after a deliberate action the ordinary banner must return: "
+            + infoField().getText(),
+        infoField().getText().toString().contains("Bob"));
+  }
 }
