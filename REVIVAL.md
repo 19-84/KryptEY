@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 465, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 470, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -268,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 465 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 470 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -386,9 +386,16 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
    extensions at all, so an emulator cannot run here even slowly. The 11 `AndroidKeystoreCryptoBox`
    tests have therefore never executed anywhere.
 
-   The one Keystore behaviour a desktop JVM does not share — `randomizedEncryptionRequired`, which
-   makes a Keystore key reject a caller-supplied IV — is now covered on the JVM instead, by
-   `CallerNonceProhibitedTest`. It registers a provider that imposes that rule and runs the real
+   Two pieces have since been pulled onto the JVM. `CallerNonceProhibitedTest` covers
+   `randomizedEncryptionRequired` — the one Keystore behaviour a desktop JVM does not share, which
+   makes a Keystore key reject a caller-supplied IV. And the key ladder's *ordering* — ask for the
+   strongest protections first, degrade only when refused — was extracted from the nested loops it
+   was welded into, so `KeyCandidateLadderTest` can check it without hardware. Getting that order
+   backwards would silently mint a weaker key on a device that could have done better, and the log
+   line says what was created, not what was possible.
+
+   What still needs a device: that a key created with those flags actually *has* them. That is a
+   `KeyInfo` check on real hardware and nothing here can substitute for it. It registers a provider that imposes that rule and runs the real
    seal/open path against it, so the bug that already shipped once cannot recur silently. That is
    one property, not the whole suite; the rest still needs a device.
 

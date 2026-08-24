@@ -81,9 +81,10 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
 
     final boolean deviceSecure = isDeviceSecure();
     StorageCryptoException last = null;
-    for (final boolean requireUnlocked : new boolean[] {true, false}) {
-      if (requireUnlocked && !deviceSecure) continue;
-      for (final boolean strongBox : new boolean[] {true, false}) {
+    for (final KeyCandidate candidate1 : candidateLadder(deviceSecure)) {
+      {
+        final boolean requireUnlocked = candidate1.requireUnlocked;
+        final boolean strongBox = candidate1.strongBox;
         try {
           final SecretKey candidate = generate(strongBox, requireUnlocked);
           selfTestViaRealCallPath(candidate);
@@ -99,6 +100,48 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
       }
     }
     throw new StorageCryptoException("no usable Keystore configuration on this device", last);
+  }
+
+  /**
+   * One rung of the key ladder: which protections to ask the Keystore for.
+   *
+   * <p>Extracted as data so the ORDER can be tested. The order is the security property here - ask
+   * for the strongest protections first and only degrade when the device refuses - and it was
+   * previously expressed as nested loops welded to the Keystore calls, so nothing could check it
+   * without hardware. The Keystore calls themselves still need a device; this does not pretend
+   * otherwise, it just stops the ordering from being untestable too.
+   */
+  static final class KeyCandidate {
+    final boolean strongBox;
+    final boolean requireUnlocked;
+
+    KeyCandidate(final boolean strongBox, final boolean requireUnlocked) {
+      this.strongBox = strongBox;
+      this.requireUnlocked = requireUnlocked;
+    }
+
+    @Override
+    public String toString() {
+      return "strongBox=" + strongBox + ",requireUnlocked=" + requireUnlocked;
+    }
+  }
+
+  /**
+   * The candidates to try, strongest first.
+   *
+   * <p>{@code setUnlockedDeviceRequired} is only meaningful on a device with a secure lock screen,
+   * so on one without it those rungs are skipped rather than attempted and failed - attempting them
+   * would delete and recreate the alias for nothing.
+   */
+  static java.util.List<KeyCandidate> candidateLadder(final boolean deviceSecure) {
+    final java.util.List<KeyCandidate> ladder = new java.util.ArrayList<>();
+    for (final boolean requireUnlocked : new boolean[] {true, false}) {
+      if (requireUnlocked && !deviceSecure) continue;
+      for (final boolean strongBox : new boolean[] {true, false}) {
+        ladder.add(new KeyCandidate(strongBox, requireUnlocked));
+      }
+    }
+    return ladder;
   }
 
   private SecretKey load() throws StorageCryptoException {
