@@ -504,4 +504,70 @@ public class StorageHelperTest {
         reloaded);
     assertEquals("Jones", reloaded.getContactList().get(0).getLastName());
   }
+
+  // ------------------------------------------------- telling apart the two empty states
+
+  /**
+   * A fresh install is NONE, and the right response to it is to generate an identity.
+   */
+  @Test
+  public void afreshInstallReportsNoStorage() {
+    assertEquals(StorageHelper.StorageState.NONE,
+        new StorageHelper(context, workingBox()).storageState());
+  }
+
+  /** A healthy account is READABLE. */
+  @Test
+  public void ahealthyAccountReportsReadable() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+
+    assertEquals(StorageHelper.StorageState.READABLE, helper.storageState());
+  }
+
+  /**
+   * The case the app could not previously tell from a fresh install: the identity is still on disk
+   * and the key that protects it is gone.
+   *
+   * <p>Presenting this as a fresh install invites the user to re-invite every contact, which
+   * silently discards every pin they had already verified - reopening the trust-on-first-use window
+   * for all of them, at a moment when whoever caused the key loss knows exactly when to strike.
+   */
+  @Test
+  public void alostKeystoreKeyReportsUnreadableRatherThanEmpty() {
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(newAccount());
+
+    // Same stored bytes, different key: exactly what a lost Keystore alias looks like.
+    key = newKey();
+
+    assertEquals("a lost key must not look like a fresh install",
+        StorageHelper.StorageState.UNREADABLE,
+        new StorageHelper(context, workingBox()).storageState());
+  }
+
+  /** And a box that refuses everything - an unusable Keystore - is also UNREADABLE, not NONE. */
+  @Test
+  public void anunusableKeystoreReportsUnreadable() {
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(newAccount());
+
+    assertEquals(StorageHelper.StorageState.UNREADABLE,
+        new StorageHelper(context, brokenBox()).storageState());
+  }
+
+  /**
+   * The three states must actually be distinguishable from one another. Asserting each one alone
+   * would pass on an implementation that always returned UNREADABLE.
+   */
+  @Test
+  public void thethreeStatesAreDistinct() {
+    final StorageHelper fresh = new StorageHelper(context, workingBox());
+    assertEquals(StorageHelper.StorageState.NONE, fresh.storageState());
+
+    fresh.storeAllInformationInSharedPreferences(newAccount());
+    assertEquals(StorageHelper.StorageState.READABLE, fresh.storageState());
+
+    key = newKey();
+    assertEquals(StorageHelper.StorageState.UNREADABLE,
+        new StorageHelper(context, workingBox()).storageState());
+  }
 }

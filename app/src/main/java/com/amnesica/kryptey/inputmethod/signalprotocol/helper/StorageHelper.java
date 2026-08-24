@@ -82,6 +82,54 @@ public class StorageHelper {
    * every time it was raised, in every app, with no way for the user to recover. Callers must now
    * handle {@code null} explicitly.
    */
+  /**
+   * Why there is no account, when there is no account.
+   *
+   * <p>These three look identical to every caller today, and two of them mean opposite things.
+   * {@code NONE} is a fresh install and the right response is to generate an identity.
+   * {@code UNREADABLE} means the user's identity is still on disk and the key that protects it is
+   * gone - generating anything would destroy it - and the right response is to tell them, because
+   * nothing the app can do recovers it. {@code READABLE} means the load failed for some other
+   * reason and is worth retrying.
+   *
+   * <p>Recorded in REVIVAL.md as a known-deferred defect: "no user-visible signal when the Keystore
+   * key is gone - it currently looks identical to no data". This is the half of it that can be
+   * decided here; showing it is the UI's job.
+   */
+  public enum StorageState {
+    /** No protocol data at all. A first run. */
+    NONE,
+    /** Protocol data exists and the master key can open it. */
+    READABLE,
+    /** Protocol data exists and cannot be decrypted - typically a lost Keystore key. */
+    UNREADABLE
+  }
+
+  /**
+   * Distinguishes "nothing stored" from "stored and unreadable".
+   *
+   * <p>The distinction is not cosmetic. A lost Keystore key leaves the identity key, every session
+   * and every verified contact on disk, encrypted under a key that no longer exists. Presenting
+   * that as a fresh install invites the user to re-invite all their contacts, which silently
+   * discards every pin they had already verified - the trust-on-first-use window reopens for every
+   * one of them, at a moment when an attacker who caused the key loss knows exactly when to strike.
+   */
+  public StorageState storageState() {
+    if (!hasExistingProtocolData()) return StorageState.NONE;
+
+    final EncryptedKeyValueStore store = secureStore();
+    if (store == null) return StorageState.UNREADABLE;
+
+    // Trial decryption, not a flag: the flag says what was written, and the question here is what
+    // can still be read.
+    try {
+      return store.get(String.valueOf(ProtocolIdentifier.PROTOCOL_STORE)) != null
+          ? StorageState.READABLE : StorageState.UNREADABLE;
+    } catch (Exception e) {
+      return StorageState.UNREADABLE;
+    }
+  }
+
   public Account getAccountFromSharedPreferences() {
     final String name = (String) getClassFromSharedPreferences(ProtocolIdentifier.UNIQUE_USER_ID);
     if (name == null) {
