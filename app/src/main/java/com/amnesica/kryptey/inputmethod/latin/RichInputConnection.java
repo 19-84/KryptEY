@@ -87,6 +87,20 @@ public final class RichInputConnection {
    * text, if any. It is refreshed when the cursor moves by calling upon the TextView.
    */
   private final StringBuilder mCommittedTextBeforeComposingText = new StringBuilder();
+
+  /**
+   * Forgets the cached text around the cursor.
+   *
+   * <p>This buffer holds up to 1024 characters of what the user was last editing, and it is reset
+   * only opportunistically, when the host editor next reports a cursor move. In this app the field
+   * being edited may be the E2EE compose box holding a decrypted message, and the IME process is
+   * not recreated when the user switches apps - so without an explicit clear the plaintext stayed
+   * cached behind whatever they opened next.
+   */
+  public void forgetCachedText() {
+    mCommittedTextBeforeComposingText.setLength(0);
+    mComposingText.setLength(0);
+  }
   /**
    * This contains the currently composing text, as LatinIME thinks the TextView is seeing it.
    */

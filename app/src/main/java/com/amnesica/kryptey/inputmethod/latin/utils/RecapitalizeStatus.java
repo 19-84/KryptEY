@@ -117,6 +117,14 @@ public class RecapitalizeStatus {
 
   public void stop() {
     mIsStarted = false;
+    // Drop the text, not just the flag.
+    //
+    // These hold up to 100KB of whatever was being recapitalised, on a field that lives as long as
+    // the IME - so in this app they can hold a decrypted message long after the conversation is
+    // over, in a process that is not recreated when the user switches apps. Clearing only
+    // mIsStarted left them readable for the lifetime of the keyboard.
+    mStringBefore = null;
+    mStringAfter = null;
   }
 
   public boolean isStarted() {

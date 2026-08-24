@@ -46,6 +46,18 @@ public final class InputLogic {
   public final RichInputConnection mConnection;
   private final RecapitalizeStatus mRecapitalizeStatus = new RecapitalizeStatus();
 
+  /**
+   * Drops every cached copy of what the user was editing.
+   *
+   * <p>Called when the keyboard is dismissed. In this app the field may be the E2EE compose box
+   * holding a decrypted message, and neither this object nor the IME service is recreated when the
+   * user switches apps - so the plaintext otherwise stayed cached behind whatever they opened next.
+   */
+  public void forgetCachedText() {
+    mConnection.forgetCachedText();
+    mRecapitalizeStatus.stop();
+  }
+
   public final TreeSet<Long> mCurrentlyPressedHardwareKeys = new TreeSet<>();
 
   /**

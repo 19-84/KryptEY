@@ -608,6 +608,12 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     if (mE2EEStripView != null) {
       mE2EEStripView.clearDecryptedContent();
     }
+    // The visible field is not the only copy. The IME keeps up to 1024 characters of text around
+    // the cursor and up to 100KB in the recapitalisation buffers, both on objects that live as long
+    // as this service - and this process is not recreated when the user switches apps.
+    if (mInputLogic != null) {
+      mInputLogic.forgetCachedText();
+    }
     clearNavigationBarColor();
   }
 
