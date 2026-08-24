@@ -101,12 +101,28 @@ public class SignalProtocolTest {
     buildSessionWithPreKeyResponseMessage(bob, BOB_USERNAME, alice, ALICE_USERNAME);
   }
 
+  /**
+   * Both sides build a session from a bundle, then a message is actually sent through it.
+   *
+   * <p>The send was commented out upstream with the note "hint: this fails!", so this test had been
+   * asserting only that two bundles could be exchanged — the part that mattered, delivering a
+   * message afterwards, was never exercised. It passes now, so it is enabled.
+   *
+   * <p>I could not identify which change fixed it, and am recording that rather than guessing. The
+   * obvious candidate is one-time pre-key allocation — every bundle used to hand out pre-key id 1
+   * and overwrite the stored record, so a second build clobbered the first — but forcing
+   * {@code KeyUtil.getUnusedOneTimePreKeyId} back to a constant id 1 does <em>not</em> reproduce the
+   * failure, so that is not it. The session path was rebuilt wholesale between libsignal 0.21 (X3DH)
+   * and 0.86 (PQXDH), so the cause may not exist in this tree at all.
+   */
   @Test
-  public void buildSessionWithPreKeyBundleOnBothSidesAndSendMessageTest() throws IOException, UntrustedIdentityException, InvalidKeyIdException, InvalidKeyException {
-    Log.i(TAG, "------------ buildSessionWithPreKeyBundleOnBothSidesTest: ------------");
+  public void buildSessionWithPreKeyBundleOnBothSidesAndSendMessageTest() throws Exception {
+    Log.i(TAG, "------------ buildSessionWithPreKeyBundleOnBothSidesAndSendMessageTest: ------------");
     buildSessionWithPreKeyResponseMessage(alice, ALICE_USERNAME, bob, BOB_USERNAME);
     buildSessionWithPreKeyResponseMessage(bob, BOB_USERNAME, alice, ALICE_USERNAME);
-    // hint: this fails! sendMessageAfterSessionBuild(alice, ALICE_USERNAME, bob, BOB_USERNAME, "test");
+
+    // Asserts the plaintext round-trips; see sendMessageAfterSessionBuild.
+    sendMessageAfterSessionBuild(alice, ALICE_USERNAME, bob, BOB_USERNAME, "test");
   }
 
   @Test
