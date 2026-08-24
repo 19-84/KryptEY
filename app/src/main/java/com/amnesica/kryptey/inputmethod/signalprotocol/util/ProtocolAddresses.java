@@ -21,8 +21,7 @@ import java.util.Random;
  * everything else. That was wrong in both directions, so to be precise about what actually happens:
  *
  * <ul>
- *   <li><b>Preserved — identity keys and safety numbers.</b> Fingerprints derive from the address
- *       <em>name</em> and the identity keys, never the device id.
+ *   <li><b>Preserved — identity keys and safety numbers.</b> Fingerprints derive from the two identity keys alone, deliberately not from the address - the address name is peer-supplied and unauthenticated.
  *   <li><b>Preserved — local sessions and trusted identities.</b> Both are stored keyed by address
  *       and read back through the same folding deserializer, so lookups still match. Nothing local
  *       is lost.

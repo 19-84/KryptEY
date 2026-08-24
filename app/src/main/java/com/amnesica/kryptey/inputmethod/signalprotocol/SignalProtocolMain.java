@@ -177,10 +177,12 @@ public class SignalProtocolMain {
    *   <li>The identity-change warning tells the user, in as many words, to open the contact and
    *       compare the number — so the app's own text routes them here, and any forged bundle at a
    *       known address triggers it.
-   *   <li>Safety numbers are computed over the peer-supplied address name, which neither the bundle
-   *       signatures nor the message MAC cover. A messenger that rewrites that field consistently
-   *       in both directions cannot forge a match, but can manufacture unlimited <em>mismatches</em>
-   *       between two entirely honest peers.
+   *   <li><b>Fixed since.</b> Safety numbers <em>were</em> computed over the peer-supplied address
+   *       name, which neither the bundle signatures nor the message MAC cover, so a messenger could
+   *       rewrite that field and manufacture unlimited <em>mismatches</em> between honest peers.
+   *       {@code createFingerprint} now derives the number from the two identity keys alone, so
+   *       this route is closed. Kept here because the first bullet still holds on its own, and
+   *       because the conclusion below was reached partly on this basis.
    * </ul>
    *
    * <p>So an attacker <em>can</em> arrange for an honest user to arrive here and correctly observe a
@@ -382,10 +384,10 @@ public class SignalProtocolMain {
   /**
    * Marks a contact verified after the user compared safety numbers.
    *
-   * @return false if the request was refused - the caller MUST report that. The refusal happens
-   *     when a substituted identity is pending, and it is silent from the user's point of view: the
-   *     screen advances and the badge simply never appears. A refusal the user cannot see teaches
-   *     them the badge is unreliable, which is the same damage as showing a wrong badge.
+   * @return false only when there is no contact or no account loaded. It does NOT mean "refused":
+   *     an earlier design refused while a substituted identity was pending, and this doc outlived
+   *     it. Verification now dismisses the offered key instead. The caller must still report false,
+   *     but as "nothing is loaded" - rendering it as a security claim would fabricate one.
    */
   public static boolean verifyContact(Contact contact) throws UnknownContactException {
     Log.d(TAG, "Verifying contact...");
@@ -462,16 +464,30 @@ public class SignalProtocolMain {
 
     final IdentityKey localIdentity = getAccount().getIdentityKeyPair().getPublicKey();
 
-    // Always the PINNED key, never a pending one: the number on screen must describe the key
-    // actually in use. Prefer the session's copy, falling back to the stored identity, so
-    // verification is possible as soon as a bundle has been processed - before any message is
-    // exchanged, which is when a user ought to compare safety numbers.
-    IdentityKey remoteIdentity = getAccount().getSignalProtocolStore().getSessionStore()
-        .getPublicKeyFromSession(contact.getSignalProtocolAddress());
-    if (remoteIdentity == null) {
-      remoteIdentity = getAccount().getSignalProtocolStore().getIdentityKeyStore()
-          .getIdentity(contact.getSignalProtocolAddress());
-    }
+    // The PIN is authoritative, and is read FIRST.
+    //
+    // This used to prefer the session's copy and fall back to the pin, which contradicted the
+    // comment above it and was fail-open: the pin is the thing the user's decisions attach to, and
+    // the session merely happens to carry a copy. The two agree on every path today, but they can
+    // be made to disagree - acceptIdentityChange moves the pin without touching the session, so
+    // wiring it up (which this codebase explicitly contemplates) would have made the verify screen
+    // render the OLD key's digits over the NEW pin. That is the mirror of the one-tap-adopt failure
+    // the coupling tests exist to prevent.
+    //
+    // The session is not consulted at all, and that is the point.
+    //
+    // Reading the pin first but keeping the session as a fallback does not fail closed - the
+    // fallback is only ever REACHED when there is no pin, which is exactly the case that must not
+    // render. A session without a pin means the key was un-pinned out from under it, and showing
+    // its digits invites the user to confirm a key their own decision removed.
+    //
+    // Nothing legitimate needs the fallback: libsignal stores the identity when it builds a
+    // session, so a session implies a pin; removeContact deletes the session and keeps the pin, and
+    // is served by the pin; rejectContactKey clears both, and must show nothing. Verification is
+    // still available as soon as a bundle has been processed, before any message is exchanged,
+    // because processing a bundle is what sets the pin.
+    final IdentityKey remoteIdentity = getAccount().getSignalProtocolStore().getIdentityKeyStore()
+        .getIdentity(contact.getSignalProtocolAddress());
 
     // Was '&&'. localIdentity is essentially never null, so a missing remote identity fell straight
     // through into NumericFingerprintGenerator and NPE'd inside libsignal - crashing the keyboard

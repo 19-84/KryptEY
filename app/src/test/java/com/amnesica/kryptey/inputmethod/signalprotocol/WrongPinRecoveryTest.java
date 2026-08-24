@@ -252,4 +252,56 @@ public class WrongPinRecoveryTest {
     assertEquals("the pin-only fallback must show the pinned key, or confirming adopts the "
         + "offered one", beforeAttack, duringAttack);
   }
+
+  /**
+   * The pin is authoritative and must be read first.
+   *
+   * <p>Deleting the session branch of {@code createFingerprint} used to survive the entire suite:
+   * only the fallback was covered, so nothing pinned which of the two sources wins. That preference
+   * matters. The session merely carries a copy of the key; the pin is what the user's decisions
+   * attach to, and the two can be made to disagree — {@code acceptIdentityChange} moves the pin
+   * without touching the session, so wiring it up would have shown the OLD key's digits over the
+   * NEW pin.
+   */
+  @Test
+  public void theFingerprintFollowsThePinWhenTheSessionDisagrees() throws Exception {
+    final Contact contact = storedContact();
+
+    activate(realPeer);
+    final String genuine = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    SignalProtocolMain.processPreKeyResponseMessage(EnvelopeCodec.fromWire(genuine), peerAddress);
+    final String withGenuinePin =
+        SignalProtocolMain.getFingerprint(contact).getDisplayableFingerprint().getDisplayText();
+
+    // Move the pin without touching the session - the state acceptIdentityChange would produce.
+    victim.getSignalProtocolStore().getIdentityKeyStore()
+        .saveIdentity(peerAddress, attacker.getIdentityKeyPair().getPublicKey());
+    assertTrue("the session must still be present, or this proves nothing",
+        victim.getSignalProtocolStore().containsSession(peerAddress));
+
+    final String afterPinMoved =
+        SignalProtocolMain.getFingerprint(contact).getDisplayableFingerprint().getDisplayText();
+
+    org.junit.Assert.assertNotEquals("the number must follow the pin, not the stale session copy",
+        withGenuinePin, afterPinMoved);
+  }
+
+  /** And with nothing pinned it fails closed rather than rendering an un-pinned key. */
+  @Test
+  public void noPinMeansNoNumberEvenIfASessionSurvives() throws Exception {
+    final Contact contact = storedContact();
+
+    activate(realPeer);
+    final String genuine = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    SignalProtocolMain.processPreKeyResponseMessage(EnvelopeCodec.fromWire(genuine), peerAddress);
+    assertNotNull(SignalProtocolMain.getFingerprint(contact));
+
+    // Un-pin but leave the session, which is what a bare removeIdentity does.
+    victim.getSignalProtocolStore().getIdentityKeyStore().removeIdentity(peerAddress);
+
+    assertNull("a number for a key the user has un-pinned must not be shown",
+        SignalProtocolMain.getFingerprint(contact));
+  }
 }

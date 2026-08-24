@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 253, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 330, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -216,10 +216,26 @@ work.
 
 QR is purely a UX layer over the same string and needs a dependency decision.
 
-**One known equivalent mutant.** Swapping the local/remote identifiers in the fingerprint survives
-every test, and correctly so: `NumericFingerprintGenerator` sorts the two halves, so both sides
-compute the same value either way. It is a genuine symmetry, not a coverage gap, and chasing it
-would mean pinning a golden fingerprint against a hard-coded key pair.
+**Mutation-sweep ledger.** Two sweeps have been run, both in an isolated worktree. Recording the
+outcomes here because a previous commit claimed "all 21 survivors killed or documented" with nothing
+in the tree to audit that against.
+
+*Sweep 1 — `EncryptedKeyValueStore`, `GcmCryptoBox`, `SharedPreferencesKeyValueStore`,
+`BinaryEnvelope` (93 mutants, 21 survivors).* Killed by new tests: `isEncrypted` (`StorageSchemaStateTest`),
+`hasEncryptedData` ×2, the unmarked legacy read, `containsReadableEnvelope` ×1 of 2, sender-name
+length, sender-name character bounds ×2, u8 range ×3, u16 length, cursor bounds ×2, device count,
+varU8 length, zero-length read. Recorded as equivalent: the in-progress marker write (no early
+return, so the completion marker always overwrites it — documented in `StorageSchemaStateTest`), the
+`looksLikeEnvelope` structural pre-filter ×2 (documented in the method as never load-bearing), and
+the nonce-length error-message branch. One remains genuinely uncovered and is noted here rather than
+claimed: the second `&&` in `containsReadableEnvelope`.
+
+*Sweep 2 — the pre-key/session stores and `StorageHelper`.* In progress at time of writing; no
+survivors in the classes completed so far.
+
+**One known equivalent mutant elsewhere.** Swapping the local/remote identifiers in the fingerprint
+survives every test, and correctly so: `NumericFingerprintGenerator` sorts the two halves, so both
+sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 ---
 
@@ -227,7 +243,7 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
 
 **Verified by execution:**
 
-- 253 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 330 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -283,7 +299,16 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
    The number now proves "these two keys are the ones in use", which is what the comparison is for;
    it does not prove the address you are sending to is your contact's. That is the duplicate-name
    problem, addressed separately by warning and tagging.
-5. **Run the instrumentation tests.** The single largest remaining unknown — see below.
+5. **Run the instrumentation tests.** Not possible in this environment, and that is now settled
+   rather than pending: there is no `/dev/kvm` and the host CPU exposes no virtualisation
+   extensions at all, so an emulator cannot run here even slowly. The 11 `AndroidKeystoreCryptoBox`
+   tests have therefore never executed anywhere.
+
+   The one Keystore behaviour a desktop JVM does not share — `randomizedEncryptionRequired`, which
+   makes a Keystore key reject a caller-supplied IV — is now covered on the JVM instead, by
+   `CallerNonceProhibitedTest`. It registers a provider that imposes that rule and runs the real
+   seal/open path against it, so the bug that already shipped once cannot recur silently. That is
+   one property, not the whole suite; the rest still needs a device.
 
 ## Known-deferred defects
 
