@@ -16,7 +16,7 @@
     android:layout_height="25dp"
     android:layout_alignStart="@id/e2ee_contact_element_divider_view"
     android:layout_centerVertical="true"
-    android:layout_marginStart="30dp" />
+    android:layout_marginStart="10dp" />
 
   <ImageButton
     android:id="@+id/e2ee_verify_contact_verified_button"
@@ -25,7 +25,7 @@
     android:layout_height="25dp"
     android:layout_alignStart="@id/e2ee_contact_element_divider_view"
     android:layout_centerVertical="true"
-    android:layout_marginStart="30dp" />
+    android:layout_marginStart="10dp" />
 
   <!--
     Both name views live in one container that is constrained to end before the tag.
@@ -62,11 +62,17 @@
       for the last name that was true only in the sense that it was truncated to nothing.
 
       Weights make the truncation visible in both, which is the property that was claimed.
+
+      They are wrap_content rather than 0dp, which is the difference between weights distributing
+      the LEFTOVER and weights dividing the whole column. At 0dp each view took exactly half
+      whatever it held, so an empty last name - and the last name is the optional field - left half
+      the column blank while the mandatory first name was cut in half. Measured at 320dp, "Maria
+      del Carmen Fernandez" showed "Mari" with 61px sitting empty beside it.
     -->
     <TextView
       android:id="@+id/e2ee_contact_first_name_element"
       style="?attr/e2eeStripContactListNameFieldStyle"
-      android:layout_width="0dp"
+      android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_weight="1"
       android:layout_marginVertical="5dp"
@@ -78,7 +84,7 @@
     <TextView
       android:id="@+id/e2ee_contact_last_name_element"
       style="?attr/e2eeStripContactListNameFieldStyle"
-      android:layout_width="0dp"
+      android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_weight="1"
       android:layout_marginVertical="5dp"
@@ -102,10 +108,10 @@
     column on a 320dp screen - "Alice Smith" rendered as "Alice ..." - and nothing at all at font
     scale 2.0, where the column computed negative. Priority (tag over name) is right, but "a
     truncated name is visibly truncated" stops being true when there is no room for any of it.
-    Trimmed to 10dp on the END side and the tag to 12sp. Note the START side is still 30dp, on the
-    verify buttons above - so the name column begins at 65dp (30 + 25 + 10), not 35dp. Reclaiming
-    that would widen the name column by another 20dp, which matters most at 320dp and large font
-    scales where it is around 57dp.
+    Trimmed to 10dp on the END side and the tag to 12sp. The START side was 30dp on the verify
+    buttons, putting the name column's left edge at 65dp (30 + 25 + 10); that is now 10dp, so it
+    begins at 45dp and the column is 20dp wider. Measured, that is what moves 320dp/fontScale 1.5
+    from "Al"/"S" to the whole of "Alice Smith".
 
     Anchored here, and with BOTH name views inside a container bounded by it, the tag always
     renders and the names are what get ellipsised. That is the right way round: a truncated name is

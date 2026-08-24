@@ -248,6 +248,150 @@ public class ContactRowLayoutTest {
         shown[0], shown[1]);
   }
 
+  private static final int[] WIDTHS_DP = {320, 360, 411, 480};
+
+  /** 1.3 is the stock "Largest" slider; 2.0 is reachable in accessibility settings. */
+  private static final float[] FONT_SCALES = {1.0f, 1.15f, 1.3f, 1.5f, 2.0f};
+
+  /** Everything the user can actually read in one row, at one configuration. */
+  private String renderedRow(final int widthDp, final float fontScale,
+                             final String first, final String last, final String tagText) {
+    final Context context = RuntimeEnvironment.getApplication();
+    final android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+    final float density = metrics.density;
+    // Font scale is what shrinks the name column, so it has to be real: sp dimensions resolve
+    // through scaledDensity, and leaving it at the default measures a screen nobody has.
+    metrics.scaledDensity = density * fontScale;
+
+    final View row = inflateRow(context);
+    final TextView firstName = row.findViewById(R.id.e2ee_contact_first_name_element);
+    final TextView lastName = row.findViewById(R.id.e2ee_contact_last_name_element);
+    final TextView tag = row.findViewById(R.id.e2ee_contact_address_tag_element);
+    firstName.setText(first);
+    lastName.setText(last);
+    tag.setText(tagText);
+
+    final int widthPx = (int) (widthDp * density);
+    row.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+    row.layout(0, 0, widthPx, row.getMeasuredHeight());
+
+    try {
+      return visibleText(firstName) + "|" + visibleText(lastName) + "|" + visibleText(tag);
+    } finally {
+      metrics.scaledDensity = density;
+    }
+  }
+
+  /**
+   * Two distinct contacts must never render as the same row - at any width, at any font scale.
+   *
+   * <p>The predicate here has been wrong three rounds running: {@code getEllipsize() != null},
+   * then {@code getWidth() > 0}, then visible-text-differs at one width and one font scale. Each
+   * was true of a layout that still rendered two different contacts identically. A 33px name view
+   * satisfies {@code width > 0} and is narrower than the ellipsis glyph, so it draws nothing at all
+   * - no characters, no "...", no indication a name was cut.
+   *
+   * <p>Note what is NOT claimed: that the NAMES always differ. Under truncation they cannot - two
+   * contacts sharing a long first name will always truncate alike, and no layout fixes that. The
+   * address tag is the designed answer to exactly this, so the property is that the ROW differs. It
+   * follows that the tag has to be legible whenever the names are not, which the next test pins.
+   */
+  @Test
+  public void twoDistinctContactsNeverRenderAsTheSameRow() {
+    final String[][] pairs = {
+        {"Alice", "Smith", "Alicia", "Smythe"},
+        {"Maria del Carmen Fernandez", "Smith", "Maria del Carmen Fernandez", "Jones"},
+        {"Maria del Carmen Fernandez", "", "Maria del Carmen Fernandes", ""},
+        {"Alice", "", "Alice", "Smith"},
+        {"AliceAliceAliceAliceAlice", "X", "AliceAliceAliceAliceAlice", "Y"},
+    };
+
+    for (final int widthDp : WIDTHS_DP) {
+      for (final float fontScale : FONT_SCALES) {
+        for (final String[] pair : pairs) {
+          // Distinct contacts have distinct addresses, so they have distinct tags. That is the
+          // whole reason the tag exists; a sweep that gave both rows the same tag would be
+          // testing a situation the app cannot produce.
+          final String a = renderedRow(widthDp, fontScale, pair[0], pair[1], "#ab12-cd34");
+          final String b = renderedRow(widthDp, fontScale, pair[2], pair[3], "#ef56-7890");
+
+          org.junit.Assert.assertNotEquals(
+              "two distinct contacts rendered identically at " + widthDp + "dp, fontScale "
+                  + fontScale + " - \"" + pair[0] + "\"/\"" + pair[1] + "\" vs \"" + pair[2]
+                  + "\"/\"" + pair[3] + "\" both show [" + escape(a) + "]",
+              a, b);
+        }
+      }
+    }
+  }
+
+  /**
+   * The tag is the fallback discriminator, so it must be fully legible everywhere - not merely
+   * non-zero width, which is what every previous version of this checked. A tag truncated to
+   * "#ab1" collides with every other tag sharing that prefix, and a tag truncated to nothing
+   * leaves two identically-truncated names with nothing to tell them apart at all.
+   */
+  @Test
+  public void theTagIsNeverTruncatedAtAnyWidthOrFontScale() {
+    for (final int widthDp : WIDTHS_DP) {
+      for (final float fontScale : FONT_SCALES) {
+        for (final String name : HOSTILE_NAMES) {
+          final String shown = renderedRow(widthDp, fontScale, name, name, "#ab12-cd34");
+          final String tagShown = shown.substring(shown.lastIndexOf('|') + 1);
+
+          assertEquals("the tag was truncated at " + widthDp + "dp, fontScale " + fontScale
+                  + " with name \"" + escape(name) + "\" - it is the only thing left to "
+                  + "distinguish two rows whose names have both been cut",
+              "#ab12-cd34", tagShown);
+        }
+      }
+    }
+  }
+
+  /**
+   * The mandatory field must not be starved by an empty optional one.
+   *
+   * <p>With both views at {@code 0dp} + {@code weight="1"} each took exactly half the column
+   * whatever it held, so an empty last name left half the column blank while the first name - the
+   * field that always exists - was cut in half. Measured at 320dp: "Maria del Carmen Fernandez"
+   * showed "Mari" with 61px sitting empty beside it.
+   */
+  @Test
+  public void anEmptyLastNameGivesItsRoomToTheFirst() {
+    final String full = "Maria del Carmen Fernandez";
+    int configurationsWhereItMattered = 0;
+
+    for (final int widthDp : WIDTHS_DP) {
+      for (final float fontScale : FONT_SCALES) {
+        final String withEmpty = renderedRow(widthDp, fontScale, full, "", "#ab12-cd34");
+        final String withLast = renderedRow(widthDp, fontScale, full, "Smith", "#ab12-cd34");
+
+        final String firstOfEmpty = withEmpty.substring(0, withEmpty.indexOf('|'));
+        final String firstOfLast = withLast.substring(0, withLast.indexOf('|'));
+
+        assertTrue("an empty last name showed LESS of the first name than a present one at "
+                + widthDp + "dp, fontScale " + fontScale + ": \"" + firstOfEmpty + "\" vs \""
+                + firstOfLast + "\"",
+            firstOfEmpty.length() >= firstOfLast.length());
+
+        // Where the first name is cut at all, dropping the optional field must buy back room.
+        // Asserting only ">=" would pass on a layout that never gave the room back, so the
+        // strict case is required wherever it is reachable.
+        if (firstOfLast.length() < full.length()) {
+          assertTrue("the last name was blank and the first name was still truncated to \""
+                  + firstOfEmpty + "\" at " + widthDp + "dp, fontScale " + fontScale
+                  + " - its half of the column sat empty beside it",
+              firstOfEmpty.length() > firstOfLast.length());
+          configurationsWhereItMattered++;
+        }
+      }
+    }
+
+    assertTrue("no configuration in the grid truncated the first name, so this proved nothing",
+        configurationsWhereItMattered > 0);
+  }
+
   /** What the user can actually read: the text minus whatever the ellipsis cut off. */
   private static String visibleText(final TextView view) {
     final android.text.Layout layout = view.getLayout();
