@@ -140,8 +140,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NO_MESSAGE_TO_ENCRYPT = "No message to encrypt";
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
   private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
+  private final String INFO_PINNED_AFTER_REJECT = "Careful: you previously told the app that %s's number did not match, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
   private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. If they told you they reinstalled, check with them by voice before sending anything: a reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address.";
-  private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite - ask for one through a channel you trust, not through the app you were just messaging in.";
+  // Does not tell the user to obtain the invite "out of band": there is no import path for one -
+  // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
+  // the only way a bundle can enter the app. Advising a route that does not exist is the same
+  // defect as telling them to check a number that is never displayed.
+  private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
   private final String INFO_VERIFY_PENDING_CHANGE = "Someone offered a different key for %s since you last spoke - it was refused and is not in use. The number below is the key you already have. If it still matches what they read out, confirm it to dismiss the warning.";
   // Deliberately does NOT offer "they reinstalled" as an explanation. A reinstall mints a fresh
   // address (AddressingPremiseTest), so it cannot collide with an existing pin - a changed key at a
@@ -234,6 +239,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private void createVerifyContactRejectButtonClickListener() {
     if (mVerifyContactRejectButton == null) return;
+    mVerifyContactRejectButton.setContentDescription(
+        "The number does not match - forget this contact's key");
     mVerifyContactRejectButton.setOnClickListener(v -> {
       if (chosenContact == null) return;
       final String name = chosenContact.getFirstName();
@@ -528,7 +535,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     resetAddContactInputTextFields();
     showOnlyUIView(UIView.MAIN_VIEW);
 
-    if (duplicateName) {
+    // A key arriving where the user previously reported a mismatch is not a first sighting, even
+    // though the store looks empty. Without this the forged bundle that provoked the rejection can
+    // simply be re-delivered and pinned silently.
+    final boolean previouslyRejected = mE2EEStrip.wasKeyRejected(recipientProtocolAddress);
+
+    if (previouslyRejected) {
+      final String warning =
+          String.format(INFO_PINNED_AFTER_REJECT, chosenContact.getFirstName());
+      Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
+      setInfoTextViewMessage(mInfoTextView, warning);
+      mIdentityWarningStanding = true;
+    } else if (duplicateName) {
       Toast.makeText(getContext(),
           String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()),
           Toast.LENGTH_LONG).show();
@@ -536,7 +554,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     if (messageEnvelope.getPreKeyResponse() != null) {
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
-      if (successful && duplicateName) {
+      if (successful && previouslyRejected) {
+        setInfoTextViewMessage(mInfoTextView,
+            String.format(INFO_PINNED_AFTER_REJECT, chosenContact.getFirstName()));
+      } else if (successful && duplicateName) {
         setInfoTextViewMessage(mInfoTextView,
             String.format(INFO_DUPLICATE_CONTACT_NAME, chosenContact.getFirstName()));
       } else if (successful) {
@@ -1001,16 +1022,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     showOnlyUIView(UIView.ADD_CONTACT_VIEW);
   }
 
+  /** Set while an identity-change warning is on screen, so the info field is not reset over it. */
+  private boolean mIdentityWarningStanding = false;
+
   /**
    * Shows the identity-change warning if one is pending for this sender.
    *
    * @return true if a warning was shown, in which case the caller must not also show the generic
    *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
-   *     move for an impersonation attempt and the right one only for a reinstall.
+   *     move for an impersonation attempt, which at a pinned address is the only possibility.
    */
-  /** Set while an identity-change warning is on screen, so the info field is not reset over it. */
-  private boolean mIdentityWarningStanding = false;
-
   private boolean warnIfIdentityChanged(final Contact sender) {
     if (sender == null) return false;
     if (!com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain

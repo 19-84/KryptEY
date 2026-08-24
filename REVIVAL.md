@@ -140,14 +140,31 @@ to clear app data and destroy the user's own identity. A user doing exactly the 
 comparing numbers and finding a mismatch — had no action available.
 
 `rejectContactKey` is that action, wired to a "does not match" control on the verify screen. It
-forgets the pin, the session and the badge. It is reachable **only** from that screen, after the user
-has been shown a number to compare — never from a failure message, because those are
-attacker-inducible, which is exactly what made contact deletion an unsafe exit. Between dismiss (the
-pin is right) and reject (the pin is wrong) both directions are now covered, which is what
-`acceptIdentityChange` was being reached for before either existed.
+forgets the pin, the session and the badge. Between dismiss (the pin is right) and reject (the pin is
+wrong) both directions are now covered, which is what `acceptIdentityChange` was being reached for
+before either existed.
+
+**A correction, because this was argued wrongly first.** The original justification was that reject
+is safe because "an attacker cannot deliver the user to the verify screen, and cannot make the
+comparison fail for a genuine peer". Both halves are false, and the second was already written down
+as deferred defect #4 in this very document while the code claimed the opposite. The identity-change
+warning tells the user, in as many words, to open the contact and compare — so the app's own text
+routes them there, and any forged bundle triggers it. And safety numbers are computed over the
+peer-supplied address name, which nothing signs, so a messenger can rewrite it and manufacture a
+mismatch between two entirely honest peers.
+
+An attacker can therefore arrange for a careful user to reject a *correct* pin. That does not make
+the control wrong — someone who sees a mismatch must be able to act — but it means the state after a
+reject cannot be assumed benign. `removeIdentity` wiped every trace of the address, leaving it
+indistinguishable from one never seen, so the next bundle was a silent first sighting **including the
+forged bundle that provoked the rejection**. The rejection is now recorded separately and outlives
+the key, so a pin arriving at a rejected address is a warned event; only a fresh comparison retires
+it. What remains true, and is the real reason this is safer than clearing the pin on contact
+deletion, is narrower: reject takes a deliberate action on a specific contact, rather than following
+generic advice shown after any decryption failure.
 
 This does not *detect* a swapped first invite — nothing can, from inside the app. It makes the
-detection the user performs actionable.
+detection the user performs actionable, and makes the aftermath visible.
 
 As it now stands: a displaced key is refused in **both** directions; the change is recorded from the
 `UntrustedIdentityException` path, taking the offered key from the bundle (libsignal raises that
@@ -255,6 +272,12 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
    bundle signatures nor the message MAC. A messenger that rewrites that field consistently in both
    directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a
    server-attested identifier; there is no equivalent here.
+
+   **This is now the largest residual risk, and it undermines the comparison the whole model rests
+   on.** Every control above assumes a mismatch means an attack; this makes a mismatch something the
+   adversary can produce at will against two honest peers. Binding the fingerprint to the identity
+   key alone, rather than to the address name, would close it and is the obvious next piece of
+   work — it is a wire-format-visible change, hence deferred rather than done here.
 5. **Run the instrumentation tests.** The single largest remaining unknown — see below.
 
 ## Known-deferred defects

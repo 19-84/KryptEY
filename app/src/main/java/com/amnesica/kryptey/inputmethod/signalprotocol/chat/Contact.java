@@ -122,7 +122,31 @@ public class Contact {
    */
   public String getAddressTag() {
     final String name = getSignalProtocolAddressName();
-    final String head = name == null ? "?" : name.replace("-", "");
-    return "#" + (head.length() >= 6 ? head.substring(0, 6) : head) + "." + getDeviceId();
+    // Hash the WHOLE address, do not take a prefix of it. The first version returned the first six
+    // characters of the address name plus the device id - but the address name is chosen by the
+    // peer and the messenger knows every contact's, so an impostor only had to pick a name agreeing
+    // with the victim's in its first six characters and reuse the device id. No grinding, no cost,
+    // and the tag rendered identically for both contacts. A tag that an adversary can make collide
+    // is worse than none, because it looks like a check.
+    final byte[] digest;
+    try {
+      final java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+      sha.update((name == null ? "" : name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      sha.update((byte) 0);  // separator, so name+deviceId cannot be repartitioned
+      sha.update(String.valueOf(getDeviceId())
+          .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      digest = sha.digest();
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 unavailable", e);
+    }
+
+    // 40 bits, grouped for reading aloud. Not a safety number - it identifies the address, not the
+    // key - but enough that producing a collision is not something a messenger does incidentally.
+    final StringBuilder tag = new StringBuilder("#");
+    for (int i = 0; i < 5; i++) {
+      if (i == 2 || i == 4) tag.append('-');
+      tag.append(String.format("%02x", digest[i]));
+    }
+    return tag.toString();
   }
 }

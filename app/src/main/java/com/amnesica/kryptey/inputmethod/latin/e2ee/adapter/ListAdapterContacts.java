@@ -41,8 +41,10 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
   }
 
   private static boolean sameDisplayName(final Contact a, final Contact b) {
-    return java.util.Objects.equals(a.getFirstName(), b.getFirstName())
-        && java.util.Objects.equals(a.getLastName(), b.getLastName());
+    // Same normalisation as the add-time warning, or the two disagree and a name that dodges one
+    // dodges the other.
+    return com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.displayNamesMatch(
+        a.getFirstName(), a.getLastName(), b.getFirstName(), b.getLastName());
   }
 
   public View getView(final int position, View convertView, ViewGroup parent) {

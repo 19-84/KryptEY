@@ -144,7 +144,8 @@ public class SignalProtocolMain {
    * Whether this contact's identity key changed and the user has not acknowledged it.
    *
    * <p>A changed safety number is the highest-signal security event the protocol produces: it means
-   * either the contact reinstalled, or someone is impersonating them. The store refuses to send
+   * someone is impersonating them: a reinstall mints a fresh address, so it can never collide
+   * with an existing pin (see AddressingPremiseTest). The store refuses to send
    * until it is acknowledged; this is how the UI finds out why.
    */
   public static boolean hasUnacceptedIdentityChange(final SignalProtocolAddress address) {
@@ -153,13 +154,6 @@ public class SignalProtocolMain {
         .hasUnacceptedIdentityChange(address);
   }
 
-  /**
-   * Accepts a contact's changed identity key after the user has compared it out of band.
-   *
-   * @param shown the key the user was actually shown; the change is refused if it no longer matches
-   *     what is pending, so a key that arrives between display and confirmation cannot slip through
-   * @return true if the pinned key was replaced
-   */
   /**
    * Forgets a contact's pinned key, because the user compared safety numbers and they did NOT
    * match.
@@ -174,11 +168,31 @@ public class SignalProtocolMain {
    * numbers, finds a mismatch — has no action available, and the wrong pin is permanent for the
    * life of the install.
    *
-   * <p>Why this does not reopen the fail-open that made contact deletion an unsafe exit: that path
-   * was reachable from generic decryption-failure advice, and an attacker can induce a decryption
-   * failure at will by replaying a message or flipping a bit. This is reachable only from the verify
-   * screen, only after the user has been shown a number to compare. An attacker cannot deliver the
-   * user to it, and cannot make the comparison fail for a genuine peer.
+   * <p>An earlier version of this note claimed the control was safe because "an attacker cannot
+   * deliver the user to the verify screen, and cannot make the comparison fail for a genuine peer".
+   * <b>Both halves were false</b>, and the second was already written down as a known-deferred
+   * defect in REVIVAL.md while this claimed the opposite:
+   *
+   * <ul>
+   *   <li>The identity-change warning tells the user, in as many words, to open the contact and
+   *       compare the number — so the app's own text routes them here, and any forged bundle at a
+   *       known address triggers it.
+   *   <li>Safety numbers are computed over the peer-supplied address name, which neither the bundle
+   *       signatures nor the message MAC cover. A messenger that rewrites that field consistently
+   *       in both directions cannot forge a match, but can manufacture unlimited <em>mismatches</em>
+   *       between two entirely honest peers.
+   * </ul>
+   *
+   * <p>So an attacker <em>can</em> arrange for an honest user to arrive here and correctly observe a
+   * mismatch. That does not make the control wrong — a user who sees a mismatch must be able to act
+   * — but it means the state left behind cannot be assumed benign. Hence
+   * {@code markKeyRejected}: the address is remembered as rejected even though the key is gone, so
+   * the next bundle to arrive is a <em>warned</em> event rather than a silent first sighting.
+   * Without that, re-delivering the forged bundle immediately after the rejection pins it clean.
+   *
+   * <p>What remains true, and is the actual reason this is safer than clearing the pin on contact
+   * deletion: this is reachable only from the verify screen, so it takes a deliberate user action on
+   * a specific contact, rather than following generic advice shown after any decryption failure.
    *
    * <p>Drops the session and the verified badge with the key, so nothing downstream keeps treating
    * the old identity as current.
@@ -192,6 +206,9 @@ public class SignalProtocolMain {
     final boolean hadPin = sInstance.mAccount.getSignalProtocolStore()
         .getIdentityKeyStore().getIdentity(address) != null;
     sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore().removeIdentity(address);
+    // Must outlive the key: without it the address looks untouched and the next bundle - including
+    // the forged one that caused this - is pinned silently.
+    sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore().markKeyRejected(address);
     if (sInstance.mAccount.getSignalProtocolStore().containsSession(address)) {
       sInstance.mAccount.getSignalProtocolStore().deleteSession(address);
     }
@@ -220,6 +237,9 @@ public class SignalProtocolMain {
 
   /**
    * Adopts a pending identity in place of the pin, taking the key the user was actually shown.
+   *
+   * @param shown the key the user was actually shown; the change is refused if it no longer matches
+   *     what is pending, so a key arriving between display and confirmation cannot slip through
    *
    * <p><b>Deliberately unwired.</b> No production caller, and adding one needs an argument first:
    * a peer who reinstalls arrives at a fresh address, so a change at a pinned address is never a
@@ -400,6 +420,14 @@ public class SignalProtocolMain {
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
 
+    // A fresh comparison is the only thing that retires a rejection warning. Nothing an attacker
+    // can trigger clears it.
+    if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .clearRejection(contact.getSignalProtocolAddress())) {
+      Log.i(TAG, "Cleared the rejection warning for " + contact.getSignalProtocolAddressName()
+          + ": the user compared the number of the newly pinned key");
+    }
+
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .dismissIdentityChange(contact.getSignalProtocolAddress())) {
       Log.i(TAG, "Discarded an offered identity for " + contact.getSignalProtocolAddressName()
@@ -488,6 +516,42 @@ public class SignalProtocolMain {
   }
 
   /**
+   * Compares display names the way a person reads them, not the way a computer stores them.
+   *
+   * <p>Exact string equality let the check be sidestepped for free: "Alice " with a trailing space,
+   * "alice", or "Аlice" with a Cyrillic А all failed to match a stored "Alice", suppressing both
+   * the duplicate warning and the row tag so the two contacts rendered identically. And the natural
+   * way for a user to fill this field is to copy the name out of the invite message, which is text
+   * the attacker wrote.
+   */
+  public static boolean displayNamesMatch(final String aFirst, final String aLast,
+      final String bFirst, final String bLast) {
+    return normalizeForDisplay(aFirst).equals(normalizeForDisplay(bFirst))
+        && normalizeForDisplay(aLast).equals(normalizeForDisplay(bLast));
+  }
+
+  private static String normalizeForDisplay(final String value) {
+    if (value == null) return "";
+    // NFKC folds confusables that differ only by compatibility form; toLowerCase handles case.
+    // Cyrillic А and Latin A are distinct characters that NFKC does NOT fold, so they still differ
+    // here - the tag is what distinguishes those, and it is now a hash of the whole address.
+    return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
+        .trim()
+        .toLowerCase(java.util.Locale.ROOT);
+  }
+
+  /**
+   * Whether the user previously un-pinned a key at this address after a mismatch.
+   *
+   * <p>A bundle arriving here is not a first sighting however empty the store looks: the user has
+   * already reported an impersonation attempt at this address.
+   */
+  public static boolean wasKeyRejected(final SignalProtocolAddress address) {
+    if (sInstance.mAccount == null || address == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore().wasKeyRejected(address);
+  }
+
+  /**
    * Whether the contact list already holds someone under this display name at a different address.
    *
    * <p>The pin mechanism protects one address, and says nothing about a second contact at another
@@ -501,8 +565,8 @@ public class SignalProtocolMain {
     if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return false;
     for (final Contact existing : sInstance.mAccount.getContactList()) {
       if (existing.getSignalProtocolAddress().equals(excluding)) continue;
-      if (java.util.Objects.equals(existing.getFirstName(), firstName)
-          && java.util.Objects.equals(existing.getLastName(), lastName)) {
+      if (displayNamesMatch(existing.getFirstName(), existing.getLastName(),
+          firstName, lastName)) {
         return true;
       }
     }
@@ -895,8 +959,8 @@ public class SignalProtocolMain {
    *
    * @param preKeyBundle                   PreKeyBundle
    * @param recipientSignalProtocolAddress SignalProtocolAddress
+   * @return true only if the session was actually established and the bundle's signatures held.
    */
-  /** @return true only if the session was actually established and the bundle's signatures held. */
   private boolean buildSession(final PreKeyBundle preKeyBundle, final SignalProtocolAddress recipientSignalProtocolAddress) {
     try {
       SessionBuilder sessionBuilder = new SessionBuilder(mAccount.getSignalProtocolStore(), recipientSignalProtocolAddress);

@@ -51,7 +51,8 @@ public class E2EEStrip {
   private final String INFO_SESSION_CREATION_FAILED = "Could not set up a session from that invite. Ask your contact to send a fresh one.";
   /**
    * Deliberately does NOT tell the user to just delete and re-add. That is the right remedy for a
-   * reinstall and exactly the wrong one for an impersonation attempt, and the app cannot tell which
+   * reinstall - which cannot happen at a pinned address - and exactly the wrong one for an
+   * impersonation attempt, which is the only thing it can be
    * this is - only the user can, by comparing the safety number out of band.
    */
   // Does not name a reinstall as the cause: a reinstall mints a fresh address and cannot collide
@@ -185,7 +186,8 @@ public class E2EEStrip {
       Toast.makeText(mContext, "Session with " + chosenContact.getFirstName() + " " + chosenContact.getLastName() + " created", Toast.LENGTH_SHORT).show();
     } else if (SignalProtocolMain.hasUnacceptedIdentityChange(recipientProtocolAddress)) {
       // Distinguish this from a generic failure. A changed safety number means the contact
-      // reinstalled - or someone is impersonating them - and the generic "delete and re-invite"
+      // being impersonated - a reinstall arrives at a fresh address and cannot land here - and
+      // the generic "delete and re-invite"
       // advice would talk a user straight past a possible man-in-the-middle.
       Toast.makeText(mContext,
           String.format(INFO_IDENTITY_CHANGED, chosenContact.getFirstName()),
@@ -224,6 +226,11 @@ public class E2EEStrip {
 
   public Fingerprint getFingerprint(Contact contact) {
     return SignalProtocolMain.getFingerprint(contact);
+  }
+
+  /** @see SignalProtocolMain#wasKeyRejected */
+  public boolean wasKeyRejected(final org.signal.libsignal.protocol.SignalProtocolAddress address) {
+    return SignalProtocolMain.wasKeyRejected(address);
   }
 
   /** @see SignalProtocolMain#hasContactWithSameDisplayName */

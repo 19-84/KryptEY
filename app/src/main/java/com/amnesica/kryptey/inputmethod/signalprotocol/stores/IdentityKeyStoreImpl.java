@@ -38,6 +38,21 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   @JsonProperty
   private java.util.List<String> outOfBandAddresses = new java.util.ArrayList<>();
 
+  /**
+   * Addresses whose key the user un-pinned after a safety-number mismatch.
+   *
+   * <p>Survives {@link #removeIdentity}, deliberately — it is the one thing that must not be
+   * forgotten when the key is. Without it a reject leaves the address indistinguishable from one
+   * never seen, so the very next bundle to arrive is a silent trust-on-first-use, including the
+   * forged bundle that provoked the rejection in the first place. That is the same substitution
+   * window contact deletion was reverted for, entered through a different door.
+   *
+   * <p>Cleared only by a fresh comparison (the user confirming a number), never by anything an
+   * attacker can trigger.
+   */
+  @JsonProperty
+  private java.util.List<String> rejectedAddresses = new java.util.ArrayList<>();
+
   @JsonProperty
   @JsonSerialize(using = JsonUtil.IdentityKeyPairSerializer.class)
   @JsonDeserialize(using = JsonUtil.IdentityKeyPairDeserializer.class)
@@ -209,6 +224,30 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
     // carry over to it.
     outOfBandAddresses.remove(addressKey(address));
     return true;
+  }
+
+  /**
+   * Records that the user un-pinned this address after comparing numbers and finding a mismatch.
+   * Kept separately from the pin so it outlives {@link #removeIdentity}.
+   */
+  public void markKeyRejected(final SignalProtocolAddress address) {
+    final String key = addressKey(address);
+    if (!rejectedAddresses.contains(key)) rejectedAddresses.add(key);
+  }
+
+  /**
+   * Whether a key at this address was previously rejected by the user.
+   *
+   * <p>A pin arriving at such an address is not a first sighting, whatever the empty store suggests
+   * — the user has already told us that somebody was impersonating this contact here.
+   */
+  public boolean wasKeyRejected(final SignalProtocolAddress address) {
+    return address != null && rejectedAddresses.contains(addressKey(address));
+  }
+
+  /** Cleared by a fresh comparison, which is the only thing that can retire the warning. */
+  public boolean clearRejection(final SignalProtocolAddress address) {
+    return address != null && rejectedAddresses.remove(addressKey(address));
   }
 
   /**
