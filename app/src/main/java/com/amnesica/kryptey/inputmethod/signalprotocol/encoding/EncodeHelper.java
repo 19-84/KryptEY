@@ -13,7 +13,6 @@ import java.util.regex.Pattern;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
-import java.util.zip.InflaterOutputStream;
 
 public class EncodeHelper {
 
@@ -271,13 +270,73 @@ public class EncodeHelper {
     return stream.toByteArray();
   }
 
+  /**
+   * The largest decompressed payload that can possibly be legitimate.
+   *
+   * <p>Whatever comes out of here has to be a wire envelope, and {@code EnvelopeCodec} refuses
+   * anything longer than {@link EnvelopeCodec#MAX_WIRE_CHARS}. So output past that point cannot be
+   * a message under any circumstances - it can only be an attempt to exhaust memory - and there is
+   * no legitimate payload this rejects. Doubled once for the UTF-8/UTF-16 slack so the bound is on
+   * the codec's terms rather than a coincidence of encoding.
+   */
+  static final int MAX_DECOMPRESSED_BYTES = 2 * EnvelopeCodec.MAX_WIRE_CHARS;
+
+  /**
+   * Decompress with a hard output budget.
+   *
+   * <p>This used to write into an unbounded {@code InflaterOutputStream}. The receive path caps its
+   * INPUT at 8192 characters and capped nothing else, so a compression bomb went straight through:
+   * measured end to end through {@code E2EEStrip.decodeMessage}, an 8192-character paste produced
+   * 37,855,647 characters in 498ms - about 72MB as a UTF-16 String, an amplification of 4621x. Two
+   * stages compose, inflate then the 15 expanding replaceAll passes in {@code deSimplifyJsonKeys},
+   * whose best amplifier is "a" to "signalProtocolAddressName".
+   *
+   * <p>What made it a crash rather than a slow decode: {@code decodeMessage} catches
+   * {@code RuntimeException}, and {@code OutOfMemoryError} is an {@code Error}. It escaped into
+   * LatinIME's clipboard callback - and that callback runs on EVERY clipboard change, with routing
+   * decided by the presence of a \p{C} character rather than by which encoder the user chose. The
+   * adversary in this threat model is the messenger, so it needs no cooperation from the user at
+   * all.
+   *
+   * <p>Bounding the output is the fix rather than catching the Error. An OutOfMemoryError has
+   * already damaged the process by the time it is thrown, and the budget refuses the bomb before
+   * any of the memory is committed.
+   */
   public static String decompressString(byte[] compressedMessage) throws IOException {
-    ByteArrayOutputStream stream2 = new ByteArrayOutputStream();
-    Inflater decompresser = new Inflater(true);
-    InflaterOutputStream inflaterOutputStream = new InflaterOutputStream(stream2, decompresser);
-    inflaterOutputStream.write(compressedMessage);
-    inflaterOutputStream.close();
-    return stream2.toString();
+    final Inflater inflater = new Inflater(true);
+    try {
+      inflater.setInput(compressedMessage);
+
+      final ByteArrayOutputStream out = new ByteArrayOutputStream();
+      final byte[] chunk = new byte[4096];
+      while (!inflater.finished()) {
+        final int produced;
+        try {
+          produced = inflater.inflate(chunk);
+        } catch (java.util.zip.DataFormatException e) {
+          throw new IOException("compressed payload is malformed", e);
+        }
+        if (produced == 0) {
+          // needsInput with nothing left to give, or needsDictionary: the stream cannot continue.
+          if (inflater.needsInput() || inflater.needsDictionary()) break;
+          continue;
+        }
+        if (out.size() + produced > MAX_DECOMPRESSED_BYTES) {
+          throw new IOException("decompressed payload exceeds " + MAX_DECOMPRESSED_BYTES
+              + " bytes; refusing to expand it further");
+        }
+        out.write(chunk, 0, produced);
+      }
+
+      // A stream that stopped early is truncated, not short. InflaterOutputStream.close() does not
+      // check this, so a payload cut in half used to come back as a silent prefix of itself.
+      if (!inflater.finished()) {
+        throw new IOException("compressed payload is truncated");
+      }
+      return out.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+    } finally {
+      inflater.end();
+    }
   }
 
   private static String simplifyJsonKeys(String json) {
