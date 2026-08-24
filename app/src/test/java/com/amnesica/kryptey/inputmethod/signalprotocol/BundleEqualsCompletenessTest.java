@@ -144,4 +144,73 @@ public class BundleEqualsCompletenessTest {
     assertNotEquals("a sender-supplied timestamp must not cross the wire - it would let a peer "
             + "backdate a message", 1_600_000_000_000L, again.getTimestamp());
   }
+
+  // ---------------------------------------------- one field at a time, per entity
+
+  /**
+   * The entity {@code equals} methods, varied ONE field at a time.
+   *
+   * <p>Everything above this point varies whole entities or replaces them with null, so a field
+   * dropped from one of these {@code equals} methods survives it. That matters more than an
+   * ordinary coverage gap: {@code aRealBundleSurvivesTheWireRoundTrip} says in its own javadoc that
+   * it is "only as strong as the equals methods above", and the failure those round-trips exist to
+   * catch is a SUBSTITUTED key - which compares equal under exactly these mutants.
+   *
+   * <p>Varying id, key and signature together, as the Kyber test elsewhere does, does not
+   * discriminate either: any one of the three comparisons still returns false.
+   */
+  @Test
+  public void apreKeyEntityComparesBothOfItsFields() {
+    final PreKeyEntity same = new PreKeyEntity(preKey.getKeyId(), preKey.getPublicKey());
+    assertEquals("identically built entities must be equal", preKey, same);
+
+    assertNotEquals("the key id must participate",
+        preKey, new PreKeyEntity(preKey.getKeyId() + 1, preKey.getPublicKey()));
+    assertNotEquals("and the public key must - this is the substitution the round trips exist for",
+        preKey, new PreKeyEntity(preKey.getKeyId(), otherPreKey().getPublicKey()));
+  }
+
+  @Test
+  public void asignedPreKeyEntityComparesAllThreeOfItsFields() {
+    final SignedPreKeyEntity same = new SignedPreKeyEntity(
+        signed.getKeyId(), signed.getPublicKey(), signed.getSignature());
+    assertEquals(same, signed);
+
+    assertNotEquals("the key id must participate", signed,
+        new SignedPreKeyEntity(signed.getKeyId() + 1, signed.getPublicKey(),
+            signed.getSignature()));
+    assertNotEquals("the public key must participate", signed,
+        new SignedPreKeyEntity(signed.getKeyId(), otherPreKey().getPublicKey(),
+            signed.getSignature()));
+    assertNotEquals("and the signature must - a valid key under someone else's signature is "
+            + "exactly what a substitution looks like", signed,
+        new SignedPreKeyEntity(signed.getKeyId(), signed.getPublicKey(), flipped(
+            signed.getSignature())));
+  }
+
+  @Test
+  public void akyberPreKeyEntityComparesAllThreeOfItsFields() {
+    final KyberPreKeyEntity same = new KyberPreKeyEntity(
+        kyber.getKeyId(), kyber.getPublicKey(), kyber.getSignature());
+    assertEquals(same, kyber);
+
+    assertNotEquals("the key id must participate", kyber,
+        new KyberPreKeyEntity(kyber.getKeyId() + 1, kyber.getPublicKey(), kyber.getSignature()));
+    assertNotEquals("and the signature must", kyber,
+        new KyberPreKeyEntity(kyber.getKeyId(), kyber.getPublicKey(),
+            flipped(kyber.getSignature())));
+  }
+
+  /** A different one-time pre key, for substituting a public key without changing anything else. */
+  private PreKeyEntity otherPreKey() {
+    SignalProtocolMain.initialize(null);
+    final PreKeyResponse other = SignalProtocolMain.getPreKeyResponseMessage().getPreKeyResponse();
+    return other.getDevices().get(0).getPreKey();
+  }
+
+  private static byte[] flipped(final byte[] signature) {
+    final byte[] copy = signature.clone();
+    copy[0] ^= 0x01;
+    return copy;
+  }
 }
