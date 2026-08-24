@@ -3,6 +3,8 @@ package com.amnesica.kryptey.inputmethod.signalprotocol;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
@@ -183,5 +185,118 @@ public class DuplicateContactNameTest {
 
     assertNotEquals("same name, different device must be visibly different",
         deviceOne.getAddressTag(), deviceTwo.getAddressTag());
+  }
+
+  // ------------------------------------------------- confusable / invisible names
+
+  /**
+   * Names that <em>render</em> identically must compare identically.
+   *
+   * <p>NFKC + trim + lowercase was not enough, and was documented as if it were. NFKC does not fold
+   * scripts — Cyrillic А, Greek Α and Latin A are three characters that draw the same glyph and none
+   * folds to another — and it does not strip format characters, so a zero-width space or a
+   * right-to-left override survives it and renders as nothing.
+   *
+   * <p>The consequence was worse than a missed toast: the contact-row tag is gated on this same
+   * comparison, so one invisible character suppressed the warning <em>and</em> removed the tag from
+   * both rows. Two entries reading identically, with nothing anywhere to tell them apart.
+   *
+   * <p>The user types this text because they copy the name out of the invite — which the attacker
+   * wrote.
+   */
+  @Test
+  public void namesThatRenderIdenticallyAreTreatedAsDuplicates() {
+    addAs("Alice", "Smith", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    final String[] dodges = {
+        "\u0410lice",       // Cyrillic А
+        "Ali\u0441e",       // Cyrillic с
+        "\u0391lice",       // Greek Α
+        "Alice\u200B",      // zero-width space
+        "Ali\u00ADce",      // soft hyphen
+        "\u200EAlice",      // left-to-right mark
+        "Alice\u2060",      // word joiner
+        "\uFEFFAlice",      // BOM
+        "  ALICE  ",         // whitespace + case, which the old folding did catch
+    };
+    for (final String dodge : dodges) {
+      assertTrue("\"" + dodge + "\" dodged the duplicate check",
+          SignalProtocolMain.hasContactWithSameDisplayName(dodge, "Smith", elsewhere));
+    }
+  }
+
+  /** The folding must not be so aggressive that genuinely different names collide. */
+  @Test
+  public void genuinelyDifferentNamesSurviveTheFolding() {
+    addAs("Alice", "Smith", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    for (final String[] other : new String[][] {
+        {"Alicia", "Smith"}, {"Alice", "Smyth"}, {"Bob", "Smith"}, {"Al", "Smith"}}) {
+      assertFalse(other[0] + " " + other[1] + " must not be treated as a duplicate of Alice Smith",
+          SignalProtocolMain.hasContactWithSameDisplayName(other[0], other[1], elsewhere));
+    }
+  }
+
+  // --------------------------------------------------------- one address, one identity
+
+  /**
+   * A second contact row at an address already in use is never legitimate, and needs no name
+   * trickery to create.
+   *
+   * <p>An attacker already present as one contact sends a bundle from that same address with a
+   * "this is Alice, I reinstalled" story. Same key, so no pin conflict and no identity change; a
+   * different name, so the duplicate-name check does not fire; and the address matches the contact
+   * being added, so the name loop skips the only row that would have matched. Nothing warned.
+   *
+   * <p>Unlike the name check this one is exact — it compares addresses, which a peer cannot dodge.
+   */
+  @Test
+  public void asecondContactAtAnAddressAlreadyInUseIsFlagged() {
+    addAs("Bob", "Jones", attacker);
+    final SignalProtocolAddress attackerAddress = addressOf(attacker);
+
+    final Contact clash =
+        SignalProtocolMain.existingContactAtSameAddress(attackerAddress, "Alice", "Smith");
+
+    assertNotNull("a second name at one address must be flagged", clash);
+    assertEquals("Bob", clash.getFirstName());
+  }
+
+  /** Re-adding the same contact under the same name is not a clash. */
+  @Test
+  public void reAddingTheSameContactAtItsOwnAddressIsNotFlagged() {
+    addAs("Bob", "Jones", attacker);
+
+    assertNull("the same person under the same name is a re-add, not a second identity",
+        SignalProtocolMain.existingContactAtSameAddress(addressOf(attacker), "Bob", "Jones"));
+  }
+
+  /** And a genuinely new address is not a clash. */
+  @Test
+  public void aContactAtAFreshAddressIsNotFlagged() {
+    addAs("Bob", "Jones", attacker);
+
+    assertNull(SignalProtocolMain.existingContactAtSameAddress(
+        addressOf(realAlice), "Alice", "Smith"));
+    assertNull(SignalProtocolMain.existingContactAtSameAddress(null, "Alice", "Smith"));
+  }
+
+  // ------------------------------------------------------------------ tag width
+
+  /**
+   * The tag must not be grindable. It was 40 bits, hashed over an address the peer chooses freely,
+   * against an adversary that knows the address it wants to collide with — minutes on a GPU, and a
+   * couple of core-hours for the trailing bits a user is least likely to read.
+   */
+  @Test
+  public void theAddressTagIsWideEnoughToResistGrinding() {
+    final String tag = new Contact("A", "B", "peer-uuid", 7, false).getAddressTag();
+    final String hex = tag.replace("#", "").replace("-", "");
+
+    assertEquals("the tag must carry 96 bits; 40 is grindable by the adversary in the model",
+        24, hex.length());
+    assertTrue("the tag must be hex", hex.matches("[0-9a-f]+"));
   }
 }

@@ -153,15 +153,15 @@ public class Contact {
    *
    * <p>Derived from the address, not the key: it must stay the same when a key is legitimately
    * rejected and re-pinned, or it would read as a change when nothing about the identity moved.
+   *
+   * <p>Note what this is not. It disambiguates two rows on one screen; it is not a safety number and
+   * cannot be read out to a peer, because it is computed from the address the messenger delivered
+   * rather than from anything the peer independently knows. And it only renders when the app has
+   * decided two contacts share a display name — so it cannot be the answer to a name comparison
+   * that failed, which an earlier version of this comment wrongly claimed it was.
    */
   public String getAddressTag() {
     final String name = getSignalProtocolAddressName();
-    // Hash the WHOLE address, do not take a prefix of it. The first version returned the first six
-    // characters of the address name plus the device id - but the address name is chosen by the
-    // peer and the messenger knows every contact's, so an impostor only had to pick a name agreeing
-    // with the victim's in its first six characters and reuse the device id. No grinding, no cost,
-    // and the tag rendered identically for both contacts. A tag that an adversary can make collide
-    // is worse than none, because it looks like a check.
     final byte[] digest;
     try {
       final java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
@@ -174,13 +174,26 @@ public class Contact {
       throw new IllegalStateException("SHA-256 unavailable", e);
     }
 
-    // 40 bits, grouped for reading aloud. Not a safety number - it identifies the address, not the
-    // key - but enough that producing a collision is not something a messenger does incidentally.
+    // 96 bits, not 40.
+    //
+    // The first version emitted 40, which is not a security margin against this adversary: the
+    // hashed input is the address name, the peer chooses it freely, and the messenger knows the
+    // address of the contact being impersonated. Grinding a full 40-bit collision is minutes on a
+    // GPU and a couple of core-hours for the 32 bits a user is least likely to read carefully - so
+    // an attacker could present a second contact whose tag matched the genuine one exactly, and the
+    // tag then actively made things worse by looking like a check that had passed.
+    //
+    // 96 bits puts a targeted collision out of reach. It is longer to read, which is the right
+    // trade: this string exists to be compared against another row on the same screen, so it has to
+    // survive an adversary aiming at it, and it is not something anyone reads aloud - unlike a
+    // safety number, it is derived from the address the messenger delivered, not from anything the
+    // peer independently knows.
     final StringBuilder tag = new StringBuilder("#");
-    for (int i = 0; i < 5; i++) {
-      if (i == 2 || i == 4) tag.append('-');
+    for (int i = 0; i < 12; i++) {
+      if (i > 0 && i % 3 == 0) tag.append('-');
       tag.append(String.format("%02x", digest[i]));
     }
     return tag.toString();
   }
+
 }

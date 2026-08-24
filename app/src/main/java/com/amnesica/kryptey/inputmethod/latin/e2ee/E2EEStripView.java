@@ -141,6 +141,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
   private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
   private final String INFO_PINNED_AFTER_REJECT = "Careful: you previously told the app that %s's number did not match, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
+  private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Careful: %s is already saved as \"%s\" at this exact address. One address is one person, so this is not a second contact - either you are renaming them, or someone is using an identity you already have to introduce themselves as somebody else.";
   private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. If they told you they reinstalled, check with them by voice before sending anything: a reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address.";
   // Does not tell the user to obtain the invite "out of band": there is no import path for one -
   // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
@@ -519,6 +520,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // happened and lets the user decide.
     final boolean duplicateName = mE2EEStrip.hasContactWithSameDisplayName(
         String.valueOf(firstName), String.valueOf(lastName), recipientProtocolAddress);
+
+    // Exact and unspoofable, unlike the name heuristic above: one address is one identity, so a
+    // second contact row at an address already taken is never legitimate. Catches the variant that
+    // needs no name trickery - an attacker already present as one contact re-introducing that same
+    // address under a new name.
+    final Contact sameAddress = mE2EEStrip.existingContactAtSameAddress(
+        recipientProtocolAddress, String.valueOf(firstName), String.valueOf(lastName));
     // Store the FOLDED device id, not the raw one. Keeping the raw value here left
     // Contact.deviceId and Contact.signalProtocolAddress.getDeviceId() disagreeing for any legacy
     // peer - and the contact list keys off the former while the identity store keys off the latter.
@@ -540,7 +548,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // simply be re-delivered and pinned silently.
     final boolean previouslyRejected = mE2EEStrip.wasKeyRejected(recipientProtocolAddress);
 
-    if (previouslyRejected) {
+    if (sameAddress != null) {
+      final String warning = String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME,
+          chosenContact.getFirstName(),
+          sameAddress.getFirstName() + " " + sameAddress.getLastName());
+      Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
+      setInfoTextViewMessage(mInfoTextView, warning);
+      mIdentityWarningStanding = true;
+    } else if (previouslyRejected) {
       final String warning =
           String.format(INFO_PINNED_AFTER_REJECT, chosenContact.getFirstName());
       Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
@@ -981,7 +996,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       showAddContactView(messageEnvelope);
     } else {
       chosenContact = sender;
-      setInfoTextViewMessage(mInfoTextView, "Detected contact: " + chosenContact.getFirstName() + " " + chosenContact.getLastName());
+      setInfoTextViewMessage(mInfoTextView, "Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
@@ -994,7 +1009,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     } else {
       // update contact with preKey information
       chosenContact = sender;
-      setInfoTextViewMessage(mInfoTextView, "Detected contact: " + chosenContact.getFirstName() + " " + chosenContact.getLastName());
+      setInfoTextViewMessage(mInfoTextView, "Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
     }
   }
@@ -1007,7 +1022,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     } else {
       // update contact with preKey information
       chosenContact = sender;
-      setInfoTextViewMessage(mInfoTextView, "Detected contact with updated keybundle: " + chosenContact.getFirstName() + " " + chosenContact.getLastName());
+      setInfoTextViewMessage(mInfoTextView, "Detected contact with updated keybundle: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
@@ -1032,6 +1047,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
    *     move for an impersonation attempt, which at a pinned address is the only possibility.
    */
+  /**
+   * How a contact is named on screen: the display name, plus its address tag when another contact
+   * shares that name.
+   *
+   * <p>The tag used to render only on the contact-list row, which is one screen deep for a problem
+   * that spans the app. The paths that matter are the ones where a user acts - "Detected contact:
+   * X" when an envelope arrives, and "Chosen contact: X" while typing a reply - and both showed
+   * nothing but the name, so a second contact under the same name was indistinguishable at exactly
+   * the moment it was being messaged.
+   */
+  private String labelFor(final Contact contact) {
+    if (contact == null) return "";
+    final String name = contact.getFirstName() + " " + contact.getLastName();
+    return mE2EEStrip.hasContactWithSameDisplayName(
+        contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress())
+        ? name + "  " + contact.getAddressTag()
+        : name;
+  }
+
   private boolean warnIfIdentityChanged(final Contact sender) {
     if (sender == null) return false;
     if (!com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain
@@ -1099,7 +1133,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void showChosenContactInMainInfoField() {
     if (chosenContact != null) {
-      setInfoTextViewMessage(mInfoTextView, "Chosen contact: " + chosenContact.getFirstName() + " " + chosenContact.getLastName());
+      setInfoTextViewMessage(mInfoTextView, "Chosen contact: " + labelFor(chosenContact));
     } else {
       setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
     }

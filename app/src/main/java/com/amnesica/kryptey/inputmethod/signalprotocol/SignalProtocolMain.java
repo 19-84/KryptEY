@@ -561,7 +561,7 @@ public class SignalProtocolMain {
    * "alice", or "Аlice" with a Cyrillic А all failed to match a stored "Alice", suppressing both
    * the duplicate warning and the row tag so the two contacts rendered identically. And the natural
    * way for a user to fill this field is to copy the name out of the invite message, which is text
-   * the attacker wrote.
+   * the attacker wrote — so every dodge below is one the attacker simply types.
    */
   public static boolean displayNamesMatch(final String aFirst, final String aLast,
       final String bFirst, final String bLast) {
@@ -569,15 +569,77 @@ public class SignalProtocolMain {
         && normalizeForDisplay(aLast).equals(normalizeForDisplay(bLast));
   }
 
+  /**
+   * Folds a display name to a skeleton, so two names that <em>render</em> the same compare the same.
+   *
+   * <p>The previous version was NFKC + trim + lowercase, which is not enough and was documented as
+   * if it were. NFKC does not fold scripts: Cyrillic А (U+0410), Greek Α (U+0391) and Latin A are
+   * three distinct characters that render identically, and none folds to another. Nor does it strip
+   * format characters — a zero-width space, a soft hyphen, a word joiner or a right-to-left override
+   * survive normalisation and render as nothing at all.
+   *
+   * <p>That mattered more than a missed warning, because the contact-row tag is gated on this same
+   * comparison. One invisible character in the name therefore suppressed the warning <em>and</em>
+   * removed the tag from both rows, leaving two entries that read identically with nothing anywhere
+   * to tell them apart. The comment here used to claim the tag was what distinguished the Cyrillic
+   * case; it was not, because there was no tag.
+   *
+   * <p>Three steps now: strip anything invisible ({@code Cf} format characters, default-ignorables,
+   * combining marks), NFKC-normalise, and map the confusable Cyrillic and Greek letters that share a
+   * glyph with Latin onto their Latin counterpart. That is a subset of UTS-39 confusables — enough
+   * for the alphabets a name is realistically spoofed in, and honest about being a subset.
+   */
   private static String normalizeForDisplay(final String value) {
     if (value == null) return "";
-    // NFKC folds confusables that differ only by compatibility form; toLowerCase handles case.
-    // Cyrillic А and Latin A are distinct characters that NFKC does NOT fold, so they still differ
-    // here - the tag is what distinguishes those, and it is now a hash of the whole address.
-    return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
-        .trim()
-        .toLowerCase(java.util.Locale.ROOT);
+
+    final String normalized = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC);
+    final StringBuilder skeleton = new StringBuilder(normalized.length());
+    for (int i = 0; i < normalized.length(); ) {
+      final int cp = normalized.codePointAt(i);
+      i += Character.charCount(cp);
+
+      final int type = Character.getType(cp);
+      if (type == Character.FORMAT || type == Character.NON_SPACING_MARK
+          || type == Character.COMBINING_SPACING_MARK || type == Character.ENCLOSING_MARK
+          || type == Character.CONTROL || Character.isIdentifierIgnorable(cp)) {
+        continue; // invisible: renders as nothing, so it must not distinguish two names
+      }
+      skeleton.appendCodePoint(deconfuse(cp));
+    }
+    return skeleton.toString().trim().toLowerCase(java.util.Locale.ROOT);
   }
+
+  /**
+   * Maps Cyrillic and Greek letters that share a glyph with a Latin letter onto that letter.
+   *
+   * <p>Deliberately a small, explicit table rather than a general homograph algorithm: these are the
+   * characters that make "Аlice" and "Alice" indistinguishable on a phone screen, and an explicit
+   * list is auditable. It is a subset of UTS-39 and does not claim otherwise.
+   */
+  private static int deconfuse(final int cp) {
+    switch (cp) {
+      // Cyrillic uppercase sharing a Latin glyph
+      case 0x0410: return 'A'; case 0x0412: return 'B'; case 0x0415: return 'E';
+      case 0x041A: return 'K'; case 0x041C: return 'M'; case 0x041D: return 'H';
+      case 0x041E: return 'O'; case 0x0420: return 'P'; case 0x0421: return 'C';
+      case 0x0422: return 'T'; case 0x0423: return 'Y'; case 0x0425: return 'X';
+      case 0x0406: return 'I'; case 0x0408: return 'J'; case 0x0405: return 'S';
+      // Cyrillic lowercase
+      case 0x0430: return 'a'; case 0x0435: return 'e'; case 0x043E: return 'o';
+      case 0x0440: return 'p'; case 0x0441: return 'c'; case 0x0443: return 'y';
+      case 0x0445: return 'x'; case 0x0456: return 'i'; case 0x0458: return 'j';
+      case 0x0455: return 's';
+      // Greek uppercase sharing a Latin glyph
+      case 0x0391: return 'A'; case 0x0392: return 'B'; case 0x0395: return 'E';
+      case 0x0396: return 'Z'; case 0x0397: return 'H'; case 0x0399: return 'I';
+      case 0x039A: return 'K'; case 0x039C: return 'M'; case 0x039D: return 'N';
+      case 0x039F: return 'O'; case 0x03A1: return 'P'; case 0x03A4: return 'T';
+      case 0x03A5: return 'Y'; case 0x03A7: return 'X';
+      case 0x03BF: return 'o'; case 0x03BD: return 'v';
+      default: return cp;
+    }
+  }
+
 
   /**
    * Whether the user previously un-pinned a key at this address after a mismatch.
@@ -610,6 +672,37 @@ public class SignalProtocolMain {
       }
     }
     return false;
+  }
+
+  /**
+   * Whether a contact already exists at this exact address under a different name.
+   *
+   * <p>Unlike the display-name check this is <b>exact and unspoofable</b> — it compares addresses,
+   * not a name heuristic a peer can dodge. There is no legitimate reason for two contact rows at one
+   * address, and allowing it has real consequences: {@code getContactFromAddressInContactList} and
+   * the message store both resolve an incoming envelope with {@code findFirst()}, so which row a
+   * message is attributed to becomes list-order dependent.
+   *
+   * <p>The attack it closes needs no name trickery at all. An attacker already present as one
+   * contact sends a bundle from that same address with a "this is Alice, I reinstalled" story. The
+   * user adds "Alice" at that address: same key, so no pin conflict and no identity change; a
+   * different name, so the duplicate-name check does not fire; and the address matches the contact
+   * being added, so the loop above skips the only row that would have matched. Nothing warned.
+   */
+  public static Contact existingContactAtSameAddress(final SignalProtocolAddress address,
+      final String firstName, final String lastName) {
+    if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null
+        || address == null) {
+      return null;
+    }
+    for (final Contact existing : sInstance.mAccount.getContactList()) {
+      if (!existing.getSignalProtocolAddress().equals(address)) continue;
+      if (displayNamesMatch(existing.getFirstName(), existing.getLastName(), firstName, lastName)) {
+        continue; // the same contact under the same name is a re-add, not a second identity
+      }
+      return existing;
+    }
+    return null;
   }
 
   private Contact createAndAddContactToList(final CharSequence firstName, final CharSequence lastName, final String signalProtocolAddressName, final int deviceId) throws DuplicateContactException, InvalidContactException {

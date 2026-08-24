@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 334, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 347, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -256,7 +256,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 334 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 347 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -292,11 +292,23 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
    supplies it. Until it exists, no warning text should ask the user to check "their new number" —
    they cannot see it. The strings were corrected accordingly.
-3. ~~**Contacts are listed by display name only.**~~ Addressed: adding a contact whose display name
-   already exists at another address now warns at the moment it happens, and the contact list
-   appends a short address tag to every row sharing a name. The app cannot *refuse* this — a genuine
-   reinstall really does arrive as a second contact at a new address, which is exactly what makes
-   the attacker's "I reinstalled" story credible — so the goal is visibility, not prevention.
+3. ~~**Contacts are listed by display name only.**~~ Addressed, then found bypassable and fixed
+   again. The app cannot *refuse* a second contact under a familiar name — a genuine reinstall
+   really does arrive at a new address, which is what makes the attacker's "I reinstalled" story
+   credible — so the goal is visibility, not prevention. What that took:
+
+   - **Name folding that actually folds.** NFKC + trim + lowercase does not fold scripts (Cyrillic
+     А, Greek Α and Latin A are three characters drawing one glyph) and does not strip format
+     characters (a zero-width space survives it). Names are now reduced to a skeleton: invisible
+     characters removed, NFKC applied, and the Cyrillic/Greek letters that share a Latin glyph
+     mapped onto it. Both defences were gated on this one comparison, so a single invisible
+     character had suppressed the warning *and* removed the tag from both rows.
+   - **A tag wide enough to survive being aimed at.** 40 bits over an address the peer chooses is
+     minutes of GPU grinding for an adversary that knows the address it wants to match. Now 96.
+   - **One address is one identity.** A second contact row at an address already in use is refused
+     — an exact check on the address rather than a name heuristic, so it cannot be dodged.
+   - **The tag renders where the user acts**, not only on the contact-list row: the "Detected
+     contact" banner and the standing "Chosen contact" label both carry it when a name is shared.
 4. **Safety numbers are bound to the peer-supplied address name**, which is covered by neither the
    bundle signatures nor the message MAC. A messenger that rewrites that field consistently in both
    directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a

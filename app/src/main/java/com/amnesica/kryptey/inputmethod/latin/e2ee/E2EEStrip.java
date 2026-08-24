@@ -233,6 +233,13 @@ public class E2EEStrip {
     return SignalProtocolMain.wasKeyRejected(address);
   }
 
+  /** @see SignalProtocolMain#existingContactAtSameAddress */
+  public com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact existingContactAtSameAddress(
+      final org.signal.libsignal.protocol.SignalProtocolAddress address, final String firstName,
+      final String lastName) {
+    return SignalProtocolMain.existingContactAtSameAddress(address, firstName, lastName);
+  }
+
   /** @see SignalProtocolMain#hasContactWithSameDisplayName */
   public boolean hasContactWithSameDisplayName(final String firstName, final String lastName,
       final org.signal.libsignal.protocol.SignalProtocolAddress excluding) {
