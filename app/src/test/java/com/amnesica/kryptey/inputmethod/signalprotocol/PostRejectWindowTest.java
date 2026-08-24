@@ -289,6 +289,8 @@ public class PostRejectWindowTest {
     assertFalse(SignalProtocolMain.dismissIdentityChange(null));
     assertFalse(SignalProtocolMain.wasKeyRejected(peerAddress));
     assertFalse(SignalProtocolMain.rejectContactKey(storedContactDetached()));
+    assertFalse(SignalProtocolMain.acceptIdentityChange(peerAddress, null));
+    org.junit.Assert.assertNull(SignalProtocolMain.getPendingIdentity(peerAddress));
     assertEquals("a tag needs an account to be keyed with", "",
         SignalProtocolMain.displayTagFor(storedContactDetached()));
     assertEquals(0, SignalProtocolMain.contactCount());
@@ -301,6 +303,8 @@ public class PostRejectWindowTest {
     assertFalse(SignalProtocolMain.dismissIdentityChange(null));
     assertFalse(SignalProtocolMain.wasKeyRejected(null));
     assertFalse(SignalProtocolMain.rejectContactKey(null));
+    assertFalse(SignalProtocolMain.acceptIdentityChange(null, null));
+    org.junit.Assert.assertNull(SignalProtocolMain.getPendingIdentity(null));
     assertEquals("", SignalProtocolMain.displayTagFor(null));
   }
 
