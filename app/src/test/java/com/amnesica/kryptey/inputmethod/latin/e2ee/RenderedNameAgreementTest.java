@@ -119,6 +119,14 @@ public class RenderedNameAgreementTest {
   public void noCodePointPaintsTheBaselineWithoutMatchingIt() {
     final int[] baselinePixels = pixels(BASELINE);
     final List<String> divergences = new ArrayList<>();
+    // How many candidates actually reached the comparison.
+    //
+    // Every filter above it - isSurrogate, canRender, matchesBaseline - is capable of swallowing
+    // the whole sweep. canRender is Paint.hasGlyph, so a Robolectric font change empties it;
+    // matchesBaseline is driven by production code, so a fold that starts matching more eagerly
+    // empties it too. Either way the loop runs, the assertion holds over an empty list, and the
+    // test reports success having compared nothing.
+    int examined = 0;
 
     for (int cp = 0; cp <= 0xFFFF; cp++) {
       if (Character.isSurrogate((char) cp)) continue;
@@ -137,6 +145,7 @@ public class RenderedNameAgreementTest {
           String.valueOf((char) cp) + BASELINE,
       }) {
         if (matchesBaseline(candidate)) continue;   // folds together: nothing to check
+        examined++;
 
         if (samePicture(pixels(candidate), baselinePixels)) {
           divergences.add(String.format("U+%04X paints the baseline exactly but does not match it",
@@ -145,7 +154,9 @@ public class RenderedNameAgreementTest {
         }
       }
     }
-
+    assertTrue("the sweep compared " + examined + " candidates; it normally compares about "
+        + "163000, so a filter has swallowed nearly all of them and this passed without "
+        + "looking at anything", examined > 100000);
     assertTrue("code points that draw the same picture as the baseline while folding to a "
             + "different key - each one is a row the user cannot tell apart and a warning that "
             + "will not fire:\n  "
@@ -161,11 +172,13 @@ public class RenderedNameAgreementTest {
     final int[] baselinePixels = pixels(BASELINE);
     final List<String> divergences = new ArrayList<>();
 
+    int examined = 0;
     final int[][] ranges = {{0xE0000, 0xE0FFF}, {0x1D400, 0x1D4FF}, {0x1F100, 0x1F1FF}};
     for (final int[] range : ranges) {
       for (int cp = range[0]; cp <= range[1]; cp++) {
         final String candidate = BASELINE + new String(Character.toChars(cp));
         if (matchesBaseline(candidate)) continue;
+        examined++;
 
         if (samePicture(pixels(candidate), baselinePixels)) {
           divergences.add(String.format("U+%05X paints the baseline exactly but does not match it",
@@ -173,7 +186,8 @@ public class RenderedNameAgreementTest {
         }
       }
     }
-
+    assertTrue("the supplementary sweep compared " + examined + "; it normally compares 512",
+        examined > 400);
     assertTrue("supplementary code points painting the baseline without matching:\n  "
             + String.join("\n  ", divergences.subList(0, Math.min(25, divergences.size())))
             + (divergences.size() > 25
@@ -187,14 +201,22 @@ public class RenderedNameAgreementTest {
     final int[] baselinePixels = pixels(BASELINE);
 
     final StringBuilder reversed = new StringBuilder(BASELINE).reverse();
+    int examined = 0;
     for (final int control : new int[] {0x202E, 0x202D, 0x202B, 0x202A, 0x2067, 0x2066}) {
       final String candidate = ((char) control) + reversed.toString();
       if (matchesBaseline(candidate)) continue;
+      examined++;
 
       assertTrue(String.format("U+%04X reverses the name into the baseline's picture without "
               + "matching it", control),
           !samePicture(pixels(candidate), baselinePixels));
     }
+
+    // Six iterations, one assertion, and the gate is production code: a fold that starts matching
+    // these more eagerly empties the test to zero assertions and it stays green. This is the
+    // sharpest case in the file, because there is nothing else here to notice the absence.
+    assertTrue("every bidi control folded together with the baseline, so nothing was compared",
+        examined > 0);
   }
 
   /**
@@ -227,13 +249,16 @@ public class RenderedNameAgreementTest {
       }
     }
 
+    int examined = 0;
     for (final String candidate : candidates) {
       if (matchesBaseline(candidate)) continue;
+      examined++;
       if (samePicture(pixels(candidate), baselinePixels)) {
         divergences.add("sequence paints the baseline but does not match: " + escape(candidate));
       }
     }
-
+    assertTrue("the sequence sweep compared " + examined + "; it normally compares 71",
+        examined > 50);
     assertTrue("character sequences that draw the baseline's picture while folding to a different "
             + "key:\n  "
             + String.join("\n  ", divergences.subList(0, Math.min(15, divergences.size())))
