@@ -180,8 +180,10 @@ surrender the pin; and `acceptIdentityChange` takes the key the user was actuall
 anything else, so a key arriving between display and confirmation cannot slip through.
 
 **Out-of-band exchange** now exists as a mechanism: `exportOwnKeyBundle()` produces transferable
-text and `importOutOfBandKeyBundle()` consumes it, with the result recorded on the contact as
-`KeyOrigin.OUT_OF_BAND`. That provenance is the point — trust-on-first-use cannot detect a hostile
+text and `importOutOfBandKeyBundle()` consumes it, with the result recorded in the identity store
+and readable via `isKeyOutOfBand(address)`. (This said `KeyOrigin.OUT_OF_BAND`, a type that no
+longer exists — the provenance moved onto the store rather than the contact, and this sentence did
+not follow it.) That provenance is the point — trust-on-first-use cannot detect a hostile
 messenger substituting keys at first contact, because there is no earlier key to have changed, so
 the assurance has to come from the bundle not travelling through that messenger. Afterwards the two
 cases are indistinguishable from the stored key alone, hence recording it at import time.
@@ -282,6 +284,32 @@ survives every test, and correctly so: `NumericFingerprintGenerator` sorts the t
 sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 ---
+
+**A verified badge requires a pinned key, on both sides of the invariant.** `verifyContact` refused
+to *set* the badge with nothing pinned, and `isContactKeyTrustworthy` never asked — so a stale
+`Contact` carrying `verified = true` over an address holding no key read as trustworthy, and a later
+trust-on-first-use pinned an attacker's key onto an already-green contact. Enforced where it is
+written and ignored where it is read is how the original defect worked; both sides check now.
+
+**A standing rejection outranks a verified badge.** Telling the app a number did not match records a
+rejection, and only a fresh comparison retires it. Without consulting that on read, rejecting and
+then letting the attacker's bundle pin by trust-on-first-use gave the green badge back.
+
+**Deleting a contact retires its display name.** Deletion keeps the pin, which closes the
+*same-address* door — a substituted bundle for that address is still refused. It does nothing about
+the other door: the attacker's own fresh address carrying the deleted contact's name, where nothing
+is pinned and TOFU accepts silently. With the name gone from the list, the duplicate warning had
+nothing to fire on, so a warned attack became an unwarned one. `rejectedAddresses` was deliberately
+made to outlive `removeIdentity` on exactly this reasoning; the display name got no such treatment
+until now. Bounded at 100 distinct names, and it does **not** fire for a re-add at the same address,
+where the surviving pin already proves identity — that was the commonest firing and it used wording
+the user could see was false.
+
+Its limit is stated rather than implied: it matches the exact folded name. For a live duplicate that
+suffices, because a dodge still leaves two rows distinguishable by their tags. After a deletion there
+is no second row, so `Bob`, `Bob J`, `Robert Jones` and `Bob Jones (new phone)` all pass unwarned.
+Matching loosely would fire on ordinary names and habituate the user, which is the failure mode the
+whole control exists to avoid.
 
 ## Verified vs. reasoned
 
