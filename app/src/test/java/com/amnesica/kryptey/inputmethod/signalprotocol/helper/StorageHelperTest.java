@@ -272,4 +272,84 @@ public class StorageHelperTest {
         String.valueOf(ProtocolIdentifier.PROTOCOL_STORE), null);
     assertFalse("legacy cleartext survived the migration", onDisk.startsWith("{"));
   }
+
+  // ------------------------------------------------- partial-read failure modes
+
+  /**
+   * A partial read must abort the load, not produce a half-built account.
+   *
+   * <p>The guard is {@code metadataStore == null || address == null}. Weakening the {@code ||} to
+   * {@code &&} survived the whole suite, because every existing test either stores everything or
+   * stores nothing — the case where exactly one of the two is missing was never constructed. With
+   * {@code &&} the load proceeds carrying a null field, which surfaces later as an NPE out of
+   * {@code setInputView()}, i.e. a keyboard that crashes on every raise.
+   */
+  @Test
+  public void aMissingMetadataStoreAloneAbortsTheLoad() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+    preferences.edit().remove(ProtocolIdentifier.METADATA_STORE.toString()).commit();
+
+    assertNull("a load missing only the metadata store must abort, not half-build an account",
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
+  }
+
+  @Test
+  public void aMissingProtocolAddressAloneAbortsTheLoad() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+    preferences.edit().remove(ProtocolIdentifier.PROTOCOL_ADDRESS.toString()).commit();
+
+    assertNull("a load missing only the protocol address must abort",
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
+  }
+
+  /**
+   * A successful read of the message history must be kept.
+   *
+   * <p>Inverting the null check replaces a perfectly good list with an empty one, and the very next
+   * write-back persists that — silently erasing the user's entire message history. The existing
+   * tests only ever round-trip an account with no messages, so an empty list came back either way
+   * and the mutation was invisible.
+   */
+  @Test
+  public void aStoredMessageHistorySurvivesReloading() {
+    final Account original = newAccount();
+    final String peer = "peer-uuid";
+    original.addUnencryptedMessage(
+        new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
+            "Real", "Peer", peer, 7, false),
+        new com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage(
+            peer, peer, original.getSignalProtocolAddress().getName(),
+            java.time.Instant.ofEpochSecond(1_700_000_000L), "hello there"));
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(original);
+
+    final Account reloaded =
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
+
+    assertNotNull(reloaded);
+    assertEquals("the stored message history must survive a reload, not be replaced by an "
+        + "empty list that the next write-back then persists",
+        1, reloaded.getUnencryptedMessages().size());
+  }
+
+  /** And the same for the contact list, which shares the fallback. */
+  @Test
+  public void aStoredContactListSurvivesReloading() {
+    final Account original = newAccount();
+    final java.util.ArrayList<com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact> list =
+        new java.util.ArrayList<>();
+    list.add(new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
+        "Real", "Peer", "peer-uuid", 7, true));
+    original.setContactList(list);
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(original);
+
+    final Account reloaded =
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
+
+    assertNotNull(reloaded);
+    assertEquals("the stored contact list must survive a reload",
+        1, reloaded.getContactList().size());
+    assertEquals("Real", reloaded.getContactList().get(0).getFirstName());
+  }
 }

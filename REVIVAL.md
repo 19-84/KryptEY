@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 330, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 334, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -226,12 +226,25 @@ in the tree to audit that against.
 length, sender-name character bounds ×2, u8 range ×3, u16 length, cursor bounds ×2, device count,
 varU8 length, zero-length read. Recorded as equivalent: the in-progress marker write (no early
 return, so the completion marker always overwrites it — documented in `StorageSchemaStateTest`), the
-`looksLikeEnvelope` structural pre-filter ×2 (documented in the method as never load-bearing), and
-the nonce-length error-message branch. One remains genuinely uncovered and is noted here rather than
-claimed: the second `&&` in `containsReadableEnvelope`.
+`looksLikeEnvelope` structural pre-filter ×2 (documented in the method as never load-bearing), the
+nonce-length error-message branch, and the second `&&` in `containsReadableEnvelope`.
 
-*Sweep 2 — the pre-key/session stores and `StorageHelper`.* In progress at time of writing; no
-survivors in the classes completed so far.
+That last one was first recorded here as genuinely uncovered, which was wrong — it is equivalent, and
+the argument is worth keeping because it is not obvious. Weakening it turns
+`A && B && canDecrypt` into `(A && B) || canDecrypt`, so it matters only for a value where the
+structural pre-filter says "not an envelope" but decryption nevertheless succeeds. That cannot
+happen: `decode` is strictly stricter than `looksLikeEnvelope` (it enforces the GCM tag length as
+well as the version byte), and every path out of it — bad base64, short envelope, wrong version,
+failed tag, even a null value — raises `StorageCryptoException`, which `canDecrypt` converts to
+false. The two expressions therefore agree on every input.
+
+*Sweep 2 — the pre-key/session stores and `StorageHelper` (88 mutants).* Clean through
+`KyberPreKeyStoreImpl`, `PreKeyStoreImpl`, `SignedPreKeyStoreImpl`, `SessionStoreImpl` and
+`PreKeyMetadataStoreImpl`. Two survivors in `StorageHelper`, both now killed: a partial read
+aborting only when *both* the metadata store and the address are missing rather than either, and the
+null-guards on the message and contact lists — inverting those replaces a good list with an empty
+one, which the next write-back persists, erasing the user's history. The class comment warned about
+exactly that; nothing tested it.
 
 **One known equivalent mutant elsewhere.** Swapping the local/remote identifiers in the fingerprint
 survives every test, and correctly so: `NumericFingerprintGenerator` sorts the two halves, so both
@@ -243,7 +256,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 330 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 334 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
