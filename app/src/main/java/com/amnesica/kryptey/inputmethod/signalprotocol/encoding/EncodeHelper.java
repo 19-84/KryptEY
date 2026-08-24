@@ -376,6 +376,19 @@ public class EncodeHelper {
     return simplifiedJSONMap;
   }
 
+  /**
+   * Expand the shortened JSON keys.
+   *
+   * <p>One line here used to read {@code .replaceAll("\"iK\"", getMapKeyFromValue("iK"))}. No map
+   * value is "iK", so {@code getMapKeyFromValue} returned null and the replacement rewrote any
+   * {@code "iK"} in the payload to the literal string {@code "null"}. It had no counterpart on the
+   * encode side at all - nothing ever produces "iK" - so it could only ever corrupt.
+   *
+   * <p>Unreachable in practice, and worth saying why rather than leaving it implicit: every
+   * replacement here is a QUOTED token, and the wire alphabet is base64, which has no quote
+   * character. {@code WireTextThroughFairyTaleTest} pins that, so if the wire encoding ever grows
+   * one, these become reachable and that test fails first.
+   */
   public static String deSimplifyJsonKeys(final String simplifiedJSON) {
     return simplifiedJSON
         .replaceAll("\"pR\"", "\"" + getMapKeyFromValue("pR") + "\"")
@@ -383,7 +396,6 @@ public class EncodeHelper {
         .replaceAll("\"pK\"", "\"" + getMapKeyFromValue("pK") + "\"")
         .replaceAll("\"d\"", "\"" + getMapKeyFromValue("d") + "\"")
         .replaceAll("\"dI\"", "\"" + getMapKeyFromValue("dI") + "\"")
-        .replaceAll("\"iK\"", "\"" + getMapKeyFromValue("iK") + "\"")
         .replaceAll("\"rI\"", "\"" + getMapKeyFromValue("rI") + "\"")
         .replaceAll("\"k\"", "\"" + getMapKeyFromValue("k") + "\"")
         .replaceAll("\"s\"", "\"" + getMapKeyFromValue("s") + "\"")

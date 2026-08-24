@@ -115,11 +115,36 @@ public class E2EEStrip {
     return decryptedMessage;
   }
 
+  /**
+   * Encode, and refuse to hand back something the recipient cannot decode.
+   *
+   * <p>The send-side length checks run BEFORE this and measure the wrong thing. For a chat message
+   * {@code checkMessageLengthForEncodingMethod} counts the user's plaintext - 500 bytes - while what
+   * travels is the wire envelope, measured at 3068 characters for a 500-byte message and 5500 when
+   * a signed pre-key rotation falls due and a full PQXDH bundle is attached. The FairyTale encoder
+   * then expands that by about 1.5x plus a decoy sentence, and the recipient refuses anything past
+   * {@link #MAX_DECODABLE_CHARS}.
+   *
+   * <p>So a message could send successfully and be undecodable on arrival: measured, a rotation-due
+   * message on a still-pending session produced 8398 characters against a cap of 8192. The failure
+   * appeared on the other person's device, in a different constant, in a different class, with
+   * nothing on the sender's side having gone wrong.
+   *
+   * <p>Checking here rather than at each call site is deliberate - this is the one place every send
+   * path passes through, and it is the only place where the value that must fit actually exists.
+   */
   public String encode(final String message, final Encoder encoder) throws IOException {
     String encodedMessage = null;
     if (encoder.equals(Encoder.FAIRYTALE))
       encodedMessage = FairyTaleEncoder.encode(message, mContext);
     if (encoder.equals(Encoder.RAW)) encodedMessage = RawEncoder.encode(message);
+
+    if (encodedMessage != null && encodedMessage.length() > MAX_DECODABLE_CHARS) {
+      throw new TooManyCharsException(String.format(
+          "This message encodes to %d characters and the recipient can only decode %d. "
+              + "Shorten it, or switch to the raw encoder.",
+          encodedMessage.length(), MAX_DECODABLE_CHARS));
+    }
     return encodedMessage;
   }
 
