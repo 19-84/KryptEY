@@ -393,6 +393,18 @@ public class SignalProtocolMain {
       return false;
     }
 
+    // A standing rejection outranks a verified badge.
+    //
+    // The user told the app this address's number did not match. Only a fresh comparison retires
+    // that - verifyContact calls clearRejection - so while it stands, nothing at this address is
+    // trustworthy however the Contact object is marked. Without this, rejecting and then letting
+    // the attacker's bundle pin by trust-on-first-use gave back a green badge, because the
+    // rejection was recorded in the store and read by nobody.
+    if (sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .wasKeyRejected(contact.getSignalProtocolAddress())) {
+      return false;
+    }
+
     // A verified badge must not outlive the key it was granted for.
     return !sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .hasUnacceptedIdentityChange(contact.getSignalProtocolAddress());

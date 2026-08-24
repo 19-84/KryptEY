@@ -109,9 +109,22 @@ public class IdentitySubstitutionTest {
         SignalProtocolMain.getPendingIdentity(peerAddress));
   }
 
-  /** Nothing may be encrypted to a substituted identity. */
+  /**
+   * A refused substitution leaves the GENUINE session working - it is not a denial of service.
+   *
+   * <p>This was named {@code encryptionToASubstitutedIdentityProducesNothing} and documented
+   * "nothing may be encrypted to a substituted identity", while asserting that
+   * {@code encryptMessage} returns non-null. Those are opposite claims. What the assertion shows is
+   * the useful half and the name hid it: the attacker's bundle was refused, the pin did not move,
+   * and the user can still talk to the real peer - so a forged bundle cannot be used to cut two
+   * people off from each other.
+   *
+   * <p>The claim the old name made is covered where it belongs, by
+   * {@code theSubstitutedKeyIsNeverPinned} above and by the encrypt-side refusal in
+   * {@code DecryptPathSubstitutionTest}.
+   */
   @Test
-  public void encryptionToASubstitutedIdentityProducesNothing() throws Exception {
+  public void arefusedSubstitutionLeavesTheGenuineSessionWorking() throws Exception {
     final SignalProtocolAddress peerAddress = addressOf(realPeer);
 
     final String genuine = bundleFrom(realPeer);
@@ -124,6 +137,14 @@ public class IdentitySubstitutionTest {
     // The genuine session still stands, so sending still works to the *real* peer's key.
     assertNotNull("the established session should be unaffected",
         SignalProtocolMain.encryptMessage("still fine", peerAddress));
+
+    // And it is still the REAL peer's key - which is the half that makes the line above a security
+    // statement rather than a liveness one.
+    assertEquals("the pin must still be the genuine peer's key",
+        realPeer.getIdentityKeyPair().getPublicKey(),
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+    assertTrue("and the substitution must still be recorded as pending",
+        SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
   }
 
   /**

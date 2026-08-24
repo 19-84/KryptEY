@@ -112,8 +112,16 @@ public class PostRejectWindowTest {
 
     assertTrue("a pin at a rejected address must be a warned event, not a first sighting",
         SignalProtocolMain.wasKeyRejected(peerAddress));
-    assertFalse("and it must not be trusted",
-        SignalProtocolMain.isContactKeyTrustworthy(victim.getContactList().get(0)));
+    // Verified FIRST, so this says something about the rejection rather than about the fixture.
+    //
+    // isContactKeyTrustworthy short-circuits on !isVerified, and the contact here was never
+    // verified - so the assertion held whatever the rejection did. Marking it verified before
+    // asking is what makes the answer about the rejected pin.
+    final Contact reVerified = victim.getContactList().get(0);
+    reVerified.setVerified(true);
+    assertFalse("a key pinned at a rejected address must not read as trustworthy even when the "
+            + "contact carries a verified badge from before the rejection",
+        SignalProtocolMain.isContactKeyTrustworthy(reVerified));
   }
 
   /** Only a fresh comparison retires the warning. */
