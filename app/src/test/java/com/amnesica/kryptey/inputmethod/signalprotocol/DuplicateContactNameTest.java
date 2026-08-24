@@ -507,4 +507,34 @@ public class DuplicateContactNameTest {
     assertFalse(label.contains("#"));
     assertFalse(label.contains("\u2068"));
   }
+
+  /**
+   * The duplicate-name check must be safe before an account is loaded.
+   *
+   * <p>It is called from the add-contact flow, which the user can reach as soon as the strip is
+   * drawn — and {@code setInputView} can run before {@code reloadAccount} completes. With the guard
+   * weakened, that window dereferences null on the IME main thread. Every other test here loads an
+   * account first, so only the both-present arm ever ran.
+   */
+  @Test
+  public void theDuplicateCheckIsSafeWithNoAccountLoaded() {
+    SignalProtocolMain.getInstance().setAccount(null);
+
+    assertFalse("no account means nothing to clash with, not a crash",
+        SignalProtocolMain.hasContactWithSameDisplayName("Alice", "Smith",
+            ProtocolAddresses.of("peer-uuid", 7)));
+    assertNull(SignalProtocolMain.existingContactAtSameAddress(
+        ProtocolAddresses.of("peer-uuid", 7), "Alice", "Smith"));
+  }
+
+  /** And with an account whose contact list has not been populated. */
+  @Test
+  public void theDuplicateCheckIsSafeWithNoContactList() {
+    victim.setContactList(null);
+
+    assertFalse(SignalProtocolMain.hasContactWithSameDisplayName("Alice", "Smith",
+        ProtocolAddresses.of("peer-uuid", 7)));
+    assertNull(SignalProtocolMain.existingContactAtSameAddress(
+        ProtocolAddresses.of("peer-uuid", 7), "Alice", "Smith"));
+  }
 }
