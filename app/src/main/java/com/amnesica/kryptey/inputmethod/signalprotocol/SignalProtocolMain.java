@@ -1760,7 +1760,31 @@ public class SignalProtocolMain {
       Log.e(TAG, "Error: mStorageHelper cannot get initialized because context is null");
       return;
     }
-    mStorageHelper = new StorageHelper(context);
+    mStorageHelper = storageHelperFactory == null
+        ? new StorageHelper(context) : storageHelperFactory.create(context);
+  }
+
+  /** How the storage helper is built. Overridable so persistence can be exercised on the JVM. */
+  public interface StorageHelperFactory {
+    StorageHelper create(Context context);
+  }
+
+  private static StorageHelperFactory storageHelperFactory;
+
+  /**
+   * Substitutes the storage helper, for tests only.
+   *
+   * <p>Every test in this class runs {@code initialize(null)}, which leaves {@code mStorageHelper}
+   * null - so every {@code storeAllAccountInformationInSharedPreferences()} call inside verify,
+   * dismiss, reject, delete and the send rollback is a silent no-op. The trust logic is covered;
+   * the half that decides whether the result reaches disk is not, and a mutation deleting those
+   * persist calls survives the whole suite.
+   *
+   * <p>A real context alone does not fix that: the production helper builds an Android Keystore
+   * box, which has no JVM implementation. The seam is what makes the persisted half reachable.
+   */
+  public static void setStorageHelperFactoryForTest(final StorageHelperFactory factory) {
+    storageHelperFactory = factory;
   }
 
   // needed for testing only
