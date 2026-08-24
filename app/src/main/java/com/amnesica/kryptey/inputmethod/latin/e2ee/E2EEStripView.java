@@ -141,7 +141,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
   private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
   private final String INFO_PINNED_AFTER_REJECT = "Careful: you previously told the app that %s's number did not match, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
-  private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Careful: %s is already saved as \"%s\" at this exact address. One address is one person, so this is not a second contact - either you are renaming them, or someone is using an identity you already have to introduce themselves as somebody else.";
+  private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Not added: this invite is for the identity you already have saved as \"%2$s\", so \"%1$s\" would be a second name for the same person. If you meant to rename them, delete the old contact first. If someone told you this is a different person, they are using an identity you already have to introduce themselves as somebody else.";
   private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. If they told you they reinstalled, check with them by voice before sending anything: a reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address.";
   // Does not tell the user to obtain the invite "out of band": there is no import path for one -
   // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
@@ -231,7 +231,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     loadFingerprintInVerifyContactView();
 
     if (chosenContact == null) return;
-    setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, "" + chosenContact.getFirstName() + " " + chosenContact.getLastName()));
+    setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, labelFor(chosenContact)));
   }
 
   /**
@@ -277,7 +277,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     createVerifyContactReturnButtonClickListener();
     createVerifyContactRejectButtonClickListener();
-    setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, "" + chosenContact.getFirstName() + " " + chosenContact.getLastName()));
+    setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, labelFor(chosenContact)));
 
     final Fingerprint fingerprint = mE2EEStrip.getFingerprint(chosenContact);
     if (fingerprint == null) {
@@ -527,6 +527,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // address under a new name.
     final Contact sameAddress = mE2EEStrip.existingContactAtSameAddress(
         recipientProtocolAddress, String.valueOf(firstName), String.valueOf(lastName));
+    if (sameAddress != null) {
+      // Actually refuse, rather than warn and proceed. One address is one identity: creating the
+      // row anyway leaves two entries the app cannot tell apart, and because
+      // updateContactInContactList matches by address and replaces the FIRST match, verifying the
+      // new one silently overwrites the old - erasing the very row the warning pointed at.
+      //
+      // Three places used to claim this was refused while the code created the contact regardless.
+      // Refusing is also the honest reading: a user who genuinely wants to rename someone should
+      // delete and re-add, which is unambiguous.
+      Toast.makeText(getContext(),
+          String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME, String.valueOf(firstName),
+              sameAddress.getFirstName() + " " + sameAddress.getLastName()),
+          Toast.LENGTH_LONG).show();
+      setInfoTextViewMessage(mInfoTextView,
+          String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME, String.valueOf(firstName),
+              sameAddress.getFirstName() + " " + sameAddress.getLastName()));
+      abortContactAdding();
+      return;
+    }
+
     // Store the FOLDED device id, not the raw one. Keeping the raw value here left
     // Contact.deviceId and Contact.signalProtocolAddress.getDeviceId() disagreeing for any legacy
     // peer - and the contact list keys off the former while the identity store keys off the latter.
@@ -548,14 +568,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // simply be re-delivered and pinned silently.
     final boolean previouslyRejected = mE2EEStrip.wasKeyRejected(recipientProtocolAddress);
 
-    if (sameAddress != null) {
-      final String warning = String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME,
-          chosenContact.getFirstName(),
-          sameAddress.getFirstName() + " " + sameAddress.getLastName());
-      Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
-      setInfoTextViewMessage(mInfoTextView, warning);
-      mIdentityWarningStanding = true;
-    } else if (previouslyRejected) {
+    if (previouslyRejected) {
       final String warning =
           String.format(INFO_PINNED_AFTER_REJECT, chosenContact.getFirstName());
       Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
@@ -1060,10 +1073,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private String labelFor(final Contact contact) {
     if (contact == null) return "";
     final String name = contact.getFirstName() + " " + contact.getLastName();
-    return mE2EEStrip.hasContactWithSameDisplayName(
-        contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress())
-        ? name + "  " + contact.getAddressTag()
-        : name;
+    // Ungated, for the reason given in ListAdapterContacts.shouldShowTags: gating the tag on the
+    // name comparison made every dodge of that comparison a total blackout rather than a missing
+    // warning. Shown whenever there is anyone else to be confused with.
+    return mE2EEStrip.hasMoreThanOneContact() ? name + "  " + contact.getAddressTag() : name;
   }
 
   private boolean warnIfIdentityChanged(final Contact sender) {

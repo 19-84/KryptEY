@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 347, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 366, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -256,7 +256,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 347 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 366 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -305,8 +305,16 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
      character had suppressed the warning *and* removed the tag from both rows.
    - **A tag wide enough to survive being aimed at.** 40 bits over an address the peer chooses is
      minutes of GPU grinding for an adversary that knows the address it wants to match. Now 96.
-   - **One address is one identity.** A second contact row at an address already in use is refused
-     — an exact check on the address rather than a name heuristic, so it cannot be dodged.
+   - **One address is one identity.** Adding a second contact at an address already in use is
+     refused outright — an exact check on the address rather than a name heuristic, so it cannot be
+     dodged. It has to refuse rather than warn: `updateContactInContactList` matches by address and
+     replaces the first match, so verifying the newer row would silently overwrite the older one,
+     erasing the very evidence the warning pointed at.
+   - **The tag is not gated on the name comparison.** That was the structural error: both defences
+     hung off one predicate, so any dodge of the folding produced a total blackout rather than a
+     missing warning. The tag is a pure function of the address, so it now renders whenever there is
+     more than one contact. Folding gaps are inevitable — homoglyphs are open-ended — and this is
+     what keeps each one partial.
    - **The tag renders where the user acts**, not only on the contact-list row: the "Detected
      contact" banner and the standing "Chosen contact" label both carry it when a name is shared.
 4. **Safety numbers are bound to the peer-supplied address name**, which is covered by neither the

@@ -275,4 +275,28 @@ public class KyberPreKeyTest {
     assertFalse("a legacy store should report no kyber pre key for the default id",
         legacy.containsKyberPreKey(0));
   }
+
+  /**
+   * The one-time pre-key batch size is a real quantity, not a loop detail.
+   *
+   * <p>Each bundle hands out one pre-key from this batch, and running out forces the fallback path.
+   * Nothing asserted how many are minted, so widening the loop bound to generate a different number
+   * survived the whole suite.
+   */
+  @Test
+  public void aBatchMintsExactlyBatchSizeOneTimePreKeys() {
+    final SignalProtocolStoreImpl store = newStore();
+    final com.amnesica.kryptey.inputmethod.signalprotocol.stores.PreKeyMetadataStore meta =
+        new com.amnesica.kryptey.inputmethod.signalprotocol.stores.PreKeyMetadataStoreImpl();
+
+    final java.util.List<org.signal.libsignal.protocol.state.PreKeyRecord> minted =
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.KeyUtil
+            .generateAndStoreOneTimePreKeys(store, meta);
+
+    assertEquals("a batch must mint exactly BATCH_SIZE keys",
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.KeyUtil.BATCH_SIZE, minted.size());
+    for (final org.signal.libsignal.protocol.state.PreKeyRecord r : minted) {
+      assertTrue("every minted key must be stored", store.containsPreKey(r.getId()));
+    }
+  }
 }

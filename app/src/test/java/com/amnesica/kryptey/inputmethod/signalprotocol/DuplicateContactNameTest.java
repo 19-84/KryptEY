@@ -219,6 +219,16 @@ public class DuplicateContactNameTest {
         "Alice\u2060",      // word joiner
         "\uFEFFAlice",      // BOM
         "  ALICE  ",         // whitespace + case, which the old folding did catch
+        "Alice\u3164",       // HANGUL FILLER - category Lo, not Cf, so a category filter missed it
+        "\u115FAlice",       // HANGUL CHOSEONG FILLER
+        "Alice\u2800",       // BRAILLE PATTERN BLANK - category So
+        "Alice\u2028",       // LINE SEPARATOR
+        "AIice",             // capital I for lowercase l - pure ASCII, no Unicode needed at all
+        "A1ice",             // digit one for l
+        "Ali\u03F2e",        // Greek lunate sigma for c
+        "A\u04CFice",        // Cyrillic palochka for l
+        "\u0251lice",        // Latin alpha
+        "\u13AAlice",        // Cherokee A
     };
     for (final String dodge : dodges) {
       assertTrue("\"" + dodge + "\" dodged the duplicate check",
@@ -251,6 +261,12 @@ public class DuplicateContactNameTest {
    * being added, so the name loop skips the only row that would have matched. Nothing warned.
    *
    * <p>Unlike the name check this one is exact — it compares addresses, which a peer cannot dodge.
+   */
+  /**
+   * Note the scope of what is tested here. This asserts the <em>detection</em>; the refusal itself
+   * lives in {@code E2EEStripView.addContact}, which is an Android view and not reachable from a
+   * JVM test, so nothing here proves the contact is not created. A mutation that turns the refusal
+   * back into a warn-and-proceed survives this suite, and is recorded rather than papered over.
    */
   @Test
   public void asecondContactAtAnAddressAlreadyInUseIsFlagged() {
@@ -298,5 +314,59 @@ public class DuplicateContactNameTest {
     assertEquals("the tag must carry 96 bits; 40 is grindable by the adversary in the model",
         24, hex.length());
     assertTrue("the tag must be hex", hex.matches("[0-9a-f]+"));
+  }
+
+  /**
+   * The bypass that needed no Unicode at all: put the whole name in one field.
+   *
+   * <p>The comparison was field-pairwise while every render site concatenates, so
+   * {@code ("Alice Smith","")} and {@code ("Alice","Smith")} read identically on screen and did not
+   * match. Only the first name is mandatory, so this was also a false negative for honest users who
+   * happened to fill the fields differently.
+   */
+  @Test
+  public void aNameSplitAcrossFieldsDifferentlyIsStillADuplicate() {
+    addAs("Alice", "Smith", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    assertTrue("the whole name in the first field must still match",
+        SignalProtocolMain.hasContactWithSameDisplayName("Alice Smith", "", elsewhere));
+    assertTrue("...and in the last field",
+        SignalProtocolMain.hasContactWithSameDisplayName("", "Alice Smith", elsewhere));
+    // Note NOT asserted: splitting mid-word ("Ali" + "ce Smith") renders as "Ali ce Smith", which
+    // genuinely does not look like "Alice Smith". The join is a faithful model of the rendering, so
+    // it only collapses splits that a reader also cannot see.
+    assertFalse("a split that changes what is rendered must not be folded together",
+        SignalProtocolMain.hasContactWithSameDisplayName("Ali", "ce Smith", elsewhere));
+  }
+
+  /**
+   * Over-folding is its own failure. Stripping every combining mark collapses Indic and South-East
+   * Asian scripts, so unrelated names collide and the warning fires on non-events — which teaches
+   * the user to dismiss it.
+   */
+  @Test
+  public void unrelatedIndicNamesDoNotCollide() {
+    addAs("\u0930\u0940\u0924\u093E", "", realAlice);  // रीता (Rita)
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    assertFalse("रुत must not be treated as a duplicate of रीता",
+        SignalProtocolMain.hasContactWithSameDisplayName("\u0930\u0941\u0924", "", elsewhere));
+    assertFalse("कविता vs कवीता must not collide",
+        SignalProtocolMain.hasContactWithSameDisplayName(
+            "\u0915\u0935\u093F\u0924\u093E", "", elsewhere));
+  }
+
+  /** Case variants of one name must still match each other - the confusable map must not split them. */
+  @Test
+  public void ordinaryCaseVariantsStillMatch() {
+    addAs("Alice", "Smith", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    for (final String[] variant : new String[][] {
+        {"ALICE", "SMITH"}, {"alice", "smith"}, {"AliCe", "SmItH"}}) {
+      assertTrue(variant[0] + " " + variant[1] + " must match Alice Smith",
+          SignalProtocolMain.hasContactWithSameDisplayName(variant[0], variant[1], elsewhere));
+    }
   }
 }

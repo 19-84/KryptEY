@@ -170,4 +170,79 @@ public class PreKeyRotationTest {
     assertEquals("signed pre key ids collided across rotations", 10, signedIds.size());
     assertEquals("kyber pre key ids collided across rotations", 10, kyberIds.size());
   }
+
+  // -------------------------------------------------------------- null guards
+
+  /**
+   * Both arms of each null guard, which no test covered.
+   *
+   * <p>These are written {@code a == null || b == null}. Weakening the {@code ||} to {@code &&}
+   * survived the whole suite, because every existing test passes two real stores — so only the
+   * both-non-null path ran, and the guard could have been anything. With {@code &&}, one null
+   * slips through into an NPE on the IME main thread, which is a crash on every keyboard raise
+   * rather than a logged refusal.
+   */
+  @Test
+  public void refreshRefusesWhenEitherStoreIsMissing() {
+    assertFalse("a null protocol store must be refused, not dereferenced",
+        KeyUtil.refreshSignedPreKeyIfNecessary(null, metadata));
+    assertFalse("a null metadata store must be refused",
+        KeyUtil.refreshSignedPreKeyIfNecessary(store, null));
+    assertFalse(KeyUtil.refreshSignedPreKeyIfNecessary(null, null));
+  }
+
+  @Test
+  public void allocationRefusesWhenEitherStoreIsMissing() {
+    org.junit.Assert.assertNull(KeyUtil.getUnusedOneTimePreKeyId(null, metadata));
+    org.junit.Assert.assertNull(KeyUtil.getUnusedOneTimePreKeyId(store, null));
+  }
+
+  // ------------------------------------------------- the allocator's search
+
+  /**
+   * When the next id is taken, the allocator must take the very next free one.
+   *
+   * <p>The search is {@code while (containsPreKey(id) && guard++ < MAX)}. Weakening that
+   * {@code &&} to {@code ||} keeps the loop running past ids that are free, walking the whole
+   * space until the guard trips — an unbounded-looking scan on the IME main thread that also
+   * hands out an id far from the expected one. Nothing asserted <em>which</em> id came back, so
+   * the mutation was invisible.
+   */
+  @Test
+  public void allocationTakesTheNextFreeIdWhenTheObviousOneIsTaken() {
+    // Consume every pre-key the fixture minted, so the fast path finds nothing unused.
+    // loadPreKey is what marks one used, so draining through findUnusedPreKeyId uses the real path.
+    Integer unused;
+    while ((unused = store.getPreKeyStore().findUnusedPreKeyId()) != null) {
+      try {
+        store.getPreKeyStore().loadPreKey(unused);
+      } catch (org.signal.libsignal.protocol.InvalidKeyIdException e) {
+        throw new AssertionError(e);
+      }
+    }
+
+    // Occupy exactly the id the allocator will try first, and consume it - a key that is present
+    // but unused would be handed straight back by the fast path, and the scan would never run.
+    final int next = metadata.getNextOneTimePreKeyId();
+    KeyUtil.generateAndStoreOneTimePreKey(store, next);
+    try {
+      store.getPreKeyStore().loadPreKey(next);
+    } catch (org.signal.libsignal.protocol.InvalidKeyIdException e) {
+      throw new AssertionError(e);
+    }
+    org.junit.Assert.assertNull("the fast path must find nothing, or the scan is not exercised",
+        store.getPreKeyStore().findUnusedPreKeyId());
+
+    // The lowest id the store does not already hold. Computed rather than assumed: the fixture's
+    // batch already occupies the first few, so "next + 1" is not it - an earlier version of this
+    // test asserted that and was wrong about the code, not the other way round.
+    int expected = next;
+    while (store.getPreKeyStore().containsPreKey(expected)) expected++;
+
+    final Integer allocated = KeyUtil.getUnusedOneTimePreKeyId(store, metadata);
+
+    org.junit.Assert.assertNotNull(allocated);
+    assertEquals("the allocator must stop at the first free id, not keep scanning past it",
+        expected, allocated.intValue());
+  }
 }

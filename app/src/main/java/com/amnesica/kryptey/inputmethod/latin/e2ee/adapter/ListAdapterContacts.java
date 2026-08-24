@@ -28,23 +28,20 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     this.mContacts = contacts;
   }
 
-  /** True when some other contact in the list renders under the same first and last name. */
-  private boolean hasDuplicateDisplayName(final Contact contact) {
+  /**
+   * Whether to render address tags at all.
+   *
+   * <p>Deliberately not "do two names clash": that made the tag depend on the same folding the
+   * warning depends on, so one dodge disabled both. The only reason to hide it is that a single
+   * contact has nothing to be confused with.
+   */
+  private boolean shouldShowTags() {
     if (mContacts == null) return false;
-    int seen = 0;
+    int contacts = 0;
     for (final Object other : mContacts) {
-      if (!(other instanceof Contact)) continue;
-      final Contact c = (Contact) other;
-      if (sameDisplayName(c, contact) && ++seen > 1) return true;
+      if (other instanceof Contact && ++contacts > 1) return true;
     }
     return false;
-  }
-
-  private static boolean sameDisplayName(final Contact a, final Contact b) {
-    // Same normalisation as the add-time warning, or the two disagree and a name that dodges one
-    // dodges the other.
-    return com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.displayNamesMatch(
-        a.getFirstName(), a.getLastName(), b.getFirstName(), b.getLastName());
   }
 
   public View getView(final int position, View convertView, ViewGroup parent) {
@@ -65,7 +62,16 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     // mechanism: rather than substituting a key for the existing Alice - which is refused and
     // warned about - it invites the user to add a second one at an address it controls, which is a
     // clean first sighting with no warning anywhere.
-    lastNameTextView.setText(hasDuplicateDisplayName(contact)
+    // The tag is shown UNCONDITIONALLY once there is more than one contact, not only when the app
+    // has decided two names clash.
+    //
+    // Gating it on the name comparison was the structural mistake: the tag is a pure function of
+    // the address, so showing it costs nothing and leaks nothing, while gating it meant any dodge
+    // of the name folding removed the tag from BOTH rows as well as suppressing the warning. That
+    // turned every gap in the folding - and there will always be gaps, homoglyphs are an infinite
+    // regress - from a missing warning into a total blackout. Ungated, a dodge costs the attacker
+    // the warning but leaves the rows distinguishable.
+    lastNameTextView.setText(shouldShowTags()
         ? contact.getLastName() + "  " + contact.getAddressTag()
         : contact.getLastName());
     lastNameTextView.setOnClickListener(v -> mListener.selectContact(contact));

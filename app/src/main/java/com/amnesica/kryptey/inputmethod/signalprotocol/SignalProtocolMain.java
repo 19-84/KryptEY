@@ -565,8 +565,19 @@ public class SignalProtocolMain {
    */
   public static boolean displayNamesMatch(final String aFirst, final String aLast,
       final String bFirst, final String bLast) {
-    return normalizeForDisplay(aFirst).equals(normalizeForDisplay(bFirst))
-        && normalizeForDisplay(aLast).equals(normalizeForDisplay(bLast));
+    // Compare what is RENDERED, which is the concatenation - not the two fields pairwise.
+    //
+    // Pairwise comparison was a plain-ASCII bypass needing no Unicode at all: store Alice as
+    // ("Alice","Smith"), then get the user to enter ("Alice Smith",""). The fields differ, so no
+    // warning fired - but every render site in the app concatenates them, so the two rows read
+    // identically. It was also a false negative in ordinary use, since only the first name is
+    // mandatory and two honest contacts entered with the fields split differently would never be
+    // flagged. Folding the joined string collapses both cases.
+    return normalizeForDisplay(join(aFirst, aLast)).equals(normalizeForDisplay(join(bFirst, bLast)));
+  }
+
+  private static String join(final String first, final String last) {
+    return (first == null ? "" : first) + " " + (last == null ? "" : last);
   }
 
   /**
@@ -598,47 +609,118 @@ public class SignalProtocolMain {
       final int cp = normalized.codePointAt(i);
       i += Character.charCount(cp);
 
-      final int type = Character.getType(cp);
-      if (type == Character.FORMAT || type == Character.NON_SPACING_MARK
-          || type == Character.COMBINING_SPACING_MARK || type == Character.ENCLOSING_MARK
-          || type == Character.CONTROL || Character.isIdentifierIgnorable(cp)) {
-        continue; // invisible: renders as nothing, so it must not distinguish two names
-      }
-      skeleton.appendCodePoint(deconfuse(cp));
+      if (rendersAsNothing(cp)) continue;
+      // Case-fold BEFORE mapping confusables. The two interact: uppercase I and lowercase l draw
+      // the same stroke, so mapping I onto l ahead of case folding made "ALICE" fold to "allce"
+      // while "Alice" folded to "alice" - the two most ordinary spellings of one name stopped
+      // matching each other. Folding case first lets one entry per confusable class cover both.
+      skeleton.appendCodePoint(deconfuse(Character.toLowerCase(cp)));
     }
-    return skeleton.toString().trim().toLowerCase(java.util.Locale.ROOT);
+    // Collapse whitespace runs, not just the ends. Joining the two name fields introduces a space
+    // that may sit beside one the user typed, and in any case a doubled space is not something a
+    // reader distinguishes from a single one.
+    return skeleton.toString().trim().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
   }
 
   /**
-   * Maps Cyrillic and Greek letters that share a glyph with a Latin letter onto that letter.
+   * Whether a code point draws nothing, so it cannot distinguish two names a reader compares.
    *
-   * <p>Deliberately a small, explicit table rather than a general homograph algorithm: these are the
-   * characters that make "Аlice" and "Alice" indistinguishable on a phone screen, and an explicit
-   * list is auditable. It is a subset of UTS-39 and does not claim otherwise.
+   * <p>General category is the wrong instrument for this and using it left real gaps: U+3164 HANGUL
+   * FILLER is {@code Lo}, not {@code Cf}, and is the character conventionally used for blank names
+   * on other platforms; U+2800 BRAILLE PATTERN BLANK is {@code So}; U+2028/U+2029 are {@code Zl}
+   * and {@code Zp}. All of them render as blank and all survived a category-based filter. The
+   * fillers additionally normalise under NFKC into other blank-drawing letters, so normalising first
+   * does not help.
+   *
+   * <p>So: the ignorable categories, plus an explicit list of code points that are known to draw
+   * nothing despite not being in them. The explicit list is a list, and will never be complete —
+   * which is exactly why the address tag is no longer gated on this comparison.
+   */
+  private static boolean rendersAsNothing(final int cp) {
+    final int type = Character.getType(cp);
+    if (type == Character.FORMAT || type == Character.ENCLOSING_MARK
+        || type == Character.CONTROL || Character.isIdentifierIgnorable(cp)) {
+      return true;
+    }
+    // Combining marks are deliberately NOT stripped wholesale. Doing so removes every vowel sign,
+    // nukta and virama in Indic and South-East Asian scripts, so रीता and रुत both reduce to रत and
+    // two unrelated Hindi names collide - firing a duplicate warning for a non-event. A control
+    // that cries wolf on ordinary names teaches the user to dismiss it, which costs more than the
+    // narrow spoofing case stripping them would have caught. UTS-39 does not remove matras either.
+    // Marks that are genuinely invisible are already covered by the ignorable checks above.
+    switch (cp) {
+      case 0x3164:   // HANGUL FILLER
+      case 0x115F:   // HANGUL CHOSEONG FILLER
+      case 0x1160:   // HANGUL JUNGSEONG FILLER (what 3164/FFA0 become under NFKC)
+      case 0xFFA0:   // HALFWIDTH HANGUL FILLER
+      case 0x2800:   // BRAILLE PATTERN BLANK
+      case 0x2028:   // LINE SEPARATOR
+      case 0x2029:   // PARAGRAPH SEPARATOR
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Maps letters that share a glyph with a Latin letter onto that letter.
+   *
+   * <p><b>Scope, stated precisely,</b> because an earlier version of this javadoc said "Cyrillic and
+   * Greek" without qualification and was wrong even about those: this is an explicit, auditable
+   * subset of UTS-39 covering the Latin/Cyrillic/Greek confusables and the ASCII digit-letter pairs
+   * that actually appear in name spoofing. It is not complete and cannot be — homoglyphs are an
+   * open-ended set, and chasing them one review round at a time is an infinite regress. That is why
+   * the address tag no longer depends on this succeeding.
+   *
+   * <p>Includes {@code I}/{@code l}/{@code 1} and {@code O}/{@code 0}, which are pure ASCII and the
+   * commonest substitution of all: in Roboto, Android's default face, capital I and lowercase l draw
+   * the same bare stroke, so "AIice" and "Alice" are indistinguishable with no exotic characters
+   * involved at all.
    */
   private static int deconfuse(final int cp) {
     switch (cp) {
-      // Cyrillic uppercase sharing a Latin glyph
-      case 0x0410: return 'A'; case 0x0412: return 'B'; case 0x0415: return 'E';
-      case 0x041A: return 'K'; case 0x041C: return 'M'; case 0x041D: return 'H';
-      case 0x041E: return 'O'; case 0x0420: return 'P'; case 0x0421: return 'C';
-      case 0x0422: return 'T'; case 0x0423: return 'Y'; case 0x0425: return 'X';
-      case 0x0406: return 'I'; case 0x0408: return 'J'; case 0x0405: return 'S';
-      // Cyrillic lowercase
-      case 0x0430: return 'a'; case 0x0435: return 'e'; case 0x043E: return 'o';
-      case 0x0440: return 'p'; case 0x0441: return 'c'; case 0x0443: return 'y';
-      case 0x0445: return 'x'; case 0x0456: return 'i'; case 0x0458: return 'j';
-      case 0x0455: return 's';
-      // Greek uppercase sharing a Latin glyph
-      case 0x0391: return 'A'; case 0x0392: return 'B'; case 0x0395: return 'E';
-      case 0x0396: return 'Z'; case 0x0397: return 'H'; case 0x0399: return 'I';
-      case 0x039A: return 'K'; case 0x039C: return 'M'; case 0x039D: return 'N';
-      case 0x039F: return 'O'; case 0x03A1: return 'P'; case 0x03A4: return 'T';
-      case 0x03A5: return 'Y'; case 0x03A7: return 'X';
-      case 0x03BF: return 'o'; case 0x03BD: return 'v';
+      // Entries are LOWERCASE only: the caller case-folds first, so an uppercase entry here would
+      // be dead code. Cyrillic А folds to а, Greek Α to α, and so on, before reaching this table.
+      // Cyrillic
+      case 0x0430: return 'a'; case 0x0432: return 'b'; case 0x0435: return 'e';
+      case 0x043A: return 'k'; case 0x043C: return 'm'; case 0x043D: return 'h';
+      case 0x043E: return 'o'; case 0x0440: return 'p'; case 0x0441: return 'c';
+      case 0x0442: return 't'; case 0x0443: return 'y'; case 0x0445: return 'x';
+      case 0x0456: return 'l'; case 0x0458: return 'j'; case 0x0455: return 's';
+      case 0x04CF: return 'l'; case 0x04C0: return 'l';  // palochka
+      case 0x04BB: return 'h'; case 0x0501: return 'd'; case 0x051B: return 'q';
+      case 0x051D: return 'w'; case 0x0475: return 'v';
+      // Greek
+      case 0x03B1: return 'a'; case 0x03B2: return 'b'; case 0x03B5: return 'e';
+      case 0x03B6: return 'z'; case 0x03B7: return 'n'; case 0x03B9: return 'l';
+      case 0x03BA: return 'k'; case 0x03BC: return 'm'; case 0x03BD: return 'v';
+      case 0x03BF: return 'o'; case 0x03C1: return 'p'; case 0x03C4: return 't';
+      case 0x03C5: return 'u'; case 0x03C7: return 'x';
+      // Lunate sigma ϲ is written U+03F2, but NFKC rewrites it to final sigma U+03C2 before this
+      // table is consulted - so the entry has to be on the normalised form. Determined by running
+      // it, not by reading the tables.
+      case 0x03C2: return 'c'; case 0x03F2: return 'c';
+      case 0x03F3: return 'j';
+      // Latin extended lookalikes
+      case 0x0251: return 'a'; case 0x0131: return 'l'; case 0x026A: return 'l';
+      case 0x029F: return 'l'; case 0x0261: return 'g';
+      // Other scripts with Latin-identical glyphs
+      // Cherokee is cased, so the uppercase forms never reach here - U+13AA lowercases to U+AB7A,
+      // U+13A1 to U+AB71, U+13C0 to U+AB90. Both are listed so the table reads as what it covers.
+      case 0xAB7A: case 0x13AA: return 'a';
+      case 0xAB71: case 0x13A1: return 'l';
+      case 0xAB90: case 0x13C0: return 'g';
+      case 0x0585: return 'o';
+      // ASCII digit/letter confusables - the commonest of all, and free for an attacker.
+      // Applied after case folding, so one entry per class covers both cases. The i/l/1 class
+      // collapses lowercase i too, because the capital-I attack ("AIice") only folds onto "Alice"
+      // if that name's own l lands in the same class.
+      case 'i': case '1': case 0x7C: return 'l';
+      case '0': return 'o';
       default: return cp;
     }
   }
+
 
 
   /**
@@ -672,6 +754,12 @@ public class SignalProtocolMain {
       }
     }
     return false;
+  }
+
+  /** How many contacts the account holds; 0 when nothing is loaded. */
+  public static int contactCount() {
+    if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return 0;
+    return sInstance.mAccount.getContactList().size();
   }
 
   /**
