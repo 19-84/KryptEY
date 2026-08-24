@@ -1,6 +1,8 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.storage;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 
 import android.content.Context;
@@ -100,12 +102,23 @@ public class BatchCommitsOnceTest {
     }
   }
 
-  /** An empty batch must not commit an empty editor - a save with nothing to save is not a write. */
+  /**
+   * An empty batch commits once and writes nothing.
+   *
+   * <p>The javadoc here used to say it "must NOT commit an empty editor" while the assertion pinned
+   * exactly one commit - the opposite of the stated rule. Committing once is the right behaviour
+   * and the cheaper one to reason about: the alternative is a branch that skips the commit, and a
+   * caller cannot then tell "nothing to save" from "saved nothing". What matters is that no entry
+   * appears, which nothing checked.
+   */
   @Test
-  public void anEmptyBatchStillBehaves() {
-    new SharedPreferencesKeyValueStore(counting).putAll(new LinkedHashMap<>());
+  public void anEmptyBatchCommitsOnceAndWritesNothing() {
+    final SharedPreferencesKeyValueStore store = new SharedPreferencesKeyValueStore(counting);
+    store.putAll(new LinkedHashMap<>());
 
-    assertEquals("an empty batch may commit at most once", 1, commits);
+    assertEquals("an empty batch is still one durable commit", 1, commits);
+    assertNull("an empty batch must not invent an entry", store.get("key-1"));
+    assertTrue("and must leave the store empty", store.keys().isEmpty());
   }
 
   /** Single writes are unaffected: one entry, one commit, as before. */

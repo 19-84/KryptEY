@@ -75,8 +75,18 @@ public class FairyTaleInitTest {
         "");
     final int rapunzelOnly = FairyTaleEncoder.mSentencesMap.size();
 
-    assertTrue("the two stories together must yield more sentences than one of them",
-        both > rapunzelOnly);
+    FairyTaleEncoder.mSentencesMap.clear();
+    FairyTaleEncoder.initForTest("",
+        context.getResources().getString(com.amnesica.kryptey.inputmethod.R.string.e2ee_cinderella));
+    final int cinderellaOnly = FairyTaleEncoder.mSentencesMap.size();
+
+    // The SUM, not an inequality.
+    //
+    // "both > rapunzelOnly" is what this asserted, and it does not catch the bug named above:
+    // measured, rapunzel yields 63 sentences and cinderella 112, so a restart-at-zero that keeps
+    // only the second story gives 112 > 63 and passes. Every sentence from each has to be present.
+    assertEquals("the second story overwrote the first: " + rapunzelOnly + " + " + cinderellaOnly
+            + " should be " + both, rapunzelOnly + cinderellaOnly, both);
   }
 
   /**

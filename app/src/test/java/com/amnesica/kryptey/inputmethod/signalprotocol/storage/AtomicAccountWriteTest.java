@@ -33,6 +33,14 @@ import java.util.Set;
  *
  * <p>These test the store layer directly rather than through {@code StorageHelper}, because the
  * property is about what reaches the delegate and how often, and that is invisible from above.
+ *
+ * <p>A test named {@code theOldOneAtATimePathLeavesATornAccount} used to sit here, looping over
+ * {@code delegate.put(...)} on the fake store defined in this file. It invoked no production class
+ * at all - it asserted that {@code LinkedHashMap} preserves insertion order and that the fake's own
+ * counter works, so no mutation of anything real could fail it. Its message also claimed "the
+ * contact list is the value that was lost" while asserting on the display-tag secret. Deleted: the
+ * paragraph above already says the same thing, and prose that is honest about being prose beats a
+ * test that looks like evidence and is not.
  */
 public class AtomicAccountWriteTest {
 
@@ -171,28 +179,6 @@ public class AtomicAccountWriteTest {
     final Set<String> keys = new HashSet<>(store.written.keySet());
     keys.remove(EncryptedKeyValueStore.SCHEMA_KEY);
     return keys;
-  }
-
-  /**
-   * What the old path did, demonstrated rather than described: writing the same eight values one at
-   * a time leaves seven of them behind when the eighth fails. This is the state reload could not
-   * detect.
-   */
-  @Test
-  public void theOldOneAtATimePathLeavesATornAccount() {
-    delegate.failSingleWriteNumber = 8;
-
-    final Map<String, String> values = eightValues();
-    assertThrows(IllegalStateException.class, () -> {
-      for (final Map.Entry<String, String> entry : values.entrySet()) {
-        delegate.put(entry.getKey(), entry.getValue());
-      }
-    });
-
-    assertEquals("seven values survive the failure, and nothing records that the eighth did not",
-        7, delegate.written.size());
-    assertNull("the contact list is the value that was lost",
-        delegate.written.get("DISPLAY_TAG_SECRET"));
   }
 
   /** A batch must still round-trip through the encryption layer. */

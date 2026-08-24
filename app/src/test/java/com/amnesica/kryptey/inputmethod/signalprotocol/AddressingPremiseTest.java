@@ -66,13 +66,18 @@ public class AddressingPremiseTest {
     final Account account = SignalProtocolMain.getInstance().getAccount();
     final String name = account.getSignalProtocolAddress().getName();
 
-    // Parses as a UUID and is not a function of the identity key.
-    UUID.fromString(name);
+    // Version 4 means randomly generated. That is the property this whole design rests on, and it
+    // is the one a substring check cannot see: UUID.nameUUIDFromBytes(identityKey) is a perfectly
+    // well-formed UUID that shares no substring with its input, so the old assertion passed on
+    // exactly the change this test exists to catch. A derived name is version 3 or 5.
+    assertEquals("the address must be a randomly generated UUID - a name DERIVED from the identity "
+            + "key would make every reinstall collide with its own pin, which is the premise the "
+            + "whole trust model rests on", 4, UUID.fromString(name).version());
 
     final String identityKey = com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64
         .encodeBytesWithoutPadding(
             account.getSignalProtocolStore().getIdentityKeyPair().getPublicKey().serialize());
-    assertFalse("the address name must not be derived from the identity key",
+    assertFalse("nor may it embed the key directly",
         identityKey.contains(name) || name.contains(identityKey.substring(0, 8)));
   }
 

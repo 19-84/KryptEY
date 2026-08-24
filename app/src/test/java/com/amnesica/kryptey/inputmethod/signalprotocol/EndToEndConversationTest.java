@@ -93,7 +93,18 @@ public class EndToEndConversationTest {
     assertNotNull("Bob could not encrypt to Alice", outbound);
 
     final String onTheWire = EnvelopeCodec.toWire(outbound);
-    assertFalse("the plaintext is visible on the wire", onTheWire.contains("usual place"));
+
+    // Look for the plaintext in the CIPHERTEXT BYTES, not in the base64 text.
+    //
+    // This searched onTheWire for "usual place". The wire alphabet is [A-Za-z0-9+/=], so a string
+    // containing a space cannot occur in it under any circumstances - the assertion was false for
+    // every possible envelope, including one that carried the plaintext verbatim. Nothing else in
+    // the suite asserts that the ciphertext is opaque.
+    final byte[] ciphertext = outbound.getCiphertextMessage();
+    assertNotNull("there must be ciphertext to inspect", ciphertext);
+    final String asLatin1 = new String(ciphertext, java.nio.charset.StandardCharsets.ISO_8859_1);
+    assertFalse("the plaintext is visible in the ciphertext", asLatin1.contains("usual place"));
+    assertFalse("nor any run of it", asLatin1.contains("meet me"));
 
     // --- Alice receives and decrypts it ---
     activate(alice);

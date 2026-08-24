@@ -208,6 +208,18 @@ public class StorageHelperTest {
   public void aFailedSealWritesNothingRatherThanCleartext() {
     new StorageHelper(context, brokenBox()).storeAllInformationInSharedPreferences(newAccount());
 
+    // The "writes nothing" half, which nothing asserted.
+    //
+    // putAll seals the whole batch before touching the delegate, so a broken box means the loop
+    // below runs over an EMPTY set of values - it can no longer catch a cleartext write because
+    // there is nothing to inspect. The test kept its name and lost its content when the write path
+    // became atomic.
+    final Set<String> written = new HashSet<>();
+    for (final String key : preferences.getAll().keySet()) {
+      if (!key.startsWith("__kryptey")) written.add(key);
+    }
+    assertTrue("a failed seal must write nothing at all, and wrote " + written, written.isEmpty());
+
     for (final String k : preferences.getAll().keySet()) {
       final Object v = preferences.getAll().get(k);
       if (!(v instanceof String)) continue;
