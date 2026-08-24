@@ -625,7 +625,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final String warning =
           String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact));
       Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
-      setInfoTextViewMessage(mInfoTextView, warning);
+      setWarningMessage(warning);
       mIdentityWarningStanding = true;
     } else if (duplicateName) {
       Toast.makeText(getContext(),
@@ -636,8 +636,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (messageEnvelope.getPreKeyResponse() != null) {
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
       if (successful && previouslyRejected) {
-        setInfoTextViewMessage(mInfoTextView,
-            String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact)));
+        setWarningMessage(String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact)));
       } else if (successful && duplicateName) {
         setInfoTextViewMessage(mInfoTextView,
             String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact)));
@@ -744,7 +743,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     setMainInfoTextTextChangeListener();
     setMainInfoTextClearChosenContactListener();
-    setInfoTextViewMessage(mInfoTextView, openingMessage(SignalProtocolMain.storageState()));
+    final String opening = openingMessage(SignalProtocolMain.storageState());
+    if (INFO_STORAGE_UNREADABLE.equals(opening)) setWarningMessage(opening);
+    else setInfoTextViewMessage(mInfoTextView, opening);
 
     createButtonEncryptClickListener();
     createButtonDecryptClickListener();
@@ -799,10 +800,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // anyone" line. That line is the part that actually protects their pins, and the copy that
         // erased it is the attacker's invite: the whole workflow is copy-then-paste, so the
         // warning survived exactly until the moment it mattered.
-        if (storageIsUnreadable()) {
-          Log.i(TAG, "Storage cannot be decrypted; leaving the warning in place");
-          return;
-        }
+        if (!mayOverwriteInfoBanner()) return;
 
         // Parse once. This ran on every clipboard change and used to deserialize up to three
         // times, and getMessageType returns null for anything unrecognised - which then NPE'd on
@@ -1212,6 +1210,69 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** Set while an identity-change warning is on screen, so the info field is not reset over it. */
   private boolean mIdentityWarningStanding = false;
 
+  /**
+   * Set while ANY security warning is on screen, and cleared only by a deliberate user action.
+   *
+   * <p>The info banner is the app's only persistent warning surface - a toast lasts about three and
+   * a half seconds and then the screen looks like an ordinary success. {@code
+   * mIdentityWarningStanding} was added for exactly that, and it does not survive: it is cleared at
+   * the end of {@code decryptMessageInClipboard} while the warning text is still on screen, so by
+   * the time the next clipboard event arrives it is already false and the listener overwrites the
+   * banner.
+   *
+   * <p>That reduces the cost of erasing every warning in the app to one extra post. The user copies
+   * it as part of the ordinary copy-then-paste workflow, the listener writes "Keybundle detected",
+   * and nothing is left: an unverified contact after a refused substitution is byte-identical to
+   * one the user simply never compared.
+   *
+   * <p>So this is cleared by things the USER does - choosing a contact, opening the contact list,
+   * verifying - and never by anything the messenger can cause.
+   */
+  private boolean mWarningStanding = false;
+
+  /**
+   * Posts a warning to the info banner and marks it as standing.
+   *
+   * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
+   * "is a warning on screen" is a property of how it was written rather than a string comparison
+   * against a set of format strings someone has to remember to extend.
+   */
+  private void setWarningMessage(final String message) {
+    setInfoTextViewMessage(mInfoTextView, message);
+    mWarningStanding = true;
+  }
+
+  /** Posts a warning, for tests that drive the strip. */
+  void setWarningMessageForTest(final String message) {
+    setWarningMessage(message);
+  }
+
+  /** Simulates a clipboard event carrying something KryptEY-shaped, for tests. */
+  void onClipboardChangedForTest() {
+    if (!mayOverwriteInfoBanner()) return;
+    setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_DETECTED);
+  }
+
+  /**
+   * Whether a passive, messenger-driven event may write over the info banner.
+   *
+   * <p>Extracted so the clipboard listener and its test run the SAME code. The listener is a lambda
+   * on a system service that a test cannot invoke, and a test that re-implements its body proves
+   * only that the copy behaves - which is the failure this codebase keeps finding elsewhere.
+   */
+  boolean mayOverwriteInfoBanner() {
+    if (storageIsUnreadable() || mWarningStanding) {
+      Log.i(TAG, "A security warning is on screen; leaving it in place");
+      return false;
+    }
+    return true;
+  }
+
+  /** Clears a standing warning. Only call this from a deliberate user action. */
+  private void clearStandingWarning() {
+    mWarningStanding = false;
+  }
+
   /** How a contact is named on screen. See {@code SignalProtocolMain.displayLabelFor}. */
   private String labelFor(final Contact contact) {
     return SignalProtocolMain.displayLabelFor(contact);
@@ -1236,7 +1297,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final String warning =
         String.format(INFO_IDENTITY_CHANGED_EXISTING, labelFor(sender), labelFor(sender));
     Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
-    setInfoTextViewMessage(mInfoTextView, warning);
+    setWarningMessage(warning);
     mIdentityWarningStanding = true;
     return true;
   }
@@ -1306,6 +1367,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void selectContact(Contact contact) {
+    clearStandingWarning();   // the user chose this contact; they have seen whatever was on screen
     setChosenContact(contact);
     showChosenContactInMainInfoField();
     Log.d(TAG, chosenContact.toString());
@@ -1321,6 +1383,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void verifyContact(Contact contact) {
+    clearStandingWarning();   // going to compare the number is the deliberate response to a warning
     setChosenContact(contact);
     Log.d(TAG, chosenContact.toString());
     loadFingerprintInVerifyContactView();

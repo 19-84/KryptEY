@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 
 import android.view.ContextThemeWrapper;
@@ -94,4 +95,50 @@ public class StripRecipientChangeTest {
     assertEquals("a draft must not outlive the contact it was addressed to",
         "", inputField().getText().toString());
   }
+
+  private android.widget.TextView infoField() {
+    final android.widget.TextView view = strip.findViewById(R.id.e2ee_info_text);
+    assertNotNull("the strip must have an info banner", view);
+    return view;
+  }
+
+  /**
+   * A security warning must survive whatever the messenger puts on the clipboard.
+   *
+   * <p>The info banner is the app's only persistent warning surface - a toast lasts about three and
+   * a half seconds, and then the screen looks like an ordinary success. Overwriting it therefore
+   * erases the warning entirely, and it cost the attacker one extra post: the user copies it as
+   * part of the ordinary workflow, the listener writes "Keybundle detected", and nothing is left.
+   * An unverified contact after a refused substitution is byte-identical to one the user simply
+   * never compared.
+   */
+  @Test
+  public void aStandingWarningIsNotOverwrittenByClipboardTraffic() {
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+
+    // Calls the same decision the listener calls, NOT a re-implementation of its body.
+    //
+    // Driving the real listener was the first attempt and does not work: Robolectric's clipboard
+    // shadow does not notify OnPrimaryClipChangedListener, so writing to the clipboard fired
+    // nothing and the test passed because nothing had happened - which two controls then proved by
+    // surviving. What IS covered is the guard itself; the listener's one-line call to it is not,
+    // and no test here can cover it. Stated rather than implied.
+    strip.onClipboardChangedForTest();
+
+    assertEquals("clipboard traffic must not erase a security warning",
+        "Someone offered a different key for Bob.", infoField().getText().toString());
+  }
+
+  /** And choosing a contact - a deliberate act - does clear it. */
+  @Test
+  public void choosingAcontactClearsTheWarning() {
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+    strip.selectContact(contact("Bob", "bob-uuid"));
+
+    strip.onClipboardChangedForTest();
+
+    assertNotEquals("once the user has acted on it, ordinary banners may appear again",
+        "Someone offered a different key for Bob.", infoField().getText().toString());
+  }
+
 }
