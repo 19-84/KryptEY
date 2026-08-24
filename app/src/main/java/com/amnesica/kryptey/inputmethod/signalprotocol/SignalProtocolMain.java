@@ -738,6 +738,20 @@ public class SignalProtocolMain {
       // a single fixed baseline, so they test pairs of the form (baseline, baseline+X) and never
       // (baseline+X, baseline+Y). The property being claimed is about pairs of names, and only one
       // shape of pair was being generated.
+      // A lone surrogate is NOT a box. The shaper substitutes U+FFFD REPLACEMENT CHARACTER for an
+      // unpaired surrogate before any font is consulted, so it paints ink 1030 at advance 49 -
+      // exactly like a literal U+FFFD, and nothing like the notdef box's 349 at 21.
+      //
+      // Putting surrogates in the box class was a bypass this fold created for itself. The
+      // reasoning was that a surrogate "can never acquire a glyph", which is true of the code point
+      // and irrelevant to what is drawn. "Alice<U+FFFD>Smith" and "Alice<U+D800>Smith" rendered
+      // pixel-identically and folded to different keys, so a second invite carrying the surrogate
+      // raised no duplicate warning. Jackson turns the JSON escape "\ud800" into a live lone
+      // surrogate, so the messenger only has to write one.
+      if (Character.isSurrogate((char) cp)) {
+        skeleton.append('\uFFFD');
+        continue;
+      }
       if (rendersAsTofu(cp)) {
         skeleton.append(TOFU);
         continue;
@@ -804,13 +818,21 @@ public class SignalProtocolMain {
   /**
    * Whether a code point has no glyph in any font, and therefore draws the notdef box.
    *
-   * <p>All of these render identically - measured, ink 349 and advance 21, the same box - so two
-   * names differing only in which one they contain are indistinguishable to a reader and must fold
-   * together. They are NOT deleted: a box is something the user can see, so a name containing one
-   * must still differ from a name without it.
+   * <p>These render as the notdef box - measured, ink 349 at advance 21 - so two names differing
+   * only in which one they contain are indistinguishable to a reader and must fold together. They
+   * are NOT deleted: a box is something the user can see, so a name containing one must still
+   * differ from a name without it.
    *
-   * <p>Only font-independent members are listed. Unassigned code points, lone surrogates and C1 can
-   * never acquire a glyph. Private use is font-dependent in principle - a device with a matching
+   * <p>"All of these render identically" is what this said, and it was not true of the class as it
+   * then stood. Lone surrogates were in it and paint U+FFFD (ink 1030, advance 49) rather than the
+   * box; they are handled separately now. Seven of the kept format characters draw real Arabic
+   * marks, and three private-use code points have real glyphs in the test font - those are
+   * deliberate over-folds, not identical renderings, and saying otherwise is what hid the surrogate
+   * bypass for a round.
+   *
+   * <p>Only font-independent members are listed. Unassigned code points and C1 have no glyph in any
+   * font. Note that "no glyph" is a claim about rendering, not about the code point: a lone
+   * surrogate also has no glyph of its own, and yet draws U+FFFD, which is why it is not here. Private use is font-dependent in principle - a device with a matching
    * icon font would draw something - and is included anyway, because folding it is the cry-wolf
    * direction while leaving it out is the bypass direction, and 6400 BMP private-use code points is
    * far too large a hole to leave open on that reasoning.
@@ -824,8 +846,9 @@ public class SignalProtocolMain {
     if (cp >= 0x7F && cp <= 0x9F) return true;
 
     final int type = Character.getType(cp);
-    if (type == Character.UNASSIGNED || type == Character.PRIVATE_USE
-        || type == Character.SURROGATE) {
+    // Not SURROGATE: an unpaired surrogate is replaced by U+FFFD by the shaper, which is a
+    // different picture from the notdef box and is handled before this is reached.
+    if (type == Character.UNASSIGNED || type == Character.PRIVATE_USE) {
       return true;
     }
     return type == Character.FORMAT && !isDefaultIgnorable(cp);

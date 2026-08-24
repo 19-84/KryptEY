@@ -639,4 +639,99 @@ public class RenderedNameAgreementTest {
             + (wrong.size() > 20 ? "\n  ... and " + (wrong.size() - 20) + " more" : ""),
         wrong.isEmpty());
   }
+
+  /**
+   * A lone surrogate draws U+FFFD, not the notdef box, so it must fold with U+FFFD.
+   *
+   * <p>This is a bypass the tofu fold itself created. Surrogates were put in the glyphless class on
+   * the reasoning that they "can never acquire a glyph" - true of the code point and irrelevant to
+   * what is drawn, because HarfBuzz substitutes U+FFFD REPLACEMENT CHARACTER for an unpaired
+   * surrogate before any font is consulted. Measured: a lone surrogate paints ink 1030 at advance
+   * 49, exactly like U+FFFD, while the notdef box is ink 349 at advance 21. They are two different
+   * pictures, and the fold sent one of them to the other's key.
+   *
+   * <p>So "Alice&lt;U+FFFD&gt;Smith" and "Alice&lt;U+D800&gt;Smith" render pixel-identically and folded
+   * apart. Both are reachable: Jackson decodes the JSON escape "\ud800" into a live lone surrogate,
+   * and the add-contact path checks only emptiness, length and '#'.
+   *
+   * <p>Font-independent - U+FFFD is in every system font and the substitution is the shaper's, not
+   * a font gap.
+   */
+  @Test
+  public void everyLoneSurrogateFoldsWithTheReplacementCharacter() {
+    final List<String> wrong = new ArrayList<>();
+    final String replacement = "Bob\uFFFDJones";
+
+    for (int cp = 0xD800; cp <= 0xDFFF; cp++) {
+      final String candidate = "Bob" + (char) cp + "Jones";
+
+      if (!samePicture(pixels(candidate), pixels(replacement))) {
+        wrong.add(String.format("U+%04X does not paint the replacement character", cp));
+        continue;
+      }
+      if (!SignalProtocolMain.hasContactWithSameDisplayName(
+          candidate, "", elsewhere2(replacement))) {
+        wrong.add(String.format("U+%04X paints the replacement character but folds elsewhere", cp));
+      }
+    }
+
+    assertTrue("lone surrogates draw U+FFFD and must fold with it - a name carrying one is "
+            + "indistinguishable from a name carrying the replacement character:\n  "
+            + String.join("\n  ", wrong.subList(0, Math.min(15, wrong.size())))
+            + (wrong.size() > 15 ? "\n  ... and " + (wrong.size() - 15) + " more" : ""),
+        wrong.isEmpty());
+  }
+
+  /** And two different lone surrogates must fold together, for the same reason. */
+  @Test
+  public void twoLoneSurrogatesFoldTogether() {
+    assertTrue("U+D800 and U+D801 paint the same replacement character but fold apart",
+        SignalProtocolMain.hasContactWithSameDisplayName(
+            "Bob\uD800Jones", "", elsewhere2("Bob\uD801Jones")));
+    assertTrue("a high and a low surrogate paint the same replacement character but fold apart",
+        SignalProtocolMain.hasContactWithSameDisplayName(
+            "Bob\uD800Jones", "", elsewhere2("Bob\uDC00Jones")));
+  }
+
+  /**
+   * The converse, which nothing asserted: a character that draws its own glyph must not fold onto
+   * the box.
+   *
+   * <p>Every other sweep here asks whether things that look alike fold alike. None asks whether
+   * things that look different fold differently, and the tofu class is exactly where that goes
+   * wrong - it is a bucket, and widening the bucket silently is cheap. Adding
+   * {@code MATH_SYMBOL || CURRENCY_SYMBOL} to {@code rendersAsTofu} makes "Bob+Jones" and
+   * "Bob$Jones" one contact, and the entire suite stayed green while it did.
+   *
+   * <p>Not asserted in full generality, because the full converse is false on purpose:
+   * {@code deconfuse} folds visually similar characters together, which is its job. What is
+   * asserted is the decidable part - a character with a glyph of its own does not land in the
+   * glyphless bucket.
+   */
+  @Test
+  public void acharacterWithItsOwnGlyphDoesNotFoldOntoTheBox() {
+    final String box = "Bob\u0080Jones";
+    final List<String> wrong = new ArrayList<>();
+
+    for (int cp = 0x20; cp <= 0xFFFF; cp++) {
+      if (Character.isSurrogate((char) cp)) continue;      // draws U+FFFD, covered separately
+      if (hasNoGlyphAnywhere(cp)) continue;                 // legitimately in the bucket
+      if (OVER_FOLD_EXCEPTIONS.containsKey(cp)) continue;
+
+      final String ch = String.valueOf((char) cp);
+      if (!canRender(ch)) continue;                         // no glyph HERE: font-dependent
+      if (inkPixels(ch) == 0) continue;                     // draws nothing: deleted, not bucketed
+
+      if (SignalProtocolMain.hasContactWithSameDisplayName(
+          "Bob" + ch + "Jones", "", elsewhere2(box))) {
+        wrong.add(String.format("U+%04X draws its own glyph but folds onto the notdef box", cp));
+      }
+    }
+
+    assertTrue("characters with real glyphs were swept into the glyphless bucket, so names a "
+            + "reader can plainly tell apart became one contact:\n  "
+            + String.join("\n  ", wrong.subList(0, Math.min(20, wrong.size())))
+            + (wrong.size() > 20 ? "\n  ... and " + (wrong.size() - 20) + " more" : ""),
+        wrong.isEmpty());
+  }
 }
