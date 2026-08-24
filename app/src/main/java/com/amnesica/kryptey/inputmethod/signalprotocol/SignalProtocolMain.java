@@ -638,7 +638,7 @@ public class SignalProtocolMain {
     // whitespace collapse below). It was only the separators the display path had started treating
     // differently. Matching what is rendered is the invariant; anything else is a gap by
     // construction.
-    final String separatorsAsSpaces = value
+    String separatorsAsSpaces = value
         .replace('\n', ' ').replace('\r', ' ')
         .replace('\u0085', ' ').replace('\u2028', ' ').replace('\u2029', ' ')
         .replace('\u000B', ' ').replace('\f', ' ').replace('\t', ' ')
@@ -650,6 +650,30 @@ public class SignalProtocolMain {
         // put them at the END of a name, where deleting happens to give the same answer.
         .replace('\u3164', ' ').replace('\u115F', ' ').replace('\u1160', ' ')
         .replace('\uFFA0', ' ').replace('\u2800', ' ');
+
+    // C0 controls are blanks too, and were the same bug as U+3164 above, still live.
+    //
+    // Measured with Skia: U+0001..U+001F draw no ink but advance 11-15px where a space advances 12
+    // - within a pixel of a space at the row's real text size. They were DELETED by the fold, so
+    // "Alice<U+0011>Smith" rendered as "Alice Smith" and did not match a contact of that name. And
+    // Java's \s does not cover C0 outside \t\n\u000B\f\r, so they reached the TextView intact.
+    //
+    // The character that had been fixed was the one that looks wrong - U+3164 leaves a visibly wide
+    // gap. These look right, which is why they are worse.
+    final StringBuilder controlsAsSpaces = new StringBuilder(separatorsAsSpaces.length());
+    for (int i = 0; i < separatorsAsSpaces.length(); i++) {
+      final char c = separatorsAsSpaces.charAt(i);
+      // Not every C0 draws a gap. U+0002 advances zero - it renders as nothing - so mapping it to
+      // a space would make the fold disagree with the render in the other direction, and the sweep
+      // reports that just as loudly. It falls through to rendersAsNothing and is deleted.
+      //
+      // The rule this encodes is measured, not guessed: zero ink with a positive advance folds to a
+      // space, zero ink with zero advance folds to nothing. RenderedNameAgreementTest checks the
+      // consequence for every code point, so a wrong call here fails rather than hides.
+      final boolean drawsAGap = (c < 0x20 && c != 0x0002) || (c >= 0x7F && c <= 0x9F);
+      controlsAsSpaces.append(drawsAGap ? ' ' : c);
+    }
+    separatorsAsSpaces = controlsAsSpaces.toString();
     // Drop combining marks that have no base character to combine with.
     //
     // Marks are deliberately NOT stripped in general - doing so collapses Indic vowel signs and
@@ -697,16 +721,16 @@ public class SignalProtocolMain {
   /**
    * Whether a code point draws nothing, so it cannot distinguish two names a reader compares.
    *
-   * <p>General category is the wrong instrument for this and using it left real gaps: U+3164 HANGUL
-   * FILLER is {@code Lo}, not {@code Cf}, and is the character conventionally used for blank names
-   * on other platforms; U+2800 BRAILLE PATTERN BLANK is {@code So}; U+2028/U+2029 are {@code Zl}
-   * and {@code Zp}. All of them render as blank and all survived a category-based filter. The
-   * fillers additionally normalise under NFKC into other blank-drawing letters, so normalising first
-   * does not help.
+   * <p>Note what this method is NOT responsible for. Characters that draw a <em>blank</em> - zero ink
+   * but a positive advance, so they leave a gap - are handled earlier, by the separator chain that
+   * rewrites them to a space. U+3164, U+2800, U+2028/U+2029 and the C0 controls all used to be
+   * deleted here, and that was wrong: deleting a gap joins two words that the reader sees as
+   * separate. Every example this javadoc once cited has moved.
    *
-   * <p>So: the ignorable categories, plus an explicit list of code points that are known to draw
-   * nothing despite not being in them. The explicit list is a list, and will never be complete —
-   * which is exactly why the address tag is no longer gated on this comparison.
+   * <p>What remains here is the genuinely invisible: zero ink AND zero advance. The rule is
+   * measured rather than listed - {@code RenderedNameAgreementTest} asserts, for every code point,
+   * that a blank folds to a space and an invisible folds away - so a wrong call in either direction
+   * fails a test rather than hiding. The explicit cases below are the ones no category expresses.
    */
   private static boolean rendersAsNothing(final int cp) {
     final int type = Character.getType(cp);

@@ -42,7 +42,7 @@
   -->
   <LinearLayout
     android:id="@+id/e2ee_contact_name_container"
-    android:layout_width="wrap_content"
+    android:layout_width="0dp"
     android:layout_height="wrap_content"
     android:layout_centerVertical="true"
     android:layout_marginStart="10dp"
@@ -51,11 +51,24 @@
     android:layout_toStartOf="@id/e2ee_contact_address_tag_element"
     android:orientation="horizontal">
 
+    <!--
+      Both name views are weighted, so neither can starve the other.
+
+      They were plain wrap_content in a wrap_content container: the first child was measured against
+      the whole bounded width, so a long first name left the last-name view at ZERO width - with no
+      ellipsis and nothing on screen to say a name had been cut. Measured, "Maria del Carmen
+      Fernandez"/"Smith" and the same first name with "Jones" rendered byte-identically, in plain
+      ASCII with no Unicode involved. The comment below promised "the names are what get ellipsised";
+      for the last name that was true only in the sense that it was truncated to nothing.
+
+      Weights make the truncation visible in both, which is the property that was claimed.
+    -->
     <TextView
       android:id="@+id/e2ee_contact_first_name_element"
       style="?attr/e2eeStripContactListNameFieldStyle"
-      android:layout_width="wrap_content"
+      android:layout_width="0dp"
       android:layout_height="wrap_content"
+      android:layout_weight="1"
       android:layout_marginVertical="5dp"
       android:layout_marginEnd="5dp"
       android:ellipsize="end"
@@ -65,8 +78,9 @@
     <TextView
       android:id="@+id/e2ee_contact_last_name_element"
       style="?attr/e2eeStripContactListNameFieldStyle"
-      android:layout_width="wrap_content"
+      android:layout_width="0dp"
       android:layout_height="wrap_content"
+      android:layout_weight="1"
       android:layout_marginVertical="5dp"
       android:layout_marginEnd="5dp"
       android:ellipsize="end"

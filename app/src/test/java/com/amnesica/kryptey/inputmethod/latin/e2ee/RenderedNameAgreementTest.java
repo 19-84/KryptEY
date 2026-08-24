@@ -247,4 +247,88 @@ public class RenderedNameAgreementTest {
     }
     return out.toString();
   }
+
+  // ------------------------------------------------- the property, not the picture
+
+  /**
+   * The rule that decides how a character must fold, stated as a measurement.
+   *
+   * <p>Pixel equality is the wrong predicate for this class. A character that advances 15px where a
+   * space advances 12 shifts everything after it by three pixels, so the two pictures differ by a
+   * thousand pixels while being humanly identical - and an exact ARGB comparison calls that "not the
+   * same" and moves on. That is how 25 C0 controls stayed live through a sweep that was looking
+   * directly at them.
+   *
+   * <p>The decidable rule is: <b>zero ink and a positive advance means it draws a gap, so it must
+   * fold to a space; zero ink and no advance means it draws nothing, so it must fold away.</b> Both
+   * terms are measurable with the Skia already in this harness, so this asserts the rule for every
+   * code point rather than checking a list of characters someone thought of.
+   */
+  @Test
+  public void everyBlankFoldsToASpaceAndEveryInvisibleFoldsAway() {
+    final List<String> wrong = new ArrayList<>();
+    final float spaceAdvance = paint.measureText(" ");
+
+    for (int cp = 1; cp <= 0xFFFF; cp++) {
+      if (Character.isSurrogate((char) cp)) continue;
+      final String ch = String.valueOf((char) cp);
+      if (!canRender(ch)) continue;
+
+      // Combining marks are excluded, and the reason is a limit of the measurement rather than a
+      // gap in the rule. Measured alone they have no base to attach to, so they show zero ink and
+      // zero advance - but inside a name they modify the preceding glyph and change its appearance.
+      // The property below only decides characters whose rendering is context-free. Marks are
+      // handled by the leading-mark fold and by the Indic non-collision test instead.
+      final int markType = Character.getType(cp);
+      if (markType == Character.NON_SPACING_MARK || markType == Character.COMBINING_SPACING_MARK
+          || markType == Character.ENCLOSING_MARK) {
+        continue;
+      }
+
+      if (inkPixels(ch) != 0) continue;               // draws something: not our business
+      final float advance = paint.measureText(ch);
+
+      // How the fold actually treats it, observed rather than assumed: does inserting it between
+      // two words leave a word break, or join them?
+      final boolean foldsToSpace = SignalProtocolMain.hasContactWithSameDisplayName(
+          "Bob" + ch + "Jones", "", elsewhere2("Bob Jones"));
+      final boolean foldsAway = SignalProtocolMain.hasContactWithSameDisplayName(
+          "Bob" + ch + "Jones", "", elsewhere2("BobJones"));
+
+      if (advance > 0.5f && !foldsToSpace) {
+        wrong.add(String.format("U+%04X draws a %.0fpx gap (space is %.0f) but does not fold to a "
+            + "space", cp, advance, spaceAdvance));
+      } else if (advance <= 0.5f && !foldsAway) {
+        wrong.add(String.format("U+%04X draws nothing at all but does not fold away", cp));
+      }
+    }
+
+    assertTrue("code points whose fold disagrees with what they draw:\n  "
+            + String.join("\n  ", wrong.subList(0, Math.min(25, wrong.size())))
+            + (wrong.size() > 25 ? "\n  ... and " + (wrong.size() - 25) + " more" : ""),
+        wrong.isEmpty());
+  }
+
+  /** Re-seeds the baseline contact and returns an address that is not it. */
+  private SignalProtocolAddress elsewhere2(final String baseline) {
+    final ArrayList<Contact> list = new ArrayList<>();
+    list.add(new Contact(baseline, "", "peer-uuid", 7, false));
+    account.setContactList(list);
+    return elsewhere;
+  }
+
+  private int inkPixels(final String text) {
+    final Bitmap bitmap = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+    final Canvas canvas = new Canvas(bitmap);
+    canvas.drawColor(Color.WHITE);
+    canvas.drawText(text, 4f, 52f, paint);
+
+    final int[] px = new int[W * H];
+    bitmap.getPixels(px, 0, W, 0, 0, W, H);
+    int ink = 0;
+    for (final int p : px) {
+      if (p != Color.WHITE) ink++;
+    }
+    return ink;
+  }
 }

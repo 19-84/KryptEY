@@ -183,4 +183,78 @@ public class ContactRowLayoutTest {
     }
     return out.toString();
   }
+
+  /**
+   * Neither name view may be starved to zero width.
+   *
+   * <p>They were both {@code wrap_content} in a {@code wrap_content} container, so the first child
+   * was measured against the whole bounded width and a long first name left the last-name view at
+   * zero - with no ellipsis and nothing on screen to say a name had been cut. Two genuinely
+   * different contacts then rendered byte-identically, in plain ASCII: "Maria del Carmen
+   * Fernandez"/"Smith" and the same first name with "Jones".
+   *
+   * <p>Asserting that a view {@code getEllipsize() != null} does not catch this - that is a property
+   * of the view, and a view of zero width ellipsises nothing. The width is what matters.
+   */
+  @Test
+  public void neitherNameViewIsStarvedToZeroWidth() {
+    for (final int widthDp : new int[] {320, 360, 411, 480}) {
+      final Context context = RuntimeEnvironment.getApplication();
+      final View row = inflateRow(context);
+      final TextView firstName = row.findViewById(R.id.e2ee_contact_first_name_element);
+      final TextView lastName = row.findViewById(R.id.e2ee_contact_last_name_element);
+
+      firstName.setText("Maria del Carmen Fernandez");
+      lastName.setText("Smith");
+      ((TextView) row.findViewById(R.id.e2ee_contact_address_tag_element)).setText("#ab12-cd34");
+
+      final float density = context.getResources().getDisplayMetrics().density;
+      final int widthPx = (int) (widthDp * density);
+      row.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+      row.layout(0, 0, widthPx, row.getMeasuredHeight());
+
+      assertTrue("a long first name starved the last name to nothing at " + widthDp + "dp",
+          lastName.getWidth() > 0);
+      assertTrue("and the first name must still have room at " + widthDp + "dp",
+          firstName.getWidth() > 0);
+    }
+  }
+
+  /** Two contacts differing only in the last name must not render as the same text. */
+  @Test
+  public void contactsDifferingOnlyInTheLastNameRenderDifferently() {
+    final Context context = RuntimeEnvironment.getApplication();
+    final float density = context.getResources().getDisplayMetrics().density;
+    final int widthPx = (int) (360 * density);
+
+    final String[] shown = new String[2];
+    final String[] lasts = {"Smith", "Jones"};
+    for (int i = 0; i < 2; i++) {
+      final View row = inflateRow(context);
+      final TextView firstName = row.findViewById(R.id.e2ee_contact_first_name_element);
+      final TextView lastName = row.findViewById(R.id.e2ee_contact_last_name_element);
+      firstName.setText("Maria del Carmen Fernandez");
+      lastName.setText(lasts[i]);
+
+      row.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+      row.layout(0, 0, widthPx, row.getMeasuredHeight());
+
+      shown[i] = visibleText(firstName) + "|" + visibleText(lastName);
+    }
+
+    org.junit.Assert.assertNotEquals("two contacts differing in the last name rendered identically",
+        shown[0], shown[1]);
+  }
+
+  /** What the user can actually read: the text minus whatever the ellipsis cut off. */
+  private static String visibleText(final TextView view) {
+    final android.text.Layout layout = view.getLayout();
+    if (layout == null || layout.getLineCount() == 0) return "";
+    final int cut = layout.getEllipsisCount(0);
+    final CharSequence text = view.getText();
+    final int keep = Math.max(0, text.length() - cut);
+    return text.subSequence(0, keep).toString();
+  }
 }
