@@ -116,6 +116,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private Contact chosenContact;
 
+  /**
+   * Changes the recipient, clearing anything staged for the previous one.
+   *
+   * <p>The input field survived a recipient change it did not cause, and a hostile messenger did
+   * not need any cryptographic capability to exploit that. Reposting another contact's OWN earlier
+   * invite text - verbatim, no forgery, no keys - sets the chosen contact to them while the field
+   * still holds the plaintext just decrypted from somebody else. Driven end to end, one contact's
+   * message was re-encrypted and logged to another's.
+   *
+   * <p>Both routes are messenger-driven and both are invited by the app's own banner: a replayed
+   * BUNDLE shows no error at all, and a replayed MESSAGE fails to decrypt and leaves the field
+   * untouched. So the fix belongs at the assignment rather than on either path.
+   */
+  private void setChosenContact(final Contact contact) {
+    final boolean changed = chosenContact == null
+        ? contact != null
+        : !chosenContact.equals(contact);
+    chosenContact = contact;
+    if (changed && mInputEditText != null && mInputEditText.getText().length() > 0) {
+      Log.i(TAG, "Recipient changed; clearing the staged message");
+      mInputEditText.setText("");
+    }
+  }
+
   private Encoder encodingMethod = Encoder.RAW; // raw is default
 
   // info texts
@@ -579,8 +603,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Store the FOLDED device id, not the raw one. Keeping the raw value here left
     // Contact.deviceId and Contact.signalProtocolAddress.getDeviceId() disagreeing for any legacy
     // peer - and the contact list keys off the former while the identity store keys off the latter.
-    chosenContact = mE2EEStrip.createAndAddContactToContacts(firstName, lastName,
-        recipientProtocolAddress.getName(), recipientProtocolAddress.getDeviceId());
+    setChosenContact(mE2EEStrip.createAndAddContactToContacts(firstName, lastName,
+        recipientProtocolAddress.getName(), recipientProtocolAddress.getDeviceId()));
 
     if (chosenContact == null) {
       abortContactAdding();
@@ -1143,7 +1167,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), INFO_SIGNAL_MESSAGE_NO_CONTACT_FOUND, Toast.LENGTH_SHORT).show();
       showAddContactView(messageEnvelope);
     } else {
-      chosenContact = sender;
+      setChosenContact(sender);
       setInfoTextViewMessage(mInfoTextView, "Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
@@ -1156,7 +1180,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       showAddContactView(messageEnvelope);
     } else {
       // update contact with preKey information
-      chosenContact = sender;
+      setChosenContact(sender);
       setInfoTextViewMessage(mInfoTextView, "Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
     }
@@ -1169,14 +1193,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       processPreKeyResponse(messageEnvelope, sender);
     } else {
       // update contact with preKey information
-      chosenContact = sender;
+      setChosenContact(sender);
       setInfoTextViewMessage(mInfoTextView, "Detected contact with updated keybundle: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
 
   private void resetChosenContactAndInfoText() {
-    chosenContact = null;
+    setChosenContact(null);
     setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
   }
 
@@ -1282,7 +1306,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void selectContact(Contact contact) {
-    chosenContact = contact;
+    setChosenContact(contact);
     showChosenContactInMainInfoField();
     Log.d(TAG, chosenContact.toString());
     showOnlyUIView(UIView.MAIN_VIEW);
@@ -1297,7 +1321,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void verifyContact(Contact contact) {
-    chosenContact = contact;
+    setChosenContact(contact);
     Log.d(TAG, chosenContact.toString());
     loadFingerprintInVerifyContactView();
     showOnlyUIView(UIView.VERIFY_CONTACT_VIEW);
