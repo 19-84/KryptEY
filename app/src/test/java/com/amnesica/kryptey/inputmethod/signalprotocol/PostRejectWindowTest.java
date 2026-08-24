@@ -311,4 +311,78 @@ public class PostRejectWindowTest {
   private Contact storedContactDetached() {
     return new Contact("Real", "Peer", peerAddress.getName(), peerAddress.getDeviceId(), false);
   }
+
+  // ---------------------------------------------- scoping of badge revocation
+
+  /**
+   * A substituted key must revoke <em>that</em> contact's badge and no one else's.
+   *
+   * <p>{@code clearVerificationFor} walks the whole contact list and clears rows matching the
+   * address. Weakening its {@code &&} to {@code ||} clears every verified contact instead — so one
+   * forged bundle, aimed at a single address the messenger already knows, would strip the verified
+   * badge from every contact the user has. That is a cheap, remote, whole-app downgrade, and it
+   * survived because no test had two verified contacts at once.
+   */
+  @Test
+  public void aSubstitutionRevokesOnlyTheAffectedContactsBadge() throws Exception {
+    // Two contacts, both verified.
+    final SignalProtocolAddress otherAddress = ProtocolAddresses.of("other-peer-uuid", 9);
+    activate(attacker);
+    final String otherBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(otherBundle), otherAddress));
+
+    final Contact target = new Contact("Real", "Peer", peerAddress.getName(),
+        peerAddress.getDeviceId(), false);
+    final Contact bystander = new Contact("Other", "Peer", otherAddress.getName(),
+        otherAddress.getDeviceId(), false);
+    final ArrayList<Contact> list = new ArrayList<>();
+    list.add(target);
+    list.add(bystander);
+    victim.setContactList(list);
+
+    assertTrue(SignalProtocolMain.verifyContact(target));
+    assertTrue(SignalProtocolMain.verifyContact(bystander));
+    assertTrue(victim.getContactList().get(0).isVerified());
+    assertTrue(victim.getContactList().get(1).isVerified());
+
+    // A forged bundle aimed at the FIRST contact only. It must come from a key that is not already
+    // pinned anywhere here, or no identity change is detected and the test proves nothing - the
+    // first version used realPeer's own bundle, which is exactly the key peerAddress already holds.
+    SignalProtocolMain.initialize(null);
+    final Account thirdParty = SignalProtocolMain.getInstance().getAccount();
+    final String forged = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    assertFalse("the forged key must be refused, which is what records the change",
+        SignalProtocolMain.importOutOfBandKeyBundle(forged, peerAddress));
+    assertTrue("and the change must have been recorded",
+        SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+
+    assertFalse("the targeted contact must lose its badge",
+        victim.getContactList().get(0).isVerified());
+    assertTrue("but an unrelated contact must keep its own",
+        victim.getContactList().get(1).isVerified());
+  }
+
+  /**
+   * The out-of-band import guard, on both arms.
+   *
+   * <p>Note the second case uses a <em>valid</em> bundle. With invalid text the guard is
+   * indistinguishable from the exception handler below it — both return false — so a test that
+   * passes garbage proves nothing about the guard. A well-formed bundle with no address is what
+   * separates "refused at the door" from "walked in and dereferenced null".
+   */
+  @Test
+  public void importingIsSafeWithEitherArgumentMissing() throws Exception {
+    activate(realPeer);
+    final String validBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+
+    assertFalse(SignalProtocolMain.importOutOfBandKeyBundle(null, peerAddress));
+    assertFalse("a valid bundle with no address must be refused, not processed",
+        SignalProtocolMain.importOutOfBandKeyBundle(validBundle, null));
+    assertFalse(SignalProtocolMain.importOutOfBandKeyBundle("some text", null));
+    assertFalse(SignalProtocolMain.importOutOfBandKeyBundle(null, null));
+  }
 }

@@ -455,6 +455,11 @@ public class SignalProtocolMain {
    * "Verified" has to mean the key in use was compared, not that some key once was.
    */
   private void clearVerificationFor(final SignalProtocolAddress address) {
+    // Equivalent mutant, recorded rather than chased: weakening this || to && cannot be observed.
+    // The method is private and every caller has already established a non-null account, and the
+    // contact list is initialised in Account's constructor and never set to null in production. So
+    // neither arm is reachable and no test can distinguish the two forms. Kept as defence in depth
+    // because the callers' checks are in another method.
     if (mAccount == null || mAccount.getContactList() == null) return;
     for (final Contact contact : mAccount.getContactList()) {
       if (contact.getSignalProtocolAddress().equals(address) && contact.isVerified()) {
