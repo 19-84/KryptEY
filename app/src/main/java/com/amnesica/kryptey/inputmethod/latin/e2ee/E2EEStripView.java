@@ -743,9 +743,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     setMainInfoTextTextChangeListener();
     setMainInfoTextClearChosenContactListener();
-    final String opening = openingMessage(SignalProtocolMain.storageState());
-    if (INFO_STORAGE_UNREADABLE.equals(opening)) setWarningMessage(opening);
-    else setInfoTextViewMessage(mInfoTextView, opening);
+    setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
 
     createButtonEncryptClickListener();
     createButtonDecryptClickListener();
@@ -1240,6 +1238,45 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setWarningMessage(final String message) {
     setInfoTextViewMessage(mInfoTextView, message);
     mWarningStanding = true;
+  }
+
+  /**
+   * Chooses the opening banner, once the storage layer exists to be asked.
+   *
+   * <p>This used to run in the constructor, where it could never see anything but {@code NONE}.
+   * {@code KeyboardSwitcher} evaluates {@code onCreateInputView(...)} - which inflates this view -
+   * as the ARGUMENT to {@code setInputView}, so the strip is built before {@code LatinIME} calls
+   * {@code initialize}/{@code reloadAccount}, and those are the only callers that create the
+   * storage helper. {@code storageState()} returns {@code NONE} when there is no helper.
+   *
+   * <p>So on a cold keyboard process - which is the normal path, because the strip is built exactly
+   * once unless the theme changes - a user whose identity cannot be decrypted saw "No contact
+   * chosen". The banner telling them not to re-invite anyone was structurally incapable of ever
+   * appearing, and {@code openingMessage} was honest that it covered "WHICH message is chosen, not
+   * that the view displays it".
+   */
+  public void refreshOpeningMessage() {
+    if (mInfoTextView == null) return;
+    final String opening = openingMessage(SignalProtocolMain.storageState());
+    if (INFO_STORAGE_UNREADABLE.equals(opening)) {
+      setWarningMessage(opening);
+    } else if (!mWarningStanding) {
+      setInfoTextViewMessage(mInfoTextView, opening);
+    }
+  }
+
+  /**
+   * Forgets anything decrypted into the input field.
+   *
+   * <p>The IME view is not recreated when the user switches apps, and nothing in the input
+   * lifecycle touched strip state - {@code clearFocusEditTextView} clears focus, not text. So a
+   * decrypted message stayed rendered and came back on screen the next time the keyboard rose, in
+   * whatever app that happened to be.
+   */
+  public void clearDecryptedContent() {
+    if (mInputEditText != null && mInputEditText.getText().length() > 0) {
+      mInputEditText.setText("");
+    }
   }
 
   /** Posts a warning, for tests that drive the strip. */

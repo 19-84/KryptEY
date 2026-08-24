@@ -399,6 +399,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     if (mE2EEStripView != null) {
       mE2EEStripView.setListener(this, view);
       mE2EEStripView.setRichInputConnection(mRichInputConnection);
+      // AFTER initialize/reloadAccount above: those are the only callers that create the storage
+      // helper, and the strip was inflated before this method was even entered - KeyboardSwitcher
+      // evaluates onCreateInputView as the argument to setInputView. Asking the strip to choose its
+      // banner in its own constructor could therefore only ever see "no storage at all".
+      mE2EEStripView.refreshOpeningMessage();
     }
   }
 
@@ -569,6 +574,12 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     final MainKeyboardView mainKeyboardView = mKeyboardSwitcher.getMainKeyboardView();
     if (mainKeyboardView != null) {
       mainKeyboardView.closing();
+    }
+    // Decrypted plaintext must not outlive the keyboard being dismissed. The IME view is not
+    // recreated when the user switches apps, so without this a decrypted message came back on
+    // screen the next time the keyboard rose - in whatever app that was.
+    if (mE2EEStripView != null) {
+      mE2EEStripView.clearDecryptedContent();
     }
     clearNavigationBarColor();
   }

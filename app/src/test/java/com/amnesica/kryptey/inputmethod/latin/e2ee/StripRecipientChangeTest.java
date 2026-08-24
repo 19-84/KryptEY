@@ -141,4 +141,69 @@ public class StripRecipientChangeTest {
         "Someone offered a different key for Bob.", infoField().getText().toString());
   }
 
+
+  /**
+   * The opening banner is chosen when storage can be asked, not at inflation.
+   *
+   * <p>The strip is built before {@code LatinIME} creates the storage helper - KeyboardSwitcher
+   * evaluates {@code onCreateInputView(...)} as the ARGUMENT to {@code setInputView} - so a
+   * decision made in the constructor could only ever see "no storage at all". On a cold process,
+   * which is the normal path, a user whose identity cannot be decrypted saw "No contact chosen" and
+   * the banner telling them not to re-invite anyone could never appear.
+   */
+  @Test
+  public void theOpeningBannerIsChosenAfterStorageExists() {
+    // At inflation there is no storage helper, so the strip must not have committed to a banner
+    // that claims to know the storage state.
+    assertEquals("at inflation the strip can only say the neutral thing",
+        E2EEStripView.INFO_NO_CONTACT_CHOSEN_TEXT, infoField().getText().toString());
+
+    // Now storage exists and reports UNREADABLE - the state the constructor could never see.
+    SignalProtocolMain.setStorageStateForTest(
+        com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+
+    assertEquals("once storage can be asked, the warning must appear",
+        E2EEStripView.INFO_STORAGE_UNREADABLE, infoField().getText().toString());
+  }
+
+  /**
+   * And that banner survives clipboard traffic.
+   *
+   * <p>Twice over, and only one of the two is load-bearing here: {@code mayOverwriteInfoBanner}
+   * refuses when storage is unreadable OR a warning is standing, and this banner only exists when
+   * the first is already true. So marking it as a standing warning is belt-and-braces for THIS
+   * message - a control confirmed it, by surviving. It is kept because the flag is what protects
+   * the identity-change and post-reject banners, where no second guard applies, and having one
+   * rule for all three is what stops the next banner being added without one.
+   */
+  @Test
+  public void theUnreadableBannerSurvivesClipboardTraffic() {
+    SignalProtocolMain.setStorageStateForTest(
+        com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+
+    strip.onClipboardChangedForTest();
+
+    assertEquals(E2EEStripView.INFO_STORAGE_UNREADABLE, infoField().getText().toString());
+  }
+
+  /**
+   * Decrypted plaintext must not survive the keyboard being dismissed.
+   *
+   * <p>The IME view is not recreated when the user switches apps, and nothing in the input
+   * lifecycle touched strip state - the one per-raise call clears focus, not text. So a decrypted
+   * message stayed rendered and reappeared the next time the keyboard rose, in whatever app that
+   * was.
+   */
+  @Test
+  public void decryptedContentDoesNotSurviveTheKeyboardBeingHidden() {
+    strip.selectContact(contact("Alice", "alice-uuid"));
+    inputField().setText("meet me at the safe house at nine");
+
+    strip.clearDecryptedContent();
+
+    assertEquals("a decrypted message must not be waiting on screen in the next app",
+        "", inputField().getText().toString());
+  }
 }

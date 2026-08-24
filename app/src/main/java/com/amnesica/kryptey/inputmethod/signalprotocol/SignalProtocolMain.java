@@ -121,8 +121,22 @@ public class SignalProtocolMain {
    * fresh install and is the correct answer for one.
    */
   public static StorageHelper.StorageState storageState() {
+    if (storageStateForTest != null) return storageStateForTest;
     if (sInstance.mStorageHelper == null) return StorageHelper.StorageState.NONE;
     return sInstance.mStorageHelper.storageState();
+  }
+
+  private static StorageHelper.StorageState storageStateForTest;
+
+  /**
+   * Forces the reported storage state, for tests only.
+   *
+   * <p>Reaching UNREADABLE through the real path needs a Keystore-backed box, which has no JVM
+   * implementation - so without this the one state the warning exists for cannot be reached from a
+   * test of the view at all.
+   */
+  public static void setStorageStateForTest(final StorageHelper.StorageState state) {
+    storageStateForTest = state;
   }
 
   public static void reloadAccount(final Context context) {
@@ -1844,6 +1858,7 @@ public class SignalProtocolMain {
    * each test class discovering it again.
    */
   public static void resetForTest() {
+    storageStateForTest = null;
     sInstance.mStorageHelper = null;
     sInstance.mAccount = null;
     storageHelperFactory = null;
