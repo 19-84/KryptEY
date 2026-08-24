@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -17,19 +18,35 @@ import org.junit.Test;
  */
 public class DecompressionBudgetTest {
 
+  /**
+   * Literal values, because the previous version compared a constant against itself.
+   *
+   * <p>It asserted {@code MAX_DECOMPRESSED_BYTES <= 4 * MAX_WIRE_CHARS} where the budget is DEFINED
+   * as {@code 2 * MAX_WIRE_CHARS} - that is {@code 2X <= 4X}, true for every X. Both the budget's
+   * multiplier and the wire cap itself could be raised with the suite green: taking the wire cap to
+   * 1 MiB drags the budget to 2 MiB, and measured, {@code deSimplifyJsonKeys} amplifies exactly 9x,
+   * so that is 18,874,377 characters - about 36MB - in 288ms on the IME main thread, on every
+   * clipboard change. The compression bomb, restored by a one-line edit, invisible to the test
+   * written to prevent it.
+   *
+   * <p>Tying two values that move together is not a bound. These are the numbers.
+   */
   @Test
-  public void thebudgetStaysWithinASmallMultipleOfTheWireCap() {
-    assertTrue("the budget is " + EncodeHelper.MAX_DECOMPRESSED_BYTES + " against a wire cap of "
-            + EnvelopeCodec.MAX_WIRE_CHARS + " - anything decompressed here has to be wire text, "
-            + "which EnvelopeCodec refuses above that cap, so a budget far larger than it is "
-            + "bounding nothing",
-        EncodeHelper.MAX_DECOMPRESSED_BYTES <= 4 * EnvelopeCodec.MAX_WIRE_CHARS);
+  public void thebudgetAndTheWireCapAreTheValuesTheyAreDocumentedToBe() {
+    assertEquals("the wire cap is what bounds every decoded payload; changing it changes what a "
+            + "compression bomb can cost", 8192, EnvelopeCodec.MAX_WIRE_CHARS);
+    assertEquals("the decompression budget is deliberately twice the wire cap - large enough that "
+            + "no legitimate payload is rejected, small enough that the downstream 9x expansion "
+            + "stays under 150KB", 16384, EncodeHelper.MAX_DECOMPRESSED_BYTES);
   }
 
-  /** And high enough that the largest legitimate payload is not rejected. */
+  /**
+   * And the relationship still has to hold, so a future change to one is caught if the other is
+   * updated to match without thinking about the product.
+   */
   @Test
-  public void thebudgetIsAtLeastTheWireCap() {
-    assertTrue("a budget below the wire cap would reject payloads the codec accepts",
+  public void thebudgetCoversTheLargestPayloadTheCodecAccepts() {
+    assertTrue("a budget below the wire cap would reject payloads EnvelopeCodec accepts",
         EncodeHelper.MAX_DECOMPRESSED_BYTES >= EnvelopeCodec.MAX_WIRE_CHARS);
   }
 }

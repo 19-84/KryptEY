@@ -19,8 +19,10 @@ import java.nio.charset.StandardCharsets;
  * <p>It used to measure {@code JsonUtil.toJson}, with a comment claiming that was "literally what
  * goes on the wire". It has not been since Phase 3: the wire format is
  * {@code EnvelopeCodec.toWire}, base64 over a binary envelope. So the one guard on invite size was
- * checking a representation the app does not produce, and reported 2515 characters where the real
- * envelope is 2484. The javadoc also named the limit as {@code CHAR_THRESHOLD_RAW} (500) when the
+ * checking a representation the app does not produce. Its length is not even stable - the JSON
+ * embeds registrationId and keyId as decimal integers, so it varies run to run (2515, 2517 and 2521
+ * have all been recorded), which is why quoting it to the character was meaningless. The binary
+ * envelope is fixed-width at 2484. The javadoc also named the limit as {@code CHAR_THRESHOLD_RAW} (500) when the
  * enforced one is 4096.
  */
 public class PreKeyBundleSizeTest {

@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Before;
@@ -91,5 +92,97 @@ public class FairyTaleGoldenTest {
     assertTrue("40 encodes produced " + decoys.size() + " distinct decoy sentences - a fixed decoy "
             + "makes the sentence itself the signature that identifies every KryptEY user",
         decoys.size() > 3);
+  }
+
+  /**
+   * The decoy must be chosen so the RESULT fits, not chosen and then checked.
+   *
+   * <p>This is the half of the fix that had no test at all: reverting {@code pickDecoy}'s budget
+   * filter to the original random draw left all 576 tests green. Measured on the real shipped
+   * corpus with a rotation-attached wire envelope, the old policy refused 378 of 400 presses at one
+   * payload size and sent on the other 22 - the coin flip the fix removed, invisible to the suite.
+   *
+   * <p>The rotation test that looked like it covered this accepts either outcome by construction,
+   * so it tolerates the bug. This asserts the property directly: whenever any sentence fits, the
+   * encoded result is inside the cap, on every draw.
+   */
+  @Test
+  public void thechosenDecoyAlwaysLeavesTheResultInsideTheCap() throws IOException {
+    final int shortest = shortestSentenceLength();
+
+    final int longest = longestSentenceLength();
+    int sizesInTheBandThatMatters = 0;
+
+    // Coarse below the band, fine inside it. Sweeping every size at full draw count took minutes
+    // for no extra discrimination: below the band every decoy fits and a random draw passes too.
+    for (int payloadBytes = 16; payloadBytes <= 6200;
+         payloadBytes += payloadBytes < 4800 ? 149 : 7) {
+      final String message = incompressible(payloadBytes);
+      // What the payload alone will cost, so we know whether ANY decoy can fit.
+      final int payloadChars =
+          EncodeHelper.compressString(EncodeHelper.minifyJSON(message)).length * 2;
+      if (payloadChars + shortest > CAP) continue;   // nothing can fit; the caller refuses
+
+      // The band where the choice actually decides anything: some sentences fit and some do not.
+      // Below it every decoy fits and a random draw passes too, which is why an earlier version of
+      // this sweep stopped at 3000 bytes and let the reverted fix through.
+      if (payloadChars + longest > CAP) sizesInTheBandThatMatters++;
+
+      for (int draw = 0; draw < 12; draw++) {
+        final String encoded = FairyTaleEncoder.encode(message, null, CAP);
+        assertTrue("payload of " + payloadBytes + " bytes encoded to " + encoded.length()
+                + " characters, past the " + CAP + " requested - the decoy was drawn without "
+                + "regard to the budget", encoded.length() <= CAP);
+      }
+    }
+
+    assertTrue("the sweep never reached a size where some decoys fit and others do not, so it "
+            + "could not tell a budgeted choice from a random one - widen the range rather than "
+            + "trusting this", sizesInTheBandThatMatters > 0);
+  }
+
+  private static int longestSentenceLength() {
+    int longest = 0;
+    for (final String sentence : FairyTaleEncoder.mSentencesMap.values()) {
+      if (sentence != null) longest = Math.max(longest, sentence.length());
+    }
+    return longest;
+  }
+
+  /** And when nothing fits, it still returns rather than looping, so the caller can refuse. */
+  @Test
+  public void whenNoDecoyFitsItStillReturnsTheShortest() throws IOException {
+    final String tooBig = incompressible(6000);
+    final String encoded = FairyTaleEncoder.encode(tooBig, null, CAP);
+
+    assertNotNull("encode must return so the caller can refuse, not throw here", encoded);
+    assertTrue("and the caller is the one that refuses", encoded.length() > CAP);
+  }
+
+  private static final int CAP =
+      com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStrip.MAX_DECODABLE_CHARS;
+
+  private static int shortestSentenceLength() {
+    int shortest = Integer.MAX_VALUE;
+    for (final String sentence : FairyTaleEncoder.mSentencesMap.values()) {
+      if (sentence != null) shortest = Math.min(shortest, sentence.length());
+    }
+    return shortest;
+  }
+
+  /**
+   * Text deflate cannot shrink much. A 64-symbol alphabet is only six bits per character, so
+   * deflate still takes it to about 75% - which moved the band where some decoys fit and others do
+   * not well past where an earlier version of this sweep stopped, and let the reverted fix through.
+   */
+  private static String incompressible(final int length) {
+    final String alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    final java.util.Random random = new java.util.Random(20260824L + length);
+    final StringBuilder builder = new StringBuilder(length);
+    while (builder.length() < length) {
+      builder.append(alphabet.charAt(random.nextInt(alphabet.length())));
+    }
+    return builder.toString();
   }
 }

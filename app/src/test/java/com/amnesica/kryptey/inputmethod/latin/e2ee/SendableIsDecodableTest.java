@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -191,7 +192,7 @@ public class SendableIsDecodableTest {
    * <p>The test this replaces compared {@code CHAR_THRESHOLD_RAW} (500) against
    * {@code MAX_DECODABLE_CHARS} and its comment said "the raw encoder is a pass-through, so its own
    * cap is what keeps it inside the door". False: RAW passes through the WIRE ENVELOPE, not the
-   * plaintext - measured 3068 characters for a 500-byte message and 5372 with a rotation-attached
+   * plaintext - measured 3068 characters for a 500-byte message and 5500 with a rotation-attached
    * bundle. Six to eleven times the number it was comparing. That is exactly the category error the
    * commit which wrote it says it is fixing, reintroduced in the replacement.
    */
@@ -268,30 +269,54 @@ public class SendableIsDecodableTest {
       refused = true;
     }
 
-    if (!refused) return;   // this configuration fits; the next test covers the refusal directly
-
+    // No "if (!refused) return" here. That is a silent-vacuity switch: the day a 500-byte
+    // rotation-due message stops refusing, the test stops asserting and stays green, and the
+    // rollback it guards becomes uncovered without anything failing.
+    assertTrue("a 500-byte message with a rotation attached must exceed the cap - if that has "
+        + "changed, this test needs a new size, not a quiet exit", refused);
     assertEquals("a refused send left the plaintext in the user's history", before, chatLogSize());
   }
 
-  /** Driven directly, so it does not depend on a size that may change. */
+  /**
+   * The rollback must remove the REFUSED message, not merely one message.
+   *
+   * <p>The test this replaces asserted {@code chatLogSize() - before <= 1}, which every possible
+   * outcome satisfies: rollback works, rollback deleted, refusal never reached. Worse, its first
+   * call succeeded, so the refusal it did observe came from a bare {@code encode} that never
+   * records anything - the test named for the rollback never exercised it.
+   *
+   * <p>What it should have caught: a rollback that scans forward and drops the recipient's OLDEST
+   * message instead of the matching one silently deletes a real, previously delivered message from
+   * the user's history. Counting entries cannot see that. This checks the contents.
+   */
   @Test
-  public void arefusalRollsBackExactlyOneEntry() throws Exception {
-    final int before = chatLogSize();
+  public void therollbackRemovesTheRefusedMessageAndNotAnEarlierOne() throws Exception {
+    final String earlier = "an earlier message that was really sent";
+    assertNotNull(strip.encryptMessage(earlier, bobAddress, Encoder.RAW));
+    final int afterEarlier = chatLogSize();
 
-    // A message that encrypts fine and cannot possibly encode inside the cap.
+    alice.getMetadataStore().setNextSignedPreKeyRefreshTime(1L);
     boolean refused = false;
+    final String doomed = plaintext(500);
     try {
-      strip.encryptMessage(incompressible(400), bobAddress, Encoder.FAIRYTALE);
-      // Not refused at this size; force the refusal through encode directly instead and assert the
-      // log is untouched by a path that never recorded anything.
-      strip.encode(incompressible(20000), Encoder.FAIRYTALE);
+      strip.encryptMessage(doomed, bobAddress, Encoder.FAIRYTALE);
     } catch (TooManyCharsException expected) {
       refused = true;
     }
 
-    assertTrue("the refusal path must be reachable, or this proves nothing", refused);
-    assertTrue("the log must not have grown by more than the one message that was sent",
-        chatLogSize() - before <= 1);
+    assertTrue("this configuration must refuse, or the test proves nothing - if the wire size or "
+        + "the cap has moved, re-derive the size rather than deleting the assertion", refused);
+    assertEquals("the rollback must leave exactly the messages that were there before",
+        afterEarlier, chatLogSize());
+
+    boolean earlierSurvived = false;
+    for (final Object message : alice.getUnencryptedMessages()) {
+      final String text = ((com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage)
+          message).getUnencryptedMessage();
+      assertNotEquals("the refused message must be gone from the history", doomed, text);
+      if (earlier.equals(text)) earlierSurvived = true;
+    }
+    assertTrue("and a genuinely delivered message must NOT be the one removed", earlierSurvived);
   }
 
   /** And a successful send DOES record exactly one entry - or the rollback is indistinguishable. */
@@ -302,5 +327,51 @@ public class SendableIsDecodableTest {
     assertNotNull(strip.encryptMessage("hello", bobAddress, Encoder.RAW));
 
     assertEquals("a successful send must record exactly one message", before + 1, chatLogSize());
+  }
+
+  /**
+   * An encoder this code does not implement must FAIL, not quietly produce nothing.
+   *
+   * <p>{@code encode} handled FAIRYTALE and RAW and returned null for anything else, so
+   * {@code encryptMessage} returned null with no exception - the rollback never fired and the
+   * plaintext stayed in the user's history while the view reported "encryption failed". A null
+   * encoder was worse: NullPointerException out of a click listener, which neither catch in
+   * {@code encryptAndSendInputFieldContent} stops.
+   *
+   * <p>Unreachable today, since the chosen encoder is only ever RAW or FAIRYTALE. Worth closing
+   * anyway because {@code checkMessageLengthForEncodingMethod} already tolerates a null encoder, so
+   * the two halves of the send path disagreed about what counts as acceptable input.
+   */
+  @Test
+  public void anunhandledEncoderFailsRatherThanReturningNothing() {
+    for (final Encoder encoder : Encoder.values()) {
+      if (encoder == Encoder.RAW || encoder == Encoder.FAIRYTALE) continue;
+
+      final int before = chatLogSize();
+      try {
+        strip.encryptMessage("hello", bobAddress, encoder);
+        fail(encoder + " produced no exception - the plaintext stays in the chat log while the "
+            + "view reports a failure");
+      } catch (Exception expected) {
+        assertTrue(encoder + " must fail as an IOException, not an unchecked throwable from a "
+                + "click listener: " + expected.getClass().getName(),
+            expected instanceof IOException);
+      }
+      assertEquals(encoder + " left the plaintext in the chat log", before, chatLogSize());
+    }
+  }
+
+  /** And a null encoder is refused the same way, rather than dereferenced. */
+  @Test
+  public void anullEncoderIsRefusedRatherThanDereferenced() {
+    final int before = chatLogSize();
+    try {
+      strip.encryptMessage("hello", bobAddress, null);
+      fail("a null encoder must be refused");
+    } catch (Exception expected) {
+      assertTrue("must be an IOException, not an NPE: " + expected.getClass().getName(),
+          expected instanceof IOException);
+    }
+    assertEquals("a null encoder left the plaintext in the chat log", before, chatLogSize());
   }
 }

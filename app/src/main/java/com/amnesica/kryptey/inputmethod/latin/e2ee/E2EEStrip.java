@@ -64,7 +64,8 @@ public class E2EEStrip {
   //
   // These count the USER'S PLAINTEXT. An earlier version of this comment said "UTF-8 bytes of
   // plaintext wire text", which is wrong by six to eleven times: what travels is the wire envelope,
-  // measured 3068 characters for a 500-byte message and 5372 with a rotation-attached bundle. The
+  // measured 3068 characters for a 500-byte message and 5500 with a rotation-attached bundle (5372
+  // is the figure for a 400-byte message, and this comment had it mislabelled). The
   // commit that identified that sentence as false deleted the test whose javadoc repeated it and
   // left the copy here, which is how it survived.
   //
@@ -158,10 +159,24 @@ public class E2EEStrip {
    * path passes through, and it is the only place where the value that must fit actually exists.
    */
   public String encode(final String message, final Encoder encoder) throws IOException {
+    // An encoder this method does not handle must FAIL, not return null.
+    //
+    // Returning null let encryptMessage return null with no exception - so the rollback never
+    // fired and the plaintext stayed in the user's history while the view said "encryption
+    // failed". A null encoder was worse: it threw NullPointerException out of a click listener,
+    // which neither catch in encryptAndSendInputFieldContent stops. Unreachable today, since
+    // encodingMethod is only ever RAW or FAIRYTALE - but checkMessageLengthForEncodingMethod
+    // already tolerates a null encoder, so the two disagreed about what is acceptable input.
+    if (encoder == null) throw new IOException("no encoder selected");
+
     String encodedMessage = null;
-    if (encoder.equals(Encoder.FAIRYTALE))
+    if (encoder.equals(Encoder.FAIRYTALE)) {
       encodedMessage = FairyTaleEncoder.encode(message, mContext, MAX_DECODABLE_CHARS);
-    if (encoder.equals(Encoder.RAW)) encodedMessage = RawEncoder.encode(message);
+    } else if (encoder.equals(Encoder.RAW)) {
+      encodedMessage = RawEncoder.encode(message);
+    } else {
+      throw new IOException("no encoder implementation for " + encoder);
+    }
 
     if (encodedMessage != null && encodedMessage.length() > MAX_DECODABLE_CHARS) {
       throw new TooManyCharsException(String.format(
