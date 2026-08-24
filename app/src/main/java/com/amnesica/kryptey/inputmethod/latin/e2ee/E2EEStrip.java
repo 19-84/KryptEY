@@ -60,8 +60,12 @@ public class E2EEStrip {
   // comment on INFO_IDENTITY_CHANGED_EXISTING in E2EEStripView.
   private final String INFO_IDENTITY_CHANGED = "Someone offered a different key for %s. It was refused and is not in use. Open them in your contact list and compare the number with them by voice before sending anything.";
 
-  private final int CHAR_THRESHOLD_RAW = 500;
-  private final int CHAR_THRESHOLD_FAIRYTALE = 500;
+  // Constants, not per-instance state, and visible so a test can relate them to
+  // MAX_DECODABLE_CHARS. The send side counts UTF-8 bytes of plaintext wire text; the receive side
+  // counts characters of encoded text. Nothing else connects the two, and the FairyTale encoder
+  // expands by about 1.57x, so they can drift apart silently - see SendAndReceiveLimitsTest.
+  public static final int CHAR_THRESHOLD_RAW = 500;
+  public static final int CHAR_THRESHOLD_FAIRYTALE = 500;
 
   /**
    * Separate, much larger limit for a key bundle.
