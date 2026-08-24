@@ -1,0 +1,13 @@
+#!/bin/bash
+# Runs a Gradle task inside the pinned build image, with a persistent dependency cache.
+#
+# Dependency verification is ON by default: the build fails if any artifact's SHA-256 does not
+# match gradle/verification-metadata.xml. Pass --dependency-verification=off only for local
+# experiments, never for a build you intend to report on.
+set -e
+IMAGE="${KRYPTEY_IMAGE:-kryptey-build:36}"
+exec docker run --rm \
+  -v "$(git rev-parse --show-toplevel)":/workspace \
+  -v kryptey-gradle-cache:/root/.gradle \
+  -w /workspace \
+  "$IMAGE" ./gradlew --no-daemon "${@:-testDebugUnitTest}"

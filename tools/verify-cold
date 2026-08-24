@@ -1,0 +1,17 @@
+#!/bin/bash
+# Builds from genuinely empty caches, the way a fresh clone would.
+#
+# A warm Gradle cache hides dependency-verification gaps: artifacts resolved during buildscript
+# classpath resolution are fetched before --write-verification-metadata takes effect, so
+# regenerating metadata cannot record them and every warm build passes regardless. That is how two
+# missing entries once survived dozens of "clean verified build" reports while a fresh clone could
+# not configure at all. Run this before claiming a build is reproducible.
+set -e
+IMAGE="${KRYPTEY_IMAGE:-kryptey-build:36}"
+VOL="kryptey-coldverify-$$"
+trap 'docker volume rm "$VOL" >/dev/null 2>&1 || true' EXIT
+exec docker run --rm \
+  -v "$(git rev-parse --show-toplevel)":/workspace \
+  -v "$VOL":/root/.gradle \
+  -w /workspace \
+  "$IMAGE" ./gradlew --no-daemon "${@:-testDebugUnitTest}"
