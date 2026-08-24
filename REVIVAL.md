@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 438, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 439, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -268,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 438 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 439 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -391,6 +391,19 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
    `CallerNonceProhibitedTest`. It registers a provider that imposes that rule and runs the real
    seal/open path against it, so the bug that already shipped once cannot recur silently. That is
    one property, not the whole suite; the rest still needs a device.
+
+## Verifying a build honestly
+
+"The tests pass" is not the same claim as "this builds". Every build during the revival ran against
+a warm Gradle cache, and a warm cache hides dependency-verification gaps: artifacts resolved during
+buildscript classpath resolution are fetched *before* `--write-verification-metadata` takes effect,
+so regenerating the metadata cannot record them and every warm build passes regardless of whether
+they are pinned. Two such artifacts were missing for the whole revival, and a fresh clone could not
+configure at all — while dozens of ticks reported a clean verified build.
+
+So a build claim needs a run from empty caches, not just a `clean` task. `scratchpad/build/verify-cold`
+does that: fresh volume, no warm `~/.gradle`, discarded afterwards. It takes a few minutes, which is
+the only reason to reach for the warm path at all.
 
 ## Known-deferred defects
 
