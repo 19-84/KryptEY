@@ -411,7 +411,11 @@ public class RenderedNameAgreementTest {
       // characters from Default_Ignorable precisely so a non-supporting renderer shows a fallback
       // glyph. They are no longer deleted, so they no longer need excepting, and the exception was
       // doing what the canRender filter used to do for C1: keeping a wrong answer out of view.
-      0x180F, "MONGOLIAN FREE VARIATION SELECTOR FOUR - default-ignorable, tofu in the test font");
+      0x180F, "MONGOLIAN FREE VARIATION SELECTOR FOUR - default-ignorable, tofu in the test font",
+      0x1BCA0, "SHORTHAND FORMAT LETTER OVERLAP - default-ignorable, tofu in the test font",
+      0x1BCA1, "SHORTHAND FORMAT CONTINUING OVERLAP - default-ignorable, tofu in the test font",
+      0x1BCA2, "SHORTHAND FORMAT DOWN STEP - default-ignorable, tofu in the test font",
+      0x1BCA3, "SHORTHAND FORMAT UP STEP - default-ignorable, tofu in the test font");
 
   /**
    * The other direction: a character the user can SEE must not be folded away.
@@ -578,5 +582,61 @@ public class RenderedNameAgreementTest {
         && ((cp >= 0xFFF9 && cp <= 0xFFFB)
             || (cp >= 0x0600 && cp <= 0x0605) || cp == 0x06DD || cp == 0x070F
             || cp == 0x0890 || cp == 0x0891 || cp == 0x08E2);
+  }
+
+  /**
+   * Above the BMP, in the ranges where format characters actually live.
+   *
+   * <p>{@code aVisibleCharacterIsNotFoldedAway} and {@code everyGlyphlessCodePointFoldsToTheSameKey}
+   * both stop at U+FFFF, and the existing supplementary sweep covers three ranges chosen for the
+   * bypass direction (tags, maths alphanumerics, enclosed alphanumerics). None of them contains
+   * U+13430-1343F, the Egyptian hieroglyph format controls, which are category Cf, are NOT
+   * default-ignorable, and were being deleted by the old {@code type == FORMAT} rule - nine code
+   * points of over-fold that no test could see, in a plane no test looked at.
+   *
+   * <p>The ranges here are not a sample. They are where Cf and the supplementary
+   * default-ignorables are defined, which is the whole of what these two rules can decide above the
+   * BMP, plus a private-use range to check the tofu class reaches that far.
+   */
+  @Test
+  public void noSupplementaryFormatCharacterIsMisfolded() {
+    final int[][] ranges = {
+        {0x110BD, 0x110BD}, {0x110CD, 0x110CD},   // Kaithi number signs
+        {0x13430, 0x1343F},                       // Egyptian hieroglyph format controls
+        {0x1BCA0, 0x1BCA3},                       // shorthand format controls
+        {0x1D173, 0x1D17A},                       // musical notation format controls
+        {0xE0000, 0xE00FF},                       // language tags
+        {0xF0000, 0xF00FF},                       // supplementary private use
+    };
+
+    final List<String> wrong = new ArrayList<>();
+    for (final int[] range : ranges) {
+      for (int cp = range[0]; cp <= range[1]; cp++) {
+        if (OVER_FOLD_EXCEPTIONS.containsKey(cp)) continue;
+        final String ch = new String(Character.toChars(cp));
+        final String candidate = "Bob" + ch + "Jones";
+
+        if (inkPixels(ch) == 0) {
+          // Draws nothing: it must fold away, or a name carrying it is indistinguishable from one
+          // without it while folding to a different key.
+          if (!SignalProtocolMain.hasContactWithSameDisplayName(
+              candidate, "", elsewhere2("BobJones"))) {
+            wrong.add(String.format("U+%05X draws nothing but does not fold away", cp));
+          }
+        } else {
+          // Draws something: it must NOT fold away, or the warning fires on names a reader can
+          // tell apart.
+          if (SignalProtocolMain.hasContactWithSameDisplayName(
+              candidate, "", elsewhere2("BobJones"))) {
+            wrong.add(String.format("U+%05X draws ink but folds away entirely", cp));
+          }
+        }
+      }
+    }
+
+    assertTrue("supplementary format characters folded against what they draw:\n  "
+            + String.join("\n  ", wrong.subList(0, Math.min(20, wrong.size())))
+            + (wrong.size() > 20 ? "\n  ... and " + (wrong.size() - 20) + " more" : ""),
+        wrong.isEmpty());
   }
 }

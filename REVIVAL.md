@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 511, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 512, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -287,7 +287,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 511 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 512 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -454,6 +454,25 @@ class of vacuity into a failure, and any test that reads paths from disk should 
 So this stays a review-caught defect rather than a test-caught one. The honest mitigation is that the
 claims which *are* checkable have been turned into assertions — the fold rule, the layout invariant,
 the session version — so the comments increasingly point at tests rather than restate them.
+
+## The one structural lesson from the review rounds
+
+Two findings in a row came from the same shape of mistake, and it is worth stating separately from
+the defects themselves.
+
+**A sweep is only as good as the pairs it generates.** Every pixel test in `RenderedNameAgreementTest`
+compared candidates against one fixed baseline, so it produced pairs of the form
+`(baseline, baseline+X)` and never `(baseline+X, baseline+Y)`. The property being claimed — that two
+names a reader cannot tell apart fold together — is about pairs in general. 8520 BMP code points all
+paint the same notdef box and folded to different keys; nothing in a 480-test suite could see it.
+
+**A filter that hides a wrong answer looks exactly like a filter that excludes an irrelevant one.**
+`canRender` kept the C1 controls out of view for as long as they were mishandled. `OVER_FOLD_EXCEPTIONS`
+then did the same for U+FFF9–FFFB, with a stated reason ICU contradicts. Both were added in good
+faith to suppress noise. The rule that came out of it: an exclusion gets a written reason and a
+negative control proving something still fails without it, or it does not go in.
+
+---
 
 ## Known-deferred defects
 
