@@ -545,6 +545,28 @@ public class StorageHelperTest {
         new StorageHelper(context, workingBox()).storageState());
   }
 
+  /**
+   * The key is fine and the value is corrupt.
+   *
+   * <p>This is the case that makes the trial decryption in {@code storageState} load-bearing. Both
+   * tests above pass without it: when the master key is wrong, {@code secureStore()} fails its
+   * migration check and returns null long before any value is read, so removing the decryption
+   * still reported UNREADABLE and the mutation survived. Here the store opens perfectly and the one
+   * value that matters does not decode - which is what a partial write or a truncated file looks
+   * like, and is indistinguishable from a healthy account by any flag.
+   */
+  @Test
+  public void anintactKeyWithACorruptedValueReportsUnreadable() {
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(newAccount());
+    preferences.edit()
+        .putString(String.valueOf(ProtocolIdentifier.PROTOCOL_STORE), "!!! not base64 !!!")
+        .commit();
+
+    assertEquals("an intact key over a corrupted value must not report READABLE",
+        StorageHelper.StorageState.UNREADABLE,
+        new StorageHelper(context, workingBox()).storageState());
+  }
+
   /** And a box that refuses everything - an unusable Keystore - is also UNREADABLE, not NONE. */
   @Test
   public void anunusableKeystoreReportsUnreadable() {
