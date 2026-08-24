@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStrip;
@@ -11,6 +12,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64;
 import org.junit.Test;
 
 import java.io.IOException;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 
 /**
  * Regression tests for envelopes that decoded cleanly and then killed the IME further downstream.
@@ -90,9 +92,25 @@ public class HostileEnvelopeTest {
     assertTrue(e.getMessage().contains("too large"));
   }
 
+  /**
+   * A REAL bundle, not two constants.
+   *
+   * <p>This compared {@code MAX_WIRE_CHARS} with {@code CHAR_THRESHOLD_PRE_KEY_RESPONSE} - 8192
+   * against 4096 - and constructed no bundle at all, so a bundle that outgrew the cap left it
+   * green. The send-side threshold is not what the cap has to clear; the actual serialised bundle
+   * is, and PQXDH is what made that a real question.
+   */
   @Test
-  public void theWireCapComfortablyExceedsARealBundle() {
-    assertTrue("the cap must not reject legitimate key bundles",
-        EnvelopeCodec.MAX_WIRE_CHARS > E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE);
+  public void theWireCapComfortablyExceedsARealBundle() throws Exception {
+    SignalProtocolMain.testIsRunning = true;
+    SignalProtocolMain.initialize(null);
+    final String bundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    assertNotNull("a real bundle must serialise", bundle);
+    assertTrue("a real PQXDH bundle is " + bundle.length() + " characters against a cap of "
+            + EnvelopeCodec.MAX_WIRE_CHARS + " - the cap must not reject legitimate key bundles",
+        bundle.length() < EnvelopeCodec.MAX_WIRE_CHARS);
+    assertTrue("and it must round-trip at that size",
+        EnvelopeCodec.fromWire(bundle).getPreKeyResponse() != null);
   }
 }

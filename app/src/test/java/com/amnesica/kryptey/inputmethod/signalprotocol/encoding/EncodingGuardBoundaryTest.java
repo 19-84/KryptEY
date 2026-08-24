@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -43,12 +44,23 @@ public class EncodingGuardBoundaryTest {
     assertTrue(e.getMessage(), e.getMessage().contains("no encoded bits"));
   }
 
-  /** And a real bit string still decodes, or the guard could just reject everything. */
+  /**
+   * And a real bit string still decodes to the right VALUE, not merely to some bytes.
+   *
+   * <p>This asserted {@code bytes.length >= 1} on an input of exactly eight bits, where the length
+   * is 1 by construction - so it held for any implementation returning anything at all, including
+   * one that ignored its input. The value was never checked, on the only test in this file that
+   * exists to show the guard does not simply reject everything.
+   */
   @Test
   public void aRealBitStringStillDecodes() {
-    final byte[] bytes = EncodeHelper.convertBinaryToByteArray("00000001");
-    assertNotNull(bytes);
-    assertTrue("expected at least one byte", bytes.length >= 1);
+    assertArrayEquals("eight bits must decode to that exact byte",
+        new byte[] {1}, EncodeHelper.convertBinaryToByteArray("00000001"));
+    assertArrayEquals("and the high bit must survive as 0x80, not as a sign",
+        new byte[] {(byte) 0x80}, EncodeHelper.convertBinaryToByteArray("10000000"));
+    assertArrayEquals("two bytes, in order",
+        new byte[] {(byte) 0xAB, (byte) 0xCD},
+        EncodeHelper.convertBinaryToByteArray("1010101111001101"));
   }
 
   // ------------------------------------- encodedTextContainsInvisibleCharacters guards

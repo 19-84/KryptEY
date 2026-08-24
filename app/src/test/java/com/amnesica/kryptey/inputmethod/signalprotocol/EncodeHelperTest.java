@@ -92,7 +92,12 @@ public class EncodeHelperTest {
     Log.i(TAG, "------------ convertBinaryToInvisibleStringTest: ------------");
     String binaryMessage = EncodeHelper.convertByteArrayToBinary(loremMessage.getBytes(StandardCharsets.UTF_8));
     String invisibleResult = EncodeHelper.convertBinaryToInvisibleString(binaryMessage);
-    assertNotNull(invisibleResult);
+
+    // Round-tripped, not merely non-null. assertNotNull on a StringBuilder.toString() passes for a
+    // method body of "return \"\";" - which is to say it tested that the method returns.
+    assertEquals("the invisible form must carry every bit back",
+        binaryMessage, EncodeHelper.convertInvisibleStringToBinary(invisibleResult));
+    assertEquals("four bits per character", binaryMessage.length() / 4, invisibleResult.length());
   }
 
   @Test

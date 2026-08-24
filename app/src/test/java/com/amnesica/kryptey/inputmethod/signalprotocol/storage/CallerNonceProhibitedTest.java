@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol.storage;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.After;
@@ -188,7 +189,7 @@ public class CallerNonceProhibitedTest {
     }
 
     /**
-     * Refuses a caller-supplied nonce, and does it with an <em>unchecked</em> exception on purpose.
+     * Refuses a caller-supplied nonce, the way a {@code randomizedEncryptionRequired} key does.
      *
      * <p>A real Keystore key throws {@code InvalidAlgorithmParameterException}, and the obvious
      * thing here is to do the same. It does not work, and the reason is worth knowing: when
@@ -201,8 +202,16 @@ public class CallerNonceProhibitedTest {
      * Its sanity check passed only because calling {@code getProvider()} forces selection early.)
      *
      * <p>On a device there is no fallback, because the key is bound to the AndroidKeyStore provider
-     * and no other provider can use it. An unchecked exception is the closest the JVM gets to that:
-     * it propagates instead of being treated as "try someone else".
+     * and no other provider can use it.
+     *
+     * <p>The exception thrown here is CHECKED - {@code InvalidAlgorithmParameterException} - which
+     * is what a real Keystore raises, and the paragraph above used to claim it was unchecked "on
+     * purpose". It is not, and the distinction matters: a checked exception from a candidate
+     * provider IS treated as "try someone else". What makes this test work is the displacement loop
+     * in {@code installKeystoreLikeProvider}, which removes every other provider offering this
+     * transform so there is nobody to fall back to. A maintainer trusting the old wording would
+     * have read that loop as belt-and-braces and deleted it, and the test would have gone on
+     * passing while proving nothing.
      */
     @SuppressWarnings("unused")
     private static void refuseCallerNonce(final int opmode, final Object params)
@@ -270,5 +279,26 @@ public class CallerNonceProhibitedTest {
         throws ShortBufferException, IllegalBlockSizeException, BadPaddingException {
       return delegate.doFinal(in, off, len, out, outOff);
     }
+  }
+
+  /**
+   * The displacement loop is what makes this test work, so its absence must be visible.
+   *
+   * <p>{@code Cipher} defers provider selection until {@code init()} and
+   * {@code chooseProvider} treats an exception from a candidate as "try someone else". Inserting
+   * our provider at position 1 is therefore not enough - SunJCE would quietly accept the caller
+   * nonce and the test would pass while proving nothing. Removing every other provider offering
+   * this transform is the part doing the work.
+   */
+  @Test
+  public void nothingElseOffersThisTransformWhileTheTestRuns() {
+    int offering = 0;
+    for (final java.security.Provider p : Security.getProviders()) {
+      if (p.getService("Cipher", TRANSFORM) != null) offering++;
+    }
+
+    assertEquals("exactly one provider may offer " + TRANSFORM + " during this test, or a caller "
+            + "nonce would be quietly accepted by the fallback and the refusal never exercised",
+        1, offering);
   }
 }
