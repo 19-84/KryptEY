@@ -75,8 +75,22 @@ public class SessionStoreImplTest {
 
     List<Integer> deviceIds = sessionStore.getSubDeviceSessions(signalProtocolAddress.getName());
     assertEquals(1, deviceIds.size());
-    assertNotEquals("getSubDeviceSessions filters out device id 1, so this fixture must avoid it",
-        1, signalProtocolAddress.getDeviceId());
+
+    // Sub-device grouping, and the device-id-1 filter, neither of which the fixture above reaches.
+    //
+    // The two addresses above have DIFFERENT random names, so getSubDeviceSessions matches on the
+    // name alone and the filter never runs - deleting it left the whole suite green. And the
+    // assertion that used to sit here compared the literal 42 against the literal 42 ten lines
+    // above it.
+    //
+    // Device id 1 is the primary device: it is excluded because "sub-device" means the others.
+    final String sharedName = UUID.randomUUID().toString();
+    sessionStore.storeSession(new SignalProtocolAddress(sharedName, 1), new SessionRecord());
+    sessionStore.storeSession(new SignalProtocolAddress(sharedName, 42), new SessionRecord());
+
+    final List<Integer> subDevices = sessionStore.getSubDeviceSessions(sharedName);
+    assertEquals("the primary device must not be listed as a sub-device: " + subDevices,
+        List.of(42), subDevices);
   }
 
   @Test

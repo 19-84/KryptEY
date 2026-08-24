@@ -156,13 +156,30 @@ public class OutOfBandExchangeTest {
     assertFalse(SignalProtocolMain.isContactKeyTrustworthy(contactFor(alice)));
   }
 
-  /** Comparison is the only thing that confers trust, whichever way the key arrived. */
+  /**
+   * Comparison is the only thing that confers trust, whichever way the key arrived.
+   *
+   * <p>The fixture pins Alice's key first. It used to assert that a contact marked verified was
+   * trustworthy with NOTHING pinned for that address, which is a state the app should never
+   * produce and now explicitly refuses: there is no key for the badge to be about, so a stale
+   * verified flag over an empty address read as trustworthy. The claim this test makes - that
+   * provenance does not confer trust and comparison does - is unaffected.
+   */
   @Test
-  public void onlyAnExplicitComparisonConfersTrust() {
+  public void onlyAnExplicitComparisonConfersTrust() throws Exception {
+    final String aliceBundle = bundleOf(alice);
     activate(bob);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(aliceBundle), addressOf(alice)));
+
+    final Contact unverified = contactFor(alice);
+    assertFalse("a pinned key alone is not trust",
+        SignalProtocolMain.isContactKeyTrustworthy(unverified));
+
     final Contact verified = new Contact("A", "B", alice.getSignalProtocolAddress().getName(),
         alice.getDeviceId(), true);
-    assertTrue(SignalProtocolMain.isContactKeyTrustworthy(verified));
+    assertTrue("comparing the number is what confers it",
+        SignalProtocolMain.isContactKeyTrustworthy(verified));
   }
 
   @Test

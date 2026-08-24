@@ -267,4 +267,29 @@ public class VerifyContactTest {
     assertFalse("a stale verified flag must not survive a pending identity change - the store has "
             + "to overrule the object", SignalProtocolMain.isContactKeyTrustworthy(detached));
   }
+
+  /**
+   * The read side must check for a pin too, not only the write side.
+   *
+   * <p>{@code verifyContact} refuses to set the badge with nothing pinned.
+   * {@code isContactKeyTrustworthy} did not ask, so a Contact object carrying
+   * {@code verified = true} over an address holding no key read as trustworthy - which is the
+   * defect the write-side guard was added for, surviving on the other side of it.
+   *
+   * <p>Not reachable from today's UI, because every badge renders from the account's live list. That
+   * is a property of the current call sites, not of this method, and the whole point of the guard
+   * is to stop depending on that.
+   */
+  @Test
+  public void averifiedFlagOverNoPinnedKeyIsNotTrustworthy() {
+    final Contact detached = new Contact("Ghost", "Contact", "never-pinned-uuid", 21, true);
+
+    assertTrue("precondition: the object claims to be verified", detached.isVerified());
+    assertNull("precondition: nothing may be pinned for this address",
+        me.getSignalProtocolStore().getIdentityKeyStore()
+            .getIdentity(ProtocolAddresses.of("never-pinned-uuid", 21)));
+
+    assertFalse("a verified flag over an address with no key must not read as trustworthy",
+        SignalProtocolMain.isContactKeyTrustworthy(detached));
+  }
 }

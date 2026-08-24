@@ -333,6 +333,13 @@ public class TrustScopingTest {
     final IdentityKeyStoreImpl b = new IdentityKeyStoreImpl(own, registrationId);
     assertEquals("two identically built stores must be equal", a, b);
 
+    // The account's OWN key pair, which this test claimed to cover and did not: a and b were both
+    // built from the same `own`, so the sixth field was never varied and dropping it from equals
+    // left the suite green. By this test's own argument that made every round-trip assertion
+    // vacuous for the one key the whole store is anchored on.
+    assertNotEquals("a store with a different identity key pair must not be equal",
+        a, new IdentityKeyStoreImpl(KeyUtil.generateIdentityKeyPair(), registrationId));
+
     // registration id
     assertNotEquals(a, new IdentityKeyStoreImpl(own, registrationId + 1));
 

@@ -380,6 +380,19 @@ public class SignalProtocolMain {
     if (contact == null) return false;
     if (!contact.isVerified()) return false;
     if (sInstance.mAccount == null) return false;
+
+    // There must be a key for the badge to be about.
+    //
+    // verifyContact refuses to SET the badge with nothing pinned; this is the same invariant on the
+    // read side. Enforcing it in one place and reading it in another is how the original defect
+    // worked - a stale Contact object carrying verified=true was trusted over an address holding no
+    // key at all. Not reachable from today's UI, which always renders from the account's live list,
+    // but that is a property of the current call sites rather than of this method.
+    if (sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+        .getIdentity(contact.getSignalProtocolAddress()) == null) {
+      return false;
+    }
+
     // A verified badge must not outlive the key it was granted for.
     return !sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .hasUnacceptedIdentityChange(contact.getSignalProtocolAddress());
