@@ -884,14 +884,31 @@ public class SignalProtocolMain {
    */
   public static String displayLabelFor(final Contact contact) {
     if (contact == null) return "";
-    final String name = stripBidiControls(contact.getFirstName())
-        + " " + stripBidiControls(contact.getLastName());
+    final String name = (sanitizeForInlineDisplay(contact.getFirstName())
+        + " " + sanitizeForInlineDisplay(contact.getLastName())).trim();
     if (contactCount() < 1) return name;
     return name + "  \u2068" + displayTagFor(contact) + "\u2069";
   }
 
-  /** Removes the bidi overrides and isolates that would let a name reorder text placed after it. */
-  private static String stripBidiControls(final String value) {
+  /**
+   * Makes a name safe to place inside a single line of running text.
+   *
+   * <p>Two separate hazards, both driven by text the attacker writes into an invite for the user to
+   * copy.
+   *
+   * <p><b>Bidi overrides</b> let a name reorder whatever follows it, so the tag appended after the
+   * name renders mirrored. The full set of UBA explicit formatting characters is removed.
+   *
+   * <p><b>Line breaks</b> are the one the row layout already survives and the banners did not. The
+   * info views are {@code wrap_content} with no {@code maxLines}, and both name fields declare
+   * {@code inputType="textMultiLine"}, so newlines are ordinary input that the length cap counts as
+   * ordinary characters. Twenty of them in a first name render
+   * "Someone offered a different key for Bob" followed by twenty blank lines, with the refusal
+   * notice, the instruction to compare by voice, and the tag itself all below the fold — on a
+   * warning an attacker triggers with one forged bundle. Collapsed to spaces here rather than
+   * dropped, so words on either side do not run together.
+   */
+  private static String sanitizeForInlineDisplay(final String value) {
     if (value == null) return "";
     final StringBuilder out = new StringBuilder(value.length());
     for (int i = 0; i < value.length(); i++) {
@@ -900,9 +917,23 @@ public class SignalProtocolMain {
           || c == 0x200E || c == 0x200F || c == 0x061C) {
         continue;
       }
+      if (c == '\n' || c == '\r' || c == 0x0085 || c == 0x2028 || c == 0x2029) {
+        out.append(' ');
+        continue;
+      }
       out.append(c);
     }
-    return out.toString();
+    // \\s+ alone is not enough: Java's \\s is ASCII-only, so it does not match U+2003 EM SPACE or
+    // the other Unicode space separators - and EM SPACE padding is precisely how a name was made
+    // wide enough to push the tag off its row. \\p{Zs} covers them. Unlike normalizeForDisplay this
+    // path does not NFKC first (it must preserve the name as written), so the classes are needed
+    // explicitly.
+    return out.toString().replaceAll("[\\s\\p{Zs}]+", " ").trim();
+  }
+
+  /** Sanitises an arbitrary attacker-supplied string for use inside a warning. */
+  public static String sanitizeForBanner(final CharSequence value) {
+    return value == null ? "" : sanitizeForInlineDisplay(value.toString());
   }
 
   /** How many contacts the account holds; 0 when nothing is loaded. */

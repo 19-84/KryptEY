@@ -545,11 +545,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // Refusing is also the honest reading: a user who genuinely wants to rename someone should
       // delete and re-add, which is unambiguous.
       Toast.makeText(getContext(),
-          String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME, String.valueOf(firstName),
+          String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME,
+              SignalProtocolMain.sanitizeForBanner(firstName),
               SignalProtocolMain.displayLabelFor(sameAddress)),
           Toast.LENGTH_LONG).show();
       setInfoTextViewMessage(mInfoTextView,
-          String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME, String.valueOf(firstName),
+          String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME,
+              SignalProtocolMain.sanitizeForBanner(firstName),
               SignalProtocolMain.displayLabelFor(sameAddress)));
       abortContactAdding();
       return;
@@ -1094,23 +1096,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** Set while an identity-change warning is on screen, so the info field is not reset over it. */
   private boolean mIdentityWarningStanding = false;
 
-  /**
-   * Shows the identity-change warning if one is pending for this sender.
-   *
-   * @return true if a warning was shown, in which case the caller must not also show the generic
-   *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
-   *     move for an impersonation attempt, which at a pinned address is the only possibility.
-   */
-  /**
-   * How a contact is named on screen: the display name, plus its address tag when another contact
-   * shares that name.
-   *
-   * <p>The tag used to render only on the contact-list row, which is one screen deep for a problem
-   * that spans the app. The paths that matter are the ones where a user acts - "Detected contact:
-   * X" when an envelope arrives, and "Chosen contact: X" while typing a reply - and both showed
-   * nothing but the name, so a second contact under the same name was indistinguishable at exactly
-   * the moment it was being messaged.
-   */
+  /** How a contact is named on screen. See {@code SignalProtocolMain.displayLabelFor}. */
   private String labelFor(final Contact contact) {
     return SignalProtocolMain.displayLabelFor(contact);
   }
@@ -1118,6 +1104,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
 
 
+  /**
+   * Shows the identity-change warning if one is pending for this sender.
+   *
+   * @return true if a warning was shown, in which case the caller must not also show the generic
+   *     failure advice - that advice tells the user to delete and re-invite, which is the wrong
+   *     move for an impersonation attempt, which at a pinned address is the only possibility.
+   */
   private boolean warnIfIdentityChanged(final Contact sender) {
     if (sender == null) return false;
     if (!com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain

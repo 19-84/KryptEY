@@ -236,11 +236,7 @@ public class E2EEStrip {
     return SignalProtocolMain.wasKeyRejected(address);
   }
 
-  /** True once the user has more than one contact, i.e. once names can be confused at all. */
-  /** True once the user has any contact at all, i.e. once there is anything to tag. */
-  public boolean hasAnyContact() {
-    return SignalProtocolMain.contactCount() >= 1;
-  }
+
 
   /** @see SignalProtocolMain#existingContactAtSameAddress */
   public com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact existingContactAtSameAddress(

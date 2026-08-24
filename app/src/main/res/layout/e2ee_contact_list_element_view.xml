@@ -45,7 +45,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_centerVertical="true"
-    android:layout_marginStart="30dp"
+    android:layout_marginStart="10dp"
     android:layout_marginEnd="5dp"
     android:layout_toEndOf="@id/e2ee_verify_contact_unverified_button"
     android:layout_toStartOf="@id/e2ee_contact_address_tag_element"
@@ -84,6 +84,12 @@
     fix it: the cap counts characters and the layout consumes width, so eleven EM SPACEs beat any
     character cap on any device.
 
+    The margins around the row were 30dp a side and the tag 14sp. Measured, that left 74dp of name
+    column on a 320dp screen - "Alice Smith" rendered as "Alice ..." - and nothing at all at font
+    scale 2.0, where the column computed negative. Priority (tag over name) is right, but "a
+    truncated name is visibly truncated" stops being true when there is no room for any of it.
+    Trimmed to 10dp a side and the tag to 12sp.
+
     Anchored here, and with BOTH name views inside a container bounded by it, the tag always
     renders and the names are what get ellipsised. That is the right way round: a truncated name is
     visibly truncated, a missing tag is invisible.
@@ -97,7 +103,7 @@
     android:layout_marginEnd="5dp"
     android:layout_toStartOf="@id/e2ee_contact_button_delete_contact"
     android:maxLines="1"
-    android:textSize="14sp" />
+    android:textSize="12sp" />
 
   <ImageButton
     android:id="@+id/e2ee_contact_button_delete_contact"
@@ -106,5 +112,5 @@
     android:layout_height="25dp"
     android:layout_alignEnd="@id/e2ee_contact_element_divider_view"
     android:layout_centerVertical="true"
-    android:layout_marginEnd="30dp" />
+    android:layout_marginEnd="10dp" />
 </RelativeLayout>

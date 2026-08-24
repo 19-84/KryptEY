@@ -537,4 +537,68 @@ public class DuplicateContactNameTest {
     assertNull(SignalProtocolMain.existingContactAtSameAddress(
         ProtocolAddresses.of("peer-uuid", 7), "Alice", "Smith"));
   }
+
+  /**
+   * A name must not be able to break a warning across lines.
+   *
+   * <p>The info views are {@code wrap_content} with no {@code maxLines}, and both name fields
+   * declare {@code inputType="textMultiLine"} — so newlines are ordinary input, the length cap
+   * counts them as ordinary characters, and twenty of them render
+   * "Someone offered a different key for Bob" followed by twenty blank lines, with the refusal
+   * notice, the instruction to compare by voice, and the tag itself all below the fold. On a
+   * warning an attacker triggers with one forged bundle.
+   *
+   * <p>The contact row survives this ({@code maxLines="1"}); the banners did not, and they are the
+   * surface this label was centralised for.
+   */
+  @Test
+  public void aNameCannotBreakABannerAcrossLines() {
+    // Every separator that starts a new line, not just \n. Java's \\s covers \n and \r but NOT
+    // U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR or U+0085 NEXT LINE - so a test using only
+    // \n leaves the branch that handles those three unexercised, which is how the first version of
+    // this test asserted their absence from a string that never contained them.
+    final StringBuilder padded = new StringBuilder("Bob");
+    for (int i = 0; i < 5; i++) {
+      padded.append('\n').append('\r').append('\u2028').append('\u2029').append('\u0085');
+    }
+    final Contact contact = addAs(padded.toString(), "Jones", realAlice);
+
+    final String label = SignalProtocolMain.displayLabelFor(contact);
+
+    assertFalse("a newline in the name must not reach the label", label.contains("\n"));
+    assertFalse(label.contains("\r"));
+    assertFalse("U+2028 must not reach the label", label.contains("\u2028"));
+    assertFalse("U+2029 must not reach the label", label.contains("\u2029"));
+    assertFalse("U+0085 must not reach the label", label.contains("\u0085"));
+    assertTrue("the name itself must survive", label.contains("Bob"));
+    assertTrue("and so must the tag", label.contains("#"));
+  }
+
+  /** Whitespace runs collapse, so padding cannot push the tag off the visible line either. */
+  @Test
+  public void whitespacePaddingInANameIsCollapsed() {
+    final StringBuilder padded = new StringBuilder("Bob");
+    for (int i = 0; i < 40; i++) padded.append("\u2003");   // EM SPACE
+    final Contact contact = addAs(padded.toString(), "", realAlice);
+
+    final String label = SignalProtocolMain.displayLabelFor(contact);
+    assertFalse("a run of wide spaces must not survive as padding",
+        label.contains("\u2003\u2003"));
+    assertTrue(label.contains("Bob"));
+    assertTrue(label.contains("#"));
+  }
+
+  /** An arbitrary attacker-authored string used in a warning must be sanitised the same way. */
+  @Test
+  public void aBannerArgumentIsSanitised() {
+    assertFalse(SignalProtocolMain.sanitizeForBanner("Bob\nJones").contains("\n"));
+    for (final String sep : new String[] {"\u2028", "\u2029", "\u0085"}) {
+      assertFalse("separator " + Integer.toHexString(sep.charAt(0)) + " must not survive",
+          SignalProtocolMain.sanitizeForBanner("Bob" + sep + "Jones").contains(sep));
+    }
+    assertFalse("a bidi override must not reverse the rest of a warning",
+        SignalProtocolMain.sanitizeForBanner("\u202EBob").contains("\u202E"));
+    assertEquals("", SignalProtocolMain.sanitizeForBanner(null));
+    assertEquals("Bob Jones", SignalProtocolMain.sanitizeForBanner("  Bob   Jones  "));
+  }
 }
