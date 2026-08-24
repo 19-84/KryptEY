@@ -273,11 +273,16 @@ would mean pinning a golden fingerprint against a hard-coded key pair.
    directions cannot forge a *match*, but can manufacture unlimited *mismatches*. Signal binds to a
    server-attested identifier; there is no equivalent here.
 
-   **This is now the largest residual risk, and it undermines the comparison the whole model rests
-   on.** Every control above assumes a mismatch means an attack; this makes a mismatch something the
-   adversary can produce at will against two honest peers. Binding the fingerprint to the identity
-   key alone, rather than to the address name, would close it and is the obvious next piece of
-   work — it is a wire-format-visible change, hence deferred rather than done here.
+   **Fixed.** The fingerprint is now computed over the two identity keys and nothing else, so the
+   messenger has no input to it. The claim that this was "a wire-format-visible change, hence
+   deferred" was wrong: the fingerprint is derived independently on both sides and never
+   transmitted, so nothing on the wire depends on it. The only cost is that the digits shown for
+   existing contacts change once, and anyone who already compared has to compare again.
+
+   Note what this does *not* fix: nothing still attests that an address belongs to a given person.
+   The number now proves "these two keys are the ones in use", which is what the comparison is for;
+   it does not prove the address you are sending to is your contact's. That is the duplicate-name
+   problem, addressed separately by warning and tagging.
 5. **Run the instrumentation tests.** The single largest remaining unknown — see below.
 
 ## Known-deferred defects

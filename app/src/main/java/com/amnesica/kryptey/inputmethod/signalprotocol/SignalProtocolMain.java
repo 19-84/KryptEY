@@ -482,9 +482,32 @@ public class SignalProtocolMain {
       return null;
     }
 
-    final int version = 2; // use UUID
-    final byte[] localId = getAccount().getSignalProtocolAddress().getName().getBytes();
-    final byte[] remoteId = contact.getSignalProtocolAddress().getName().getBytes();
+    // The identifiers are the KEYS, not the addresses.
+    //
+    // These used to be the two address names, mirroring Signal, where the identifier is a
+    // server-attested ACI. KryptEY has no server and nothing attests anything: the remote name is
+    // simply whatever the peer wrote in the envelope, a plaintext field covered by neither the
+    // bundle signatures nor the message MAC. So a messenger that rewrote that one field
+    // consistently in both directions left every key genuine and every message decrypting, while
+    // the two sides displayed DIFFERENT safety numbers.
+    //
+    // That is worse than it sounds. It cannot forge a match - the keys are still in the hash - but
+    // it can manufacture unlimited mismatches between two entirely honest peers, at will and
+    // undetectably. Every control in this trust model reads a mismatch as evidence of an attack:
+    // it drops the badge, and it is the trigger for rejectContactKey, which discards a pin. An
+    // adversary who can produce mismatches on demand can therefore walk a careful user into
+    // throwing away a correct key, and users who see enough of them stop believing the number.
+    //
+    // Binding to the keys alone removes the attacker's only input. The number becomes a pure
+    // function of the two identity keys, which is exactly what the comparison is meant to check.
+    // Nothing is lost by dropping the address: it never carried any authenticated meaning here.
+    //
+    // Not a wire-format change - the fingerprint is computed independently on both sides and never
+    // transmitted. It does change the digits shown for existing contacts once, so anyone who
+    // already compared has to compare again.
+    final int version = 2;
+    final byte[] localId = localIdentity.serialize();
+    final byte[] remoteId = remoteIdentity.serialize();
 
     NumericFingerprintGenerator numericFingerprintGenerator = new NumericFingerprintGenerator(5200);
 
