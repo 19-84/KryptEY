@@ -640,6 +640,10 @@ public class SignalProtocolMain {
     // construction.
     String separatorsAsSpaces = value
         .replace('\n', ' ').replace('\r', ' ')
+        // U+0085 renders as tofu here rather than breaking a line, so mapping it to a space is a
+        // small over-fold. Kept deliberately: it is a line separator by definition, and a renderer
+        // that honours that would break the banner in two. A cosmetic over-fold on a visible
+        // character is the cheaper failure.
         .replace('\u0085', ' ').replace('\u2028', ' ').replace('\u2029', ' ')
         .replace('\u000B', ' ').replace('\f', ' ').replace('\t', ' ')
         .replace('\u1680', ' ')
@@ -669,8 +673,23 @@ public class SignalProtocolMain {
       //
       // The rule this encodes is measured, not guessed: zero ink with a positive advance folds to a
       // space, zero ink with zero advance folds to nothing. RenderedNameAgreementTest checks the
-      // consequence for every code point, so a wrong call here fails rather than hides.
-      final boolean drawsAGap = (c < 0x20 && c != 0x0002) || (c >= 0x7F && c <= 0x9F);
+      // consequence for every code point from U+0000 up, so a wrong call here fails rather
+      // than hides. That bound is load-bearing: it used to start at 1.
+      // C0 only, and the two zero-advance members excepted. Measured: U+0001/0011/001F have ink 0
+      // and advance 11-15 where a space is 12, so they draw a gap; U+0000 and U+0002 both advance
+      // 0, so they draw nothing and fall through to rendersAsNothing.
+      //
+      // U+0000 was the expensive one. "c < 0x20" quietly included it, so NUL folded to a space
+      // while painting nothing - which meant "Al<NUL>ice Smith" did NOT match a contact called
+      // "Alice Smith" but rendered pixel-for-pixel identically to it. That is the bypass this whole
+      // fold exists to prevent, reintroduced by the commit that fixed 25 other code points. No
+      // sweep could see it: all of them began at cp = 1, so NUL was outside the test's world.
+      //
+      // C1 (U+007F-U+009F) is deliberately NOT here: measured, those have ink 349 and no glyph -
+      // they render as a visible tofu box, not a gap. Folding a visible character to a space is
+      // over-folding, which makes the warning fire on names a reader can plainly tell apart. I
+      // added that range by assumption; measuring it took one test.
+      final boolean drawsAGap = c != 0x0000 && c != 0x0002 && c < 0x20;
       controlsAsSpaces.append(drawsAGap ? ' ' : c);
     }
     separatorsAsSpaces = controlsAsSpaces.toString();
@@ -733,6 +752,32 @@ public class SignalProtocolMain {
    * fails a test rather than hiding. The explicit cases below are the ones no category expresses.
    */
   private static boolean rendersAsNothing(final int cp) {
+    // Format characters that actually DRAW something. Category Cf is not a promise of invisibility:
+    // the Arabic and Kaithi number signs are Cf and render as visible marks - measured, they leave
+    // ink where a truly ignorable character leaves none. Deleting them folds two names a reader can
+    // plainly tell apart onto one key, and a duplicate warning that fires on those teaches the user
+    // to dismiss it, which costs as much as never firing at all. Enumerable and decidable, unlike
+    // the homoglyph tail.
+    if ((cp >= 0x0600 && cp <= 0x0605) || cp == 0x06DD || cp == 0x070F || cp == 0x08E2
+        || cp == 0x110BD || cp == 0x110CD) {
+      return false;
+    }
+
+    // C1 (U+0080-U+009F) and U+007F are category Cc, but they are not invisible: measured, they
+    // paint a tofu box - ink 349, no glyph. The blanket CONTROL deletion below was folding 32 code
+    // points' worth of visibly different names onto one key. They stay.
+    //
+    // U+0085 never reaches here: it is a line separator by definition and is mapped to a space
+    // earlier, a deliberate one-character over-fold, because a renderer that honours it would
+    // break the banner in two.
+    //
+    // C0 below U+0020 is still deleted by the CONTROL branch, and correctly: the ones that draw a
+    // gap became spaces before this point, and the two that reach here - U+0000 and U+0002 -
+    // measure zero ink AND zero advance.
+    if (cp >= 0x7F && cp <= 0x9F) {
+      return false;
+    }
+
     final int type = Character.getType(cp);
     // Not ENCLOSING_MARK: an Me mark draws a visible ring around the preceding character, so
     // dropping it here contradicted this method's own name and quietly folded two names that look

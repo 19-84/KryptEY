@@ -21,6 +21,7 @@ import org.signal.libsignal.protocol.SignalProtocolAddress;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The duplicate-name invariant, asserted by <b>drawing</b> rather than by comparing strings.
@@ -117,7 +118,7 @@ public class RenderedNameAgreementTest {
     final int[] baselinePixels = pixels(BASELINE);
     final List<String> divergences = new ArrayList<>();
 
-    for (int cp = 1; cp <= 0xFFFF; cp++) {
+    for (int cp = 0; cp <= 0xFFFF; cp++) {
       if (Character.isSurrogate((char) cp)) continue;
 
       // Three positions, because they are not equivalent. A character appended after the name can
@@ -269,7 +270,7 @@ public class RenderedNameAgreementTest {
     final List<String> wrong = new ArrayList<>();
     final float spaceAdvance = paint.measureText(" ");
 
-    for (int cp = 1; cp <= 0xFFFF; cp++) {
+    for (int cp = 0; cp <= 0xFFFF; cp++) {
       if (Character.isSurrogate((char) cp)) continue;
       final String ch = String.valueOf((char) cp);
       if (!canRender(ch)) continue;
@@ -330,5 +331,141 @@ public class RenderedNameAgreementTest {
       if (p != Color.WHITE) ink++;
     }
     return ink;
+  }
+
+  /**
+   * The same rule, measured <em>in context</em> rather than on the character alone.
+   *
+   * <p>Ink and advance are not always properties of a character by itself. A joiner has no ink alone
+   * and changes how its neighbours shape; a variation selector is invisible alone and alters the
+   * glyph before it; contextual forms differ between isolated and medial position. So a rule decided
+   * from isolated measurement can be right about the character and wrong about the name.
+   *
+   * <p>This measures what the user actually sees: render "Bob<c>Jones" and compare it against the
+   * two things it could look like - "Bob Jones" if the character draws a gap, "BobJones" if it draws
+   * nothing. Whichever picture it matches, the fold must agree. A character that renders as neither
+   * is visible, and not this rule's business.
+   */
+  @Test
+  public void theFoldAgreesWithWhatEachCharacterDrawsInContext() {
+    final int[] spaced = pixels("Bob Jones");
+    final int[] joined = pixels("BobJones");
+    final List<String> wrong = new ArrayList<>();
+
+    for (int cp = 0; cp <= 0xFFFF; cp++) {
+      if (Character.isSurrogate((char) cp)) continue;
+      final String ch = String.valueOf((char) cp);
+      if (!canRender(ch)) continue;
+
+      final String candidate = "Bob" + ch + "Jones";
+      final int[] drawn = pixels(candidate);
+
+      final boolean looksSpaced = samePicture(drawn, spaced);
+      final boolean looksJoined = samePicture(drawn, joined);
+      if (!looksSpaced && !looksJoined) continue;   // visible: not this rule's business
+
+      if (looksSpaced && !SignalProtocolMain.hasContactWithSameDisplayName(
+          candidate, "", elsewhere2("Bob Jones"))) {
+        wrong.add(String.format("U+%04X draws \"Bob Jones\" but does not fold like it", cp));
+      }
+      if (looksJoined && !SignalProtocolMain.hasContactWithSameDisplayName(
+          candidate, "", elsewhere2("BobJones"))) {
+        wrong.add(String.format("U+%04X draws \"BobJones\" but does not fold like it", cp));
+      }
+    }
+
+    assertTrue("characters whose fold disagrees with what they draw between two words - measured "
+            + "in context, so shaping and joining are included:\n  "
+            + String.join("\n  ", wrong.subList(0, Math.min(25, wrong.size())))
+            + (wrong.size() > 25 ? "\n  ... and " + (wrong.size() - 25) + " more" : ""),
+        wrong.isEmpty());
+  }
+
+
+
+  /**
+   * Over-folds that are known, deliberate, or artefacts of the test font - written down rather than
+   * hidden behind a widened filter, because a filter that removes them also removes whatever lands
+   * in the same range next. The C1 controls sat behind exactly such a filter while they were wrong.
+   *
+   * <p>This is checked as a subset, not an equality: the second group is a property of the font
+   * Robolectric happens to load, so a font change may legitimately empty it. Any over-fold NOT
+   * listed here still fails.
+   */
+  private static final Map<Integer, String> OVER_FOLD_EXCEPTIONS = Map.of(
+      // Deliberate. Line separators by definition, folded to a space. In this font they paint a
+      // tofu box instead of breaking a line, which is what makes them show up here at all. A
+      // renderer that honours them would break the banner into two lines, and a second line of
+      // attacker-chosen text below the warning is a worse failure than a cosmetic over-fold.
+      0x0085, "NEXT LINE - line separator, folded to a space deliberately",
+      0x2028, "LINE SEPARATOR - folded to a space deliberately",
+      0x2029, "PARAGRAPH SEPARATOR - folded to a space deliberately",
+      // Artefacts. These are Default_Ignorable or interlinear-annotation format characters that
+      // conforming fonts render as nothing; deleting them is correct. The Robolectric font simply
+      // has no support for them and falls back to tofu, so they measure as ink here and nowhere a
+      // user would see. Unlike C1, which is unassigned to any glyph in every font, these have a
+      // defined invisible rendering.
+      0x180F, "MONGOLIAN FREE VARIATION SELECTOR FOUR - default-ignorable, tofu in the test font",
+      0xFFF9, "INTERLINEAR ANNOTATION ANCHOR - format character, tofu in the test font",
+      0xFFFA, "INTERLINEAR ANNOTATION SEPARATOR - format character, tofu in the test font",
+      0xFFFB, "INTERLINEAR ANNOTATION TERMINATOR - format character, tofu in the test font");
+
+  /**
+   * The other direction: a character the user can SEE must not be folded away.
+   *
+   * <p>Every sweep above asks whether two names that look alike fold alike - the direction that
+   * suppresses a warning. This asks the converse: does a name containing a plainly visible character
+   * fold together with one that lacks it? That is the cries-wolf direction, and it has its own cost.
+   * A duplicate warning that fires on names a reader can tell apart teaches the user to dismiss it,
+   * which is the same damage as never firing.
+   *
+   * <p>It is also the direction that catches a fix applied too broadly. C1 controls render as a
+   * visible tofu box - measured ink 349, no glyph - and were briefly folded to a space here on the
+   * assumption that they behaved like C0. Nothing caught it, because every other sweep skips
+   * characters that draw ink.
+   */
+  @Test
+  public void aVisibleCharacterIsNotFoldedAway() {
+    final List<String> overFolded = new ArrayList<>();
+
+    for (int cp = 0; cp <= 0xFFFF; cp++) {
+      if (Character.isSurrogate((char) cp)) continue;
+      final int type = Character.getType(cp);
+      if (type == Character.NON_SPACING_MARK || type == Character.COMBINING_SPACING_MARK
+          || type == Character.ENCLOSING_MARK || type == Character.SPACE_SEPARATOR) {
+        continue;   // context-dependent, or legitimately a space
+      }
+
+      final String ch = String.valueOf((char) cp);
+      // Deliberately NOT filtered by canRender. For this direction "does the font have a glyph" is
+      // the wrong question: a character with no glyph paints a tofu box, and a tofu box is ink the
+      // user can see. Folding it away is an over-fold here, and on a device whose font DOES have
+      // the glyph it is an over-fold there too. The filter is exactly what hid the C1 range from
+      // this test while I had it wrong - it is not an oversight that it is missing.
+      if (inkPixels(ch) == 0) continue;             // invisible: the other sweeps own this
+
+      if (OVER_FOLD_EXCEPTIONS.containsKey(cp)) continue;
+
+      // Visible. A name containing it must not fold onto one without it.
+      if (SignalProtocolMain.hasContactWithSameDisplayName(
+          "Bob" + ch + "Jones", "", elsewhere2("BobJones"))) {
+        overFolded.add(String.format("U+%04X draws ink but folds away entirely", cp));
+      }
+      // ...and must not fold onto a space either. This is the shape the C1 mistake took: the
+      // character stayed, but became indistinguishable from "Bob Jones". Folding away and folding
+      // to a space are the same error wearing different clothes, and only one of them is caught by
+      // the check above.
+      if (SignalProtocolMain.hasContactWithSameDisplayName(
+          "Bob" + ch + "Jones", "", elsewhere2("Bob Jones"))) {
+        overFolded.add(String.format("U+%04X draws ink but folds onto a space", cp));
+      }
+    }
+
+    assertTrue("visible characters folded away - each is a duplicate warning that fires on names a "
+            + "reader can tell apart, which teaches the user to dismiss it:\n  "
+            + String.join("\n  ", overFolded.subList(0, Math.min(25, overFolded.size())))
+            + (overFolded.size() > 25
+                ? "\n  ... and " + (overFolded.size() - 25) + " more" : ""),
+        overFolded.isEmpty());
   }
 }
