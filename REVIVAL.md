@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 653 (652 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 3 (3 run, 0 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -315,7 +315,7 @@ whole control exists to avoid.
 
 **Verified by execution:**
 
-- 653 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 3 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
