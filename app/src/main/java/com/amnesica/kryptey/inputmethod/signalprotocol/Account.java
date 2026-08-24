@@ -36,9 +36,10 @@ public class Account {
    * output bits do not help, because they make partial reading more likely rather than less.
    *
    * <p>Keying removes the attacker's ability to compute the target at all. It never leaves the
-   * device, is stored inside the same Keystore-encrypted blob as the identity key, and is
-   * regenerated only when an account is created — so a tag stays stable for the life of an install,
-   * which is what makes it comparable between two rows.
+   * device and is persisted in its own row of the same Keystore-encrypted store as the identity
+   * key. The constructor mints one on every load — which is what made an earlier bug possible — and
+   * the stored value then overwrites it, so a tag stays stable for the life of an install, which is
+   * what makes it comparable between two rows.
    */
   private byte[] displayTagSecret;
 

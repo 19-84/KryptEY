@@ -183,18 +183,17 @@ public class E2EEStrip {
   public boolean createSessionWithContact(Contact chosenContact, MessageEnvelope messageEnvelope, SignalProtocolAddress recipientProtocolAddress) {
     boolean successful = SignalProtocolMain.processPreKeyResponseMessage(messageEnvelope, recipientProtocolAddress);
     if (successful) {
-      // Tagged like every other place a contact is named: a bare name here is one more surface
-      // where two contacts under one name are indistinguishable.
-      final String label = chosenContact.getFirstName() + " " + chosenContact.getLastName()
-          + (hasMoreThanOneContact() ? "  " + chosenContact.getAddressTag() : "");
-      Toast.makeText(mContext, "Session with " + label + " created", Toast.LENGTH_SHORT).show();
+      // Via displayLabelFor, like every other surface. Building the label by hand here is how this
+      // one ended up without the bidi handling every other site had.
+      Toast.makeText(mContext, "Session with " + SignalProtocolMain.displayLabelFor(chosenContact)
+          + " created", Toast.LENGTH_SHORT).show();
     } else if (SignalProtocolMain.hasUnacceptedIdentityChange(recipientProtocolAddress)) {
       // Distinguish this from a generic failure. A changed safety number means the contact
       // being impersonated - a reinstall arrives at a fresh address and cannot land here - and
       // the generic "delete and re-invite"
       // advice would talk a user straight past a possible man-in-the-middle.
       Toast.makeText(mContext,
-          String.format(INFO_IDENTITY_CHANGED, chosenContact.getFirstName()),
+          String.format(INFO_IDENTITY_CHANGED, SignalProtocolMain.displayLabelFor(chosenContact)),
           Toast.LENGTH_LONG).show();
     } else {
       Toast.makeText(mContext, INFO_SESSION_CREATION_FAILED, Toast.LENGTH_SHORT).show();
@@ -238,9 +237,8 @@ public class E2EEStrip {
   }
 
   /** True once the user has more than one contact, i.e. once names can be confused at all. */
-  public boolean hasMoreThanOneContact() {
-    // Named for its callers; the threshold is one, so a user has a tag to remember from their very
-    // first contact rather than only once a second one appears. See ListAdapterContacts.
+  /** True once the user has any contact at all, i.e. once there is anything to tag. */
+  public boolean hasAnyContact() {
     return SignalProtocolMain.contactCount() >= 1;
   }
 

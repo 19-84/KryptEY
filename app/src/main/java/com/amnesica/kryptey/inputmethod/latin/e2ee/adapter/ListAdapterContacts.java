@@ -67,8 +67,7 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     // mechanism: rather than substituting a key for the existing Alice - which is refused and
     // warned about - it invites the user to add a second one at an address it controls, which is a
     // clean first sighting with no warning anywhere.
-    // The tag is shown UNCONDITIONALLY once there is more than one contact, not only when the app
-    // has decided two names clash.
+    // The tag is shown from the FIRST contact, in its own view, not appended to this one.
     //
     // Gating it on the name comparison was the structural mistake: the tag is a pure function of
     // the address, so showing it costs nothing and leaks nothing, while gating it meant any dodge

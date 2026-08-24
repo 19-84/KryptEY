@@ -247,9 +247,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         "The number does not match - forget this contact's key");
     mVerifyContactRejectButton.setOnClickListener(v -> {
       if (chosenContact == null) return;
-      final String name = chosenContact.getFirstName();
+      // Capture the label before rejecting: the message names the contact whose key was just
+      // forgotten, and reading it afterwards would describe post-rejection state.
+      final String label = SignalProtocolMain.displayLabelFor(chosenContact);
       mE2EEStrip.rejectContactKey(chosenContact);
-      Toast.makeText(getContext(), String.format(INFO_KEY_REJECTED, name), Toast.LENGTH_LONG).show();
+      Toast.makeText(getContext(), String.format(INFO_KEY_REJECTED, label), Toast.LENGTH_LONG).show();
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);
     });
@@ -544,11 +546,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // delete and re-add, which is unambiguous.
       Toast.makeText(getContext(),
           String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME, String.valueOf(firstName),
-              sameAddress.getFirstName() + " " + sameAddress.getLastName()),
+              SignalProtocolMain.displayLabelFor(sameAddress)),
           Toast.LENGTH_LONG).show();
       setInfoTextViewMessage(mInfoTextView,
           String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME, String.valueOf(firstName),
-              sameAddress.getFirstName() + " " + sameAddress.getLastName()));
+              SignalProtocolMain.displayLabelFor(sameAddress)));
       abortContactAdding();
       return;
     }
@@ -643,11 +645,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // The name shares a text field with the address tag, so unbounded and unsanitised names let an
     // attacker attack the tag through the name.
     //
-    // Two concrete moves this stops. A long name pushes the tag out of the row: the last-name view
-    // is wrap_content with only a start constraint, so once the first name fills the row the tag
-    // measures zero width and simply does not render - and an untagged row reads as the ordinary
-    // one. And a name containing a '#' can imitate a tag outright, because the invite text is
-    // written by the attacker and the app has been teaching the user that tags identify contacts.
+    // One concrete move this stops: a name containing '#' can imitate a tag outright, because the
+    // invite text is written by the attacker and the app has been teaching the user that tags
+    // identify contacts. It does NOT stop a long name crowding the tag - that is the layout's job
+    // now, and an earlier version of this comment claimed the cap handled it while describing the
+    // pre-fix layout.
     final int total = firstName.length() + (lastName == null ? 0 : lastName.length());
     if (total > MAX_DISPLAY_NAME_CHARS) {
       Toast.makeText(getContext(), INFO_NAME_TOO_LONG, Toast.LENGTH_LONG).show();
@@ -1110,34 +1112,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * the moment it was being messaged.
    */
   private String labelFor(final Contact contact) {
-    if (contact == null) return "";
-    // Bidi controls stripped before concatenation. A single U+202E in the name renders the tag
-    // appended after it mirrored - "#ab12-cd34" becomes "43dc-21ba#" - on every surface that joins
-    // the two into one string. It cannot forge a specific tag, but it reliably stops the user
-    // matching the strip line against the contact row, and mirrored hex does not look like an
-    // attack. The list row is unaffected (separate views), but these banners are not.
-    final String name = stripBidiControls(contact.getFirstName())
-        + " " + stripBidiControls(contact.getLastName());
-    // Ungated, for the reason given in ListAdapterContacts.shouldShowTags: gating the tag on the
-    // name comparison made every dodge of that comparison a total blackout rather than a missing
-    // warning. Shown whenever there is anyone else to be confused with.
-    return mE2EEStrip.hasMoreThanOneContact() ? name + "  " + contact.getAddressTag() : name;
+    return SignalProtocolMain.displayLabelFor(contact);
   }
 
-  /** Removes the bidi overrides and isolates that would let a name reorder text placed after it. */
-  private static String stripBidiControls(final String value) {
-    if (value == null) return "";
-    final StringBuilder out = new StringBuilder(value.length());
-    for (int i = 0; i < value.length(); i++) {
-      final char c = value.charAt(i);
-      if ((c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069)
-          || c == 0x200E || c == 0x200F || c == 0x061C) {
-        continue;
-      }
-      out.append(c);
-    }
-    return out.toString();
-  }
+
+
 
   private boolean warnIfIdentityChanged(final Contact sender) {
     if (sender == null) return false;

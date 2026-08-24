@@ -95,6 +95,13 @@ public class SignalProtocolMain {
       Log.w(TAG, "Protocol data already exists; refusing to generate a new identity. "
           + "Loading the existing account instead.");
       sInstance.reloadAccountFromSharedPreferences();
+      // Write back, as reloadAccount does. Without it, a store predating a persisted field gets one
+      // raise with the freshly minted value un-persisted - so the display tags churn once and then
+      // settle, which is the same bug this branch's sibling was fixed for. Guarded because storing
+      // a partially-loaded account would overwrite good data with blanks.
+      if (sInstance.mAccount != null) {
+        sInstance.storeAllAccountInformationInSharedPreferences();
+      }
       return sInstance.mAccount != null;
     }
 
@@ -853,6 +860,46 @@ public class SignalProtocolMain {
     }
     return false;
   }
+  /**
+   * A contact's display label: the name, plus its address tag, safe to concatenate.
+   *
+   * <p>Lives here rather than in the view so every surface gets the same string — a previous version
+   * had this logic in {@code E2EEStripView} and a toast in {@code E2EEStrip} was simply missed.
+   *
+   * <p>Two directionality problems, and only one of them is fixable by cleaning the name. Stripping
+   * bidi control characters stops a {@code U+202E} in the name mirroring the tag after it. It does
+   * nothing about a name whose <em>first strong character</em> is right-to-left: a Hebrew or Arabic
+   * name flips the paragraph under {@code FIRST_STRONG} resolution, and the tag appended to it is
+   * relocated to the other end with its {@code #} migrating across. That is not an attack requiring
+   * exotic input — it happens for every Hebrew- and Arabic-named contact — and one leading RTL
+   * letter is enough to trigger it deliberately.
+   *
+   * <p>So the tag is wrapped in a first-strong isolate ({@code U+2068}…{@code U+2069}). The
+   * surrounding text cannot reorder it and it cannot reorder the surrounding text.
+   */
+  public static String displayLabelFor(final Contact contact) {
+    if (contact == null) return "";
+    final String name = stripBidiControls(contact.getFirstName())
+        + " " + stripBidiControls(contact.getLastName());
+    if (contactCount() < 1) return name;
+    return name + "  \u2068" + displayTagFor(contact) + "\u2069";
+  }
+
+  /** Removes the bidi overrides and isolates that would let a name reorder text placed after it. */
+  private static String stripBidiControls(final String value) {
+    if (value == null) return "";
+    final StringBuilder out = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+      final char c = value.charAt(i);
+      if ((c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069)
+          || c == 0x200E || c == 0x200F || c == 0x061C) {
+        continue;
+      }
+      out.append(c);
+    }
+    return out.toString();
+  }
+
   /** How many contacts the account holds; 0 when nothing is loaded. */
   public static int contactCount() {
     if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return 0;

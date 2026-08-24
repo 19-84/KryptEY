@@ -457,4 +457,54 @@ public class DuplicateContactNameTest {
           SignalProtocolMain.displayNameImitatesATag(ok));
     }
   }
+
+  // ------------------------------------------------------ label directionality
+
+  /**
+   * The tag must read the same way round whatever the name does to text direction.
+   *
+   * <p>Stripping bidi control characters stops a {@code U+202E} in the name mirroring the tag. It
+   * does nothing for a name whose <em>first strong character</em> is right-to-left: a Hebrew or
+   * Arabic name flips the paragraph under first-strong resolution, and a tag appended to it is
+   * relocated with its {@code #} migrating across. That is not exotic input — it is every
+   * Hebrew-named contact — and one leading RTL letter triggers it deliberately.
+   *
+   * <p>So the tag is wrapped in a first-strong isolate. These assert the isolate is present and
+   * that the tag survives inside it.
+   */
+  @Test
+  public void theTagIsIsolatedFromTheNamesDirectionality() {
+    final Contact hebrew = addAs("\u05D0\u05DC\u05D9\u05E1", "\u05E9\u05DE\u05D9\u05EA",
+        realAlice);
+    final String label = SignalProtocolMain.displayLabelFor(hebrew);
+
+    assertTrue("the tag must be wrapped in a first-strong isolate",
+        label.contains("\u2068") && label.contains("\u2069"));
+    final int open = label.indexOf('\u2068');
+    final int close = label.indexOf('\u2069');
+    assertTrue("the isolate must actually enclose the tag",
+        label.substring(open, close).contains("#"));
+  }
+
+  /** A bidi override typed into the name must not survive into the label at all. */
+  @Test
+  public void bidiControlsInANameAreStripped() {
+    final Contact contact = addAs("\u202EAlice", "Smith", realAlice);
+    final String label = SignalProtocolMain.displayLabelFor(contact);
+
+    assertFalse("an override in the name must not reach the label",
+        label.contains("\u202E"));
+    assertTrue("and the name itself must survive", label.contains("Alice"));
+  }
+
+  /** With no contacts loaded there is nothing to disambiguate, so no tag and no isolate. */
+  @Test
+  public void aLabelWithNoContactsCarriesNoTag() {
+    victim.setContactList(new java.util.ArrayList<>());
+    final String label = SignalProtocolMain.displayLabelFor(
+        new Contact("Alice", "Smith", "peer-uuid", 7, false));
+
+    assertFalse(label.contains("#"));
+    assertFalse(label.contains("\u2068"));
+  }
 }

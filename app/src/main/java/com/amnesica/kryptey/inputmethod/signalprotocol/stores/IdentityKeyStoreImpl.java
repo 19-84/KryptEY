@@ -280,7 +280,9 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    * a guard, so a null address became an NPE thrown out of the trust store — on this codebase that
    * means a keyboard that dies mid-message rather than a refusal. The sentinel cannot collide with
    * a real key: address names are UUIDs and the separator is a dot, so nothing legitimate produces
-   * a leading NUL. Mutating methods still refuse a null outright rather than writing under it.
+   * a leading NUL. Note {@code saveIdentity} does NOT null-check — libsignal always supplies an
+   * address, so it is unreachable, but an earlier version of this sentence claimed every mutating
+   * method refuses a null and that was not true.
    */
   private static String addressKey(final SignalProtocolAddress address) {
     if (address == null) return "\u0000-no-address";

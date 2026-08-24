@@ -156,8 +156,8 @@ public class Contact {
    *
    * <p>Note what this is not. It disambiguates two rows on one screen; it is not a safety number and
    * cannot be read out to a peer, because it is keyed with a secret only this install holds. It
-   * renders whenever the account has more than one contact — deliberately not gated on the name
-   * comparison, so a name that dodges the folding still produces two visibly different rows.
+   * renders whenever the account has any contact — deliberately not gated on the name comparison,
+   * so a name that dodges the folding still produces two visibly different rows.
    */
   public String getAddressTag() {
     // Derived by SignalProtocolMain, which holds the per-install secret this is keyed with. Kept as
