@@ -811,6 +811,35 @@ public class SignalProtocolMain {
     }
   }
 
+  /**
+   * A name must not be able to imitate the address tag rendered beside it.
+   *
+   * <p>Checks the NFKC-normalised form, not the raw text. U+FF03 FULLWIDTH NUMBER SIGN and U+FE5F
+   * SMALL NUMBER SIGN both render as a '#' and both fold to one under NFKC, so a raw
+   * {@code indexOf('#')} lets them straight through — and the name is text the attacker wrote into
+   * the invite for the user to copy. A handful of other sharp-like characters do not fold at all and
+   * are listed explicitly.
+   */
+  public static boolean displayNameImitatesATag(final CharSequence name) {
+    if (name == null) return false;
+    final String normalized =
+        java.text.Normalizer.normalize(name.toString(), java.text.Normalizer.Form.NFKC);
+    if (normalized.indexOf('#') >= 0) return true;
+    for (int i = 0; i < normalized.length(); ) {
+      final int cp = normalized.codePointAt(i);
+      i += Character.charCount(cp);
+      switch (cp) {
+        case 0x266F:  // MUSIC SHARP SIGN
+        case 0x22D5:  // EQUAL AND PARALLEL TO
+        case 0x2317:  // VIEWDATA SQUARE
+        case 0x1F5E7: // THREE RAYS
+          return true;
+        default:
+          break;
+      }
+    }
+    return false;
+  }
   /** How many contacts the account holds; 0 when nothing is loaded. */
   public static int contactCount() {
     if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return 0;

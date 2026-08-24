@@ -420,4 +420,41 @@ public class DuplicateContactNameTest {
     assertFalse("an enclosing ring is visible, so it must not fold onto the bare name",
         SignalProtocolMain.hasContactWithSameDisplayName("A\u20DDlice", "Smith", elsewhere));
   }
+
+  // ------------------------------------------------- names imitating a tag
+
+  /**
+   * A name must not be able to counterfeit the tag rendered beside it.
+   *
+   * <p>The tag shares a text view with the name, at the same size and style, separated by two
+   * spaces — and the name is text the attacker writes into the invite for the user to copy. So
+   * "add me as: Alice  #abcd-123456" produces a row whose first line reads exactly like a genuine
+   * tagged one.
+   *
+   * <p>The check normalises before looking, because U+FF03 FULLWIDTH NUMBER SIGN and U+FE5F both
+   * render as '#' and fold to one under NFKC — a raw {@code indexOf('#')} lets them through.
+   */
+  @Test
+  public void namesThatImitateATagAreRefused() {
+    for (final String bad : new String[] {
+        "Alice #abcd-123456",
+        "Alice \uFF03abcd-123456",   // fullwidth number sign
+        "Alice \uFE5F abcd",        // small number sign
+        "Alice \u266Fabcd",         // music sharp sign - does not fold, listed explicitly
+        "#",
+    }) {
+      assertTrue("\"" + bad + "\" must be refused as a tag imitation",
+          SignalProtocolMain.displayNameImitatesATag(bad));
+    }
+  }
+
+  /** Ordinary names must not be caught by it. */
+  @Test
+  public void ordinaryNamesAreNotMistakenForTagImitations() {
+    for (final String ok : new String[] {
+        "Alice", "Alice Smith", "\u0928\u092E\u0938\u094D\u0924\u0947", "Nikos", "", null}) {
+      assertFalse("\"" + ok + "\" must be accepted",
+          SignalProtocolMain.displayNameImitatesATag(ok));
+    }
+  }
 }

@@ -31,6 +31,7 @@ import com.amnesica.kryptey.inputmethod.latin.e2ee.adapter.ListAdapterContacts;
 import com.amnesica.kryptey.inputmethod.latin.e2ee.adapter.ListAdapterMessages;
 import com.amnesica.kryptey.inputmethod.latin.e2ee.util.HTMLHelper;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageType;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
@@ -643,17 +644,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), INFO_NAME_TOO_LONG, Toast.LENGTH_LONG).show();
       return false;
     }
-    if (containsTagLookalike(firstName) || containsTagLookalike(lastName)) {
+    if (SignalProtocolMain.displayNameImitatesATag(firstName)
+        || SignalProtocolMain.displayNameImitatesATag(lastName)) {
       Toast.makeText(getContext(), INFO_NAME_LOOKS_LIKE_A_TAG, Toast.LENGTH_LONG).show();
       return false;
     }
     return true;
   }
 
-  /** A name must not be able to imitate the address tag rendered beside it. */
-  private static boolean containsTagLookalike(final CharSequence name) {
-    return name != null && name.toString().indexOf('#') >= 0;
-  }
+
 
   private void createAddContactCancelClickListener() {
     if (mAddContactCancelButton != null) {
