@@ -10,6 +10,7 @@ import android.widget.ImageButton;
 import android.widget.TextView;
 
 import com.amnesica.kryptey.inputmethod.R;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 
 import java.util.ArrayList;
@@ -58,7 +59,12 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     final Contact contact = (Contact) getItem(position);
 
     final TextView firstNameTextView = convertView.findViewById(R.id.e2ee_contact_first_name_element);
-    firstNameTextView.setText(contact.getFirstName());
+    // Sanitised, like every other surface that shows a name. This was the ONE place setting the
+    // raw string, and it is the place that matters most: a leading U+202E with the name written
+    // backwards renders pixel-identically to another contact's row, while the matching path folds
+    // the logical order and sees a different name - so no duplicate warning fires and the two rows
+    // are indistinguishable. Every banner already went through this; the row did not.
+    firstNameTextView.setText(SignalProtocolMain.sanitizeForBanner(contact.getFirstName()));
     firstNameTextView.setOnClickListener(v -> mListener.selectContact(contact));
 
     final TextView lastNameTextView = convertView.findViewById(R.id.e2ee_contact_last_name_element);
@@ -75,7 +81,7 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     // turned every gap in the folding - and there will always be gaps, homoglyphs are an infinite
     // regress - from a missing warning into a total blackout. Ungated, a dodge costs the attacker
     // the warning but leaves the rows distinguishable.
-    lastNameTextView.setText(contact.getLastName());
+    lastNameTextView.setText(SignalProtocolMain.sanitizeForBanner(contact.getLastName()));
 
     // The tag goes in its OWN view, anchored to the end of the row, so a long name can no longer
     // push it out of existence - the name ellipsises instead. Appending it to the name view meant a

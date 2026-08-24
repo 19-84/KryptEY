@@ -642,7 +642,14 @@ public class SignalProtocolMain {
         .replace('\n', ' ').replace('\r', ' ')
         .replace('\u0085', ' ').replace('\u2028', ' ').replace('\u2029', ' ')
         .replace('\u000B', ' ').replace('\f', ' ').replace('\t', ' ')
-        .replace('\u1680', ' ');
+        .replace('\u1680', ' ')
+        // Blanks, not nothing. These were deleted by rendersAsNothing, which is wrong for the same
+        // reason deleting a newline was: measured with Skia they have zero ink but a POSITIVE
+        // advance - U+3164 is 59px where a space is 16px - so they draw a gap. "Bob<U+3164>Jones"
+        // therefore reads as two words and did not match "Bob Jones". The existing tests only ever
+        // put them at the END of a name, where deleting happens to give the same answer.
+        .replace('\u3164', ' ').replace('\u115F', ' ').replace('\u1160', ' ')
+        .replace('\uFFA0', ' ').replace('\u2800', ' ');
     final String normalized =
         java.text.Normalizer.normalize(separatorsAsSpaces, java.text.Normalizer.Form.NFKC);
     final StringBuilder skeleton = new StringBuilder(normalized.length());
@@ -700,17 +707,27 @@ public class SignalProtocolMain {
         || (cp >= 0x180B && cp <= 0x180F)) {  // Mongolian FVS
       return true;
     }
+    // Unassigned code points that Unicode reserves as Default_Ignorable.
+    //
+    // Character.getType reports these as UNASSIGNED, so none of the category checks above sees
+    // them - but the property is deliberate and the shaper hides them regardless of font, so they
+    // draw literally nothing on every Android device. Appending one to a name made the row render
+    // pixel-identically while folding differently, which is a silent impersonation aid.
+    //
+    // Worth being clear that this is not another homoglyph gap. Homoglyph coverage is open-ended
+    // and a judgement call; "renders as nothing" is a closed, decidable Unicode property that this
+    // method exists to compute, and these six ranges are the whole of what it was missing.
+    if (cp == 0x2065
+        || (cp >= 0xFFF0 && cp <= 0xFFF8)
+        || cp == 0xE0000
+        || (cp >= 0xE0002 && cp <= 0xE001F)
+        || (cp >= 0xE0080 && cp <= 0xE00FF)
+        || (cp >= 0xE01F0 && cp <= 0xE0FFF)) {
+      return true;
+    }
     switch (cp) {
-      case 0x3164:   // HANGUL FILLER
-      case 0x115F:   // HANGUL CHOSEONG FILLER
-      case 0x1160:   // HANGUL JUNGSEONG FILLER (what 3164/FFA0 become under NFKC)
-      case 0xFFA0:   // HALFWIDTH HANGUL FILLER
-      case 0x2800:   // BRAILLE PATTERN BLANK
-      case 0x2028:   // LINE SEPARATOR
-      case 0x2029:   // PARAGRAPH SEPARATOR
       case 0x034F:   // COMBINING GRAPHEME JOINER - draws nothing, category Mn
       case 0x17B4: case 0x17B5:  // Khmer inherent vowels, invisible
-      case 0x1680:   // OGHAM SPACE MARK - blank in most fonts
       // Not U+3000 IDEOGRAPHIC SPACE: NFKC runs first and maps it to an ordinary space, so this
       // never saw it - and it draws a 1em blank rather than nothing, which is the same
       // miscategorisation as the enclosing marks removed above.

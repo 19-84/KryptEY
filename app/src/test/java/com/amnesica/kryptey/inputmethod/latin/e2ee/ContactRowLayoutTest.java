@@ -120,4 +120,67 @@ public class ContactRowLayoutTest {
     assertEquals(1, firstName.getMaxLines());
     assertEquals(1, lastName.getMaxLines());
   }
+
+  // ------------------------------------------- what the adapter actually puts in the row
+
+  /**
+   * The row must show a SANITISED name, not the raw one.
+   *
+   * <p>Every banner went through the sanitiser; the contact row did not, and the row is where two
+   * contacts are compared. A leading U+202E with the name written backwards renders
+   * pixel-identically to another contact's row, while the matching path folds the logical order and
+   * sees a different name - so no duplicate warning fires and the rows are indistinguishable.
+   *
+   * <p>Asserted through {@code ListAdapterContacts.getView}, not by calling the sanitiser directly.
+   * A test that calls the sanitiser proves the sanitiser works; it says nothing about whether the
+   * row uses it, and reverting the row to the raw name survived exactly such a test.
+   */
+  @Test
+  public void theAdapterPutsASanitisedNameInTheRow() {
+    final Context context = RuntimeEnvironment.getApplication();
+    com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.testIsRunning = true;
+    com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.initialize(null);
+
+    final String hostile = ((char) 0x202E) + "ecilA";
+    final java.util.ArrayList<Object> contacts = new java.util.ArrayList<>();
+    contacts.add(new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
+        hostile, "Smith" + ((char) 0x000A) + "Jones", "peer-uuid", 7, false));
+
+    final com.amnesica.kryptey.inputmethod.latin.e2ee.adapter.ListAdapterContacts adapter =
+        new com.amnesica.kryptey.inputmethod.latin.e2ee.adapter.ListAdapterContacts(
+            context, com.amnesica.kryptey.inputmethod.R.layout.e2ee_contact_list_element_view,
+            contacts);
+    adapter.setListener(
+        new com.amnesica.kryptey.inputmethod.latin.e2ee.adapter.ListAdapterContacts
+            .ListAdapterContactInterface() {
+          @Override public void selectContact(
+              com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact c) { }
+          @Override public void removeContact(
+              com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact c) { }
+          @Override public void verifyContact(
+              com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact c) { }
+        });
+
+    final View row = adapter.getView(0, null, new android.widget.FrameLayout(context));
+    final TextView firstName = row.findViewById(R.id.e2ee_contact_first_name_element);
+    final TextView lastName = row.findViewById(R.id.e2ee_contact_last_name_element);
+
+    final String shownFirst = firstName.getText().toString();
+    final String shownLast = lastName.getText().toString();
+
+    assertTrue("a bidi override must not reach the row: " + escape(shownFirst),
+        shownFirst.indexOf((char) 0x202E) < 0);
+    assertTrue("nor a line separator: " + escape(shownLast),
+        shownLast.indexOf((char) 0x000A) < 0);
+    assertTrue("and the name itself must survive", shownFirst.contains("ecilA"));
+  }
+
+  private static String escape(final String value) {
+    final StringBuilder out = new StringBuilder();
+    for (final char c : value.toCharArray()) {
+      if (c < 0x20 || c > 0x7E) out.append(String.format("U+%04X", (int) c));
+      else out.append(c);
+    }
+    return out.toString();
+  }
 }
