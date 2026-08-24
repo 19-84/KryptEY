@@ -49,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 
 public class E2EEStripView extends RelativeLayout implements ListAdapterContacts.ListAdapterContactInterface {
 
@@ -118,7 +119,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private Encoder encodingMethod = Encoder.RAW; // raw is default
 
   // info texts
-  private final String INFO_NO_CONTACT_CHOSEN = "No contact chosen";
+  /** Static so {@link #openingMessage} can be decided without an inflated view. */
+  static final String INFO_NO_CONTACT_CHOSEN_TEXT = "No contact chosen";
+
+  private final String INFO_NO_CONTACT_CHOSEN = INFO_NO_CONTACT_CHOSEN_TEXT;
+  static final String INFO_STORAGE_UNREADABLE =
+      "Your saved identity cannot be unlocked on this device. Your contacts and their verified "
+          + "keys are still stored but cannot be read. Do NOT re-invite anyone until you have "
+          + "checked this - re-inviting replaces every key you have already verified.";
   private final String INFO_PRE_KEY_DETECTED = "Keybundle detected: click on decrypt to save the content";
   private final String INFO_SIGNAL_MESSAGE_DETECTED = "Encrypted message detected: click on decrypt to view message";
   private final String INFO_PRE_KEY_AND_SIGNAL_MESSAGE_DETECTED = "Encrypted update message detected: click on decrypt to view message";
@@ -701,7 +709,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     setMainInfoTextTextChangeListener();
     setMainInfoTextClearChosenContactListener();
-    setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
+    setInfoTextViewMessage(mInfoTextView, openingMessage(SignalProtocolMain.storageState()));
 
     createButtonEncryptClickListener();
     createButtonDecryptClickListener();
@@ -800,6 +808,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         }
       }
     });
+  }
+
+  /**
+   * What the strip says when it first opens.
+   *
+   * <p>A user whose storage cannot be decrypted used to see "No contact chosen" - byte-identical to
+   * a healthy install that simply has no contacts yet. That is the worst possible reading of the
+   * situation: their identity key, sessions and verified contacts are all still on disk under a key
+   * that no longer exists, and the obvious response to an apparently empty app is to re-invite
+   * everyone. Re-inviting replaces every pin they had already compared, so a key loss silently
+   * becomes a fresh trust-on-first-use window for every contact at once.
+   *
+   * <p>Separated from the view so the decision can be tested without an inflated IME. The wiring
+   * above is the one call that uses it.
+   */
+  static String openingMessage(final StorageHelper.StorageState state) {
+    return state == StorageHelper.StorageState.UNREADABLE
+        ? INFO_STORAGE_UNREADABLE : INFO_NO_CONTACT_CHOSEN_TEXT;
   }
 
   private void setInfoTextViewMessage(final TextView textView, final String message) {

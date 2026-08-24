@@ -114,6 +114,17 @@ public class SignalProtocolMain {
     return sInstance.mStorageHelper != null && sInstance.mStorageHelper.hasExistingProtocolData();
   }
 
+  /**
+   * Why there is no account, when there is no account - see {@link StorageHelper.StorageState}.
+   *
+   * <p>Reports {@code NONE} when nothing has been initialised, which is indistinguishable from a
+   * fresh install and is the correct answer for one.
+   */
+  public static StorageHelper.StorageState storageState() {
+    if (sInstance.mStorageHelper == null) return StorageHelper.StorageState.NONE;
+    return sInstance.mStorageHelper.storageState();
+  }
+
   public static void reloadAccount(final Context context) {
     Log.d(TAG, "Reloading local account for signal protocol (not first app run)...");
     sInstance.initializeStorageHelper(context);
