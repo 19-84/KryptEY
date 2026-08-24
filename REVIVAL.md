@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 602 (601 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 609 (608 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -287,7 +287,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 602 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 609 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -484,6 +484,27 @@ paint the same notdef box and folded to different keys; nothing in a 480-test su
 then did the same for U+FFF9–FFFB, with a stated reason ICU contradicts. Both were added in good
 faith to suppress noise. The rule that came out of it: an exclusion gets a written reason and a
 negative control proving something still fails without it, or it does not go in.
+
+---
+
+## What the double ratchet gives this app, measured
+
+Ciphertext travels as text the user copies and pastes by hand, so out-of-order delivery is the
+ordinary case here rather than an edge one — they paste what is in front of them, scroll back to
+older messages, skip ones they cannot be bothered with, and occasionally paste the same thing twice.
+`OutOfOrderDeliveryTest` pins what actually happens:
+
+- Reversed, shuffled and newest-first delivery all decrypt completely.
+- A message the user never pastes does not block the ones after it.
+- Pasting the same message twice is refused, and the session is undamaged by the attempt.
+- **The window is exactly 2000 skipped messages.** Skip 2000 and the oldest still opens; skip 2001
+  and it is gone for good.
+- Past the window the failure is `DuplicateMessageException`, **not** an "invalid message" error. An
+  evicted key is indistinguishable from a used one, so libsignal reports the same thing for both.
+  That reaches the user: the app's failure text says "Most often this means it was already decrypted
+  once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
+  unrecoverable either way — but a user scrolling a long way back is told they have already read
+  something they have not. Distinguishing the two needs a counter libsignal does not expose.
 
 ---
 
