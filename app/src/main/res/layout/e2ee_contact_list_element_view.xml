@@ -67,7 +67,7 @@
       the LEFTOVER and weights dividing the whole column. At 0dp each view took exactly half
       whatever it held, so an empty last name - and the last name is the optional field - left half
       the column blank while the mandatory first name was cut in half. Measured at 320dp, "Maria
-      del Carmen Fernandez" showed "Mari" with 61px sitting empty beside it.
+      del Carmen Fernandez" showed "Mari" in a 57px view with 58px sitting empty beside it.
     -->
     <TextView
       android:id="@+id/e2ee_contact_first_name_element"
@@ -110,8 +110,10 @@
     truncated name is visibly truncated" stops being true when there is no room for any of it.
     Trimmed to 10dp on the END side and the tag to 12sp. The START side was 30dp on the verify
     buttons, putting the name column's left edge at 65dp (30 + 25 + 10); that is now 10dp, so it
-    begins at 45dp and the column is 20dp wider. Measured, that is what moves 320dp/fontScale 1.5
-    from "Al"/"S" to the whole of "Alice Smith".
+    begins at 45dp and the column is 20dp wider. Measured at 320dp with "Alice"/"Smith": fontScale
+    1.3 goes from "Ali"/"Smi" to the whole of both names, and fontScale 1.5 from "Al"/"S" to
+    "Ali"/"Sm". An earlier version of this sentence took the before from the 1.5 row and the after
+    from the 1.3 row, and so claimed 1.5 reached the whole name. It does not.
 
     Anchored here, and with BOTH name views inside a container bounded by it, the tag always
     renders and the names are what get ellipsised. That is the right way round: a truncated name is

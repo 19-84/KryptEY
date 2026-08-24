@@ -305,6 +305,12 @@ public class ContactRowLayoutTest {
         {"Maria del Carmen Fernandez", "", "Maria del Carmen Fernandes", ""},
         {"Alice", "", "Alice", "Smith"},
         {"AliceAliceAliceAliceAlice", "X", "AliceAliceAliceAliceAlice", "Y"},
+        // Not all ASCII. CJK glyphs are about twice the advance of Latin ones, so they exhaust the
+        // column at font scales where Latin names still fit - a pair that never leaves the ASCII
+        // range cannot reach the cells where the column actually runs out.
+        {"龘龘龘龘龘龘龘龘龘龘", "山田", "龘龘龘龘龘龘龘龘龘龘", "田中"},
+        {"אליס", "שמית", "אליס", "כהן"},
+        {"Maria del Carmen Fernandez", "", "María del Carmen Fernandez", ""},
     };
 
     for (final int widthDp : WIDTHS_DP) {
@@ -337,15 +343,68 @@ public class ContactRowLayoutTest {
     for (final int widthDp : WIDTHS_DP) {
       for (final float fontScale : FONT_SCALES) {
         for (final String name : HOSTILE_NAMES) {
-          final String shown = renderedRow(widthDp, fontScale, name, name, "#ab12-cd34");
-          final String tagShown = shown.substring(shown.lastIndexOf('|') + 1);
-
-          assertEquals("the tag was truncated at " + widthDp + "dp, fontScale " + fontScale
-                  + " with name \"" + escape(name) + "\" - it is the only thing left to "
-                  + "distinguish two rows whose names have both been cut",
-              "#ab12-cd34", tagShown);
+          assertTagFullyDrawn(widthDp, fontScale, name);
         }
       }
+    }
+  }
+
+  /**
+   * Measured geometrically, because the obvious predicate cannot fail.
+   *
+   * <p>The first version of this asked whether {@code visibleText(tag)} still equalled the tag. The
+   * tag TextView has {@code maxLines="1"} and deliberately no {@code ellipsize}, so
+   * {@code getEllipsisCount(0)} is always 0 and {@code visibleText} returns the whole string by
+   * construction - the assertion was comparing a string with itself. Pinning the tag view to 18dp,
+   * where it needs 65px and is silently clipped to about "#a", left the whole class green.
+   *
+   * <p>The negative control that appeared to justify it - "tag fixed at 30dp with ellipsize" - only
+   * failed because adding {@code ellipsize} changes the view under test. That is the third
+   * insufficient predicate in this file: {@code getEllipsize() != null}, then
+   * {@code getWidth() > 0}, then visible-text on a view that never ellipsises.
+   *
+   * <p>What actually distinguishes a clipped tag from a whole one is width: the text needs
+   * {@code Layout.getDesiredWidth} and the view has {@code getWidth()}. Clipping is silent - no
+   * ellipsis, no marker - so nothing in the drawn text can report it.
+   */
+  private void assertTagFullyDrawn(final int widthDp, final float fontScale, final String name) {
+    final Context context = RuntimeEnvironment.getApplication();
+    final android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+    final float density = metrics.density;
+    metrics.scaledDensity = density * fontScale;
+
+    try {
+      final View row = inflateRow(context);
+      final TextView firstName = row.findViewById(R.id.e2ee_contact_first_name_element);
+      final TextView lastName = row.findViewById(R.id.e2ee_contact_last_name_element);
+      final TextView tag = row.findViewById(R.id.e2ee_contact_address_tag_element);
+      firstName.setText(name);
+      lastName.setText(name);
+      tag.setText("#ab12-cd34");
+
+      final int widthPx = (int) (widthDp * density);
+      row.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+      row.layout(0, 0, widthPx, row.getMeasuredHeight());
+
+      final android.text.Layout layout = tag.getLayout();
+      assertNotNull("the tag was not laid out at all at " + widthDp + "dp, fontScale " + fontScale,
+          layout);
+
+      // getDesiredWidth, NOT getLineWidth. Measured at a pinned 18dp: the view is 18px, the text
+      // needs 65px, and getLineWidth(0) reports 14.0 - because the Layout is built at the view's
+      // width and WRAPS, and maxLines="1" then simply clips the lines after the first. So the line
+      // width is a property of the box, not of the text, and comparing it to the box can only ever
+      // say yes. getDesiredWidth measures the text itself.
+      final float needed = android.text.Layout.getDesiredWidth(tag.getText(), tag.getPaint());
+      final int available = tag.getWidth();
+      assertTrue("the tag needs " + needed + "px but has " + available + "px at " + widthDp
+              + "dp, fontScale " + fontScale + " with name \"" + escape(name) + "\" - it is "
+              + "clipped silently, and it is the only thing left to distinguish two rows whose "
+              + "names have both been cut",
+          needed <= available);
+    } finally {
+      metrics.scaledDensity = density;
     }
   }
 
@@ -355,7 +414,7 @@ public class ContactRowLayoutTest {
    * <p>With both views at {@code 0dp} + {@code weight="1"} each took exactly half the column
    * whatever it held, so an empty last name left half the column blank while the first name - the
    * field that always exists - was cut in half. Measured at 320dp: "Maria del Carmen Fernandez"
-   * showed "Mari" with 61px sitting empty beside it.
+   * showed "Mari" in a 57px view with 58px sitting empty beside it.
    */
   @Test
   public void anEmptyLastNameGivesItsRoomToTheFirst() {

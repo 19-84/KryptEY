@@ -649,7 +649,7 @@ public class SignalProtocolMain {
         .replace('\u1680', ' ')
         // Blanks, not nothing. These were deleted by rendersAsNothing, which is wrong for the same
         // reason deleting a newline was: measured with Skia they have zero ink but a POSITIVE
-        // advance - U+3164 is 59px where a space is 16px - so they draw a gap. "Bob<U+3164>Jones"
+        // advance - measured, U+3164 advances 44px where a space advances 12 - so they draw a gap. "Bob<U+3164>Jones"
         // therefore reads as two words and did not match "Bob Jones". The existing tests only ever
         // put them at the END of a name, where deleting happens to give the same answer.
         .replace('\u3164', ' ').replace('\u115F', ' ').replace('\u1160', ' ')

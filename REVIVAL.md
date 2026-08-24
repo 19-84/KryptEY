@@ -472,8 +472,12 @@ the session version — so the comments increasingly point at tests rather than 
   (`theTagIsNeverTruncatedAtAnyWidthOrFontScale`), which is what the tag exists for. So this is safe
   under the stated property and still poor. Fixing it properly means wrapping the tag onto a second
   line when the column is too narrow, which is a layout restructure rather than an attribute change.
-  Every other cell in the {320,360,411,480}dp × {1.0,1.15,1.3,1.5,2.0} grid now shows at least one
-  character of each name.
+  This is not the only such cell: 360dp at fontScale 2.0 renders the last name as nothing for a
+  CJK name (`龘龘龘龘龘龘龘龘龘龘`), because CJK glyphs are about twice the advance of Latin ones. An
+  earlier version of this paragraph claimed every other cell in the
+  {320,360,411,480}dp × {1.0,1.15,1.3,1.5,2.0} grid showed at least one character of each name; that
+  was measured only over ASCII names and is false. What holds across the whole grid is the weaker
+  and actually-asserted property — the rows stay distinguishable, by tag where not by name.
 - ~~`E2EEStripView` enables the *encrypt* button on detecting an encrypted message.~~ Resolved: it
   was a copy-paste slip, and inert — `setInfoTextViewMessage` fires a `TextWatcher` that enables
   both buttons for any info text other than `INFO_NO_CONTACT_CHOSEN`, so all three sibling
