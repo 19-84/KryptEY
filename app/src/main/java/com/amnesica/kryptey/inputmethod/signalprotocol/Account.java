@@ -25,6 +25,23 @@ public class Account {
   private ArrayList<StorageMessage> mUnencryptedMessages;
   private ArrayList<Contact> contactList;
 
+  /**
+   * Per-install secret keying the contact display tags.
+   *
+   * <p>The tags exist so a user can tell two contacts with the same display name apart. An
+   * <em>unkeyed</em> hash of the address cannot do that job against this adversary: the messenger
+   * knows the address of the contact being impersonated and chooses its own freely, so it can
+   * compute the target tag and grind an address whose tag matches wherever a person actually looks.
+   * Measured on one JVM thread with no GPU, matching the leading group took nine seconds; more
+   * output bits do not help, because they make partial reading more likely rather than less.
+   *
+   * <p>Keying removes the attacker's ability to compute the target at all. It never leaves the
+   * device, is stored inside the same Keystore-encrypted blob as the identity key, and is
+   * regenerated only when an account is created — so a tag stays stable for the life of an install,
+   * which is what makes it comparable between two rows.
+   */
+  private byte[] displayTagSecret;
+
   public Account(String name, int deviceId, IdentityKeyPair identityKeyPair, PreKeyMetadataStore metadataStore, SignalProtocolStoreImpl signalProtocolStore, SignalProtocolAddress signalProtocolAddress) {
     this.mName = name;
     this.mDeviceId = deviceId;
@@ -34,6 +51,27 @@ public class Account {
     this.mSignalProtocolAddress = signalProtocolAddress;
     this.mUnencryptedMessages = new ArrayList<>();
     this.contactList = new ArrayList<>();
+    this.displayTagSecret = newDisplayTagSecret();
+  }
+
+  private static byte[] newDisplayTagSecret() {
+    final byte[] secret = new byte[32];
+    new java.security.SecureRandom().nextBytes(secret);
+    return secret;
+  }
+
+  public byte[] getDisplayTagSecret() {
+    // Older stores predate this field. Minting one lazily keeps tags working after an upgrade; it
+    // changes every existing tag once, which is harmless - they are only ever compared with each
+    // other, never carried between devices or read out to a peer.
+    if (displayTagSecret == null || displayTagSecret.length == 0) {
+      displayTagSecret = newDisplayTagSecret();
+    }
+    return displayTagSecret;
+  }
+
+  public void setDisplayTagSecret(final byte[] secret) {
+    this.displayTagSecret = secret;
   }
 
   // testing only

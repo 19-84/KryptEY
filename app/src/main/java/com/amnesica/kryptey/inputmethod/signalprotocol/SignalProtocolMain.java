@@ -589,15 +589,15 @@ public class SignalProtocolMain {
    * format characters — a zero-width space, a soft hyphen, a word joiner or a right-to-left override
    * survive normalisation and render as nothing at all.
    *
-   * <p>That mattered more than a missed warning, because the contact-row tag is gated on this same
-   * comparison. One invisible character in the name therefore suppressed the warning <em>and</em>
-   * removed the tag from both rows, leaving two entries that read identically with nothing anywhere
-   * to tell them apart. The comment here used to claim the tag was what distinguished the Cyrillic
-   * case; it was not, because there was no tag.
+   * <p>That used to matter more than a missed warning, because the contact-row tag was gated on this
+   * same comparison: one invisible character suppressed the warning <em>and</em> removed the tag
+   * from both rows. It is no longer gated, so a dodge now costs the warning and leaves the rows
+   * still distinguishable. That is the whole reason for ungating it — this list will never be
+   * complete.
    *
-   * <p>Three steps now: strip anything invisible ({@code Cf} format characters, default-ignorables,
-   * combining marks), NFKC-normalise, and map the confusable Cyrillic and Greek letters that share a
-   * glyph with Latin onto their Latin counterpart. That is a subset of UTS-39 confusables — enough
+   * <p>Three steps now: strip characters that draw nothing, NFKC-normalise, and map confusables onto
+   * their Latin counterpart. Combining marks are deliberately <em>not</em> stripped — doing so
+   * collapsed Indic vowel signs and made unrelated names collide. That is a subset of UTS-39 confusables — enough
    * for the alphabets a name is realistically spoofed in, and honest about being a subset.
    */
   private static String normalizeForDisplay(final String value) {
@@ -638,8 +638,11 @@ public class SignalProtocolMain {
    */
   private static boolean rendersAsNothing(final int cp) {
     final int type = Character.getType(cp);
-    if (type == Character.FORMAT || type == Character.ENCLOSING_MARK
-        || type == Character.CONTROL || Character.isIdentifierIgnorable(cp)) {
+    // Not ENCLOSING_MARK: an Me mark draws a visible ring around the preceding character, so
+    // dropping it here contradicted this method's own name and quietly folded two names that look
+    // different. Removed after review pointed it out.
+    if (type == Character.FORMAT || type == Character.CONTROL
+        || Character.isIdentifierIgnorable(cp)) {
       return true;
     }
     // Combining marks are deliberately NOT stripped wholesale. Doing so removes every vowel sign,
@@ -648,6 +651,14 @@ public class SignalProtocolMain {
     // that cries wolf on ordinary names teaches the user to dismiss it, which costs more than the
     // narrow spoofing case stripping them would have caught. UTS-39 does not remove matras either.
     // Marks that are genuinely invisible are already covered by the ignorable checks above.
+    // Ranges first: variation selectors and the Mongolian free variation selectors are
+    // default-ignorable but are category Mn, which isIdentifierIgnorable does not cover. These are
+    // the cheapest dodge of all - one appended character in the invite text the user copies.
+    if ((cp >= 0xFE00 && cp <= 0xFE0F)        // VARIATION SELECTOR-1..16
+        || (cp >= 0xE0100 && cp <= 0xE01EF)   // VARIATION SELECTOR-17..256
+        || (cp >= 0x180B && cp <= 0x180F)) {  // Mongolian FVS
+      return true;
+    }
     switch (cp) {
       case 0x3164:   // HANGUL FILLER
       case 0x115F:   // HANGUL CHOSEONG FILLER
@@ -656,6 +667,10 @@ public class SignalProtocolMain {
       case 0x2800:   // BRAILLE PATTERN BLANK
       case 0x2028:   // LINE SEPARATOR
       case 0x2029:   // PARAGRAPH SEPARATOR
+      case 0x034F:   // COMBINING GRAPHEME JOINER - draws nothing, category Mn
+      case 0x17B4: case 0x17B5:  // Khmer inherent vowels, invisible
+      case 0x1680:   // OGHAM SPACE MARK - blank in most fonts
+      case 0x3000:   // IDEOGRAPHIC SPACE
         return true;
       default:
         return false;
@@ -756,6 +771,46 @@ public class SignalProtocolMain {
     return false;
   }
 
+  /**
+   * The short tag shown beside a contact's name so two contacts with one name can be told apart.
+   *
+   * <p><b>Keyed, not just hashed.</b> This used to be a plain truncated SHA-256 of the address,
+   * computed inside {@code Contact}. That cannot work against this adversary: the messenger knows
+   * the address of the contact being impersonated and chooses its own address freely, so it can
+   * compute the victim's tag and grind until its own matches. Measured on a single JVM thread with
+   * no GPU, matching the leading group took nine seconds; matching both ends is hours on rented
+   * hardware. Widening the output made that worse rather than better, because a longer string is
+   * one a user reads less of.
+   *
+   * <p>Keying with a per-install secret removes the ability to compute the target at all, so there
+   * is nothing to grind towards. That also means the tag can be short enough to read completely,
+   * which is the property that actually matters — security here is bounded by the characters a
+   * person compares, not by the characters emitted.
+   *
+   * @return the tag, or an empty string when no account is loaded.
+   */
+  public static String displayTagFor(final Contact contact) {
+    if (contact == null || sInstance.mAccount == null) return "";
+    try {
+      final javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+      mac.init(new javax.crypto.spec.SecretKeySpec(
+          sInstance.mAccount.getDisplayTagSecret(), "HmacSHA256"));
+      final String name = contact.getSignalProtocolAddressName();
+      mac.update((name == null ? "" : name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      mac.update((byte) 0);
+      mac.update(String.valueOf(contact.getDeviceId())
+          .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      final byte[] tag = mac.doFinal();
+
+      // 40 bits, in two groups short enough to be read end to end. Keyed, so an attacker cannot
+      // aim at it - 40 keyed bits are worth far more here than 96 unkeyed ones.
+      return String.format("#%02x%02x-%02x%02x%02x", tag[0], tag[1], tag[2], tag[3], tag[4]);
+    } catch (java.security.GeneralSecurityException e) {
+      Log.e(TAG, "Could not derive a display tag", e);
+      return "";
+    }
+  }
+
   /** How many contacts the account holds; 0 when nothing is loaded. */
   public static int contactCount() {
     if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return 0;
@@ -771,11 +826,18 @@ public class SignalProtocolMain {
    * the message store both resolve an incoming envelope with {@code findFirst()}, so which row a
    * message is attributed to becomes list-order dependent.
    *
-   * <p>The attack it closes needs no name trickery at all. An attacker already present as one
-   * contact sends a bundle from that same address with a "this is Alice, I reinstalled" story. The
-   * user adds "Alice" at that address: same key, so no pin conflict and no identity change; a
-   * different name, so the duplicate-name check does not fire; and the address matches the contact
-   * being added, so the loop above skips the only row that would have matched. Nothing warned.
+   * <p><b>Currently unreachable, and kept deliberately.</b> The add-contact screen is only shown on
+   * the {@code sender == null} branch of the three envelope handlers — that is, only when no contact
+   * was found at that exact address — and the Add button recomputes the same address from the same
+   * envelope. So at the moment this runs, there is guaranteed to be nothing at that address and this
+   * can never return non-null. An earlier version of this comment described the attack as live; the
+   * dispatcher already prevents it, and such an envelope resolves to the existing contact instead.
+   *
+   * <p>It stays because the guarantee lives in a different file from the invariant, and a change to
+   * how the add screen is reached would silently make two rows at one address possible again. Note
+   * the polarity if that ever happens: the same-name case is treated as a re-add and skipped, so
+   * every improvement to the name folding <em>widens</em> that exemption. A trailing space would be
+   * enough to walk past it while {@code Contact.equals} still creates a second row.
    */
   public static Contact existingContactAtSameAddress(final SignalProtocolAddress address,
       final String firstName, final String lastName) {

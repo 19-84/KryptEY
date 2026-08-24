@@ -229,6 +229,12 @@ public class DuplicateContactNameTest {
         "A\u04CFice",        // Cyrillic palochka for l
         "\u0251lice",        // Latin alpha
         "\u13AAlice",        // Cherokee A
+        "Alice\uFE0F",       // VARIATION SELECTOR-16 - category Mn, the cheapest dodge of all
+        "Al\uFE00ice",       // VARIATION SELECTOR-1
+        "Ali\u034Fce",       // COMBINING GRAPHEME JOINER
+        "Alice\u180B",       // Mongolian free variation selector
+        "Alice\u17B4",       // Khmer inherent vowel, invisible
+        "Alice\u1680",       // OGHAM SPACE MARK
     };
     for (final String dodge : dodges) {
       assertTrue("\"" + dodge + "\" dodged the duplicate check",
@@ -302,19 +308,49 @@ public class DuplicateContactNameTest {
   // ------------------------------------------------------------------ tag width
 
   /**
-   * The tag must not be grindable. It was 40 bits, hashed over an address the peer chooses freely,
-   * against an adversary that knows the address it wants to collide with — minutes on a GPU, and a
-   * couple of core-hours for the trailing bits a user is least likely to read.
+   * The tag must not be <em>predictable</em>. Width was the wrong lever.
+   *
+   * <p>An earlier version of this test asserted 96 output bits, on the reasoning that 40 were
+   * grindable. Both the fix and the test were wrong: the hashed input is an address the peer chooses
+   * freely, and the adversary knows the address it wants to collide with, so it could compute the
+   * target tag and grind towards it however wide the output was. Matching the leading group took
+   * nine seconds on one JVM thread. Widening made it worse, because a longer string is one a user
+   * reads less of.
+   *
+   * <p>What closes it is keying with a per-install secret: there is nothing to aim at, because the
+   * attacker cannot compute the victim's tag. That in turn lets the tag be short enough to read
+   * end to end, which is the property that actually protects anyone — security here is bounded by
+   * the characters a person compares, not the characters emitted.
    */
   @Test
-  public void theAddressTagIsWideEnoughToResistGrinding() {
-    final String tag = new Contact("A", "B", "peer-uuid", 7, false).getAddressTag();
-    final String hex = tag.replace("#", "").replace("-", "");
+  public void theAddressTagIsKeyedToThisInstallAndShortEnoughToRead() {
+    final Contact contact = new Contact("A", "B", "peer-uuid", 7, false);
+    final String tag = contact.getAddressTag();
 
-    assertEquals("the tag must carry 96 bits; 40 is grindable by the adversary in the model",
-        24, hex.length());
-    assertTrue("the tag must be hex", hex.matches("[0-9a-f]+"));
+    assertTrue("the tag must be short enough to compare in full, got: " + tag,
+        tag.length() <= 16);
+    assertTrue("the tag must be hex with separators", tag.matches("#[0-9a-f]{4}-[0-9a-f]{6}"));
+
+    // A different install must produce a different tag for the SAME address - that is what makes it
+    // unpredictable to someone who knows the address.
+    final String beforeReinstall = tag;
+    SignalProtocolMain.initialize(null);
+    final String afterReinstall = new Contact("A", "B", "peer-uuid", 7, false).getAddressTag();
+
+    assertNotEquals("the tag must be keyed per install, not a plain hash of the address",
+        beforeReinstall, afterReinstall);
   }
+
+  /** Within one install it must be stable, or two rows cannot be compared against each other. */
+  @Test
+  public void theAddressTagIsStableWithinOneInstall() {
+    final Contact first = new Contact("A", "B", "peer-uuid", 7, false);
+    final Contact again = new Contact("Other", "Name", "peer-uuid", 7, true);
+
+    assertEquals("the same address must tag the same way regardless of the name on the row",
+        first.getAddressTag(), again.getAddressTag());
+  }
+
 
   /**
    * The bypass that needed no Unicode at all: put the whole name in one field.
@@ -368,5 +404,20 @@ public class DuplicateContactNameTest {
       assertTrue(variant[0] + " " + variant[1] + " must match Alice Smith",
           SignalProtocolMain.hasContactWithSameDisplayName(variant[0], variant[1], elsewhere));
     }
+  }
+
+  /**
+   * An enclosing mark draws a visible ring, so it must NOT be folded away.
+   *
+   * <p>These were stripped alongside the genuinely invisible characters, which contradicted the
+   * filter's own name and quietly folded together two names a reader can plainly tell apart.
+   */
+  @Test
+  public void visibleCombiningMarksAreNotFoldedAway() {
+    addAs("Alice", "Smith", realAlice);
+    final SignalProtocolAddress elsewhere = ProtocolAddresses.of("attacker-uuid", 7);
+
+    assertFalse("an enclosing ring is visible, so it must not fold onto the bare name",
+        SignalProtocolMain.hasContactWithSameDisplayName("A\u20DDlice", "Smith", elsewhere));
   }
 }

@@ -141,6 +141,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
   private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
   private final String INFO_PINNED_AFTER_REJECT = "Careful: you previously told the app that %s's number did not match, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
+  private final String INFO_NAME_TOO_LONG = "That name is too long to show next to the contact's address tag. Use a shorter one - the tag is what tells two contacts with similar names apart.";
+  private final String INFO_NAME_LOOKS_LIKE_A_TAG = "Names cannot contain '#'. The app shows a tag starting with # beside each contact to tell similar names apart, and a name that imitates one would defeat that.";
   private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Not added: this invite is for the identity you already have saved as \"%2$s\", so \"%1$s\" would be a second name for the same person. If you meant to rename them, delete the old contact first. If someone told you this is a different person, they are using an identity you already have to introduce themselves as somebody else.";
   private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. If they told you they reinstalled, check with them by voice before sending anything: a reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address.";
   // Does not tell the user to obtain the invite "out of band": there is no import path for one -
@@ -296,8 +298,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // key rather than an acceptance of it.
     if (com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain
         .hasUnacceptedIdentityChange(chosenContact.getSignalProtocolAddress())) {
+      // labelFor, not the bare first name: this branch is reached whenever a change is pending,
+      // which any messenger can arrange with one forged bundle - so it is precisely the state in
+      // which the user most needs to know WHICH contact they are looking at.
       setInfoTextViewMessage(mVerifyContactInfoTextView,
-          String.format(INFO_VERIFY_PENDING_CHANGE, chosenContact.getFirstName()));
+          String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact)));
     }
     setFingerprintViews(fingerprint, true);
   }
@@ -616,12 +621,38 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mAddContactLastNameInputEditText.setText("");
   }
 
+  /** Longest display name accepted, so a name cannot crowd the address tag off its row. */
+  private static final int MAX_DISPLAY_NAME_CHARS = 32;
+
   private boolean providedContactInformationIsValid(CharSequence firstName, CharSequence lastName) {
     if (firstName == null || firstName.length() == 0) {
       Toast.makeText(getContext(), INFO_ADD_FIRSTNAME_ADD_CONTACT, Toast.LENGTH_SHORT).show();
       return false;
     }
+
+    // The name shares a text field with the address tag, so unbounded and unsanitised names let an
+    // attacker attack the tag through the name.
+    //
+    // Two concrete moves this stops. A long name pushes the tag out of the row: the last-name view
+    // is wrap_content with only a start constraint, so once the first name fills the row the tag
+    // measures zero width and simply does not render - and an untagged row reads as the ordinary
+    // one. And a name containing a '#' can imitate a tag outright, because the invite text is
+    // written by the attacker and the app has been teaching the user that tags identify contacts.
+    final int total = firstName.length() + (lastName == null ? 0 : lastName.length());
+    if (total > MAX_DISPLAY_NAME_CHARS) {
+      Toast.makeText(getContext(), INFO_NAME_TOO_LONG, Toast.LENGTH_LONG).show();
+      return false;
+    }
+    if (containsTagLookalike(firstName) || containsTagLookalike(lastName)) {
+      Toast.makeText(getContext(), INFO_NAME_LOOKS_LIKE_A_TAG, Toast.LENGTH_LONG).show();
+      return false;
+    }
     return true;
+  }
+
+  /** A name must not be able to imitate the address tag rendered beside it. */
+  private static boolean containsTagLookalike(final CharSequence name) {
+    return name != null && name.toString().indexOf('#') >= 0;
   }
 
   private void createAddContactCancelClickListener() {

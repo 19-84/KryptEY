@@ -6,7 +6,7 @@ obvious from the code alone.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
-**Tests: 31 → 369, all passing.** Debug and release both assemble; dependency verification pins 382
+**Tests: 31 → 371, all passing.** Debug and release both assemble; dependency verification pins 382
 artifacts by SHA-256.
 
 ---
@@ -268,7 +268,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 369 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 371 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -327,8 +327,20 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
      characters removed, NFKC applied, and the Cyrillic/Greek letters that share a Latin glyph
      mapped onto it. Both defences were gated on this one comparison, so a single invisible
      character had suppressed the warning *and* removed the tag from both rows.
-   - **A tag wide enough to survive being aimed at.** 40 bits over an address the peer chooses is
-     minutes of GPU grinding for an adversary that knows the address it wants to match. Now 96.
+   - **A tag that cannot be aimed at.** This was got wrong twice. It began as 40 bits of SHA-256
+     over the address; that was widened to 96 on the reasoning that 40 were grindable. Both the
+     diagnosis and the fix were wrong: the input is an address the peer chooses freely and the
+     adversary knows the address it wants to collide with, so it can compute the target tag and
+     grind towards it at any width — matching the leading group took **nine seconds on one JVM
+     thread**, and widening made things worse, because a longer string is one a user reads less of.
+     The tag is now an HMAC under a per-install secret. There is nothing to aim at, which in turn
+     lets it be short enough to read end to end — and the bits a person actually compares are the
+     only ones that were ever protecting anyone.
+   - **A name cannot attack the tag it sits beside.** Names are capped in length and may not contain
+     `#`. Unbounded names pushed the tag out of its row entirely (the view is `wrap_content` with
+     only a start constraint, so it measures zero width and silently does not render — and an
+     untagged row reads as the ordinary one); a `#` in the name let an attacker's invite text
+     supply a counterfeit tag in the same field, same style, same size.
    - **One address is one identity.** Adding a second contact at an address already in use is
      refused outright — an exact check on the address rather than a name heuristic, so it cannot be
      dodged. It has to refuse rather than warn: `updateContactInContactList` matches by address and
