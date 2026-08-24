@@ -3,6 +3,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol.storage;
 import android.content.SharedPreferences;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 /** {@link KeyValueStore} over Android SharedPreferences. */
@@ -32,6 +33,29 @@ public final class SharedPreferencesKeyValueStore implements KeyValueStore {
     // on disk, which is unrecoverable: the legacy-read path is only reachable while unmarked.
     if (!preferences.edit().putString(key, value).commit()) {
       throw new StorageWriteException("could not persist '" + key + "' to SharedPreferences");
+    }
+  }
+
+  /**
+   * One editor, one commit - so the whole batch reaches disk or none of it does.
+   *
+   * <p>SharedPreferences writes the file by rename, keeping the previous contents in a .bak until
+   * the new file is complete. That is what makes a single commit atomic against process death, and
+   * it is exactly the property eight separate commits do not have.
+   *
+   * <p>The return value is checked for the same reason it is checked in {@link #put}: on an I/O
+   * failure the on-disk state rolls back while the in-memory map keeps the new values, so a caller
+   * that ignored it would carry on with an account that does not exist on disk.
+   */
+  @Override
+  public void putAll(final Map<String, String> entries) {
+    final SharedPreferences.Editor editor = preferences.edit();
+    for (final Map.Entry<String, String> entry : entries.entrySet()) {
+      editor.putString(entry.getKey(), entry.getValue());
+    }
+    if (!editor.commit()) {
+      throw new StorageWriteException(
+          "could not persist " + entries.size() + " entries to SharedPreferences");
     }
   }
 

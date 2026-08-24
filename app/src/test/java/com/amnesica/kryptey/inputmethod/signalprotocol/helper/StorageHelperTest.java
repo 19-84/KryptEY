@@ -32,6 +32,11 @@ import java.security.NoSuchAlgorithmException;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 
 /**
  * Covers the class that decides whether a user still has an identity.
@@ -430,5 +435,73 @@ public class StorageHelperTest {
 
     assertNotNull("an upgrade from a store predating the field must not fail", reloaded);
     assertEquals(32, reloaded.getDisplayTagSecret().length);
+  }
+
+  /**
+   * A box that works except on one value - standing in for a Keystore key that has been
+   * invalidated part-way through a save, or a value that will not serialise.
+   */
+  private StorageHelper.CryptoBoxFactory boxFailingOn(final String marker) {
+    return (ctx, hasExistingData) -> new GcmCryptoBox() {
+      @Override
+      protected SecretKey key() {
+        return key;
+      }
+
+      @Override
+      public byte[] seal(final byte[] plaintext, final byte[] aad)
+          throws StorageCryptoException {
+        if (new String(plaintext, java.nio.charset.StandardCharsets.UTF_8).contains(marker)) {
+          throw new StorageCryptoException("keystore refused a value containing " + marker);
+        }
+        return super.seal(plaintext, aad);
+      }
+    };
+  }
+
+  /**
+   * An account save is all or nothing.
+   *
+   * <p>The save used to be eight independent durable commits, so a failure on the eighth left the
+   * first seven written. Reload cannot detect that - every value is individually well-formed and
+   * parses cleanly - so the account came back holding a new protocol store beside an old contact
+   * list, which is worse than coming back broken.
+   *
+   * <p>This fails the LAST value specifically. Failing the first would pass on the old code too.
+   */
+  @Test
+  public void afailureOnTheLastValueLeavesTheWholeSaveUnwritten() {
+    final Account account = newAccount();
+    account.setContactList(new ArrayList<>(List.of(
+        new Contact("Bob", "Jones", "peer-uuid", 7, false))));
+
+    // DISPLAY_TAG_SECRET is written last; fail on the contact list, which is written just before.
+    new StorageHelper(context, boxFailingOn("Jones")).storeAllInformationInSharedPreferences(account);
+
+    // Everything except the store's own bookkeeping. Filtering by prefix rather than importing
+    // SCHEMA_KEY, which is package-private on purpose - a test is not a reason to widen it.
+    final Set<String> written = new HashSet<>();
+    for (final String key : preferences.getAll().keySet()) {
+      if (!key.startsWith("__kryptey")) written.add(key);
+    }
+
+    assertTrue("a save that could not seal one value left " + written
+            + " behind - a torn account that reload cannot detect", written.isEmpty());
+  }
+
+  /** And the same save with a working box writes everything and reloads intact. */
+  @Test
+  public void thesameSaveWithAWorkingBoxIsComplete() {
+    final Account account = newAccount();
+    account.setContactList(new ArrayList<>(List.of(
+        new Contact("Bob", "Jones", "peer-uuid", 7, false))));
+
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(account);
+
+    final Account reloaded = helper.getAccountFromSharedPreferences();
+    assertNotNull("the control must actually store an account, or the test above proves nothing",
+        reloaded);
+    assertEquals("Jones", reloaded.getContactList().get(0).getLastName());
   }
 }

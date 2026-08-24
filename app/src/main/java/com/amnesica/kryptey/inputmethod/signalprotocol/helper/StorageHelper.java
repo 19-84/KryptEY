@@ -24,6 +24,8 @@ import org.signal.libsignal.protocol.SignalProtocolAddress;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 public class StorageHelper {
   static final String TAG = StorageHelper.class.getSimpleName();
@@ -145,15 +147,52 @@ public class StorageHelper {
     return account;
   }
 
+  /**
+   * One write, not eight.
+   *
+   * <p>This used to call the eight single-value setters in turn, each of which is a durable
+   * {@code commit()}. That is eight fsyncs on the IME main thread per save, and eight places for a
+   * save to stop half way: a process death or an I/O failure after the fourth left a store holding
+   * a new protocol store beside an old contact list, with nothing recording that the two no longer
+   * described the same moment. Reload has no way to detect that - both halves are individually
+   * well-formed - so the account came back subtly wrong rather than obviously broken.
+   *
+   * <p>Sealing happens for the whole batch before anything is handed to the delegate, so a failure
+   * to encrypt any one value writes none of them.
+   */
   public void storeAllInformationInSharedPreferences(final Account account) {
-    storeMetaDataStoreInSharedPreferences(account.getMetadataStore());
-    storeUniqueUserIdInSharedPreferences(account.getName());
-    storeSignalProtocolInSharedPreferences(account.getSignalProtocolStore()); // incl. registrationId + identityKeyPair
-    storeSignalProtocolAddressInSharedPreferences(account.getSignalProtocolAddress());
-    storeDeviceIdInSharedPreferences(account.getDeviceId());
-    storeUnencryptedMessagesMapInSharedPreferences(account.getUnencryptedMessages());
-    storeContactListInSharedPreferences(account.getContactList());
-    storeDisplayTagSecretInSharedPreferences(account.getDisplayTagSecret());
+    final EncryptedKeyValueStore store = secureStore();
+    if (store == null) return;
+
+    final Map<String, String> batch = new LinkedHashMap<>();
+    put(batch, ProtocolIdentifier.METADATA_STORE, account.getMetadataStore());
+    put(batch, ProtocolIdentifier.UNIQUE_USER_ID, account.getName());
+    // Protocol store carries the registrationId and the identity key pair.
+    put(batch, ProtocolIdentifier.PROTOCOL_STORE, account.getSignalProtocolStore());
+    put(batch, ProtocolIdentifier.PROTOCOL_ADDRESS, account.getSignalProtocolAddress());
+    put(batch, ProtocolIdentifier.DEVICE_ID, account.getDeviceId());
+    put(batch, ProtocolIdentifier.UNENCRYPTED_MESSAGES, account.getUnencryptedMessages());
+    put(batch, ProtocolIdentifier.CONTACTS, account.getContactList());
+
+    final byte[] secret = account.getDisplayTagSecret();
+    if (secret != null) {
+      batch.put(String.valueOf(ProtocolIdentifier.DISPLAY_TAG_SECRET),
+          JsonUtil.toJson(com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64
+              .encodeBytes(secret)));
+    }
+
+    try {
+      store.putAll(batch);
+    } catch (StorageCryptoException e) {
+      // Same rule as the single-value path: never fall back to cleartext. Losing a write is
+      // recoverable; writing the identity private key to disk unencrypted is not.
+      Log.e(TAG, "Error: could not store account information", e);
+    }
+  }
+
+  private static void put(final Map<String, String> batch, final ProtocolIdentifier identifier,
+                          final Object value) {
+    batch.put(String.valueOf(identifier), JsonUtil.toJson(value));
   }
 
   private void storeDisplayTagSecretInSharedPreferences(final byte[] secret) {

@@ -13,7 +13,7 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 520, all passing.** Debug and release both assemble; dependency verification pins 387
+**Tests: 31 → 534, all passing.** Debug and release both assemble; dependency verification pins 387
 artifacts by SHA-256.
 
 ---
@@ -287,7 +287,7 @@ sides compute the same value either way. A genuine symmetry, not a coverage gap.
 
 **Verified by execution:**
 
-- 520 JVM tests, including an end-to-end conversation across all four phases and a real MITM
+- 534 JVM tests, including an end-to-end conversation across all four phases and a real MITM
   identity substitution driven through libsignal
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
@@ -484,7 +484,13 @@ negative control proving something still fails without it, or it does not go in.
 - **No user-visible signal when the Keystore key is gone** — it currently looks identical to
   "no data". `destroyMasterKey()` has no production caller (only instrumentation tests), so there is
   no reset path.
-- **Non-atomic account write** — 7 independent `commit()`s per save, on the IME main thread.
+- ~~**Non-atomic account write** — 7 independent `commit()`s per save, on the IME main thread.~~
+  Resolved. `KeyValueStore` gained a `putAll`; `SharedPreferencesKeyValueStore` overrides it with one
+  editor and one commit, and `EncryptedKeyValueStore.putAll` seals the whole batch before handing
+  the delegate anything. A save is now one durable write instead of eight, and a failure to seal
+  any value writes none of them. The torn state it prevented was the dangerous kind: every value
+  individually well-formed, so reload could not detect that a new protocol store sat beside an old
+  contact list.
 - **At 320dp with fontScale 2.0 the contact row shows no name at all** — both name views measure
   narrower than the ellipsis glyph, so nothing is drawn: no characters, no `…`. The rows stay
   distinguishable because the address tag is `wrap_content` and is never truncated

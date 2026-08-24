@@ -5,6 +5,8 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -215,6 +217,37 @@ public final class EncryptedKeyValueStore {
       }
     } catch (RuntimeException e) {
       throw new StorageCryptoException("storage write failed for '" + key + "'", e);
+    }
+  }
+
+  /**
+   * Seal everything first, write once.
+   *
+   * <p>Two separate properties, and both matter. Sealing the whole batch before touching the
+   * delegate means a failure part-way - a Keystore key that has been invalidated, a value that
+   * would not serialise - writes nothing at all, rather than leaving the first few entries updated
+   * beside the rest at their old values. Handing the delegate one map lets it commit once, so
+   * process death cannot land in the middle either.
+   *
+   * <p>Before this, an account save was eight independent durable commits. A tear between them
+   * produced a store holding a new protocol store beside an old contact list, with nothing to
+   * indicate the two no longer described the same moment.
+   */
+  public void putAll(final Map<String, String> entries) throws StorageCryptoException {
+    final Map<String, String> sealed = new LinkedHashMap<>(entries.size());
+    for (final Map.Entry<String, String> entry : entries.entrySet()) {
+      // Outside the try below: a failure here must surface as itself, and must happen before any
+      // part of the batch has been handed to the delegate.
+      sealed.put(entry.getKey(), encode(entry.getKey(), entry.getValue()));
+    }
+
+    try {
+      delegate.putAll(sealed);
+      if (!MARKER_COMPLETE.equals(readMarker())) {
+        writeMarker(MARKER_COMPLETE);
+      }
+    } catch (RuntimeException e) {
+      throw new StorageCryptoException("storage write failed for " + entries.size() + " entries", e);
     }
   }
 
