@@ -384,6 +384,32 @@ public class StorageHelperTest {
         secret, reloaded.getDisplayTagSecret());
   }
 
+  /**
+   * The secret must survive <em>repeated</em> load/store cycles, not just one.
+   *
+   * <p>This is the shape of the real failure. {@code reloadAccount} loads the account and then
+   * writes it straight back, and it runs on every {@code setInputView} — so on every rotation, every
+   * theme change and every IME restart. A single round-trip assertion would pass even if the write
+   * back stored a freshly minted secret each time, because it only ever looks once. Cycling proves
+   * the loop is a fixed point rather than a slow drift.
+   */
+  @Test
+  public void theDisplayTagSecretSurvivesRepeatedLoadStoreCycles() {
+    final Account original = newAccount();
+    final byte[] secret = original.getDisplayTagSecret();
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(original);
+
+    Account current = null;
+    for (int cycle = 0; cycle < 5; cycle++) {
+      final StorageHelper helper = new StorageHelper(context, workingBox());
+      current = helper.getAccountFromSharedPreferences();
+      assertNotNull("cycle " + cycle + " failed to load", current);
+      org.junit.Assert.assertArrayEquals("the secret drifted on cycle " + cycle,
+          secret, current.getDisplayTagSecret());
+      helper.storeAllInformationInSharedPreferences(current);
+    }
+  }
+
   /** Two separate accounts must not share one - that is what makes a tag unpredictable. */
   @Test
   public void twoAccountsGetDifferentSecrets() {

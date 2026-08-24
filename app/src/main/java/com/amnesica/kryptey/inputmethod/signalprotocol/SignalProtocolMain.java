@@ -1379,4 +1379,21 @@ public class SignalProtocolMain {
   public void setAccount(final Account account) {
     this.mAccount = account;
   }
+
+  /**
+   * Injects a storage helper, for tests only.
+   *
+   * <p>{@code initialize()} contains the guard that refuses to generate a new identity over
+   * existing data — the one standing between a lost "first run" flag and the irrecoverable
+   * destruction of the user's identity key, every session and every verified contact. That guard
+   * was unreachable from a JVM test, because reaching it needs a {@code StorageHelper} and the real
+   * one is Keystore-backed. So it was never executed, and mutation testing found both of its
+   * outcomes could be inverted with the whole suite still green.
+   *
+   * <p>A test seam is the honest price of covering it. The alternative was leaving the single most
+   * destructive branch in the codebase untested because it was awkward to reach.
+   */
+  public void setStorageHelperForTest(final StorageHelper storageHelper) {
+    this.mStorageHelper = storageHelper;
+  }
 }
