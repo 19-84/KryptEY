@@ -641,11 +641,12 @@ and why. The image also installs build-tools 36.0.0, which AGP actually selects;
 carried only 35.0.0, and everyone working here relabelled a copy of the 35.0.0 directory to get
 past it — which worked, and meant nobody was building with the tools AGP chooses.
 
-Last cold verification, at `3a5fe22`: `clean testDebugUnitTest` from an empty Gradle volume, with
-verification ON — BUILD SUCCESSFUL in 5m08, 30 of 31 tasks executed, **808 tests green from scratch**
-rather than warm. Eighteen commits had landed since the previous one, including the whole AOSP-seam
-series, so this is the first cold confirmation that any of that work builds and passes on a machine
-with nothing cached.
+Last cold verification, at `af17117`: `clean testDebugUnitTest` from an empty Gradle volume, with
+verification ON — BUILD SUCCESSFUL in 5m25, 39 of 41 tasks executed, **843 tests green from scratch**
+rather than warm. Twenty-three commits since the previous cold run, including deleting 329 lines from
+the vendored `Base64` and wiring `androidTest` compilation into the unit-test task — both of which
+change what the build has to do rather than only what it runs, which is the case a warm cache is
+least able to speak for.
 The run before it covered `clean assembleDebug` the same way (39 of 39 tasks executed, zero
 verification failures across all 386 pinned components).
 
