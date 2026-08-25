@@ -824,6 +824,18 @@ work rather than its inputs.
 The run before it covered `clean assembleDebug` the same way (39 of 39 tasks executed, zero
 verification failures across all 386 pinned components).
 
+**A cold cache is not a fresh clone, and until now only the first had been tested.** Every cold run
+on this branch mounts the working tree — the same directory, with its build outputs and anything
+untracked or ignored sitting in it. Such a run proves the *dependency* story (an empty Gradle volume,
+verification on, 386 components fetched and checked) and says nothing about whether the tracked
+content is sufficient. A build quietly depending on an ignored file would pass every one of them.
+
+Tested at `49a451e`: `git clone` of the branch into a fresh directory, an empty Gradle volume, and
+`testDebugUnitTest` — **BUILD SUCCESSFUL in 5m37, 939 tests, 0 failures, 4 skipped**, 37 of 39 tasks
+executed. So what a new contributor gets from `git clone` alone is a working build. The inference was
+available beforehand — only build outputs and `.claude/` are ignored — but this document has spent its
+time replacing exactly that kind of inference with a run.
+
 One hazard learned the hard way: `verify-cold` mounts **this** repository, so running it in the
 background while doing foreground builds means two Gradle invocations sharing one `build/`
 directory, and the `clean` pulls it out from under the other one. A foreground build failed that
