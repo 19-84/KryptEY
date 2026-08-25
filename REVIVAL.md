@@ -1056,6 +1056,34 @@ javadoc now says callers *must* call `hasEncryptedData`, rather than *should pre
 wording was true, unheeded, and cost nothing to ignore.
 
 
+## Phase 3's parser, swept and clean
+
+Mutation has found a real gap in this branch three times — a Keystore refusal consulted by nothing, a
+`hasEncryptedData` sibling never called, a warning banner one rebuild could wipe — so a clean sweep
+is worth recording with its numbers rather than left as an impression.
+
+Every rejection in `BinaryEnvelope` was removed or disarmed, one at a time, each against the **full**
+suite rather than a scoped subset:
+
+| guard removed | result |
+|---|---|
+| trailing bytes accepted after a valid envelope | killed (2 tests) |
+| non-printable / non-ASCII sender name accepted | killed (4) |
+| any envelope version accepted | killed (1) |
+| unknown flag bits accepted | killed (1) |
+| device id outside libsignal's [1,127] accepted | killed (3) |
+| decode accepts an envelope carrying nothing | killed (1) |
+
+Nothing survived. Two of those are load-bearing beyond ordinary parsing hygiene and are worth naming:
+the printable-ASCII rule on sender names is what keeps `U+001F` — the address-key separator — off the
+wire, which is the hole the chat-log migration had to be written around; and refusing trailing bytes
+is what stops a hostile envelope smuggling data past a parser that has otherwise succeeded.
+
+The thin margins are honest rather than alarming: a guard killed by one test is a guard with exactly
+one test, and for a parser that is often correct — the assertion is "this input is rejected", and
+there is one way to say it. What would be worth acting on is a zero, and there are none here.
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
