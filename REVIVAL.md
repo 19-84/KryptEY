@@ -1754,7 +1754,7 @@ different things, and only one of them is a coverage gap:
 | **genuine gap, now closed** | `rejectContactKey`, `dismissIdentityChange`, `encrypt`, `decrypt`'s `recordIdentityChange` arm, `buildSession`'s success arm, `createAndAddContactToList` | a fact that reached memory and not disk, with a test that now fails if the write goes |
 | **duplicated write** | `processPreKeyResponse` (removed) | two writes for one fact; each deletion unobservable, so a sweep counts two survivors where neither guards anything alone |
 | **acknowledged equivalent mutant** | `reloadAccount`'s write-back | the inner method guards null itself, so inverting the outer guard changes nothing — verified, not assumed, and kept because the inner guard lives in a different method and a refactor could remove it |
-| **open, and honestly so** | `decrypt`'s final persist | attempted; the obstacle is the harness, not the property |
+| **genuine gap, closed on the second attempt** | `decrypt`'s final persist | see below |
 
 Two of those four categories are *not* defects, and one is the opposite of one — a redundancy that
 made the sweep's own output misleading. **A survivor count is not a coverage figure**, which is the
@@ -1763,7 +1763,19 @@ same caveat recorded against the 29-guard sweep and is now demonstrated rather t
 The remainder of the thirteen were not individually examined, and that is stated rather than papered
 over: the six closed above were chosen by consequence, not by working down a list.
 
-Still open: `decrypt`'s final persist. The receive-side one was
+**Nothing on this list is open any more, and how the last one closed is the useful part.** The first
+attempt at `decrypt`'s final persist failed three times and was recorded as blocked on the harness.
+It was not. The scenario was too big: peer sends, victim decrypts, victim replies, peer reads the
+reply — four state swaps through one singleton and one `SharedPreferences`, and every failure came
+from that machinery rather than from the code. One was libsignal being right and me being wrong.
+
+The version that works asks the smallest question that still bites: one message, one reload, is it in
+the log? It passes, and deleting the write fails it. The property never needed the round trip — the
+round trip was me testing the ratchet as well as the persist, in a harness that could not carry both.
+
+Worth keeping because the instinct it corrects is a common one: when a test will not go green, the
+scenario is usually the thing to shrink, not the harness to fight. Recorded as blocked was the honest
+call with what I had; it was still the wrong diagnosis. The receive-side one was
 attempted and left undone deliberately — the obstacle is the harness, not the property. This suite
 drives two "devices" through one singleton and one `SharedPreferences`, swapping the storage helper in
 and out, and each attempt to make the peer send twice hit an artefact of that arrangement rather than
