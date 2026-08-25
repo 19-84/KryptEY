@@ -1743,13 +1743,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final boolean wasComposing;
     private final CharSequence banner;
     private final boolean warningStanding;
+    private final boolean hostFieldIsPassword;
+    private final Encoder encoding;
 
     private CarriedState(final CharSequence draft, final boolean wasComposing,
-        final CharSequence banner, final boolean warningStanding) {
+        final CharSequence banner, final boolean warningStanding,
+        final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
       this.banner = banner;
       this.warningStanding = warningStanding;
+      this.hostFieldIsPassword = hostFieldIsPassword;
+      this.encoding = encoding;
     }
   }
 
@@ -1762,7 +1767,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mInfoTextView == null ? "" : mInfoTextView.getText().toString();
 
     if (mInputEditText != null) mInputEditText.setText("");
-    return new CarriedState(draft, wasComposing, banner, mWarningStanding);
+    return new CarriedState(draft, wasComposing, banner, mWarningStanding,
+        mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -1782,11 +1788,37 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       mInputEditText.requestFocus();
     }
 
+    // A WARNING is carried. An ordinary banner is not, and the difference is the whole of two
+    // defects this branch introduced by treating them alike.
+    //
+    // Writing back any non-empty banner meant a stale ordinary line was painted over a warning the
+    // rebuild had just raised - refreshOpeningMessage can raise exactly one, INFO_STORAGE_UNREADABLE,
+    // whose entire purpose is not to look like an ordinary empty app, because the obvious response
+    // to an apparently empty app is to re-invite everyone and replace every pin already compared.
+    // The user read "No contact chosen" instead, with mWarningStanding left true over it: the wedge
+    // resetChosenContactAndInfoText already documents.
+    //
+    // It also resurrected warnings the user had resolved. Pressing Verify is the deliberate response
+    // the flag waits for; afterwards the app's own predicate says there is nothing to warn about,
+    // and the stale text used to be self-correcting because the flag was down. Re-posting it told a
+    // user who had just compared a safety number to go and compare it again.
+    //
+    // An ordinary banner is worth nothing across a rebuild anyway: whatever the new strip computes
+    // for itself is at least current.
     if (carried.warningStanding) {
       setWarningMessage(String.valueOf(carried.banner));
-    } else if (carried.banner.length() > 0) {
-      setInfoTextViewMessage(mInfoTextView, String.valueOf(carried.banner));
     }
+
+    // Not the view's to lose either. The password-field guard is re-armed only by
+    // onStartInputViewInternal, which then calls updateKeyboardTheme - and a theme change rebuilds
+    // the strip synchronously, eight lines later, so the guard was armed on a view discarded
+    // microseconds afterwards. Carrying the banner while dropping the guard was the worse half:
+    // the strip went on saying encryption was off over a password box while the actions were back
+    // on, which is the exact pairing setHostFieldIsPassword's own comment records as a defect.
+    setHostFieldIsPassword(carried.hostFieldIsPassword);
+    // Choosing FairyTale is the user saying "do not let this look like ciphertext in the
+    // transcript". A rebuild put it back to RAW and the messenger picks when rebuilds happen.
+    if (carried.encoding != null) encodingMethod = carried.encoding;
 
     // The window's FLAG_SECURE decision belongs to whatever is on screen NOW. Nothing else tells
     // it: notifySensitiveVisibility is reachable only from a screen switch, and a rebuild is not
