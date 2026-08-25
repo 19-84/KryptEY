@@ -2053,6 +2053,31 @@ different thing to have on a deferred list.
 
 ## Known-deferred defects
 
+**The plaintext chat log has no cap, and it is read on every keyboard raise.** No size limit, no age
+limit; entries go only when a contact is deleted or a send is discarded. Measured at ~358 characters
+per message in SharedPreferences: **20,000 messages is 7.16 MB, 194 ms to save and 72 ms to load** on
+a desktop JVM — and the load is on the `setInputView` path, so it runs every time the keyboard is
+raised, in every app.
+
+Two things make this less alarming and one makes it harder than it looks.
+
+Cost scales with the log, so it is a **tail problem**: parsing is roughly linear, which puts a
+thousand-message log near 4 ms and most users nowhere near noticing. That is an extrapolation from the
+one measured point, not a second measurement, and it is stated as such. It is also **peer-paced** —
+a correspondent can send messages, and each one is kept forever.
+
+The obvious fix is not to cap it, which deletes the user's history, but to stop reading it on the
+raise path: it has its own storage key (`UNENCRYPTED_MESSAGES`), so it could load when the message-log
+screen is opened. **Checked, and there is a complication:** `LegacyKeyMigration.apply` runs during
+`getAccountFromSharedPreferences` and iterates the message list to re-key pre-upgrade entries. A lazy
+load either skips that migration or forces the read it was meant to avoid, so the fix needs the
+migration moved or made lazy with it — which is exactly the code whose four previous attempts are
+documented three sections above.
+
+Left as a decision with its numbers rather than taken: capping loses history, and the lazy load is a
+larger change to the one component on this branch with the worst track record for being changed.
+
+
 **The CI workflow's Lint step has never passed.** The workflow runs four Gradle tasks. Three of them
 are exercised constantly here; `lintDebug` had never been run by anyone, and it fails — in two
 different ways depending on the JDK, which is what makes it worth writing down rather than just
