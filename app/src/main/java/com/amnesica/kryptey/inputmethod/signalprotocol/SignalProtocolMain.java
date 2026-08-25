@@ -1732,15 +1732,28 @@ public class SignalProtocolMain {
     // mandatory rather than optional. Generate one lazily for accounts created before this upgrade.
     if (!mAccount.getSignalProtocolStore().containsKyberPreKey(mAccount.getMetadataStore().getActiveKyberPreKeyId())) {
       KeyUtil.generateAndStoreKyberPreKey(mAccount.getSignalProtocolStore(), mAccount.getMetadataStore());
-      // Persist immediately. This method hands the public half to a peer; if the private half is
-      // still only in memory when the keyboard is dismissed, reloadAccount() replaces the account
-      // from disk and the key is gone. The peer then builds a session against a key we can never
-      // use, and ML-KEM implicit rejection turns that into an opaque MAC failure rather than a
-      // diagnosable error.
-      storeAllAccountInformationInSharedPreferences();
     }
     final int kyberPreKeyId = mAccount.getMetadataStore().getActiveKyberPreKeyId();
     final KyberPreKeyRecord kyberRecord = mAccount.getSignalProtocolStore().loadKyberPreKey(kyberPreKeyId);
+
+    // Persist BEFORE the public halves leave this method, and on every path rather than only the
+    // one that lazily mints a Kyber key.
+    //
+    // Three things above this line can put brand-new private key material into the in-memory store
+    // and nowhere else: refreshSignedPreKeyIfNecessary rotates the signed AND Kyber pre keys once a
+    // month, getUnusedOneTimePreKeyId mints a fresh one-time pre key when the pool runs dry, and
+    // the lazy Kyber branch. reloadAccount() runs on every setInputView - a rotation, a theme
+    // change, the next time the keyboard is raised at all - and replaces the account with whatever
+    // is on disk, so an unpersisted private half is simply gone.
+    //
+    // The persist call this replaces was correct and reached, and it fired in exactly the case that
+    // did not need it: on the monthly rotation path rotateSignedPreKey has already stored the new
+    // Kyber key, so containsKyberPreKey() is true, the branch is skipped, and the bundle carrying
+    // the freshly rotated signed and Kyber keys went out with neither of them written down. The
+    // invitee builds a session against key ids this device can never load again and their first
+    // message fails to decrypt for good - the "opaque MAC failure" the old comment describes,
+    // reached by the one path its own guard excluded.
+    storeAllAccountInformationInSharedPreferences();
 
     Log.d(TAG, "Generating PreKeyBundle with pre key id: " + preKeyId
         + " and kyber pre key id: " + kyberPreKeyId);
