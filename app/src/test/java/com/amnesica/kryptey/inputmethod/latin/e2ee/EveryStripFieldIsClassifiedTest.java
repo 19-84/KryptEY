@@ -69,7 +69,25 @@ public class EveryStripFieldIsClassifiedTest {
       // A holder for the strip's own child views; carries no state of its own.
       "mE2EEStripVisibilityGroup"));
 
-  /** Fields whose whole content is rendering: views, layouts, and the ids of views. */
+  /** Types whose contents cannot change, so a final field of that type cannot hold state. */
+  private static boolean isImmutable(final Class<?> type) {
+    return type.isPrimitive()
+        || type == String.class
+        || Number.class.isAssignableFrom(type)
+        || type == Boolean.class
+        || type == Character.class
+        || type.isEnum();
+  }
+
+  /**
+   * Fields whose whole content is rendering: views, layouts, and the ids of views.
+   *
+   * <p>An acknowledged hole, left open rather than papered over. {@code CarriedState.banner} is a
+   * {@code TextView}'s text, so a view's CONTENT can be carried state even though the field holding
+   * the view is rendering. Which view's content is also state is not derivable from a type, and a
+   * scan claiming to answer it would assert more than it checks — this file is honest about
+   * covering the mechanical half.
+   */
   private static boolean isRendering(final Field field) {
     return View.class.isAssignableFrom(field.getType())
         || field.getType().getName().startsWith("android.widget")
@@ -85,7 +103,13 @@ public class EveryStripFieldIsClassifiedTest {
       if (field.isSynthetic()) continue;
       // Constants and statics do not belong to an instance and cannot be lost with one.
       if (Modifier.isStatic(field.getModifiers())) continue;
-      if (Modifier.isFinal(field.getModifiers())) continue;
+      // final is NOT a reason to skip. A final field cannot be reassigned; its CONTENTS can still
+      // be state, and the one instance here is the case that matters: mCodeAnimators is a final
+      // List of running ValueAnimators, and a running animator is held by the process-wide
+      // AnimationHandler through a lambda capturing a digit TextView - the exact retention shape a
+      // review round found for the clipboard listener. Skipping finals meant it was listed as
+      // classified and never examined, so removing it from the list failed nothing.
+      if (Modifier.isFinal(field.getModifiers()) && isImmutable(field.getType())) continue;
       if (isRendering(field)) continue;
 
       examined++;
