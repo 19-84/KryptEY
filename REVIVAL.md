@@ -2092,10 +2092,11 @@ Left as a decision with its numbers rather than taken: capping loses history, an
 larger change to the one component on this branch with the worst track record for being changed.
 
 
-**The CI workflow's Lint step has never passed.** The workflow runs four Gradle tasks. Three of them
-are exercised constantly here; `lintDebug` had never been run by anyone, and it fails — in two
-different ways depending on the JDK, which is what makes it worth writing down rather than just
-fixing.
+**~~The CI workflow's Lint step has never passed.~~ Fixed in `5fb0a91`** — Temurin 21 plus a lint
+baseline, after which all four CI tasks pass and lint reports "no new issues". The finding is kept
+because how it was deferred and then undeferred is the useful part. The workflow runs four Gradle
+tasks. Three were exercised constantly here; `lintDebug` had never been run by anyone, and it failed
+in two different ways depending on the JDK.
 
 - **On Temurin 17, the toolchain the image and the workflow both declare, lint crashes.**
   `BidirectionalTextDetector` calls `List.removeLast()`, which is Java 21 API, so lint aborts with
@@ -2123,13 +2124,20 @@ introduced. That was the objection to it — freezing unreviewed findings as app
 apply. The remaining cost is honest and much smaller: lint would then gate *new* problems only, and
 the 100 inherited ones stay recorded rather than fixed.
 
-What is recorded is the measurement, so the choice is made with numbers rather than in the middle of
-a failing pipeline. And the reason it went unnoticed for so long is worth keeping too: three of the
-four CI steps are run here every day, and the fourth had never been run once — a gate nobody executes
-is indistinguishable from a gate that passes.
+Recording the measurement was what made the decision easy, and it was then taken rather than left:
+both objections — that 21 might not work, and that a baseline would freeze unreviewed findings — were
+checked and neither survived. **Deferring is only honest while the thing that makes a decision hard is
+still unmeasured.**
+
+The reason it went unnoticed is worth keeping: three of the four CI steps are run here every day, and
+the fourth had never been run once — a gate nobody executes is indistinguishable from a gate that
+passes.
 
 
-**Nine durable writes are still asserted by nothing.** A review round swept all 18
+**~~Nine durable writes are still asserted by nothing.~~ All closed** — see the disposition table at
+the end of this entry, which was added later and contradicted this headline for two days. A reader
+skimming headlines got the opposite of the truth, which is the risk this list carries by construction:
+it is appended to, and its headlines outlive the work they describe. A review round swept all 18
 `storeAllAccountInformationInSharedPreferences()` call sites in `SignalProtocolMain`, deleting one per
 run: **13 survived**. `reloadAccount` runs on every `setInputView`, so a decision that never reaches
 disk is a decision the next theme change undoes — and the method returns `void` and swallows
