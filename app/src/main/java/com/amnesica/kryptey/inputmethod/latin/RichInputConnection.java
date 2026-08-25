@@ -573,6 +573,15 @@ public final class RichInputConnection {
    * @return whether there is a selection currently active.
    */
   public boolean hasSelection() {
+    // Never, while the user is typing into the strip.
+    //
+    // mExpectedSelStart/End are written only by LatinIME.onUpdateSelection - the host describing
+    // ITS OWN field. The compose box is a plain view inside the IME and reports nothing, so while
+    // an edit is redirected these numbers belong to a field the user is not in, and the messenger
+    // owns them. handleBackspaceEvent branches on this and deletes end-start characters: one
+    // backspace took the whole draft, or an attacker-chosen prefix of a message the user then
+    // encrypted and sent without noticing.
+    if (shouldUseOtherIC) return false;
     return mExpectedSelEnd != mExpectedSelStart;
   }
 
@@ -620,6 +629,17 @@ public final class RichInputConnection {
   }
 
   // TODO
+  /**
+   * Whether edits are currently going to the strip's compose box rather than the host's field.
+   *
+   * <p>Anything that computes an edit from state the HOST reports has to ask this first. The host
+   * is the adversary in this app's threat model, and while this is true it is describing a field
+   * the user is not typing into.
+   */
+  public boolean isUsingOtherIC() {
+    return shouldUseOtherIC;
+  }
+
   public void setShouldUseOtherIC(boolean shouldUseOtherIC) {
     this.shouldUseOtherIC = shouldUseOtherIC;
   }

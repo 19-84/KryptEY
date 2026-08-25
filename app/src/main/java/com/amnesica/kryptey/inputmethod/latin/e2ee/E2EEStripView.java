@@ -1239,8 +1239,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       }
     });
     mInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
-      if (hasFocus) mRichInputConnection.setOtherIC(mInputEditText);
-      mRichInputConnection.setShouldUseOtherIC(hasFocus);
+      if (hasFocus) {
+        mRichInputConnection.setOtherIC(mInputEditText);
+        mRichInputConnection.setShouldUseOtherIC(true);
+      }
+      // Losing focus does NOT send typing back to the host app.
+      //
+      // It used to, and that was the app's central promise broken by one unprivileged call: any
+      // application can call InputMethodManager.showSoftInput, which reaches
+      // LatinIME.onShowInputRequested, whose first statement clears focus on this box. Focus goes,
+      // this listener lowered the flag, and every subsequent keystroke was committed into the
+      // messenger's own EditText in cleartext - with the compose box still on screen holding the
+      // draft, the only visible change being two small buttons disappearing. It also fired with no
+      // adversary at all: opening any other strip screen sets this layout GONE, which clears focus.
+      //
+      // Focus loss is not the user saying "type into the host now". The two things that are - a
+      // send, and the keyboard being dismissed - lower it explicitly.
       changeVisibilityInputFieldButtons(hasFocus);
     });
 
@@ -1539,6 +1553,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * re-implements the body proves only that the copy behaves.
    */
   public void onKeyboardHidden() {
+    // The user is done with this keyboard session, so the next one types into the host until they
+    // choose the compose box again. This and the send path are the only two deliberate lowerings;
+    // see the focus listener for why focus loss is not one.
+    if (mRichInputConnection != null) mRichInputConnection.setShouldUseOtherIC(false);
     clearDecryptedContent();
     forgetAbandonedInvite();
     forgetChosenRecipient();

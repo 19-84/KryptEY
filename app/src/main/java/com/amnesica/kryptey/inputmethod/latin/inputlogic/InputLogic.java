@@ -251,8 +251,15 @@ public final class InputLogic {
     switch (event.mCodePoint) {
       case Constants.CODE_ENTER:
         final EditorInfo editorInfo = getCurrentInputEditorInfo();
-        final int imeOptionsActionId =
-            InputTypeUtils.getImeOptionsActionIdFromEditorInfo(editorInfo);
+        // While the user is composing inside the keyboard, the host does not get to say what Enter
+        // does. This dispatches from the HOST's EditorInfo, which the messenger sets with one
+        // attribute on its own EditText - and every chat app sets one. IME_ACTION_SEND, the common
+        // declaration, made Enter a silent no-op, so the compose box had no working Enter key at
+        // all; IME_ACTION_NEXT made TextView.onEditorAction move focus off it, which is the typing
+        // redirection above reached by a route the app chooses rather than one the attacker pokes.
+        final int imeOptionsActionId = mConnection.isUsingOtherIC()
+            ? EditorInfo.IME_ACTION_NONE
+            : InputTypeUtils.getImeOptionsActionIdFromEditorInfo(editorInfo);
         if (InputTypeUtils.IME_ACTION_CUSTOM_LABEL == imeOptionsActionId) {
           // Either we have an actionLabel and we should performEditorAction with
           // actionId regardless of its value.
