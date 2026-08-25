@@ -5,13 +5,18 @@ been a source of confusion at least once: which JDK, which Android platform, whi
 whether dependency verification was actually on.
 
 ```
-docker build -t kryptey-build:37 -f tools/Dockerfile tools/
+docker build -t kryptey-build:38 -f tools/Dockerfile tools/
 tools/build-in-docker testDebugUnitTest
 ```
 
 ## What is pinned, and why it matters
 
-- **Temurin 17.** libsignal 0.86 and AGP both require it.
+- **Temurin 21.** 17 is the *minimum* AGP and libsignal accept, and this image ran it for a long
+  time. What 17 cannot do is run lint: `BidirectionalTextDetector` calls `List.removeLast()`, a Java
+  21 API, so `lintDebug` aborts with "this is a bug in lint or one of the libraries it depends on"
+  and produces no analysis. The CI workflow runs that task, so its Lint step had never passed once.
+  Verified on 21 before moving: the full suite, `assembleRelease` with the strip gate, and lint
+  itself.
 - **platform android-35**, matching `compileSdk 35`.
 - **build-tools 35.0.0 and 36.0.0.** AGP asks for 36.0.0; the image carried only 35.0.0 for a long
   time, and everyone who touched this repo worked around it by relabelling a copy of the 35.0.0
@@ -53,6 +58,17 @@ failures, release APKs of 9.4 MB and 7.7 MB with the strip gate passing unaided.
 A clone rather than this working tree, deliberately: every earlier cold run mounted the directory it
 was checking, so it proved the dependency story and could not have noticed a build that depended on
 an untracked or ignored file.
+
+## Lint
+
+`lintDebug` runs against `app/lint-baseline.xml`, which holds 100 errors and 503 warnings. Every one
+of them predates this work: 77 are in files the revival never touched, and the other 23 are
+`MissingTranslation` on strings that exist in `master`. So the baseline grandfathers the state the
+project was already in and gates everything new — `Lint found no new issues` is the passing message,
+and a *new* problem fails the build.
+
+Regenerate it with `gradlew updateLintBaseline` deliberately, never to turn a red build green: an
+entry added there is a finding nobody will look at again.
 
 ## What this environment cannot do
 

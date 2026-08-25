@@ -13,6 +13,17 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    lint {
+        // A baseline, not a suppression. lint reports 100 errors and 503 warnings, and NONE of them
+        // are in code this revival wrote - 77 are in files it never touched, and the other 23 are
+        // MissingTranslation on strings that exist in master. So this grandfathers exactly the state
+        // the project was already in, and gates everything new.
+        //
+        // Regenerate deliberately with `gradlew updateLintBaseline`, never to make a red build green:
+        // an entry added here is a finding nobody will see again.
+        baseline = file("lint-baseline.xml")
+    }
+
     buildFeatures {
         buildConfig true
     }

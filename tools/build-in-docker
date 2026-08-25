@@ -5,7 +5,7 @@
 # match gradle/verification-metadata.xml. Pass --dependency-verification=off only for local
 # experiments, never for a build you intend to report on.
 set -e
-IMAGE="${KRYPTEY_IMAGE:-kryptey-build:37}"
+IMAGE="${KRYPTEY_IMAGE:-kryptey-build:38}"
 exec docker run --rm \
   -v "$(git rev-parse --show-toplevel)":/workspace \
   -v kryptey-gradle-cache:/root/.gradle \

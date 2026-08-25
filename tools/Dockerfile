@@ -1,4 +1,15 @@
-FROM eclipse-temurin:17-jdk-jammy
+# Temurin 21, not 17.
+#
+# 17 is what AGP and libsignal require as a MINIMUM, and this image ran it for a long time. What 17
+# cannot do is run lint: BidirectionalTextDetector calls List.removeLast(), which is Java 21 API, so
+# lintDebug aborts with "this is a bug in lint or one of the libraries it depends on" and produces no
+# analysis at all. The CI workflow runs that task, so its Lint step had never passed - and lint's own
+# suggested workaround, disabling that detector, gives up a bidirectional-text spoofing check on an
+# app whose contact names come from peers.
+#
+# Verified on 21 before moving: the full suite (958 tests, 0 failures), assembleRelease including the
+# strip gate, and lint itself.
+FROM eclipse-temurin:21-jdk-jammy
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
