@@ -77,6 +77,26 @@ public final class InputTypeUtils implements InputType {
     return maskedInputType == TEXT_VISIBLE_PASSWORD_INPUT_TYPE;
   }
 
+  /**
+   * Whether the field is a password box of ANY kind - masked or not.
+   *
+   * <p>{@link #isPasswordInputType} deliberately excludes {@code textVisiblePassword}, because it
+   * mirrors {@code TextView.isPasswordInputType}, and the distinction TextView draws is about
+   * whether to paint dots. It is not about whether the content is a secret: a Wi-Fi passphrase box,
+   * a "show password" login, a recovery phrase and a PIN box with a reveal toggle all declare
+   * {@code textVisiblePassword} and are all password boxes.
+   *
+   * <p>So every consumer that cares about the SECRET rather than the masking wants the disjunction,
+   * and all three of this app's did - {@code InputAttributes.mIsPasswordField} and
+   * {@code KeyboardId.passwordInput()} each spelled it out inline, and
+   * {@code LatinIME.onStartInputViewInternal} - the one that gates the E2EE actions - asked only
+   * the narrow half. Three inline copies of a security-relevant disjunction is how the third came
+   * to differ from the other two, so there is one now.
+   */
+  public static boolean isAnyPasswordInputType(final int inputType) {
+    return isPasswordInputType(inputType) || isVisiblePasswordInputType(inputType);
+  }
+
   public static boolean isAutoSpaceFriendlyType(final int inputType) {
     if (TYPE_CLASS_TEXT != (TYPE_MASK_CLASS & inputType)) return false;
     final int variation = TYPE_MASK_VARIATION & inputType;

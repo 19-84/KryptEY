@@ -481,10 +481,19 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     // it would hand a decrypted message to that app's storage, autofill and anything it syncs.
     // Nothing checked this - the strip is inlined into the keyboard, so it appears over every field
     // the keyboard serves.
+    //
+    // isAnyPasswordInputType, not isPasswordInputType. The narrow one mirrors
+    // TextView.isPasswordInputType, whose distinction is whether to paint dots - so it answers
+    // false for textVisiblePassword, which is what a Wi-Fi passphrase box, a "show password"
+    // login, a recovery phrase and a PIN box with a reveal toggle all declare. This app already
+    // treated those as password fields everywhere it did not matter: InputAttributes suppresses
+    // suggestions for them and KeyboardId picks the password layout, both by asking the
+    // disjunction. The one place it decides whether a key bundle or a decrypted message may be
+    // typed into the field asked the half that says no.
     if (mE2EEStripView != null) {
       mE2EEStripView.setHostFieldIsPassword(editorInfo != null
           && com.amnesica.kryptey.inputmethod.latin.utils.InputTypeUtils
-              .isPasswordInputType(editorInfo.inputType));
+              .isAnyPasswordInputType(editorInfo.inputType));
     }
 
     // Switch to the null consumer to handle cases leading to early exit below, for which we

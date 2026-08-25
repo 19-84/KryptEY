@@ -282,6 +282,34 @@ public class PasswordFieldButtonStateTest {
   }
 
   /**
+   * And the messenger must not be able to erase the notice with a clipboard event.
+   *
+   * <p>The other direction of the same coupling, and the one left open. {@code
+   * mayOverwriteInfoBanner} refuses a passive, messenger-driven banner write over an unreadable
+   * store and over a standing warning, and the password-field notice is neither - so one copy takes
+   * the banner from "Encryption and decryption are turned off here" to "Keybundle detected: click
+   * on decrypt to save the content", while decrypt is refused and the button is correctly dark.
+   *
+   * <p>Both halves are the messenger's to arrange and neither needs a forged anything: it declares
+   * the inputType of every field it presents, and it is the foreground app, so it owns the
+   * clipboard. Copy-then-paste is this app's own workflow, so the copy is the ordinary next gesture
+   * rather than an unusual one - and after it the strip's only lasting surface tells the user to
+   * press a button that will refuse, with no remaining trace of why.
+   */
+  @Test
+  public void aclipboardEventMustNotEraseThePasswordFieldNotice() {
+    ime.onStartInputView(passwordField(), false);
+    ShadowLooper.idleMainLooper();
+    assertTrue("precondition: the notice is on the banner. Shown: " + banner(),
+        E2EEStripView.INFO_PASSWORD_FIELD.equals(banner()));
+
+    liveStrip().onClipboardChangedForTest();
+
+    assertEquals("the notice explains a refusal that is still in force, and a clipboard event is "
+            + "not the user leaving the field", E2EEStripView.INFO_PASSWORD_FIELD, banner());
+  }
+
+  /**
    * The guard must hold when the banner is not the strip's to write.
    *
    * <p>{@code setHostFieldIsPassword} posts its notice through {@code setInfoUnlessWarned}, which

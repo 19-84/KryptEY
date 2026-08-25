@@ -209,8 +209,30 @@ public final class RichInputConnection {
    */
   public boolean resetCachesUponCursorMoveAndReturnSuccess(final int newSelStart,
                                                            final int newSelEnd) {
-    mExpectedSelStart = newSelStart;
-    mExpectedSelEnd = newSelEnd;
+    // Ordered, because these two numbers are the host's and nothing else checks them.
+    //
+    // This is the ONLY place mExpectedSelStart/End are written from outside: EditorInfo's
+    // initialSelStart/End arrive here at the start of an input session, and onUpdateSelection
+    // arrives here for every later move. onUpdateSelection is delivered verbatim from
+    // InputMethodManager.updateSelection, an unprivileged call whose integers the calling app
+    // picks - so in this app's threat model both are attacker-chosen.
+    //
+    // Reversed is not exotic and must not be refused: dragging a selection backwards leaves
+    // stop < start in a perfectly ordinary TextView, and hasSelection() is (end != start), which
+    // such a pair satisfies. What must not survive is the SUBTRACTION downstream:
+    // handleBackspaceEvent and performRecapitalization both compute end - start and hand it to
+    // deleteTextBeforeCursor as a character count, where it becomes
+    // mComposingText.setLength(length - beforeLength) - so a negative count sizes a
+    // service-lifetime buffer with a number the messenger sent, and at Integer.MAX_VALUE that is
+    // an OutOfMemoryError out of one key press. An Error, so none of the catch (Exception)
+    // handlers this branch added stops it, and the input-method process dies in whatever app the
+    // user is typing in.
+    //
+    // Normalising here rather than at those two call sites: they are the two that exist today,
+    // the invariant belongs to the pair rather than to either reader, and a backwards drag still
+    // deletes exactly the characters it selected.
+    mExpectedSelStart = Math.min(newSelStart, newSelEnd);
+    mExpectedSelEnd = Math.max(newSelStart, newSelEnd);
     mComposingText.setLength(0);
     final boolean didReloadTextSuccessfully = reloadTextCache();
     if (!didReloadTextSuccessfully) {

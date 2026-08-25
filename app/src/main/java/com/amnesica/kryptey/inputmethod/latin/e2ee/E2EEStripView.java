@@ -1496,6 +1496,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       showAddContactView(messageEnvelope);
     } else {
       setChosenContact(sender);
+      // This arm pins too, and the sender decides which arm the envelope takes.
+      //
+      // The javadoc below used to say the plain signal-message arm carries no bundle "so nothing is
+      // pinned there". SignalProtocolMain.decrypt's own comment says the opposite, and it is the
+      // one that is right: "a PreKeySignalMessage carries its own identity key and needs no
+      // attached bundle". decrypt takes its PREKEY_TYPE arm on the envelope's ciphertextType alone
+      // and calls sessionCipher.decrypt(preKeySignalMessage), which trust-on-first-use pins that
+      // key whenever the address holds none - and holding none is precisely what a completed
+      // rejection leaves behind: rejectContactKey removes the identity AND the session, keeping the
+      // contact row.
+      //
+      // So an attacker who omits the bundle reached the same pin, at the same rejected address,
+      // through the one arm of the three that never asked. getMessageType reads field presence and
+      // nothing else, so choosing the arm costs them nothing.
+      //
+      // Asked of the ciphertext type rather than unconditionally: a WHISPER_TYPE message pins
+      // nothing, and after a rejection it cannot decrypt either, because the session went with the
+      // key. A sender who declares PREKEY_TYPE over other bytes gets a warning on a message that
+      // then fails to decrypt, which is the safe direction.
+      if (messageEnvelope.getCiphertextType()
+          == org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE) {
+        warnIfKeyWasRejected(sender);
+      }
       setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
@@ -1525,8 +1548,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * Posts the post-rejection warning when a key is about to be pinned at an address the user told
    * the app was wrong. Returns whether it fired.
    *
-   * <p>Deliberately not called from the plain signal-message arm above it: that path carries no
-   * bundle, so nothing is pinned there and a warning would be noise on an ordinary message.
+   * <p>Called from all three arms. The plain signal-message arm asks it only for an envelope
+   * declaring {@code PREKEY_TYPE}, because that is the one that pins - see the comment at that call
+   * site. An earlier version of this sentence said that arm carried no bundle "so nothing is pinned
+   * there", which is the premise {@code SignalProtocolMain.decrypt} contradicts in its own comment,
+   * and it was the premise an attacker only had to omit a field to use.
    */
   private boolean warnIfKeyWasRejected(final Contact sender) {
     if (sender == null) return false;
@@ -1797,6 +1823,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   boolean mayOverwriteInfoBanner() {
     if (storageIsUnreadable() || mWarningStanding) {
       Log.i(TAG, "A security warning is on screen; leaving it in place");
+      return false;
+    }
+    // Nor over the password-field notice, which is a live refusal rather than a stale line.
+    //
+    // The two conditions above are the two the strip already refused to paint over. This is the
+    // third and it was missed, in the direction opposite to the one the button gate closed: there,
+    // the notice turned the buttons ON by announcing they were off; here, a clipboard event takes
+    // the banner from "Encryption and decryption are turned off here" to "Keybundle detected: click
+    // on decrypt to save the content" while decrypt is still refused and the button correctly dark.
+    //
+    // Both halves belong to the messenger and neither is exotic: it declares the inputType of every
+    // field it presents, and as the foreground app it owns the clipboard. Copy-then-paste is this
+    // app's own workflow, so the copy is the next gesture rather than an unusual one.
+    //
+    // Nothing is wedged by this: the notice is taken down by setHostFieldIsPassword(false) when the
+    // user moves to an ordinary field, which repaints from the model, and this goes back to true
+    // with it.
+    if (mHostFieldIsPassword) {
+      Log.i(TAG, "The password-field notice is on screen; leaving it in place");
       return false;
     }
     return true;

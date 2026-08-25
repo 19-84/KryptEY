@@ -76,6 +76,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A guard that was false on exactly the path that needed it](#a-guard-that-was-false-on-exactly-the-path-that-needed-it)
 - [A record kept, and never shown on the route that matters](#a-record-kept-and-never-shown-on-the-route-that-matters)
 - [A decision read from rendered text](#a-decision-read-from-rendered-text)
+- [What the adversary gets to declare](#what-the-adversary-gets-to-declare)
 - [An unchecked throw out of a click listener kills the keyboard](#an-unchecked-throw-out-of-a-click-listener-kills-the-keyboard)
 - [The text is a security surface, and it had never been read as one](#the-text-is-a-security-surface-and-it-had-never-been-read-as-one)
 - [The help offered a choice the app does not](#the-help-offered-a-choice-the-app-does-not)
@@ -1494,6 +1495,42 @@ logic that decides whether stored data is readable at all.
 Nothing survived. **33 guards across seven areas, one survivor** — with the caveat that still stands:
 this measures the guards someone thought to disarm, and every real defect on this branch came from a
 reviewer asking a question nobody had asked.
+
+
+## What the adversary gets to declare
+
+The round that found this **died mid-run** — stalled with no progress, its last line "Now the
+password-predicate fix", no report, no reasoning, no control numbers. Its worktree held six modified
+production files and three new test classes. Everything below was verified here from scratch: eight
+of its eleven tests fail at unmodified HEAD, and each fix was reviewed and controlled independently.
+
+**A visible password field did not arm the guard.** `isPasswordInputType` mirrors
+`TextView.isPasswordInputType`, whose distinction is *whether to paint dots* — so it answers false for
+`textVisiblePassword`, which is what a Wi-Fi passphrase box, a "show password" login, a recovery
+phrase and a PIN box with a reveal toggle all declare. This app already treated those as password
+fields everywhere it did not matter: `InputAttributes` suppresses suggestions for them,
+`KeyboardId` picks the password layout, both by spelling out the disjunction inline. **The one place
+that decides whether a key bundle or a decrypted message may be typed into the field asked the half
+that says no.** Three inline copies of a security-relevant disjunction, and the third differed; there
+is one predicate now.
+
+**A hostile selection could kill the keyboard.** `onUpdateSelection` is delivered verbatim from
+`InputMethodManager.updateSelection`, an unprivileged call whose integers the host app picks, and
+`EditorInfo.initialSelStart/End` arrive by the same route. A reversed pair is not exotic — dragging a
+selection backwards produces one in an ordinary TextView — but downstream `handleBackspaceEvent` and
+`performRecapitalization` both compute `end - start` and pass it as a character count, reaching
+`mComposingText.setLength(length - beforeLength)`. A negative count sizes a service-lifetime buffer
+with a number the messenger chose, and at `Integer.MAX_VALUE` that is an `OutOfMemoryError` from one
+key press — an **`Error`**, so none of the `catch (Exception)` handlers this branch added stops it.
+Normalised at the single write point, because the invariant belongs to the pair rather than to either
+reader, and a backwards drag still deletes exactly what it selected.
+
+**And a fix from an earlier round rested on a false premise — mine.** Its comment said the plain
+signal-message arm "carries no bundle, so nothing is pinned there". `SignalProtocolMain.decrypt`'s own
+comment says the opposite and is right: a `PreKeySignalMessage` carries its own identity key and needs
+no attached bundle. So an attacker who simply **omits a field** reached the same pin, at the same
+rejected address, through the one arm of three that never asked. `getMessageType` reads field presence
+and nothing else, so choosing that arm costs them nothing.
 
 
 ## The one structural lesson from the review rounds
