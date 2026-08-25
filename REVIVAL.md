@@ -484,13 +484,33 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
 
 ## Settled
 
-- **APK size accepted** at 115.1 MB (arm64) / 109.2 MB (armeabi-v7a), re-measured at `fc83fc9` from
-  the cold build above. libsignal 0.86 is ~74 MB of native code per ABI; that is the cost of PQXDH.
-  The previously recorded 114/108 was close but stale — these are debug APKs and the figure drifts
-  with the code, so it is dated rather than absolute.
+- ~~**APK size accepted** at 115.1 MB (arm64) / 109.2 MB (armeabi-v7a)~~ — **withdrawn: the size was
+  accepted on a false premise, and about 90% of it was avoidable.** The entry said "libsignal 0.86 is
+  ~74 MB of native code per ABI; that is the cost of PQXDH". None of the three claims survives
+  measurement:
+
+  - **42.6 MB was not libsignal's Android library at all.** The jar carries libsignal's *desktop*
+    builds — macOS `.dylib` and Windows `.dll`, each in a normal and a `_testing_` flavour — at its
+    root, as java resources rather than `jniLibs`, so the existing `jniLibs` exclusion never saw
+    them. Excluded in `521eb74`: arm64 115 → 74 MB, armeabi-v7a 109 → 68 MB, on every build host.
+  - **Of the 74 MB that remains, 64.2 MB is DWARF debug information**, not code. `.debug_str` alone
+    is 43.8 MB against a `.text` of **4.7 MB**. AGP's `stripReleaseDebugSymbols` runs and prints
+    *"Unable to strip … packaging them as they are"* because the build image has no NDK; a host with
+    one strips automatically and lands near 10 MB.
+  - **So "the cost of PQXDH" is roughly 10 MB, not 115.** The decision to accept 115 was reasonable
+    given the premise and the premise was never checked.
+
+  What makes this worth writing at length is not the megabytes. A *settled* entry is one nobody
+  looks at again, and this one closed off the question with a plausible technical reason — the
+  binary really is large, PQXDH really does cost native code — so every later reader had an
+  explanation to accept rather than a number to test. It was found only by opening the APK while
+  verifying an unrelated claim. **A settled decision inherits the accuracy of the measurement it
+  was settled on, and nothing re-checks it.**
 - **Invite threshold accepted** at 4096 characters, up from 500. A PQXDH bundle is 2484 and
   irreducible (Kyber-1024 is 87% of it, and key material does not compress). Clears Telegram and
-  above; does not fit SMS, but neither did 500.
+  above; does not fit SMS, but neither did 500. *Re-checked while withdrawing the entry above:*
+  `CHAR_THRESHOLD_PRE_KEY_RESPONSE` is 4096, the bundle is a fixed 2484, the margin is 1612, and
+  `PreKeyBundleSizeTest` pins all three. This one is exactly as recorded.
 
 ## Open
 
