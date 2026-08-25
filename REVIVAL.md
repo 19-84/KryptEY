@@ -1084,6 +1084,50 @@ one test, and for a parser that is often correct — the assertion is "this inpu
 there is one way to say it. What would be worth acting on is a zero, and there are none here.
 
 
+## A guard that was false on exactly the path that needed it
+
+The sharpest instance yet of "correct code at the wrong moment", and the one worth keeping as a
+pattern. `getPreKeyBundle` persisted the account **inside** `if (!containsKyberPreKey(active))` — the
+branch that lazily mints a Kyber key for pre-upgrade accounts. The comment on that persist states the
+hazard exactly: *"if the private half is still only in memory when the keyboard is dismissed,
+reloadAccount() replaces the account from disk and the key is gone."*
+
+Once a month `refreshSignedPreKeyIfNecessary` rotates the signed pre key and, inside
+`rotateSignedPreKey`, the Kyber pre key with it. By the time the guard is evaluated the store already
+holds the active Kyber id, so the branch is **skipped** — and the bundle carrying both freshly
+rotated public halves leaves with neither private half on disk. `reloadAccount` runs on every
+`setInputView`: a theme flip, a rotation, the next raise at all.
+
+What the user gets: after the first month, the first invite they send produces a contact whose first
+message can never be decrypted. The app's advice is to ask for a fresh invite — which rotates again
+and loses again. The messenger decides when configuration changes happen, so it can force the reload
+whenever it likes.
+
+**The pattern to carry forward:** the code was present, correct, reached, and documented with the
+exact failure it prevents. What was wrong was the *condition around it*, and it excluded precisely
+the case the comment described. A reviewer reading that method sees a persist call with a
+well-argued comment and moves on; only asking "when is this guard false?" finds it. Mutation finds it
+too, because deleting the call changes nothing on the path that already skips it.
+
+## Phase 4's trust predicates, swept and clean
+
+Companion to the Phase 3 parser sweep, same method — every guard disarmed one at a time against the
+full suite:
+
+| guard removed | result |
+|---|---|
+| TOFU pin defeated — `isTrustedIdentity` returns true always | killed (49 tests) |
+| a displaced key silently replaces the pin | killed (3) |
+| an identity change is never recorded, so no warning fires | killed (50) |
+| `acceptIdentityChange` ignores which key the user was shown | killed (4) |
+| a rejection is never remembered | killed (10) |
+| a deleted contact's display name is never retired | killed (15) |
+
+Nothing survived. The two headline numbers are the ones to read: defeating trust-on-first-use fails
+49 tests and losing the pending-change record fails 50, which is what it should look like for the
+two properties the whole trust model rests on.
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
