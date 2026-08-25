@@ -773,6 +773,48 @@ passing test that the recipient, the visible screen and the add-contact envelope
 to lose, because a carried draft cannot reach the wrong person — re-choosing anyone is a change from
 null, and `setChosenContact` empties the box on any change.
 
+**Round four found the frame itself was wrong: nothing is lost, it is orphaned.** The discarded
+strip registers a process-wide clipboard listener in its constructor that nothing ever removed, and
+`RichInputConnection.mOtherIC` — created once, for the life of the service — went on wrapping its
+compose box whenever the redirect was down. So the view that "goes away" is retained for the life of
+the process, still holding the entire decrypted conversation in its chat-log adapter, a safety number
+in the verify screen, and the contact list; and still running `EnvelopeCodec.fromWire` on
+messenger-chosen bytes every time the clipboard changes, once per rebuild. Every clearing path the
+app has runs on the LIVE strip, so none of them can reach it. Round three asked "is the chat-log
+screen safe to lose?" and answered yes. The true answer is that it is not lost.
+
+`surrenderState` now performs the same last rites the dismissal path performs — clear the decrypted
+content, reset the add-contact fields, blank the fingerprint digits — plus the two things that kept
+the view alive: unregister the clipboard listener, and hand the connection a null `otherIC`. And the
+carried warning is no longer written over one the rebuild itself raised: `refreshOpeningMessage` can
+raise `INFO_STORAGE_UNREADABLE`, and overwriting it wiped "do NOT re-invite anyone" *and*, because
+button state is derived from the banner text, flipped encrypt and decrypt back on for an install
+whose account cannot be decrypted.
+
+**Named work, not yet done.** The reviewer's argument for why enumeration cannot converge is
+convincing and is recorded here rather than acted on inside a review round:
+
+1. *Six of the things a rebuild loses are not fields at all* — they live in an `Editable`, two
+   `ListAdapter`s, twelve `TextView`s, a lambda's captured `MessageEnvelope`, two `isEnabled` flags
+   derived from a `TextView`'s text, and six visibilities. Reading the field list cannot produce
+   them, so "which fields are safe to lose" was never the whole question.
+2. *Collect the non-view state into one `State` object* so the recurring question stops being "did
+   you remember to add it to `CarriedState`?" — which has no mechanical answer — and becomes "is this
+   state or rendering?", which does.
+3. *Derive the warning instead of carrying it.* `hasUnacceptedIdentityChange`, `storageState()` and
+   the current `EditorInfo` all outlive the view. Storing "a warning is on screen" as a boolean plus
+   a rendered string is why ranking two warnings happens implicitly, by whoever writes the `TextView`
+   last. `Warning { Kind kind; SignalProtocolAddress about; }` re-rendered on rebuild makes that
+   collision impossible by construction.
+4. *Move user-intent state to service scope* — a small session object beside `InputLogic`, which the
+   strip renders and mutates but does not own. Roughly 25 mechanical call sites in one file. The real
+   cost is that the strip fuses state and rendering today (`setChosenContact` clears the compose box;
+   `setWarningMessage` writes a view *and* sets a flag), so every moved field needs its render side
+   split out, and getting that split wrong is a fresh way to lose a warning.
+
+Deliberately deferred rather than attempted mid-round, for the reason the history above demonstrates:
+changing this code under pressure to close a finding is how each round introduced the next one.
+
 **Clearing on rebuild is the wrong fix**, and the round that found it said so about its own control:
 clearing lowers the redirect, so the next keystroke after a rotation goes into the messenger's field
 in plaintext — a residue defect traded for a disclosure one. State is carried instead, which is also

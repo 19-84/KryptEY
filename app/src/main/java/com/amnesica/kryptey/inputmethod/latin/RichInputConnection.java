@@ -646,7 +646,13 @@ public final class RichInputConnection {
 
   // TODO
   public void setOtherIC(TextView textView) {
-    if (textView == null) return;
+    // null clears it. This connection lives for the life of the service and the view it wrapped
+    // lives for the life of a configuration change, so without a way to let go it pinned every
+    // strip the app had ever built - each holding a decrypted conversation.
+    if (textView == null) {
+      mOtherIC = null;
+      return;
+    }
     mOtherIC = new E2EEInputConnection(textView);
   }
 }

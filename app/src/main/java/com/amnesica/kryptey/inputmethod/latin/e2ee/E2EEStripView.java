@@ -903,9 +903,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mInfoTextView.setOnClickListener(v -> resetChosenContactAndInfoText());
   }
 
+  /** Held so the view can be unregistered when it is discarded. See releaseClipboardListener. */
+  private ClipboardManager.OnPrimaryClipChangedListener mClipboardListener;
+
   private void initClipboardListenerToChangeStateOfDecryptButton() {
     final ClipboardManager clipboardManager = (ClipboardManager) this.getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-    clipboardManager.addPrimaryClipChangedListener(() -> {
+    mClipboardListener = () -> {
       try {
         String item = null;
         boolean isHTML = false;
@@ -967,7 +970,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // whole input-method process down, in every app, on an ordinary copy.
         Log.e(TAG, "Unexpected failure inspecting the clipboard", e);
       }
-    });
+    };
+    clipboardManager.addPrimaryClipChangedListener(mClipboardListener);
   }
 
   /**
@@ -1758,7 +1762,41 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
-  /** Takes what must survive, and empties this view so nothing is left behind on it. */
+  /**
+   * Unregisters this view from the process-wide clipboard.
+   *
+   * <p>The listener is added in the constructor and nothing ever removed it, so every rebuild left
+   * another one attached to the same {@code ClipboardManager}. That is what turned "the discarded
+   * strip is garbage" into "the discarded strip is retained for the life of the process, and still
+   * runs {@code EnvelopeCodec.fromWire} on messenger-chosen bytes every time the clipboard
+   * changes" - once per rebuild, and the messenger picks how many rebuilds happen.
+   */
+  private void releaseClipboardListener() {
+    if (mClipboardListener == null) return;
+    final ClipboardManager clipboardManager =
+        (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+    if (clipboardManager != null) {
+      clipboardManager.removePrimaryClipChangedListener(mClipboardListener);
+    }
+    mClipboardListener = null;
+  }
+
+  /**
+   * Takes what must survive, and leaves nothing behind on this view.
+   *
+   * <p>An earlier version of this method emptied the compose box and stopped, with a javadoc saying
+   * it left nothing behind. That was false in a way that mattered: the chat-log adapter still held
+   * the entire decrypted conversation, the verify screen still held a safety number, and the
+   * contact list still held who the user talks to - on a view that no clearing path can reach any
+   * more, because every one of them runs on the LIVE strip. {@code clearDecryptedContent}'s own
+   * javadoc argues that leaving the chat-log screen is not enough because the plaintext would be
+   * "one button-press away"; on an orphaned view it is not even that, which is worse rather than
+   * better.
+   *
+   * <p>So the outgoing view gets the same treatment the keyboard being dismissed gives it, plus the
+   * two things that keep it alive at all: the clipboard registration, and the input connection's
+   * reference to its compose box.
+   */
   public CarriedState surrenderState() {
     final CharSequence draft = mInputEditText == null ? "" : mInputEditText.getText().toString();
     final boolean wasComposing = mRichInputConnection != null
@@ -1766,7 +1804,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final CharSequence banner =
         mInfoTextView == null ? "" : mInfoTextView.getText().toString();
 
+    // The same last rites the dismissal path performs, on a view that is about to become
+    // unreachable rather than merely hidden.
+    clearDecryptedContent();
+    resetAddContactInputTextFields();
+    clearFingerprintViews();
+    releaseClipboardListener();
     if (mInputEditText != null) mInputEditText.setText("");
+    // And stop the service-lifetime connection pointing at this view's compose box. adoptState
+    // re-points it when the redirect was up; when it was down nothing did, so the connection went
+    // on holding the discarded box - and through its parent chain, the whole discarded strip.
+    if (mRichInputConnection != null) mRichInputConnection.setOtherIC(null);
+
     return new CarriedState(draft, wasComposing, banner, mWarningStanding,
         mHostFieldIsPassword, encodingMethod);
   }
@@ -1805,7 +1854,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     //
     // An ordinary banner is worth nothing across a rebuild anyway: whatever the new strip computes
     // for itself is at least current.
-    if (carried.warningStanding) {
+    // Not over a warning this rebuild has already raised.
+    //
+    // refreshOpeningMessage runs first and can raise INFO_STORAGE_UNREADABLE - through
+    // setWarningMessage, so it sets the flag too. Overwriting it with a carried identity warning
+    // wiped "do NOT re-invite anyone until you have checked this", and because the button state is
+    // derived from the banner TEXT, it also flipped encrypt and decrypt back to enabled on an
+    // install whose account cannot be decrypted. mayOverwriteInfoBanner then refuses forever,
+    // because storage really is unreadable, so the storage line could never come back.
+    //
+    // The previous round fixed exactly this collision for ordinary banners and introduced it again
+    // in the branch it added for warnings.
+    if (carried.warningStanding && !mWarningStanding) {
       setWarningMessage(String.valueOf(carried.banner));
     }
 
