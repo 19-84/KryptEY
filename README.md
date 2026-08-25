@@ -24,7 +24,7 @@ E2EE such as PGP. However, these methods are sometimes cumbersomely integrated a
 effort to use.
 
 KryptEY is an Android keyboard that implements the Signal protocol. The keyboard works
-messenger-independently and both the X3DH Key Agreement Protocol and the Double Ratchet Algorithm
+messenger-independently and both the PQXDH Key Agreement Protocol and the Double Ratchet Algorithm
 work without a server, thus it enables a highly independent use of the protocol.
 
 ## Screenshots
@@ -88,10 +88,24 @@ Read our privacy statement [here](/PRIVACY.md)
 
 The existing security properties for the Signal Protocol are also valid for the keyboard.
 
-The elliptic curve X25519 with SHA-512 is used in the X3DH Key Agreement Protocol from the applied
-Signal library. The hash function SHA-256 is used for the various chains and AES-256 with CBC (
-Pkcs#7) is used for the encryption of the messages. SHA-512 is also used to generate the
-fingerprint, the representation of the public key used for encryption.
+**Key agreement is PQXDH**, the post-quantum variant, using libsignal 0.86.5. Each handshake combines
+the elliptic curve X25519 with a Kyber-1024 key encapsulation, so an attacker who records traffic
+today and gains a quantum computer later still cannot derive the session key. Earlier versions of
+this app used X3DH, which is X25519 alone. The distinction is invisible from the outside — an X3DH
+session establishes and carries messages identically — so the app asserts the negotiated session
+version rather than assuming it.
+
+The hash function SHA-256 is used for the various chains and AES-256 with CBC (Pkcs#7) is used for
+the encryption of the messages. SHA-512 is also used to generate the fingerprint, the representation
+of the public key used for encryption — the "security number" the two of you compare.
+
+**Keys at rest are encrypted.** The identity key, sessions and pre-keys are sealed with AES-256-GCM
+under a key held in the Android Keystore, which never leaves the device's secure hardware where the
+device provides it. Earlier versions stored this material in cleartext.
+
+Comparing security numbers by voice is what establishes that the key you hold is your chat partner's
+rather than one the messenger supplied, and it is the only step that does. The app asks for it and
+explains why in its own help.
 
 ## Limitations
 

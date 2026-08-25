@@ -93,6 +93,7 @@ android {
         // and replays the last result. That already cost two controls on this branch which reported
         // "survived" against a test that was biting correctly.
         inputs.file('../REVIVAL.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {
