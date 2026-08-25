@@ -136,7 +136,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     chosenContact = contact;
     if (changed && mInputEditText != null && mInputEditText.getText().length() > 0) {
       Log.i(TAG, "Recipient changed; clearing the staged message");
-      mInputEditText.setText("");
+      clearComposeFieldAndCaches();
     }
   }
 
@@ -1484,7 +1484,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   public void clearDecryptedContent() {
     if (mInputEditText != null && mInputEditText.getText().length() > 0) {
-      mInputEditText.setText("");
+      clearComposeFieldAndCaches();
     }
 
     // The compose field is not the only thing rendering plaintext.
@@ -1707,18 +1707,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mE2EEStrip.clearClipboard();
   }
 
+  /**
+   * Empties the compose box AND the keyboard's own copy of what was in it.
+   *
+   * <p>One helper because the same defect has now been found three times on three different
+   * buttons. While typing is redirected into the strip, the IME's caches fill with the draft - that
+   * is what they are for - and every path that clears the visible box had to remember to clear them
+   * too. Dismissal remembered; send did not, then clear did not, and a recipient change and the
+   * password-field guard did not either. A rule that has to be remembered at five call sites is not
+   * a rule, so the two operations are one operation.
+   */
+  private void clearComposeFieldAndCaches() {
+    if (mInputEditText != null) mInputEditText.setText("");
+    if (mRichInputConnection != null) mRichInputConnection.forgetCachedText();
+  }
+
   /** The clear button's real path, for tests. */
   void clearUserInputStringForTest() {
     clearUserInputString();
   }
 
   private void clearUserInputString() {
-    if (mInputEditText != null) mInputEditText.setText("");
-    // And the keyboard's own copy. The send path learned this first; this is its sibling, reached
-    // by a user who types a message and changes their mind. Clearing what is on screen while the
-    // IME's caches - on an object that lives as long as the service - still hold the words is the
-    // same defect with a different button on it.
-    if (mRichInputConnection != null) mRichInputConnection.forgetCachedText();
+    clearComposeFieldAndCaches();
   }
 
   private void changeVisibilityInputFieldButtons(boolean shouldBeVisible) {

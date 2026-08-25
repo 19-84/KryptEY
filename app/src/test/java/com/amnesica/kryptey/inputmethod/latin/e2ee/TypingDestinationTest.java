@@ -291,4 +291,56 @@ public class TypingDestinationTest {
             + bufferField(connection, "mTempObjectForCommitText"),
         bufferField(connection, "mTempObjectForCommitText").toString().contains(SECRET));
   }
+
+  private boolean keyboardStillHolds(final String text) throws Exception {
+    return bufferField(connection, "mCommittedTextBeforeComposingText").toString().contains(text)
+        || bufferField(connection, "mTempObjectForCommitText").toString().contains(text);
+  }
+
+  /**
+   * Every path that empties the compose box empties the keyboard's copy with it.
+   *
+   * <p>Written as one assertion over all the paths rather than one test per button, because the
+   * one-test-per-button version is how this got missed three times. Dismissal cleared the caches
+   * from the start; send did not, then the clear button did not, and a recipient change and the
+   * password-field guard did not either — each found separately, by someone asking "what else ends
+   * a message's life?" and remembering to ask. A test shaped like the question catches the sixth
+   * path without anyone having to think of it.
+   *
+   * <p>If a new way to empty the box is added and this fails, the fix is to route it through
+   * {@code clearComposeFieldAndCaches} rather than to add a case here.
+   */
+  @Test
+  public void everyPathThatEmptiesTheComposeBoxEmptiesTheKeyboardsCopy() throws Exception {
+    final java.util.Map<String, Runnable> paths = new java.util.LinkedHashMap<>();
+    // First, while no recipient has been chosen yet, so choosing one is genuinely what clears the
+    // box rather than a path that ran before it. This one was missing from the first version of
+    // this list, and the control caught that - which is the same lesson the test itself is about.
+    paths.put("choosing a recipient", () -> strip.selectContact(
+        new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
+            "Bob", "Jones", "a-peer-address", 7, false)));
+    paths.put("the clear button", () -> strip.clearUserInputStringForTest());
+    paths.put("the keyboard being dismissed", () -> strip.onKeyboardHidden());
+    paths.put("focusing a password field", () -> strip.setHostFieldIsPassword(true));
+    paths.put("dismissing decrypted content", () -> strip.clearDecryptedContent());
+
+    for (final java.util.Map.Entry<String, Runnable> path : paths.entrySet()) {
+      strip.setHostFieldIsPassword(false);
+      // Focus must be re-taken, not merely still held: the listener is what raises the redirect,
+      // and a view that never lost focus fires no focus-change event. Without this the loop's
+      // later iterations quietly typed into the host and measured nothing.
+      compose.clearFocus();
+      assertTrue(compose.requestFocus());
+      connection.commitText(SECRET, 1);
+      assertTrue("precondition for " + path.getKey() + ": the draft must be staged first",
+          keyboardStillHolds(SECRET));
+
+      path.getValue().run();
+
+      assertEquals("after " + path.getKey() + ", the visible draft must be gone", "",
+          compose.getText().toString());
+      assertFalse("after " + path.getKey() + ", the keyboard must not still hold the plaintext",
+          keyboardStillHolds(SECRET));
+    }
+  }
 }
