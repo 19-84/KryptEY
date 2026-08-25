@@ -844,6 +844,17 @@ Recorded so the next round does not spend itself re-deriving them.
   and the `Log` calls are not in the APK. That was already true; what was missing was anything
   stopping one character from changing it, in files nobody in this revival had had reason to open.
   `DebugLoggingStaysOffTest` now asserts it over the whole source tree rather than a hand-kept list.
+- **The suite does not depend on test-order state leakage**, checked rather than assumed. This
+  project shares one singleton across every test, with static seams on it (`testIsRunning`,
+  `storageStateForTest`, `storageHelperFactory`), and only 24 of ~112 classes call `resetForTest`.
+  All four classes that force a storage state leave it set. So a test passing because a previous
+  class left something behind was a live possibility, and one that passes for a borrowed reason is
+  indistinguishable from one that passes on its merits. Ran the whole suite with `forkEvery = 1`,
+  every class in a fresh JVM: **796 tests, zero failures, identical to the shared-JVM run**. The
+  flag is kept as `-Dkryptey.isolateClasses=true` so the check is repeatable rather than a one-off
+  someone has to reconstruct; it costs about seven minutes against under two, because JVM start
+  dominates.
+
 - **The messenger picks the compose box's shift state.** `InputLogic.getCurrentAutoCapsState` reads
   `getCurrentInputEditorInfo().inputType` — the HOST's — to decide auto-capitalisation, and goes on
   doing so while the user is typing into the strip. So an app that declares

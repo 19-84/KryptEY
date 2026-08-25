@@ -60,6 +60,22 @@ android {
             all {
                 systemProperty 'kryptey.writeFixtures',
                         System.getProperty('kryptey.writeFixtures', 'false')
+
+                // -Dkryptey.isolateClasses=true --rerun-tasks runs every test class in a fresh JVM.
+                //
+                // This suite shares a singleton with static test seams - testIsRunning,
+                // storageStateForTest, storageHelperFactory - and only 24 of its ~112 classes call
+                // resetForTest. State left set by one class is therefore visible to the next, and a
+                // test that passes because of it is indistinguishable from one that passes on its
+                // own merits. Isolation makes that leak impossible, so a difference between the two
+                // runs is exactly the set of tests that were relying on it.
+                //
+                // Opt-in because it costs about seven minutes against under two: the JVM start
+                // dominates. Worth running when tests start passing for reasons that are not
+                // obvious.
+                if (System.getProperty('kryptey.isolateClasses') == 'true') {
+                    forkEvery = 1
+                }
             }
         }
     }
