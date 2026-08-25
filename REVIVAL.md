@@ -467,9 +467,28 @@ The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` �
    transfer needs none. *Not* on this list any more: UI for accepting an identity change. That is
    now a decision rather than a gap — the exit is discard via deletion, and adopt-in-place stays
    unavailable on purpose.
-2. **A screen showing the offered safety number beside the pinned one.** `getPendingIdentity`
-   supplies it. Until it exists, no warning text should ask the user to check "their new number" —
-   they cannot see it. The strings were corrected accordingly.
+2. ~~**A screen showing the offered safety number beside the pinned one.**~~ **Blocked, and on
+   purpose — it should not be built while adopt-in-place stays unavailable.** The mechanism is
+   trivial: `getPendingIdentity` supplies the offered key and `createFingerprint` would need only to
+   take the remote identity as a parameter rather than reading the pin. What stops it is the
+   question the screen would put to the user.
+
+   Today the model is coherent. The warning says *"It was refused and is not in use — your messages
+   still go to the key you already had. Open them in your contact list and compare the number."* The
+   number on that screen is the **pinned** one, the user can see it, comparing it confirms the key
+   actually in use, and confirming dismisses whatever someone else offered. Every part of that
+   agrees with every other part.
+
+   Showing the offered number breaks it. The user compares the new number, and if it **matches** —
+   the peer really did reinstall and this really is their new key — the only available actions are
+   dismiss (throw the correct key away) and reject (forget the pin). Neither adopts it. The screen
+   would invite a comparison the user cannot act on, which is worse than not showing it: a control
+   that asks a question and ignores the answer teaches people to stop answering.
+
+   So this is not a UI task. It is downstream of the adopt decision, which was taken deliberately in
+   the other direction and was removed from this list as "a decision rather than a gap". Those two
+   entries were coupled and the list did not say so. If adopt-in-place is ever revisited, this comes
+   back with it; until then the correct state is the current one, and the strings already match it.
 3. ~~**`SignalProtocolMain` has never been mutation-tested.**~~ Done for `signalprotocol/`.
    **This entry used to end "which closes the last coverage gap reachable in this environment", and
    that was false when written and stayed at HEAD for twenty rounds.** `E2EEStripView` — 1300 lines
