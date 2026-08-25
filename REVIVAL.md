@@ -1778,6 +1778,21 @@ Recorded so the next round does not spend itself re-deriving them.
   ignore it, which is worse than not having it — the same reasoning that declined a catch-all
   exception net and a redundant second condition earlier here.
 
+- **No test in this suite depends on the date.** A test that passes today and fails in a month, or
+  that quietly stops exercising anything as time passes, would undermine every number in this file
+  and would be found by nobody until it broke. Checked: every wall-clock use in the tests is a
+  *relative* offset from `System.currentTimeMillis()` — `+ 60_000` for "not yet due", `- 1` for
+  "overdue" — and there is no absolute date anywhere in the tree. The 30-day rotation and the 2-day
+  archive window are exercised by moving the stored deadlines, never by waiting.
+
+  While there, the sharpest historical bug in that area was re-checked by reintroducing it rather
+  than by reading its comment. `deleteOlderSignedPreKeysIfNecessary` once compared
+  `currentTimeMillis()` (~1.7e12) against `SIGNED_PRE_KEY_ARCHIVE_AGE` (a *duration*, ~1.7e8), so the
+  comparison was unconditionally true and retired keys were dropped the instant they were replaced —
+  breaking any peer still holding the previous bundle, which is exactly what the archive window
+  exists to protect. Putting that line back kills two tests. A comment saying a regression is covered
+  is not the same as the regression being covered.
+
 - **No other code-execution sink is shipping.** Deleting `Base64`'s dead deserialisation raised the
   obvious follow-up — what else is dead, dangerous and shipping, given `minifyEnabled` is false?
   Scanned for dynamic class loading (`DexClassLoader`, `PathClassLoader`), process execution
