@@ -723,4 +723,53 @@ public class StripGuardsTest {
         + "is the defect this flag exists to prevent, reached by rotating the phone", warned,
         rebuiltBanner.getText().toString());
   }
+
+  /**
+   * The digit animators are actually stopped, not merely forgotten.
+   *
+   * <p>This fix has been carried as unverified since it was written, on the grounds that the defect
+   * it prevents — the previous contact's safety number repainting into the new contact's screen a
+   * second later — cannot be reproduced under Robolectric, which delivers no further animator frames
+   * once the looper is idled past a view change. That is still true, and it is why this asserts
+   * something narrower and checkable instead: that the animators are cancelled and released.
+   *
+   * <p>Worth the distinction rather than leaving the whole thing unverified. It does not prove the
+   * digits stay blank on a device; it proves the code does the one thing the device behaviour
+   * depends on, so a future change that drops the cancel fails here rather than only on hardware
+   * nobody in this environment can run. The device half stays on the list in REVIVAL.md.
+   *
+   * <p>It also matters beyond repainting: a running {@code ValueAnimator} is held by the
+   * process-wide {@code AnimationHandler} through a listener capturing a digit view, so an
+   * uncancelled one keeps a discarded strip alive - the retention shape that kept whole
+   * conversations reachable through the clipboard listener.
+   */
+  @Test
+  public void blankingTheDigitsStopsTheAnimatorsRatherThanForgettingThem() throws Exception {
+    strip.verifyContact(bob());
+
+    final java.lang.reflect.Field field =
+        E2EEStripView.class.getDeclaredField("mCodeAnimators");
+    field.setAccessible(true);
+    @SuppressWarnings("unchecked")
+    final java.util.List<android.animation.ValueAnimator> animators =
+        (java.util.List<android.animation.ValueAnimator>) field.get(strip);
+
+    assertFalse("precondition: showing a safety number must start animators, or this proves nothing",
+        animators.isEmpty());
+    final java.util.List<android.animation.ValueAnimator> started =
+        new java.util.ArrayList<>(animators);
+    assertTrue("precondition: they must be running", started.get(0).isRunning());
+
+    // What surrenderState and the blank-screen path both call.
+    strip.onKeyboardHidden();
+
+    for (final android.animation.ValueAnimator animator : started) {
+      assertFalse("every digit animator must be cancelled - an uncancelled one goes on painting "
+          + "the previous contact's number into this contact's screen, and is itself held by the "
+          + "process-wide AnimationHandler through a listener capturing a digit view",
+          animator.isRunning());
+    }
+    assertTrue("and the list must be released, or the strip keeps growing one per verify screen",
+        animators.isEmpty());
+  }
 }

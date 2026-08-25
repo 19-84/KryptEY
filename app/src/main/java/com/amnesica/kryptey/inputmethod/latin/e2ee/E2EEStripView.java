@@ -1504,6 +1504,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mMessagesList != null) {
       mMessagesList.setAdapter(null);
     }
+    // The safety-number digits are decrypted content too, and their animators are still running.
+    //
+    // Leaving the verify screen hides the digits; it does not blank them and does not stop the
+    // count-up, which goes on painting the previous contact's number into views for another second
+    // and - because a running ValueAnimator is held by the process-wide AnimationHandler through a
+    // listener capturing a digit view - keeps this whole strip alive while it does. Found by
+    // asserting the cancel rather than the repaint: the repaint cannot be reproduced under
+    // Robolectric, the cancel can, and only surrenderState was doing it.
+    clearFingerprintViews();
+
     // Every sensitive screen, not just the chat log. The verify screen shows a safety number under
     // a contact's name; the contact list shows the user's whole set of correspondents and their
     // address tags. isShowingSensitiveContent()'s own javadoc says so, and this used to consult one

@@ -902,13 +902,20 @@ vendors, and nothing in this environment can run the keyboard — so *which* scr
 tested and *whether the flag takes effect* is not. Of everything in this branch, this is the change
 that most needs a device before it is trusted.
 
-The same is now true of one smaller change. The safety-number digits count up over a second, and
-nothing cancelled those animators, so switching contacts left the previous contact's animation to
-finish painting its number into the views a moment later — under the new contact's name, on the one
+The same *was* true of one smaller change, and is now only half true. The safety-number digits count
+up over a second, and nothing cancelled those animators, so switching contacts left the previous
+contact's animation to finish painting its number into the views a moment later — under the new contact's name, on the one
 screen whose whole purpose is comparing that number by voice. The animators are now cancelled when
 the digits are blanked and when a new number is loaded. It has no test: under Robolectric an
 un-cancelled animator delivers no further frames once the looper is idled past the view change, so
-the late repaint never happens and a test of it passes either way. The fix is unverified.
+the late repaint never happens and a test of it passes either way.
+
+What IS testable is the cancel itself, and asserting that instead found the fix incomplete: only
+`surrenderState` blanked the digits, so dismissing the keyboard left the animators running — for a
+second of painting into hidden views, and for as long as they ran, holding the whole strip alive
+through the process-wide `AnimationHandler`. Every clearing path blanks them now. The device half —
+whether the digits really stay blank on hardware — remains unverified, and that is a smaller claim
+than the one this paragraph used to make.
 
 **Which window a thing is drawn in decides whether the flag covers it**, and that question had not
 been asked of anything except the strip. Two answers, one good and one open.
