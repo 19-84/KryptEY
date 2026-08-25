@@ -574,6 +574,49 @@ So this stays a review-caught defect rather than a test-caught one. The honest m
 claims which *are* checkable have been turned into assertions — the fold rule, the layout invariant,
 the session version — so the comments increasingly point at tests rather than restate them.
 
+## One record keyed three ways, and what each fix cost
+
+Worth following end to end, because it is the clearest instance of the pattern below: three rounds,
+each one finding a HIGH defect in what the previous round had just written.
+
+**First it was the address name.** Chat-log messages were filed under `signalProtocolAddressName`
+alone. The address name is public — it travels in every envelope the messenger relays — and the
+device id beside it is one byte the sender chooses, so two contacts differing only in device id
+shared one conversation. The messenger pins its own key at `(bobsName, otherDevice)`, is warned about
+but permitted (the app cannot *refuse* a same-name contact; a genuine reinstall really does arrive at
+a new address), and its messages then render inside the genuine contact's thread, under their name,
+tag and badge. Deleting the impostor — where the warning steers the user — took the real history
+with it. Found by asking a question the design had never been posed: *which trust records are keyed
+by the name alone, and what does the attacker-chosen device id do to them?*
+
+**Then it was the rendering of the full address.** Keying on `name + "." + deviceId` fixes that, and
+two such keys can never collide — device ids are dot-free integers, so the last dot splits uniquely.
+That is the collision the obvious analysis looks for, it was checked, and it was reported as safe. It
+is also the wrong pair to compare. The live collision is between a key and a **bare address name**,
+because a legacy arm still matches name-only keys so an upgrade does not silently empty everyone's
+history. The messenger writes address names: it picks `bobsName.7`, an ordinary printable name at a
+fresh unpinned address that collides with no contact and fires no duplicate warning, and every
+message filed for the real Bob at device 7 matches it.
+
+The fix is a separator no address name can contain. `BinaryEnvelope.requireDisplaySafeName` rejects
+any sender name outside printable ASCII, on every envelope, in both directions — so `U+001F` puts
+rendered keys and bare names in provably disjoint spaces. That property is a coupling to a validator
+in another file, which is exactly the kind of thing that goes stale, so it is asserted where the
+separator is defined.
+
+**And the ambiguity gate was asked at the wrong moment.** The legacy arm only fires when the address
+name identifies exactly one contact. `removeContact` pruned the contact list *before* deleting the
+messages, so that question was put to a list the contact had already left — wrong in both directions.
+Deleting an impostor made the shared name look unambiguous and deleted the **genuine** contact's
+pre-upgrade history, which is the round-one defect exactly, still live for every message written
+before the change. Deleting a contact alone under its name made it look ambiguous, so its own
+plaintext survived the only action a user has for erasing it, with no row left to reach it from.
+
+Two things are worth taking from this. The legacy arm is the source of all of it: every one of these
+defects is a consequence of matching two key formats at read time rather than migrating once. And the
+analysis that cleared the dot separator was not sloppy — it was rigorous about the wrong pair of
+objects, which no amount of care about the pair you chose will catch.
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
