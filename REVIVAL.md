@@ -805,6 +805,26 @@ the digits are blanked and when a new number is loaded. It has no test: under Ro
 un-cancelled animator delivers no further frames once the looper is idled past the view change, so
 the late repaint never happens and a test of it passes either way. The fix is unverified.
 
+**Which window a thing is drawn in decides whether the flag covers it**, and that question had not
+been asked of anything except the strip. Two answers, one good and one open.
+
+A keyboard draws a magnified preview of every key as it is pressed, so while the user types a
+secret each character is rendered twice. That second rendering is inside the IME's own window —
+`MainKeyboardView` adds its placer view to `getRootView().findViewById(android.R.id.content)` — and
+nothing under `keyboard/` or `latin/e2ee/` constructs a `PopupWindow` or calls
+`WindowManager.addView`. So it is covered. AOSP upstream has historically drawn more-keys panels in
+a `PopupWindow`, which is a live direction for a future change to take and would silently move every
+keystroke of a plaintext message outside the protection, so
+`NothingRendersOutsideTheSecureWindowTest` pins both halves.
+
+**Toasts are the open one.** A toast is a separate system window and the flag does not reach it. None
+of the strip's 26 carry message plaintext — that was checked — but several carry a contact's display
+name, and in most of those cases the same text is also written to the banner, which *is* covered. So
+the exposure is a contact's identity, to a screen recording taken while the strip itself is
+protected. Not fixed here: deciding which of those messages need to be toasts at all is a product
+question, and several of them are the only feedback a user gets for an action. Recorded so it is a
+decision rather than an oversight.
+
 The wider point stands on its own: there was not one occurrence of `FLAG_SECURE` in the source. The
 E2EE surface is a view inlined into the IME rather than an Activity, so it never inherited one, and
 an app whose premise is that the messenger cannot read the message was painting the message into a
