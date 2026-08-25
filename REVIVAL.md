@@ -2006,6 +2006,33 @@ different thing to have on a deferred list.
 
 ## Known-deferred defects
 
+**The CI workflow's Lint step has never passed.** The workflow runs four Gradle tasks. Three of them
+are exercised constantly here; `lintDebug` had never been run by anyone, and it fails — in two
+different ways depending on the JDK, which is what makes it worth writing down rather than just
+fixing.
+
+- **On Temurin 17, the toolchain the image and the workflow both declare, lint crashes.**
+  `BidirectionalTextDetector` calls `List.removeLast()`, which is Java 21 API, so lint aborts with
+  "this is a bug in lint or one of the libraries it depends on" and produces no analysis at all. Note
+  which detector: bidirectional-text spoofing is a class this app cares about specifically, so the
+  suggested workaround — disable that detector — costs a check that matters here.
+- **On Temurin 21 lint runs correctly, and reports 100 errors and 503 warnings.** Measured by
+  building the image and running it. Almost all are inherited AOSP issues (`MissingSuperCall` and
+  similar). The full test suite also passes on 21 — 958 tests, 0 failures — so the toolchain move is
+  viable on its own terms.
+
+So the step cannot pass today on either JDK: on 17 the tool breaks, on 21 the code does. **Not fixed
+here, because the remaining choice is a project decision with real costs on each side:** accept a lint
+baseline (which is the standard mechanism and gates *new* problems, but freezes 100 unreviewed
+findings as approved), fix the inherited errors, or drop the lint gate from CI and stop claiming it.
+Each is defensible; none should be chosen by whoever happens to notice the red build.
+
+What is recorded is the measurement, so the choice is made with numbers rather than in the middle of
+a failing pipeline. And the reason it went unnoticed for so long is worth keeping too: three of the
+four CI steps are run here every day, and the fourth had never been run once — a gate nobody executes
+is indistinguishable from a gate that passes.
+
+
 **Nine durable writes are still asserted by nothing.** A review round swept all 18
 `storeAllAccountInformationInSharedPreferences()` call sites in `SignalProtocolMain`, deleting one per
 run: **13 survived**. `reloadAccount` runs on every `setInputView`, so a decision that never reaches
