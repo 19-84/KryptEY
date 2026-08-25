@@ -97,6 +97,11 @@ android {
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../fastlane/metadata/android/en-US/full_description.txt').withPathSensitivity(PathSensitivity.RELATIVE)
+        // InstrumentationTestsCleanUpTheKeystoreTest reads these at run time. dependsOn compiles
+        // them but does not make them inputs, so without this the task stays UP-TO-DATE when they
+        // change and replays its last result - which it did, reporting a removed @After cleanup as
+        // "survived".
+        inputs.dir('src/androidTest/java').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {

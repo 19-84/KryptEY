@@ -525,6 +525,22 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
   compiling it, which costs a few seconds and turns silent rot into a build failure. It does not make
   them run, and nothing here should be read as claiming it does.
 
+  **The instrumentation tests have now been read, which is the only review available for code
+  nothing here can execute.** All eleven carry real assertions — none is a compiling shell — and they
+  are order-independent on the resource that matters: every one operates on the same Keystore alias
+  and several destroy or regenerate the master key mid-test, but `@Before` and `@After` both reset
+  it, so each starts from a known state whatever order the runner picks. That is the same question
+  the JVM suite was checked for, asked about a resource global to the *device* rather than the
+  process.
+
+  `InstrumentationTestsCleanUpTheKeystoreTest` keeps both properties, because they are the two this
+  environment can never catch by running anything: a test added without the reset would compile,
+  leave this suite green, and surface as a mysterious failure for whoever first runs them on
+  hardware — the person least able to tell a harness bug from a real one. Declaring
+  `src/androidTest/java` a task input was necessary first: `dependsOn` compiles those sources but
+  does not track them, and the control reported a removed `@After` as "survived" until it did. Sixth
+  instance of that trap, and the first one predicted before the result was believed.
+
   **Not** the `CALLER_NONCE_PROHIBITED` fix, which this entry went on calling "sound in principle and
   untested in fact" long after `CallerNonceProhibitedTest` had verified it. That test registers a JCE
   provider imposing the Keystore's rule and runs the real `seal`/`open` against it, so a regression
