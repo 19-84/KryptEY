@@ -1128,6 +1128,40 @@ Nothing survived. The two headline numbers are the ones to read: defeating trust
 two properties the whole trust model rests on.
 
 
+## The typing-redirect seam, swept and clean — and two ways a sweep lies
+
+Third companion sweep, after the Phase 3 parser and the Phase 4 trust predicates. The seam that
+decides **where the user's plaintext goes** — `RichInputConnection`'s redirect — disarmed one guard
+at a time against the full suite:
+
+| guard removed | result |
+|---|---|
+| host-reported selection trusted while typing is redirected | killed (1 test) |
+| `getIC` ignores the redirect and returns the host field | killed (19) |
+| `forgetCachedText` leaves the third commit buffer holding the last message | killed (4) |
+
+Nothing survived. The 19 is the one to read: routing plaintext to the messenger's own field instead
+of the strip fails a fifth of the strip suite, which is what that should look like.
+
+**Two ways this sweep reported a result that was not true, both caught here rather than believed.**
+They belong beside the recorded mutation discipline, because each produces a confident, plausible,
+wrong answer:
+
+- *A mutation that never applied.* The anchor did not match, the script threw, the harness ran the
+  build anyway and reported **SURVIVED** — of unmutated code. A survivor is the interesting outcome,
+  so this is the direction that invents findings. The harness now refuses to report anything unless
+  the replacement is verified present in the file afterwards.
+- *A substring anchor matching more than its line.* `    x.clear();` with four spaces is a substring
+  of `      x.clear();` with six, so a "unique" anchor silently matched two places. Anchoring to the
+  preceding newline fixes it. An anchor that over-matches mutates code you did not choose and
+  attributes the result to the line you meant.
+
+Together with the two already recorded — a sweep killed mid-run leaving a mutant in the tree, and a
+control whose "nothing killed" was a compile failure — that is four distinct ways to get a wrong
+answer from mutation testing, every one of which has happened on this branch. The method is worth
+its cost; the harness around it is not optional.
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
