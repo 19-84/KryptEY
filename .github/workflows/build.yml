@@ -40,7 +40,7 @@ jobs:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ runner.os }}-${{ hashFiles('app/build.gradle') }}
 
-      # Dependency verification is enforced (gradle/verification-metadata.xml pins ~368 artifacts
+      # Dependency verification is enforced (gradle/verification-metadata.xml pins 386 artifacts
       # by SHA-256). Deliberately NOT disabled here - CI is where a substituted artifact should be
       # caught, so a verification failure must fail the build.
       - name: Unit tests
@@ -49,6 +49,18 @@ jobs:
       - name: Assemble debug
         run: ./gradlew --no-daemon assembleDebug
 
+      # assembleRelease is finalized by verifyReleaseNativesStripped, which FAILS if a packaged
+      # .so still carries DWARF debug sections. That is deliberate: AGP only warns when it cannot
+      # strip, so an unstripped artifact otherwise ships in silence at roughly seven times the size
+      # (64 MB of DWARF against a 4.7 MB .text, measured), and the same source then produces
+      # materially different APKs depending on the build host.
+      #
+      # Stripping needs the NDK. If this step fails here with "release APKs carry unstripped native
+      # libraries", the fix is to make an NDK available to the runner - NOT to pass
+      # -Pkryptey.allowUnstrippedNatives=true. That flag exists for environments which cannot strip
+      # at all, such as this project's own container, and it is an explicit statement that the
+      # artifact is not for distribution. CI is the one place that statement must never be made
+      # quietly.
       - name: Assemble release
         run: ./gradlew --no-daemon assembleRelease
 

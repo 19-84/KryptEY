@@ -1778,6 +1778,24 @@ Recorded so the next round does not spend itself re-deriving them.
   ignore it, which is worse than not having it — the same reasoning that declined a catch-all
   exception net and a redundant second condition earlier here.
 
+- **The CI workflow was read, and it is sound — but my own gate could break it.** Sixty-six lines of
+  executable config that runs on every push with repository credentials, added by this revival and
+  never audited. It holds up well: every action is pinned to a commit SHA rather than a tag, with the
+  2025 `tj-actions/changed-files` retag compromise cited as the reason; `permissions: contents: read`
+  is least-privilege; `persist-credentials: false`; the trigger is `pull_request` and not
+  `pull_request_target`, so untrusted code never runs with write access; and dependency verification
+  is deliberately left enforced, because CI is exactly where a substituted artifact should be caught.
+  Validated as YAML rather than eyeballed — ten steps, parsed.
+
+  Two corrections. Its comment said the metadata pins "~368 artifacts" and the count is **386**. And
+  `verifyReleaseNativesStripped`, which I added two days earlier, finalizes `assembleRelease` — the
+  step CI runs without the opt-out flag. **I added a build gate without considering the one place the
+  build runs automatically.** Whether that breaks CI depends on whether the runner has an NDK, which
+  cannot be tested from here, so the interaction is now documented at that step with the two correct
+  responses: make an NDK available, and never pass `-Pkryptey.allowUnstrippedNatives=true` in CI. That
+  flag is a statement that an artifact is not for distribution, and CI is the one place it must never
+  be made quietly.
+
 - **The Gradle wrapper jar is reproducible from the pinned distribution.** Dependency verification
   pins 386 components by SHA-256, and every one of those checks happens *inside* a build that
   `gradle-wrapper.jar` has already started. That jar is 47 KB of executable code, it is committed to
