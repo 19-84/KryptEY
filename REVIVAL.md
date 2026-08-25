@@ -1711,6 +1711,24 @@ Recorded so the next round does not spend itself re-deriving them.
   hash-based default — 114 classes, **796 tests, zero failures again**. Not proof over all orders;
   evidence over a second one, which is what was actually available.
 
+- **No test in the suite passes without checking anything.** Scanned all 938 `@Test` methods for
+  bodies with no assertion, no `fail(` and no `assertThrows`. Twenty-four came back, and every one is
+  legitimate on inspection — which is the result, since the scan was written expecting otherwise.
+
+  Eight are the inherited 0.1.5 protocol tests, whose assertions live in shared helpers
+  (`sendMessageAfterSessionBuild` and its siblings carry 85 between them). Fourteen are fuzz and
+  safety tests whose contract is that *nothing escapes* — `singleBitFlipsNeverEscape` feeds every
+  single-bit corruption of a real ciphertext through the decrypt path, and its helper calls `fail()`
+  on any `Throwable`, so an assertion in the body would be the wrong shape. One is the fixture
+  generator, a tool. One is a pre-28 keystore test where reaching the end without throwing is the
+  property.
+
+  **No guard was added, deliberately.** A check reading only the method body flags all twenty-four;
+  one that follows helpers would have to resolve calls across files and would still be wrong about
+  the fuzz contract. A guard with twenty-four false positives on a clean suite teaches people to
+  ignore it, which is worse than not having it — the same reasoning that declined a catch-all
+  exception net and a redundant second condition earlier here.
+
 - **No other code-execution sink is shipping.** Deleting `Base64`'s dead deserialisation raised the
   obvious follow-up — what else is dead, dangerous and shipping, given `minifyEnabled` is false?
   Scanned for dynamic class loading (`DexClassLoader`, `PathClassLoader`), process execution
