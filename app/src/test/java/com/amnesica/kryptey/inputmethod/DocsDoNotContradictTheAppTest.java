@@ -44,6 +44,21 @@ public class DocsDoNotContradictTheAppTest {
   }
 
   /**
+   * And the store listing must name the protocol the app negotiates.
+   *
+   * <p>The description a user reads before installing is the widest-read text this project has, and
+   * it was the last copy still saying X3DH after the README, KRYPTEY.md and the in-app help had all
+   * been corrected. Someone choosing this app for a recorded-now-decrypted-later threat decides here.
+   */
+  @Test
+  public void thestoreListingNamesTheProtocolTheAppNegotiates() throws IOException {
+    final String text = read("fastlane/metadata/android/en-US/full_description.txt");
+    assertTrue("the store description must name PQXDH", text.contains("PQXDH"));
+    assertFalse("and must not still present X3DH as the key agreement in use",
+        text.contains("X3DH Key Agreement Protocol"));
+  }
+
+  /**
    * The comparison must name its channel, in both copies.
    *
    * <p>The original defect: "compare the number with your chat partner's number" is satisfied by
@@ -92,11 +107,18 @@ public class DocsDoNotContradictTheAppTest {
    */
   @Test
   public void nodocumentClaimsFairytaleModeHidesTheConversation() throws IOException {
-    for (final String doc : new String[] {"KRYPTEY.md", "HELP.md", "README.md"}) {
+    // The store listing is included deliberately, and it is the one that nearly escaped: it said
+    // "hidden in a decoy TEXT" where the markdown said "decoy MESSAGE", so a check written against
+    // the documents alone would have passed while the widest-read copy of the claim stood.
+    final String[] docs = {"KRYPTEY.md", "HELP.md", "README.md",
+        "fastlane/metadata/android/en-US/full_description.txt"};
+    for (final String doc : docs) {
       final String text = read(doc);
       assertFalse(doc + " still presents fairytale mode as concealment. It conceals nothing from "
               + "the messenger, which is the only adversary this app has",
-          text.contains("look inconspicuous") || text.contains("hidden in a decoy message"));
+          text.contains("look inconspicuous")
+              || text.contains("hidden in a decoy message")
+              || text.contains("hidden in a decoy text"));
     }
   }
 }

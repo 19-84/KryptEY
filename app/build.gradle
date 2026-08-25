@@ -96,6 +96,7 @@ android {
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../fastlane/metadata/android/en-US/full_description.txt').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {

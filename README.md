@@ -52,8 +52,10 @@ the Keyboard for the E2EE functionality.
 - use clipboard to read messages
 - manage contacts in own contact list in keyboard
 - message log to view sent/received messages
-- send messages as plain JSON (raw mode) or hidden in a decoy text (fairytale mode)
-- verification of E2EE functionality via fingerprint
+- send messages as a compact binary envelope (raw mode) or behind a fairy-tale sentence with the
+  payload in invisible characters (fairytale mode)
+- keys are stored encrypted, sealed under an Android Keystore key that does not leave the device
+- verification of your chat partner by comparing a security number with them by voice
 - Q&A view helps with questions
 - dark & light theme
 
