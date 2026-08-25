@@ -1681,10 +1681,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mE2EEStrip.clearClipboard();
   }
 
+  /** The real send path, for tests. */
+  void sendEncryptedMessageToApplicationForTest(final CharSequence encryptedMessage) {
+    sendEncryptedMessageToApplication(encryptedMessage);
+  }
+
   private void sendEncryptedMessageToApplication(CharSequence encryptedMessage) {
     if (encryptedMessage == null) return;
 
     mRichInputConnection.setShouldUseOtherIC(false);
+    // The keyboard's own copy of the draft goes with the redirect.
+    //
+    // While typing is redirected those caches fill with the plaintext - that is what they are for.
+    // Lowering the flag stops new text going there but leaves what is already in them, and the
+    // keyboard stays up in the messenger's app after a send, in buffers that live as long as the
+    // service. Measured before this line existed: the cache held "the meeting is at nine" followed
+    // by the ciphertext that replaced it on screen.
+    //
+    // Same class as the buffers cleared when the keyboard is dismissed, at the moment nobody had
+    // looked at. Dismissal is the obvious end of a message's life; pressing send is the common one.
+    mRichInputConnection.forgetCachedText();
     mListener.onTextInput((String) encryptedMessage);
     mInputEditText.clearFocus();
     clearUserInputString();

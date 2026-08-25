@@ -215,4 +215,53 @@ public class TypingDestinationTest {
     assertEquals("and must not still be going into the strip", "",
         compose.getText().toString());
   }
+
+  private static Object bufferField(final Object target, final String name) throws Exception {
+    final java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
+    f.setAccessible(true);
+    return f.get(target);
+  }
+
+  /**
+   * Sending must not leave the plaintext in the keyboard's own text caches.
+   *
+   * <p>While typing is redirected, the IME's caches fill with the DRAFT - that is what they are for.
+   * The send path lowers the redirect and clears the compose box, but the keyboard stays up in the
+   * messenger's app afterwards, and those buffers live as long as the service. So the message the
+   * user just encrypted was still sitting in cleartext inside the IME, in buffers that ordinary
+   * host-side editing then reads from.
+   *
+   * <p>Same class as the buffers cleared on dismissal, at a moment nobody had looked at: dismissal
+   * is the obvious end of a message's life, and pressing send is the far more common one.
+   */
+  @Test
+  public void sendingClearsTheKeyboardsOwnCopyOfTheDraft() throws Exception {
+    assertTrue(compose.requestFocus());
+    connection.commitText(SECRET, 1);
+    assertEquals("precondition: the draft must be in the compose box", SECRET,
+        compose.getText().toString());
+    assertTrue("precondition: the keyboard's own cache must hold it, or this proves nothing",
+        bufferField(connection, "mTempObjectForCommitText").toString().contains(SECRET));
+
+    strip.setListener(new E2EEStripView.Listener() {
+      @Override
+      public void onTextInput(final String rawText) {
+        connection.commitText(rawText, 1);
+      }
+
+      @Override
+      public void onSensitiveContentVisibilityChanged(final boolean showing) { }
+    }, new View(RuntimeEnvironment.getApplication()));
+
+    strip.sendEncryptedMessageToApplicationForTest("ciphertext-goes-to-the-host");
+
+    // Not "empty" - a legitimate commit of the ciphertext follows the send and refills the commit
+    // buffer, which is correct. The property is that the PLAINTEXT is not still in there.
+    assertFalse("the keyboard's commit buffer must not keep the plaintext after a send: "
+            + bufferField(connection, "mTempObjectForCommitText"),
+        bufferField(connection, "mTempObjectForCommitText").toString().contains(SECRET));
+    assertFalse("nor may its committed-text cache: "
+            + bufferField(connection, "mCommittedTextBeforeComposingText"),
+        bufferField(connection, "mCommittedTextBeforeComposingText").toString().contains(SECRET));
+  }
 }
