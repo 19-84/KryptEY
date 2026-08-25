@@ -136,6 +136,27 @@ public class E2EEStrip {
              LegacyMessageException | InvalidKeyException e) {
       Log.e(TAG, "Error: Decrypting message failed");
       e.printStackTrace();
+    } catch (RuntimeException e) {
+      // libsignal is a JNI binding, and the layer below Java does not restrict itself to the
+      // checked exceptions above. Handing it a null byte array raises "JNI error Null pointer in
+      // get_array_elements", a plain RuntimeException, which travels up through
+      // decryptMessageAndShowMessageInMainInputField into the Decrypt button's click listener -
+      // whose only catch is for IOException. Out of a click listener there is nothing left to
+      // catch it and the keyboard process dies, in whatever app the user is in.
+      //
+      // The envelope codec will not currently produce that input: it refuses an envelope carrying
+      // nothing, and normalises a bundle-only envelope's ciphertext type to zero, so "no ciphertext
+      // but a ciphertext type" cannot come off the wire (pinned by
+      // EnvelopeCodecNormalisationTest). This is therefore defence in depth rather than a fix for
+      // a live exploit - but the property it depends on lives in a different class, and the same
+      // conversion is already done one layer up for exactly this reason: decodeMessage converts
+      // unchecked exceptions "so it cannot reach LatinIME.setInputView() and kill the process".
+      //
+      // Deliberately not narrower. The point is not this one JNI message; it is that an unchecked
+      // throw from native code must not be the difference between a failed decryption and a dead
+      // keyboard.
+      Log.e(TAG, "Error: decryption raised an unchecked exception");
+      e.printStackTrace();
     }
     return decryptedMessage;
   }
