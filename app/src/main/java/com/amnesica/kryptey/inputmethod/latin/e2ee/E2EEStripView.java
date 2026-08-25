@@ -293,6 +293,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // Capture the label before rejecting: the message names the contact whose key was just
       // forgotten, and reading it afterwards would describe post-rejection state.
       final String label = SignalProtocolMain.displayLabelFor(chosenContact);
+      clearStandingWarning();   // saying the number does not match IS the deliberate response
       mE2EEStrip.rejectContactKey(chosenContact);
       Toast.makeText(getContext(), String.format(INFO_KEY_REJECTED, label), Toast.LENGTH_LONG).show();
       loadContactsIntoContactsListView();
@@ -311,6 +312,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           Toast.makeText(getContext(), INFO_VERIFY_UNAVAILABLE, Toast.LENGTH_LONG).show();
           return;
         }
+        // Only now: the user has compared the number and confirmed it. Not on arriving at the
+        // screen, and not on a failed load, which is why this sits after the guard above.
+        clearStandingWarning();
         loadContactsIntoContactsListView();
         showOnlyUIView(UIView.CONTACT_LIST_VIEW);
       } catch (UnknownContactException e) {
@@ -375,7 +379,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mHostFieldIsPassword = isPassword;
     if (isPassword) {
       clearDecryptedContent();
-      setInfoTextViewMessage(mInfoTextView, INFO_PASSWORD_FIELD);
+      // Not over a standing warning. LatinIME calls this on EVERY input session with the host
+      // field's inputType, and the messenger owns the inputType of every field it presents - so
+      // "your session expired, re-enter your PIN" erased the substitution warning, and the flag
+      // stayed set, which meant nothing could ever write the banner again. The strip was left
+      // reading "encryption is turned off here" while the actions were back on and working.
+      setInfoUnlessWarned(INFO_PASSWORD_FIELD);
     }
   }
 
@@ -754,7 +763,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // was not belt-and-braces: it meant each copy masked the other's deletion, so removing
         // either one on its own changed nothing any test could see.
         if (!previouslyRejected && !duplicateName) {
-          setInfoTextViewMessage(mInfoTextView, "Contact " + labelFor(chosenContact) + " created. You can send messages now");
+          // Through the guarded writer: an attacker whose substitution was just refused posts one
+          // more ordinary invite under a fresh name at a fresh address, the user accepts it -
+          // accepting invites is what this app is for - and neither of the two conditions above
+          // fires, so "Contact Carol created" used to land straight on top of the warning.
+          setInfoUnlessWarned("Contact " + labelFor(chosenContact) + " created. You can send messages now");
         }
       } else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
@@ -1448,8 +1461,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mMessagesList != null) {
       mMessagesList.setAdapter(null);
     }
-    if (mLayoutE2EEMessagesListView != null
-        && mLayoutE2EEMessagesListView.getVisibility() == VISIBLE) {
+    // Every sensitive screen, not just the chat log. The verify screen shows a safety number under
+    // a contact's name; the contact list shows the user's whole set of correspondents and their
+    // address tags. isShowingSensitiveContent()'s own javadoc says so, and this used to consult one
+    // of the three - so two of them rode through the app switch and were on screen when the
+    // keyboard next rose, in whatever app that was.
+    if (isShowingSensitiveContent()) {
       showOnlyUIView(UIView.MAIN_VIEW);
     }
   }
@@ -1630,7 +1647,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void verifyContact(Contact contact) {
-    clearStandingWarning();   // going to compare the number is the deliberate response to a warning
+    // NOT cleared here. Opening the screen is not comparing the number: the user can look, back out
+    // through the contact list, and arrive at the main view with the change still pending, the
+    // warning text still up and the flag down - so the messenger's next post wipes it. The flag
+    // comes down where the deliberate act happens, in the Verify and Reject listeners.
     setChosenContact(contact);
     loadFingerprintInVerifyContactView();
     showOnlyUIView(UIView.VERIFY_CONTACT_VIEW);

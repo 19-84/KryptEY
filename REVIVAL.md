@@ -362,11 +362,16 @@ further decryption.
 **Reasoned but NOT verified:**
 
 - `AndroidKeystoreCryptoBox`'s Keystore CALLS are executed by zero JVM tests; its key-resolution
-  DECISIONS now are (`KeyResolutionTest`, 10 tests, via a `KeystoreOps` seam). 11 instrumentation tests are written and
-  compile, but need hardware or a KVM runner. This includes the `CALLER_NONCE_PROHIBITED` fix — an
-  Android Keystore key rejects a caller-supplied IV, so `seal()` would have thrown on every call on
-  every real device while all JVM crypto tests passed. That fix is sound in principle and untested
-  in fact.
+  DECISIONS now are (`KeyResolutionTest`, 10 tests, via a `KeystoreOps` seam). 11 instrumentation
+  tests are written and compile, but need hardware or a KVM runner.
+
+  **Not** the `CALLER_NONCE_PROHIBITED` fix, which this entry went on calling "sound in principle and
+  untested in fact" long after `CallerNonceProhibitedTest` had verified it. That test registers a JCE
+  provider imposing the Keystore's rule and runs the real `seal`/`open` against it, so a regression
+  fails on the JVM rather than only on a device nobody here can run. The stale sentence cost real
+  work: a later round read it, believed the gap, and wrote a second copy of that test from scratch
+  before noticing the first. This document drifts the same way comments do, and a reader deciding
+  what still needs doing trusts it the same way.
 - No part of this has run on an Android device.
 
 ---

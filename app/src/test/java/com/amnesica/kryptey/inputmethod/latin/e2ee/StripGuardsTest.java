@@ -593,4 +593,45 @@ public class StripGuardsTest {
     assertEquals("the next invite's screen must not open pre-filled with the last one's name",
         "", firstNameField().getText().toString());
   }
+
+  /**
+   * Comparing the number and acting on it IS what puts a warning down.
+   *
+   * <p>The flag used to come down on ARRIVING at the verify screen, which let a user look, back out
+   * and leave the change pending with nothing standing. Moving it onto the two presses is only
+   * correct if the presses actually do it - otherwise the warning becomes permanent and the user has
+   * no way to dismiss a banner they have dealt with, which trains them to ignore it.
+   */
+  @Test
+  public void sayingTheNumberDoesNotMatchPutsTheWarningDown() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+
+    strip.showVerifyContactForTest(bob());
+    assertTrue("precondition: the reject button must be pressable",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick());
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    final String before = infoField().getText().toString();
+    strip.onClipboardChangedForTest();
+    assertNotEquals("after the user has said the number does not match, the banner must be "
+        + "writable again", before, infoField().getText().toString());
+  }
+
+  /** And so does confirming it. */
+  @Test
+  public void confirmingTheNumberPutsTheWarningDown() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+
+    strip.showVerifyContactForTest(bob());
+    assertTrue("precondition: the verify button must be pressable",
+        strip.findViewById(R.id.e2ee_verify_contact_verify_button).performClick());
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    final String before = infoField().getText().toString();
+    strip.onClipboardChangedForTest();
+    assertNotEquals("after the user has compared and confirmed, the banner must be writable again",
+        before, infoField().getText().toString());
+  }
 }

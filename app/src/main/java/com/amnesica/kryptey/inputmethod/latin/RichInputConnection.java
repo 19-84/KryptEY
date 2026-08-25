@@ -100,6 +100,14 @@ public final class RichInputConnection {
   public void forgetCachedText() {
     mCommittedTextBeforeComposingText.setLength(0);
     mComposingText.setLength(0);
+    // The third buffer on this object, and the one that is easy to forget: it is final, so it lives
+    // as long as the service, and it holds a verbatim copy of the last commitText argument.
+    // Ordinary typing commits a character at a time, but two paths commit a whole message - the
+    // strip handing decrypted text to the host app via InputLogic.onTextInput, and recapitalising a
+    // selection, which commits the entire selection and can be 100KB. That second one is exactly
+    // the scenario PlaintextBufferClearingTest already covers: clearing RecapitalizeStatus left
+    // behind the copy the recapitalise had handed to the input connection on its way out.
+    mTempObjectForCommitText.clear();
   }
   /**
    * This contains the currently composing text, as LatinIME thinks the TextView is seeing it.

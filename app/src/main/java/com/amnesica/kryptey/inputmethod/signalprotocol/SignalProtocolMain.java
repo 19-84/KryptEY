@@ -260,8 +260,8 @@ public class SignalProtocolMain {
     }
     contact.setVerified(false);
     sInstance.clearVerificationFor(address);
-    Log.w(TAG, "Forgot the pinned key for " + contact.getSignalProtocolAddressName()
-        + ": the user reported the safety number did not match");
+    Log.w(TAG, "Forgot the pinned key for a contact: the user reported the safety number did "
+        + "not match");
     sInstance.storeAllAccountInformationInSharedPreferences();
     return hadPin;
   }
@@ -524,13 +524,13 @@ public class SignalProtocolMain {
     // can trigger clears it.
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .clearRejection(contact.getSignalProtocolAddress())) {
-      Log.i(TAG, "Cleared the rejection warning for " + contact.getSignalProtocolAddressName()
+      Log.i(TAG, "Cleared a rejection warning" + ""
           + ": the user compared the number of the newly pinned key");
     }
 
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
         .dismissIdentityChange(contact.getSignalProtocolAddress())) {
-      Log.i(TAG, "Discarded an offered identity for " + contact.getSignalProtocolAddressName()
+      Log.i(TAG, "Discarded an offered identity" + ""
           + " because the user confirmed the number of the key already pinned");
     }
 
@@ -555,7 +555,7 @@ public class SignalProtocolMain {
     if (mAccount == null || mAccount.getContactList() == null) return;
     for (final Contact contact : mAccount.getContactList()) {
       if (contact.getSignalProtocolAddress().equals(address) && contact.isVerified()) {
-        Log.w(TAG, "Clearing verification for " + contact.getSignalProtocolAddressName()
+        Log.w(TAG, "Clearing verification for a contact" + ""
             + ": a different identity key was offered");
         contact.setVerified(false);
       }
@@ -596,7 +596,7 @@ public class SignalProtocolMain {
     // through into NumericFingerprintGenerator and NPE'd inside libsignal - crashing the keyboard
     // whenever the user opened "verify contact" without a session.
     if (localIdentity == null || remoteIdentity == null) {
-      Log.w(TAG, "No identity available for " + contact.getSignalProtocolAddressName()
+      Log.w(TAG, "No identity available for a contact" + ""
           + "; cannot build a fingerprint yet");
       return null;
     }
@@ -1419,7 +1419,7 @@ public class SignalProtocolMain {
         // New in libsignal 0.86: encrypting with no established session is an explicit failure
         // rather than an implicit one. Returning null here matches how this method already reports
         // failure, and crucially avoids sending anything unencrypted.
-        Log.e(TAG, "Error: no session with " + signalProtocolAddress.getName()
+        Log.e(TAG, "Error: no session with the recipient" + ""
             + "; cannot encrypt", e);
         return null;
       }
@@ -1445,7 +1445,7 @@ public class SignalProtocolMain {
       // No key to record here — the exception carries none, and unlike the bundle path there is no
       // offered key to hand. The change is recorded where a substituted bundle is processed; this
       // is the downstream refusal, which must simply not send.
-      Log.e(TAG, "Identity key mismatch while encrypting to " + signalProtocolAddress.getName());
+      Log.e(TAG, "Identity key mismatch while encrypting");
       return null;
     } catch (InvalidContactException e) {
       e.printStackTrace();
@@ -1740,7 +1740,7 @@ public class SignalProtocolMain {
       // This is where an identity change actually surfaces. libsignal calls isTrustedIdentity
       // before saveIdentity, so refusing there means saveIdentity never runs — recording the change
       // here is the only way the flag can ever be set.
-      Log.e(TAG, "Identity key for " + recipientSignalProtocolAddress.getName()
+      Log.e(TAG, "The identity key for the recipient" + ""
           + " does not match the pinned one");
       // Take the offered key from the bundle, not from the exception: libsignal 0.86 raises this
       // from its Rust layer with a null identity, so getUntrustedIdentity() is empty here. The
