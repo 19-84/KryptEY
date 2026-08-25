@@ -1722,6 +1722,79 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mRichInputConnection != null) mRichInputConnection.forgetCachedText();
   }
 
+  /**
+   * State that must outlive this view, because the view does not outlive a configuration change.
+   *
+   * <p>The strip is rebuilt whenever the system hands the IME a new input view - a theme change, a
+   * night-mode switch at sunset, a rotation. Everything on it goes with it, and two of those things
+   * are not the view's to lose. A standing security warning is one: its own javadoc says nothing
+   * the messenger can cause clears it, and a rebuild reached every defect in that family without
+   * touching any of the paths those fixes guard. A half-typed message is the other: the redirect
+   * still pointed at the DISCARDED compose box, so the user's next keystrokes landed in an object
+   * no clearing path could reach and survived the keyboard being dismissed.
+   *
+   * <p>Carried rather than cleared. Clearing was tried first and is worse: lowering the redirect
+   * sends the next keystroke into the messenger's own field in plaintext, which is the disclosure
+   * the redirect exists to prevent - the rebuild would have swapped a residue defect for a
+   * disclosure one.
+   */
+  public static final class CarriedState {
+    private final CharSequence draft;
+    private final boolean wasComposing;
+    private final CharSequence banner;
+    private final boolean warningStanding;
+
+    private CarriedState(final CharSequence draft, final boolean wasComposing,
+        final CharSequence banner, final boolean warningStanding) {
+      this.draft = draft;
+      this.wasComposing = wasComposing;
+      this.banner = banner;
+      this.warningStanding = warningStanding;
+    }
+  }
+
+  /** Takes what must survive, and empties this view so nothing is left behind on it. */
+  public CarriedState surrenderState() {
+    final CharSequence draft = mInputEditText == null ? "" : mInputEditText.getText().toString();
+    final boolean wasComposing = mRichInputConnection != null
+        && mRichInputConnection.isUsingOtherIC();
+    final CharSequence banner =
+        mInfoTextView == null ? "" : mInfoTextView.getText().toString();
+
+    if (mInputEditText != null) mInputEditText.setText("");
+    return new CarriedState(draft, wasComposing, banner, mWarningStanding);
+  }
+
+  /** Restores what the outgoing view surrendered. */
+  public void adoptState(final CarriedState carried) {
+    if (carried == null) return;
+
+    if (mInputEditText != null && carried.draft.length() > 0) {
+      mInputEditText.setText(carried.draft);
+    }
+    // Re-pointed whether or not there was a draft, which is a distinction that cost a test run:
+    // the connection's mOtherIC still referenced the DISCARDED EditText, so with the redirect up
+    // and the box empty, everything typed after the rebuild went into an object that is no longer
+    // on screen and that no clearing path can reach. Requesting focus re-points it through the same
+    // listener a user's tap goes through, so there is one path that raises the redirect rather than
+    // two that have to agree.
+    if (carried.wasComposing && mInputEditText != null) {
+      mInputEditText.requestFocus();
+    }
+
+    if (carried.warningStanding) {
+      setWarningMessage(String.valueOf(carried.banner));
+    } else if (carried.banner.length() > 0) {
+      setInfoTextViewMessage(mInfoTextView, String.valueOf(carried.banner));
+    }
+
+    // The window's FLAG_SECURE decision belongs to whatever is on screen NOW. Nothing else tells
+    // it: notifySensitiveVisibility is reachable only from a screen switch, and a rebuild is not
+    // one, so the window kept whatever the discarded view last said - stuck on for the rest of the
+    // keyboard's life, which contradicts a property this class states outright.
+    notifySensitiveVisibility();
+  }
+
   /** The clear button's real path, for tests. */
   void clearUserInputStringForTest() {
     clearUserInputString();

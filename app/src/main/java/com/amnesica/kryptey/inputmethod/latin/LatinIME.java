@@ -407,6 +407,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
       SignalProtocolMain.reloadAccount(this);
     }
 
+    // The outgoing strip's state, before the field is repointed at the new one. See
+    // E2EEStripView.CarriedState for what must survive a rebuild and why carrying beats clearing.
+    final E2EEStripView.CarriedState carried =
+        mE2EEStripView == null ? null : mE2EEStripView.surrenderState();
+
     mE2EEStripView = view.findViewById(R.id.e2ee_strip_view);
     if (mE2EEStripView != null) {
       mE2EEStripView.setListener(this, view);
@@ -416,6 +421,9 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
       // evaluates onCreateInputView as the argument to setInputView. Asking the strip to choose its
       // banner in its own constructor could therefore only ever see "no storage at all".
       mE2EEStripView.refreshOpeningMessage();
+      // After refreshOpeningMessage, so a carried warning wins over the opening banner rather than
+      // being immediately painted over by it.
+      mE2EEStripView.adoptState(carried);
     }
   }
 

@@ -690,4 +690,37 @@ public class StripGuardsTest {
     assertNull("even with the warning still owning the banner, there must be no recipient left",
         strip.chosenContactForTest());
   }
+
+  /**
+   * A warning carried across a rebuild must still be STANDING, not merely visible.
+   *
+   * <p>The lifecycle test that found this asserts the banner text survives a configuration change.
+   * That passes even if only the text is carried and the standing flag is not - and a warning whose
+   * flag is down is erased by the messenger's next post, which is the entire family of defects the
+   * flag exists to prevent. The control proved it: dropping the flag from the carry left that test
+   * green.
+   */
+  @Test
+  public void awarningCarriedAcrossArebuildIsStillStanding() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+    final String warned = infoField().getText().toString();
+
+    // What LatinIME does when the system hands it a new input view.
+    final E2EEStripView.CarriedState carried = strip.surrenderState();
+    final E2EEStripView rebuilt = new E2EEStripView(new ContextThemeWrapper(
+        RuntimeEnvironment.getApplication(), R.style.KeyboardTheme_LXX_Pure_Day), null);
+    rebuilt.adoptState(carried);
+
+    final TextView rebuiltBanner = rebuilt.findViewById(R.id.e2ee_info_text);
+    assertEquals("precondition: the warning text must survive the rebuild", warned,
+        rebuiltBanner.getText().toString());
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    rebuilt.onClipboardChangedForTest();
+
+    assertEquals("and must still be standing afterwards - a carried warning the next post can wipe "
+        + "is the defect this flag exists to prevent, reached by rotating the phone", warned,
+        rebuiltBanner.getText().toString());
+  }
 }
