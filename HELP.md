@@ -3,7 +3,12 @@
 ## How to start a chat?
 
 - Invite a chat partner by clicking on the contact list and sending them your invite message. The
-  invite message will be directly placed in the messenger's textfield.
+  invite message is placed in the text field of whatever app you are currently in.
+- That means you choose the channel by choosing the app. To keep the invite away from the messenger
+  entirely, open the other app first - a notes app, an email draft, a message to yourself - and tap
+  the invite button while you are in it. Tap it while you are in the messenger and the messenger has
+  it, whatever you do afterwards. This first key is the one moment a substituted key would not look
+  wrong, because there is no earlier key for it to differ from.
 - Your chat partner has to add you to their contact list and then send you an encrypted message.
   Copy this message to your clipboard and click on the "decrypt" button.
 - A new context menu will open where you have to save the name of the chat partner. Then click on
@@ -14,6 +19,10 @@
 - Copy the invite message to your clipboard and click on the "decrypt" button.
 - A new context menu will open where you have to save the name of the chat partner. Then click on
   the "done" button.
+- Before you send anything private, compare the security number with them by voice or in person -
+  see "How can I verify that my chat partner is who they claim to be?". The invite reached you
+  through the messenger, and that comparison is the only step in this list that tells your chat
+  partner apart from the messenger.
 - Select your chat partner via the contact list and send them an encrypted message.
 
 ## How do I send/encrypt a message?
@@ -36,10 +45,14 @@
   main view.
 - Note that if you delete the contact, the message history will be deleted too.
 
-## How can I verify that my chat partner is who he claims to be?
+## How can I verify that my chat partner is who they claim to be?
 
 - Next to the name of your chat partner in the contact list is a verified/unverified symbol.
 - Click on the symbol and your shared security number will appear. Compare the number with your chat
   partner's number.
+- Compare it by voice - in person or on a call - and not by sending it through the messenger you are
+  chatting in. A messenger able to change your keys is able to change the numbers you send each other
+  so that they match, and then the comparison proves nothing. Reading them aloud is what makes it a
+  check.
 - If they match, click the "done" button and your contact will be marked as verified.	
 			

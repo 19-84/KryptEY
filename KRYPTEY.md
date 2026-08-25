@@ -21,7 +21,8 @@ comparing it on both end devices. Encrypted and decrypted messages are stored in
 for later viewing and there is a Q&A section that helps with questions about the keyboard and its
 functionalities.
 
-The elliptic curve X25519 with SHA-512 is used in the X3DH Key Agreement Protocol from the applied
+The elliptic curve X25519, combined with a Kyber-1024 encapsulation, is used in the PQXDH Key
+Agreement Protocol from the applied
 Signal library. The hash function SHA-256 is used for the various chains and AES-256 with CBC (
 Pkcs#7) is used for the encryption of the messages. SHA-512 is also used to generate the
 fingerprint, the representation of the public key used for encryption.
@@ -80,16 +81,23 @@ privacy of the users, since no telephone numbers are used to identify the users.
 
 ## MessageEnvelope and Message Encoding
 
-To send a message, all information is collected in a `MessageEnvelope` and then sent as plain JSON
-or hidden in a decoy message. Depending on the message type, this envelope contains
+To send a message, all information is collected in a `MessageEnvelope` and then serialised to a
+compact binary envelope, base64-encoded for the wire. (Earlier versions serialised JSON; the binary
+format replaced it, and `WireIsBinaryTest` asserts which one is actually in use rather than only that
+the codec agrees with itself.) Depending on the message type, this envelope contains
 the `PreKeyResponse`, the `CipherTextMessage` (`PreKeySignalMessage` or `SignalMessage`) as a byte
 array, the type of the `CipherTextMessage` (`PreKeySignalMessage` or `SignalMessage`), a timestamp
 and the `SignalProtocolAddress`.
 
-There are two different encoding modes in KryptEY, raw mode and fairytale mode. Messages can be sent
-as a JSON array (raw mode) or hidden in a decoy message (fairytale mode) to make the conversation
-look inconspicuous. In the latter, the encrypted message is hidden in invisible, non-printable
-Unicode characters. To keep the message size as small as possible, the JSON is minified, i.e. all
+There are two different encoding modes in KryptEY, raw mode and fairytale mode. Raw mode sends the
+base64 envelope as-is; fairytale mode prefixes it with a sentence from a shipped fairy tale and
+carries the payload in invisible, non-printable Unicode characters.
+
+Fairytale mode makes a message look unremarkable to somebody glancing at the screen. It does **not**
+conceal anything from the messenger, and the app's help says so: every fairytale message ends in a
+run of characters from a fixed sixteen-character invisible alphabet that nothing else produces, and
+the visible sentence is one of a handful shipped in `strings.xml`. One substring test identifies it.
+A user choosing this mode to stop the messenger knowing they encrypt at all does not get that. To keep the message size as small as possible, the JSON is minified, i.e. all
 spaces and paragraphs are removed and the key values of the JSON are replaced by abbreviated key
 values, e.g. ”preKeyResponse” becomes ”pR”. After that, the string is compressed with GZIP and
 converted into a binary string. When converting to invisible Unicode characters, 4 bits are always

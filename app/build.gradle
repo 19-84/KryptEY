@@ -94,6 +94,8 @@ android {
         // "survived" against a test that was biting correctly.
         inputs.file('../REVIVAL.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {
