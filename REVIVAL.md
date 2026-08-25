@@ -2027,6 +2027,16 @@ baseline (which is the standard mechanism and gates *new* problems, but freezes 
 findings as approved), fix the inherited errors, or drop the lint gate from CI and stop claiming it.
 Each is defensible; none should be chosen by whoever happens to notice the red build.
 
+**One measurement makes that choice much easier, and it was worth taking before deferring.** Of the
+100 errors, **none are in code this revival wrote.** Seventy-seven are in files the branch never
+touched; the other 23 are all `MissingTranslation` in `strings.xml`, and every flagged string exists
+in `master` — the help text this branch rewrote is `translatable="false"` and is not among them.
+
+So a baseline would grandfather exactly the state the project was already in, and nothing this work
+introduced. That was the objection to it — freezing unreviewed findings as approved — and it does not
+apply. The remaining cost is honest and much smaller: lint would then gate *new* problems only, and
+the 100 inherited ones stay recorded rather than fixed.
+
 What is recorded is the measurement, so the choice is made with numbers rather than in the middle of
 a failing pipeline. And the reason it went unnoticed for so long is worth keeping too: three of the
 four CI steps are run here every day, and the fourth had never been run once — a gate nobody executes
