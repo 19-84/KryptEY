@@ -18,6 +18,15 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
+**Release APK: 115 MB → 74 MB.** The libsignal jar carries its *desktop* builds — macOS `.dylib`
+and Windows `.dll`, each in a normal and a `_testing_` flavour — at the jar root. Those are java
+resources rather than `jniLibs`, so the existing `jniLibs` exclusion (which correctly drops the
+Android `libsignal_jni_testing.so`) never saw them, and all six were packaged into every release
+APK: **42.6 MB of the artifact, none of it loadable on Android**, two of the six being testing
+builds of the crypto library. They stay on the *test* classpath, where Robolectric genuinely needs
+them, so the fix belongs in packaging and not in the dependency. Found by opening the APK rather
+than by reading the build script, while checking a claim this file makes about release assembling.
+
 **Tests: 31 → 843 as of `bfb71c1`** (842 run, 1 permanently skipped — `FixtureGenerator`, which is a
 tool rather than coverage), all passing, and green from an empty cache rather than only warm. Debug
 and release both assemble; dependency verification pins 386 artifacts by SHA-256.
@@ -1175,6 +1184,24 @@ Together with the two already recorded — a sweep killed mid-run leaving a muta
 control whose "nothing killed" was a compile failure — that is four distinct ways to get a wrong
 answer from mutation testing, every one of which has happened on this branch. The method is worth
 its cost; the harness around it is not optional.
+
+
+## A fifth way the harness lied: a test Gradle did not know it had to re-run
+
+`ReleasePackagingTest` reads `app/build.gradle` at run time. Gradle has no way to know that, so the
+task stayed **UP-TO-DATE** when the script changed and the test replayed its previous pass. Two
+controls against it reported *survived* — the mutation applied, the build succeeded, no error
+anywhere — and the test had been biting correctly the whole time. Forcing `--rerun-tasks` showed the
+kill immediately.
+
+This one is worse than the other four, because it does not only corrupt a control: it makes the test
+itself useless in ordinary use. Anyone editing the build script and running the suite would get a
+green replay. Fixed by declaring the file as a task input, and verified the way it should have been
+in the first place — mutate the script, run the suite *without* any force flag, watch it fail.
+
+The scanner tests that read Java sources are not affected: those files are already compilation
+inputs, so changing one invalidates the task. `build.gradle` is the case where the file a test reads
+is not on any path Gradle tracks for it.
 
 
 ## The one structural lesson from the review rounds

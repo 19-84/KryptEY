@@ -23,6 +23,23 @@ android {
             // arm64. Nothing in the app references it.
             excludes += ['**/libsignal_jni_testing.so']
         }
+        resources {
+            // The same jar also carries libsignal's DESKTOP builds - macOS .dylib and Windows .dll,
+            // each in a normal and a "_testing_" flavour - at the jar root. They are java resources
+            // rather than jniLibs, so the exclusion above never saw them, and they were packaged
+            // into every release APK: six files, 42.6 MB of the artifact, none of which can be
+            // loaded by Android at all.
+            //
+            // Two of the six are testing builds of the crypto library. They are inert on a phone,
+            // but shipping a test build of libsignal inside the release artifact is not something
+            // to do by accident.
+            //
+            // These are still needed to RUN the unit tests - Robolectric executes on the JVM and
+            // libsignal loads the desktop build there - which is why they must be excluded from
+            // packaging rather than from the dependency. The test classpath reads them from the jar
+            // and is unaffected by this block.
+            excludes += ['*.dylib', '*.dll', '**/*.dylib', '**/*.dll']
+        }
     }
 
     splits {
@@ -65,6 +82,12 @@ android {
     // they have.
     tasks.matching { it.name == 'testDebugUnitTest' }.configureEach {
         dependsOn 'compileDebugAndroidTestJavaWithJavac'
+        // ReleasePackagingTest reads this build script at run time to check that libsignal's
+        // desktop binaries stay excluded from the APK. Gradle has no way to know that, so without
+        // this line the task stays UP-TO-DATE when the script changes and the test replays its last
+        // result. That is not theoretical: two controls against this file "survived" until the task
+        // was forced to re-run, and the test had been biting correctly all along.
+        inputs.file('build.gradle').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {
