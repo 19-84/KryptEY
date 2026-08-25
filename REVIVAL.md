@@ -1062,8 +1062,17 @@ Recorded so the next round does not spend itself re-deriving them.
 ## Known-deferred defects
 
 - **Store rollback.** Restoring an old `protocol.xml` presents envelopes that verify perfectly,
-  rewinding the ratchet and resetting `trustedKeys`. Needs a monotonic counter the attacker cannot
-  rewind; not solvable at the storage layer.
+  rewinding the ratchet. Needs a monotonic counter the attacker cannot rewind; not solvable at the
+  storage layer. **Now measured** (`StoreRollbackTest`), because the entry beside it turned out to be
+  wrong in two ways once anyone ran it. A rollback: takes away a verification the user performed —
+  the badge returns to unverified, which is the safe direction; **does not clear the pinned
+  identity**, so it cannot turn file access into a silent key substitution by making the next bundle
+  a clean first sighting; and rewinds the chat log, so the visible cost is losing history rather than
+  history being altered. The earlier wording said it "resets `trustedKeys`", which reads as the
+  dangerous direction and is not what happens — the pin is in the same snapshot and comes back with
+  it. Note also the capability required: write access to the app's private storage, strictly larger
+  than anything the messenger has in this threat model. That is why it stays deferred, and the tests
+  are why that judgement can now be checked instead of trusted.
 - **Bundle replay.** No freshness check, so replaying a captured envelope forces a session rebuild.
   Halved (the bundle was being processed twice per message) but not eliminated. **Now measured
   rather than described** (`BundleReplayTest`): a replay is accepted and replaces the session, but
