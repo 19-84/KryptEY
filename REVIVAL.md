@@ -1724,6 +1724,25 @@ the digits are blanked and when a new number is loaded. It has no test: under Ro
 un-cancelled animator delivers no further frames once the looper is idled past the view change, so
 the late repaint never happens and a test of it passes either way.
 
+**A second device question, from the layouts.** The compose box that holds decrypted plaintext
+(`e2ee_input_field`) is an ordinary `EditText` declaring `inputType="textMultiLine"`, and neither the
+layout nor any code sets `importantForAutofill` or `importantForAccessibility` — checked across
+`app/src/main`, which contains no occurrence of either.
+
+Whether that matters turns on a question nothing here can answer: does Android's autofill framework
+ever target views inside an **IME's own** window, rather than the app being filled? Autofill exists
+from API 26, which is this app's floor, and an `EditText` is autofill-eligible by default. If it can
+be targeted, a field holding decrypted messages is offered to whatever autofill service the user has
+enabled — and `FLAG_SECURE` does not touch autofill or accessibility, both of which read text rather
+than pixels.
+
+`android:importantForAutofill="no"` would be a one-line mitigation and *is* testable here — the
+inflated view can be asserted. It is **not** added, deliberately: this branch has twice declined
+guards it could not demonstrate a need for, and adding hardening against a mechanism that may not
+reach IME views would be exactly that, with a test that pins a decision nobody has justified. What is
+recorded instead is the observation, the mitigation, and the one experiment that settles it — enable
+an autofill service and focus the compose box.
+
 **A manifest question I could not answer, recorded rather than guessed at.** The IME service is
 declared `android:exported="false"` alongside `android:permission="android.permission.BIND_INPUT_METHOD"`.
 The system's InputMethodManagerService runs in a different UID, so on the plain reading of `exported`
