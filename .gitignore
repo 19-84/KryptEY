@@ -73,3 +73,10 @@ lint/generated/
 lint/outputs/
 lint/tmp/
 # lint/reports/
+
+# Agent scaffolding: review worktrees and task output. Not project content.
+#
+# Registered git worktrees do not show as untracked, so this is a safety net for the case that
+# matters: a worktree directory left behind after its registration is pruned would otherwise be
+# committable, and each one is a full checkout with build output in it.
+.claude/
