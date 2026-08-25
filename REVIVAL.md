@@ -1960,6 +1960,19 @@ Recorded so the next round does not spend itself re-deriving them.
   Reporting that as a finding would have been exactly the confident wrong answer this file keeps
   cataloguing.
 
+- **The branch history was replayed against its own doc guards, and holds.** Several tests here read
+  markdown and build files, which means a documentation-only commit can turn the suite red — and one
+  did: `8bac6f6` added a section without indexing it, and a red test sat on `origin` until an
+  unrelated isolation run happened to catch it.
+
+  That raised the obvious question, so it was answered rather than assumed. Both guards were replayed
+  over every commit since each landed, by evaluating the rule against each historical revision of the
+  files rather than by building 32 commits: the index guard would have failed at **exactly one**
+  commit — the known one — and the pinned-count guard at **none** of the eight since it exists.
+
+  So the one red commit was the one already found, and it is fixed. Worth stating because "we caught
+  one" and "there was one" are different claims, and only the second is checkable.
+
 - **No test in this suite depends on the date.** A test that passes today and fails in a month, or
   that quietly stops exercising anything as time passes, would undermine every number in this file
   and would be found by nobody until it broke. Checked: every wall-clock use in the tests is a
