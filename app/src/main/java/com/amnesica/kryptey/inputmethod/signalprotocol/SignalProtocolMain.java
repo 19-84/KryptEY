@@ -1345,16 +1345,20 @@ public class SignalProtocolMain {
         newContacts.add(contact);
       }
     }
-    // BEFORE the list is pruned.
+    // Ordering no longer matters here, and the reason is worth keeping.
     //
-    // removeAllUnencryptedMessages asks hasExactlyOneContactNamed to decide whether a legacy,
-    // name-keyed message can be attributed to this contact. Asked after the removal, that question
-    // is put to a list this contact has already left, and it answers wrongly in both directions:
-    // deleting an impostor who shares an address name makes the name look unambiguous, so the
-    // GENUINE contact's pre-upgrade history is deleted - which is verbatim the defect the keying
-    // change was made to fix - and deleting a contact that is alone under its name makes the name
-    // look ambiguous, so its own plaintext survives the only action a user has for erasing it, with
-    // no row left to reach it from.
+    // This used to read "BEFORE the list is pruned", because removeAllUnencryptedMessages asked
+    // whether the address name identified exactly one contact, and asking that after the removal
+    // answered wrongly in both directions. That method is gone - it never existed under the name
+    // this comment used, which is how the drift was noticed - and removeAllUnencryptedMessages now
+    // matches belongsTo, which compares the full rendered address and consults no list at all.
+    //
+    // What survives the change is a retention consequence, pinned by
+    // InertLogEntrySurvivesDeletionTest: an entry the load-time migration could not attribute keeps
+    // its bare name, and belongsTo cannot match a bare name, so this call cannot reach it. Deleting
+    // every contact leaves that plaintext in the store - unreachable by any screen, and not erased
+    // by the one action the user has. Keeping it is still the right trade (deleting it was a
+    // destruction primitive), but the gap is real and is recorded in REVIVAL.md.
     Log.d(TAG, "Deleting unencrypted messages for contact");
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 

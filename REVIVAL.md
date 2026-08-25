@@ -1243,6 +1243,40 @@ fails on purpose, and the wording should be revisited rather than the scan loose
 
 ## Known-deferred defects
 
+**Deleting a contact does not erase an un-attributed legacy log entry.** The help says "if you delete
+the contact, the message history will be deleted too". For every message this version writes that is
+true. For one class of pre-upgrade entry it is not.
+
+The chat log used to be keyed by a bare address name. The load-time migration re-keys each entry onto
+the owning contact's full rendered address, and when the name identifies no single contact — two rows
+sharing an address name, which a reinstall produces without any attacker — it cannot attribute the
+entry and keeps it. Keeping is right: deleting was tried and rejected because no reader matches a
+bare name any more, so the entry is invisible to every row including an impostor's, and erasing it
+turned a safety measure into a destruction primitive where one ordinary pre-upgrade invite was enough
+to destroy a genuine conversation with no prompt and no way back.
+
+The consequence nobody had written down is that `removeAllUnencryptedMessages` matches `belongsTo`,
+which compares the full rendered address — so it cannot reach such an entry either. The user deletes
+every contact that could relate to the conversation and the plaintext stays in the store, unreachable
+by any screen and not erased by the only action they have.
+
+`InertLogEntrySurvivesDeletionTest` pins all three halves, because the trade is only defensible if
+they all hold: the migration keeps the entry, no contact can see it, and deleting every contact
+leaves it. Both rejected designs are the negative controls — making the migration delete what it
+cannot attribute kills two of the tests, restoring the bare-name read arm kills two.
+
+**The fix is a "clear all message history" action, not a smarter per-contact delete:** a per-contact
+delete cannot attribute what the migration could not, which is the whole reason the entry is inert.
+Deferred because it is a product addition rather than a correction. The help is left unqualified
+deliberately — the history the user can *see* is genuinely deleted, and warning every user about an
+invisible pre-upgrade edge case is the kind of clutter this document has already recorded as getting
+dropped by the next editor.
+
+*Found by auditing the help's behavioural claims against the code rather than by reading the code.
+Three of those claims had already been verified this way; this was the fourth, and the first to
+fail.*
+
+
 - **Store rollback.** Restoring an old `protocol.xml` presents envelopes that verify perfectly,
   rewinding the ratchet. Needs a monotonic counter the attacker cannot rewind; not solvable at the
   storage layer. **Now measured** (`StoreRollbackTest`), because the entry beside it turned out to be
