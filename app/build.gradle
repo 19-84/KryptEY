@@ -60,6 +60,14 @@ android {
             enable true
             reset()
             include 'arm64-v8a', 'armeabi-v7a'
+            // Emulators are x86_64 and real devices are not, so x86_64 is not shipped - but
+            // without it the instrumentation tests cannot run anywhere, because libsignal's
+            // native code is what they exist to exercise. -PemulatorAbi adds it for a local
+            // run only; no release build sets it, and verifyReleaseNativesStripped still sees
+            // whatever is produced.
+            if (project.hasProperty('emulatorAbi')) {
+                include 'x86_64'
+            }
             universalApk false
         }
     }

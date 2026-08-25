@@ -1,0 +1,78 @@
+#!/bin/bash
+# Runs the instrumentation tests on a real Android runtime.
+#
+# These are the tests Robolectric cannot run: AndroidKeystoreCryptoBoxTest exercises the
+# Android Keystore, and a keystore needs a platform provider behind it rather than a shim.
+# Before this script existed they had never been executed - they compiled, and that was all
+# anyone knew about them.
+#
+# There is no /dev/kvm here, so the guest runs under software emulation. Budget ~10 minutes
+# for the boot; the tests themselves take about 9 seconds once it is up.
+set -e
+
+IMAGE="${KRYPTEY_EMU_IMAGE:-kryptey-emu:29}"
+NAME="${KRYPTEY_EMU_CONTAINER:-kryptey-emu-run}"
+BOOT_TIMEOUT="${KRYPTEY_EMU_BOOT_TIMEOUT:-1800}"
+ADB=/opt/android-sdk/platform-tools/adb
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+if ! docker image inspect "$IMAGE" > /dev/null 2>&1; then
+  echo "==> building $IMAGE (this pulls a system image; several minutes)"
+  docker build -t "$IMAGE" tools/emulator
+fi
+
+cleanup() { docker rm -f "$NAME" > /dev/null 2>&1 || true; }
+trap cleanup EXIT
+cleanup
+
+echo "==> starting the emulator"
+docker run -d --name "$NAME" "$IMAGE" bash -lc '
+  export ANDROID_AVD_HOME=$HOME/.android/avd
+  nohup /opt/android-sdk/emulator/emulator -avd test28 -no-window -no-audio -no-snapshot \
+     -no-accel -gpu swiftshader_indirect -no-boot-anim -memory 2048 \
+     > /tmp/emu.log 2>&1 &
+  sleep infinity' > /dev/null
+
+echo "==> waiting for boot (up to ${BOOT_TIMEOUT}s)"
+deadline=$((SECONDS + BOOT_TIMEOUT))
+until [ "$(docker exec "$NAME" $ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+  if [ $SECONDS -ge $deadline ]; then
+    echo "!! the emulator did not boot. Its log:"
+    docker exec "$NAME" tail -30 /tmp/emu.log || true
+    exit 1
+  fi
+  # A dead emulator and a slow one look identical from outside, and one of them is worth
+  # saying out loud rather than waiting another twenty minutes for.
+  if ! docker exec "$NAME" pgrep -f qemu-system > /dev/null 2>&1; then
+    echo "!! the emulator process is gone. Its log:"
+    docker exec "$NAME" tail -30 /tmp/emu.log || true
+    exit 1
+  fi
+  sleep 15
+done
+echo "==> booted: $(docker exec "$NAME" $ADB shell getprop ro.build.version.sdk | tr -d '\r') / $(docker exec "$NAME" $ADB shell getprop ro.product.cpu.abi | tr -d '\r')"
+
+# x86_64 is not a shipped ABI, so it has to be asked for explicitly - see the splits block.
+echo "==> building the x86_64 APKs"
+tools/build-in-docker assembleDebug assembleDebugAndroidTest -PemulatorAbi
+
+echo "==> installing"
+docker cp app/build/outputs/apk/debug/app-x86_64-debug.apk "$NAME":/tmp/app.apk
+docker cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$NAME":/tmp/test.apk
+docker exec "$NAME" $ADB install -r -t /tmp/app.apk
+docker exec "$NAME" $ADB install -r -t /tmp/test.apk
+
+echo "==> running the instrumentation tests"
+out=$(docker exec "$NAME" $ADB shell am instrument -w -r \
+        com.amnesica.kryptey.test/androidx.test.runner.AndroidJUnitRunner)
+echo "$out"
+
+# am instrument exits 0 whether the tests passed or not, so the result has to be read out of
+# the stream rather than taken from the exit status.
+if echo "$out" | grep -q '^OK ('; then
+  echo "==> PASSED"
+else
+  echo "==> FAILED"
+  exit 1
+fi

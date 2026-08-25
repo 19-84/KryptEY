@@ -70,8 +70,33 @@ and a *new* problem fails the build.
 Regenerate it with `gradlew updateLintBaseline` deliberately, never to turn a red build green: an
 entry added there is a finding nobody will look at again.
 
-## What this environment cannot do
+## Instrumentation tests
 
-Instrumentation tests (`app/src/androidTest`) need `/dev/kvm` or a physical device. There are 11 of
-them, they compile, and they have never run here - the Android Keystore has no JVM equivalent.
-`KeyResolutionTest` covers the decisions around those calls; the calls themselves remain untested.
+`tools/test-on-emulator` runs them. There are 11, they cover the Android Keystore, and until
+recently they had never executed anywhere - the Keystore has no JVM equivalent, so Robolectric
+cannot reach them.
+
+    tools/test-on-emulator
+
+It builds `tools/emulator/Dockerfile` on first use (an Android 28 x86_64 system image, so expect a
+long first run), boots the emulator, builds the APKs, installs both, and runs the suite. Budget
+about ten minutes for the boot and nine seconds for the tests.
+
+There is no `/dev/kvm` on this machine and the CPU exposes no virtualisation extensions, which was
+read for a long time as "an emulator cannot run here". It was the wrong conclusion: KVM is an
+accelerator, and `-no-accel` makes QEMU emulate the guest in software instead. Slow, not impossible.
+
+Two things are easy to trip over:
+
+- **x86_64 is not a shipped ABI.** The splits produce `arm64-v8a` and `armeabi-v7a`, neither of
+  which installs on an x86_64 emulator. `-PemulatorAbi` adds `x86_64` for a local run; nothing on a
+  release path sets it.
+- **`am instrument` exits 0 even when tests fail.** The script reads the result out of the output
+  stream rather than trusting the exit status. Both directions were checked against real runs.
+
+## What this environment still cannot do
+
+StrongBox. The emulator has none, so the top rung of the key ladder is only ever exercised as a
+refusal that gets stepped down from. What a StrongBox-backed device actually does remains untested.
+Nothing here drives the keyboard through a real messenger either - the suite is about the crypto
+box, not the IME.

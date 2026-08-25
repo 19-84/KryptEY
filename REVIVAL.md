@@ -39,7 +39,7 @@ and release both assemble; dependency verification pins 386 artifacts by SHA-256
 
 ## How to read this
 
-Twenty-nine sections, written in the order things were found rather than by subject, so the
+Thirty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -59,6 +59,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Phase 4's trust predicates, swept and clean](#phase-4s-trust-predicates-swept-and-clean)
 - [The typing-redirect seam, swept and clean — and two ways a sweep lies](#the-typing-redirect-seam-swept-and-clean-and-two-ways-a-sweep-lies)
 - [Where the sweep programme ends](#where-the-sweep-programme-ends)
+- [The instrumentation tests run now, on an emulator with no hardware acceleration](#the-instrumentation-tests-run-now-on-an-emulator-with-no-hardware-acceleration)
 - [What the double ratchet gives this app, measured](#what-the-double-ratchet-gives-this-app-measured)
 
 **Decisions, and what is still open**
@@ -519,8 +520,8 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
   which is a security preference rather than an implementation detail: strongest first, weakest
   last, `unlockedDeviceRequired` given up only after StrongBox, and the API-28 floor. Checked by
   mutation: reversing the StrongBox preference so a non-StrongBox key is chosen over a StrongBox one
-  fails immediately. 11 instrumentation
-  tests are written and compile, but need hardware or a KVM runner. **"And compile" is now
+  fails immediately. The 11 instrumentation
+  tests are no longer only compiled — they run, and pass, on an emulator (see below). **"And compile" is now
   enforced**: nothing used to build `androidTest` during an ordinary run, so the only coverage of the
   real Keystore could have been broken by a rename and stayed broken silently for months — it is the
   code most exposed to that, precisely because it cannot run here. `testDebugUnitTest` now depends on
@@ -727,10 +728,17 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
    The number now proves "these two keys are the ones in use", which is what the comparison is for;
    it does not prove the address you are sending to is your contact's. That is the duplicate-name
    problem, addressed separately by warning and tagging.
-**The instrumentation tests.** Not possible in this environment, and that is now settled
-   rather than pending: there is no `/dev/kvm` and the host CPU exposes no virtualisation
-   extensions at all, so an emulator cannot run here even slowly. The 11 `AndroidKeystoreCryptoBox`
-   tests have therefore never executed anywhere.
+**The instrumentation tests.** They run. This entry used to say the opposite — "not possible in
+   this environment, and that is now settled rather than pending" — and that conclusion was wrong,
+   which is worth leaving visible rather than quietly replacing. The premise was right: there is no
+   `/dev/kvm` and the host CPU exposes no virtualisation extensions. The inference from it was not.
+   QEMU does not need them; without KVM it falls back to TCG and emulates the guest in software,
+   which is slow rather than impossible. A boot takes about ten minutes and the tests then take nine
+   seconds. See [the instrumentation tests run
+   now](#the-instrumentation-tests-run-now-on-an-emulator-with-no-hardware-acceleration).
+
+   The 11 `AndroidKeystoreCryptoBox` tests have now executed, on Android 28 x86_64, and all 11
+   pass.
 
    Two pieces have since been pulled onto the JVM. `CallerNonceProhibitedTest` covers
    `randomizedEncryptionRequired` — the one Keystore behaviour a desktop JVM does not share, which
@@ -740,10 +748,81 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
    backwards would silently mint a weaker key on a device that could have done better, and the log
    line says what was created, not what was possible.
 
-   What still needs a device: that a key created with those flags actually *has* them. That is a
-   `KeyInfo` check on real hardware and nothing here can substitute for it. It registers a provider that imposes that rule and runs the real
-   seal/open path against it, so the bug that already shipped once cannot recur silently. That is
-   one property, not the whole suite; the rest still needs a device.
+   What needed a device: that a key created with those flags actually *has* them, which is a
+   `KeyInfo` check no JVM shim can stand in for. That check now runs. `CallerNonceProhibitedTest`
+   remains useful on the JVM regardless — it registers a provider that imposes the
+   caller-nonce rule and runs the real seal/open path against it, so the bug that already shipped
+   once cannot recur silently even without an emulator to hand.
+
+## The instrumentation tests run now, on an emulator with no hardware acceleration
+
+For most of this branch's life the 11 `AndroidKeystoreCryptoBoxTest` methods were the one piece of
+the project nothing could execute. They were compiled (a build failure now guards against silent
+rot) and they were read by hand, which is the weakest form of review there is. They have now been
+run: **11 tests, 0 failures, on Android 28 x86_64.**
+
+The reason they could not run before was a wrong inference, not a missing capability. This machine
+has no `/dev/kvm`, and `/proc/cpuinfo` advertises no `vmx` or `svm` — nested virtualisation is not
+exposed. From that it was concluded that no emulator could start. But KVM is an *accelerator*, and
+QEMU without one falls back to TCG, which emulates the guest instruction by instruction in software.
+`-no-accel` asks for exactly that. It is slow — a cold boot is about ten minutes against seconds
+with KVM — and it is not impossible, which is what the entry in "Settled during review" claimed.
+
+The first attempt did in fact fail, and it failed in the way most likely to confirm the wrong
+conclusion. The emulator process died at once with
+
+```
+emulator: error while loading shared libraries: libX11.so.6
+```
+
+and the harness around it went on polling `sys.boot_completed` for ten minutes against a process
+that had never existed, then reported no boot. A dead emulator and a slow one are indistinguishable
+from outside unless something checks — which is why `tools/test-on-emulator` now checks for the
+`qemu-system` process on every poll and prints the log the moment it is gone, rather than letting a
+crash spend the full timeout impersonating slowness. The launcher and the QEMU binary beneath it
+link against X11 and a dozen other libraries even under `-no-window`; `tools/emulator/Dockerfile`
+installs them.
+
+**x86_64 had to be built on purpose.** The shipped APKs are `arm64-v8a` and `armeabi-v7a` only,
+because that is what phones are, and libsignal's native code is ~74 MB per ABI so a universal APK is
+not an option. An x86_64 emulator cannot install either of them. `-PemulatorAbi` adds `x86_64` to
+the splits for a local run; no release path sets it, so what ships is unchanged.
+
+**What running them actually bought.** These are the Keystore tests, and the Keystore is the one
+component a JVM cannot stand in for — there is no TEE behind a desktop provider. Two pieces had been
+pulled onto the JVM to get *some* coverage (`CallerNonceProhibitedTest` for the caller-nonce rule,
+`KeyCandidateLadderTest` for the ladder's ordering), and both remain worth having. But the property
+they could never reach is whether a key created with a set of flags actually comes back *carrying*
+them, which is a `KeyInfo` question about real hardware. That now has an answer instead of an
+argument.
+
+**Two facts that had been open questions, read off the running device rather than the manifest.**
+`dumpsys package` reports the IME service as
+
+```
+com.amnesica.kryptey/.inputmethod.latin.LatinIME filter permission android.permission.BIND_INPUT_METHOD
+```
+
+An input method *must* be exported — the system server binds it, so `exported="false"` would simply
+break the app, and asking whether it is exported was the wrong question. The right one is what
+guards the binding, and the answer is `BIND_INPUT_METHOD`, a signature-level permission only the
+platform holds. And the requested-permission list on the installed package is exactly
+`android.permission.VIBRATE`: **no `INTERNET`**, confirmed by the package manager rather than
+inferred from merged XML. That is the app's whole defence against exfiltration, and it is the kind
+of property a mutation sweep structurally cannot test, because it is the absence of something.
+
+**How the runner knows it passed.** `am instrument` exits 0 whether the tests passed or not — that
+was verified, not assumed, by running a deliberately failing instrumentation and watching the shell
+report success. The result has to be read out of the stream, so the script greps for `OK (`. Both
+directions were checked against real output: the passing run matches, the failing run (`FAILURES!!!
+Tests run: 1, Failures: 1`) does not.
+
+**What this still is not.** An emulator is not a phone. There is no StrongBox on it, so the top rung
+of the key ladder is exercised only in the sense that it is correctly refused and stepped down from;
+what a StrongBox device does still has no test here. The suite is 11 tests about the crypto box, not
+about the keyboard — nothing here drives the IME through a real messenger, and the autofill question
+remains open. What changed is that the category "cannot be run in this environment" is smaller than
+it was, and it was worth an hour to find out that it was never as large as the document said.
 
 ## The release APK built here is not the one users would get
 
