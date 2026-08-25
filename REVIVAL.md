@@ -1483,12 +1483,28 @@ was correcting, because it was reasoned from the threat model rather than checke
 `InviteAdviceMatchesTheFlowTest` asserts the behaviour first — the commit path, and the absence of
 any copy affordance — and only then judges the wording, so the words are measured against the code.
 
-**The real fix is deferred and is a product change:** give the user a way to obtain their invite
-without committing it to the host app — a copy action on the strip, or a confirmation step before
-the text is typed out. Until that exists the honest wording is what shipped: the invite is in that
-app's text box before you decide anything, and what you still control is whether it travels onward.
-If the affordance is added, `theinviteGoesStraightIntoTheMessengerAndNothingOffersItAnyOtherWay`
-fails on purpose, and the wording should be revisited rather than the scan loosened.
+**Corrected, and the correction is the interesting part.** The "Open" list said, in an entry written
+long before this round, that out-of-band export *already works*: the invite goes to whichever app has
+focus, so the user picks the channel by picking the app. That is true — `onTextInput` reaches the
+current input connection — and it means the fix above was too pessimistic. There was never a missing
+capability. What was missing was the **order of operations**: open the notes app or the email draft
+*first*, then tap invite, and the messenger genuinely never sees that first key. Tap it inside the
+messenger and it is lost before the user can route anything.
+
+Neither the original wording nor my correction to it said which order to do things in, which is the
+whole of the defect. The help now does, and `InviteAdviceMatchesTheFlowTest` changed shape with it:
+it used to ban the "never sees" claim outright, which would now suppress a true and useful sentence,
+so it requires the instruction beside the claim instead.
+
+Worth recording as a process point rather than only a wording one. Two accurate findings — "the flow
+commits the invite to the host app" and "out-of-band export already works" — sat in this document at
+the same time, in different sections, contradicting each other's implications, and I acted on one
+without reading the other. **The audit that keeps finding stale entries is also how the entries talk
+to each other**, and a fix derived from one section needs checking against the rest.
+
+A copy action on the strip would still be an improvement — it would remove the ordering trap
+entirely — but it is a convenience now rather than a missing capability, which is a materially
+different thing to have on a deferred list.
 
 ## Known-deferred defects
 

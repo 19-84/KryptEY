@@ -24,13 +24,20 @@ import java.nio.file.Paths;
  * so, and then tells the user what to do about it — hand it over "in person, in an email, in a note",
  * which "keeps the messenger from ever seeing that first key".
  *
- * <p>It cannot. The invite button generates the bundle and immediately commits it into the
- * messenger's own compose field, and it does so <em>deliberately</em>: {@code
+ * <p>Not as written, and the correction went one step too far before it went far enough. The invite
+ * button commits the bundle into <b>whichever app currently has focus</b>, deliberately: {@code
  * sendEncryptedMessageToApplication} lowers the typing redirect first, precisely so the text lands
- * in the messenger rather than in the strip. There is no affordance anywhere in the strip that hands
- * the user their invite any other way — the only {@code setPrimaryClip} call writes an empty clip,
- * because its job is clearing. By the time the user could route it elsewhere, the app they were told
- * to route it around is holding it in an EditText it owns.
+ * in the host app rather than in the strip. There is no affordance that hands the user their invite
+ * any other way — the only {@code setPrimaryClip} call writes an empty clip, because its job is
+ * clearing.
+ *
+ * <p>So tapping invite <em>inside the messenger</em> loses before the user can route anything: the
+ * app they were told to route around is already holding it in an EditText it owns. But tapping it
+ * inside a notes app or an email draft puts it there instead, and the messenger genuinely never sees
+ * it. The capability was always real; the help simply never said which order to do things in, which
+ * is the whole of the defect. An earlier version of this test banned the "never sees" claim
+ * outright — that would now suppress a true and useful sentence, so it requires the instruction
+ * beside it instead.
  *
  * <p>The sentence conflates two adversaries the rest of this codebase is careful to separate: the
  * messenger's <em>servers</em>, which see the invite only if the user presses send, and the messenger
@@ -117,13 +124,22 @@ public class InviteAdviceMatchesTheFlowTest {
   public void thehelpDoesNotPromiseTheMessengerNeverSeesTheInvite() {
     final String section = startAChatSection().toLowerCase(java.util.Locale.ROOT);
 
-    assertFalse("the help promises that handing the invite over another way keeps the messenger "
-            + "from ever seeing the first key. The invite button types that key into the "
-            + "messenger's own compose field before the user can route it anywhere, and no "
-            + "affordance in the app hands it over any other way - so a user who follows this "
-            + "believes they have closed the one gap trust-on-first-use cannot cover, and has "
-            + "not. Say what the user actually controls instead: " + section,
-        section.contains("ever seeing") || section.contains("never see"));
+    // Not a ban on the claim - a requirement that it carry the instruction that makes it true.
+    //
+    // The first version of this test forbade "never sees" outright, because the help made that
+    // promise while saying nothing about how to achieve it: the invite is committed to whichever
+    // app currently has focus, so a reader who tapped invite inside the messenger had already lost
+    // before they could route it anywhere. That reading was too pessimistic in one direction. The
+    // capability is real - open the other app FIRST and the invite lands there instead - and the
+    // defect was that the help never said so. Forbidding the claim would now hide a true and
+    // useful one; requiring the instruction beside it is what the user actually needs.
+    if (section.contains("never sees") || section.contains("ever seeing")) {
+      assertTrue("the help says the messenger never sees the first key, which is true only if the "
+              + "user opens the other app BEFORE tapping invite - the invite goes to whichever app "
+              + "has focus. Said without that instruction it is a promise the reader cannot act on: "
+              + section,
+          section.contains("open the other app first"));
+    }
   }
 
   /**
