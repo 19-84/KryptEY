@@ -226,11 +226,28 @@ public class Account {
   }
 
   public void removeAllUnencryptedMessages(Contact contact) {
+    final boolean unambiguous = hasExactlyOneContactNamed(contact.getSignalProtocolAddressName());
     List<StorageMessage> operatedList = new ArrayList<>();
     mUnencryptedMessages.stream()
-        .filter(m -> m.getContactUUID().equals(contact.getSignalProtocolAddressName()))
+        .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId(),
+            unambiguous))
         .forEach(operatedList::add);
     mUnencryptedMessages.removeAll(operatedList);
+  }
+
+  /**
+   * Whether one address name identifies a single contact.
+   *
+   * <p>Gates the legacy chat-log key. Two contacts sharing an address name is the impostor case, and
+   * in it no legacy message can be attributed to either without guessing.
+   */
+  public boolean hasExactlyOneContactNamed(final String addressName) {
+    if (contactList == null || addressName == null) return false;
+    int matches = 0;
+    for (final Contact other : contactList) {
+      if (addressName.equals(other.getSignalProtocolAddressName())) matches++;
+    }
+    return matches == 1;
   }
 
   public ArrayList<Contact> getContactList() {

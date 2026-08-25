@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -304,6 +305,14 @@ public class SignalProtocolTest {
     putAllInformationInMapSharedPreferences(recipient, recipientUsername);
   }
 
+  /** One account's log with one contact, through the same key production files them under. */
+  private static List<StorageMessage> messagesWith(final Account account, final Contact contact) {
+    return account.getUnencryptedMessages().stream()
+        .filter(m -> m.getContactUUID().equals(StorageMessage.chatLogKey(
+            contact.getSignalProtocolAddressName(), contact.getDeviceId())))
+        .collect(Collectors.toList());
+  }
+
   @Test
   public void verifyUnencryptedMessagesAreStoredInMapTest() throws IOException, UntrustedIdentityException, InvalidKeyIdException, InvalidKeyException, NoSessionException, InvalidMessageException, DuplicateMessageException, InvalidVersionException, LegacyMessageException {
     Log.i(TAG, "------------ verifyUnencryptedMessagesAreStoredInMapTest: ------------");
@@ -325,11 +334,19 @@ public class SignalProtocolTest {
     assertEquals(1, alice.getUnencryptedMessages().size());
     assertEquals(1, bob.getUnencryptedMessages().size());
 
-    assertNotNull(alice.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactBob.getSignalProtocolAddressName())).collect(Collectors.toList()));
-    assertNotNull(bob.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactAlice.getSignalProtocolAddressName())).collect(Collectors.toList()));
+    // Keyed by the FULL address now - the address name alone is public and the device id beside it
+    // is the sender's to choose, so a name-keyed log is one two peers share.
+    //
+    // These were assertNotNull on the result of a collect(), which is never null: they held whether
+    // or not a single message had been stored. They now assert what they were named for, which is
+    // also what makes the get(0) below safe rather than an exception waiting to be misread.
+    assertFalse("Alice's log must hold the message she exchanged with Bob",
+        messagesWith(alice, contactBob).isEmpty());
+    assertFalse("and Bob's must hold the one he exchanged with Alice",
+        messagesWith(bob, contactAlice).isEmpty());
 
-    assertEquals(unencryptedMessage, Objects.requireNonNull(alice.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactBob.getSignalProtocolAddressName())).collect(Collectors.toList())).get(0).getUnencryptedMessage());
-    assertEquals(unencryptedMessage, Objects.requireNonNull(bob.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactAlice.getSignalProtocolAddressName())).collect(Collectors.toList())).get(0).getUnencryptedMessage());
+    assertEquals(unencryptedMessage, messagesWith(alice, contactBob).get(0).getUnencryptedMessage());
+    assertEquals(unencryptedMessage, messagesWith(bob, contactAlice).get(0).getUnencryptedMessage());
 
     final String unencryptedMessage2 = "No, I’ve been nervous lots of times.";
     sendMessageAfterSessionBuild(bob, BOB_USERNAME, alice, ALICE_USERNAME, unencryptedMessage2);
@@ -337,11 +354,19 @@ public class SignalProtocolTest {
     assertEquals(2, alice.getUnencryptedMessages().size());
     assertEquals(2, bob.getUnencryptedMessages().size());
 
-    assertNotNull(alice.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactBob.getSignalProtocolAddressName())).collect(Collectors.toList()));
-    assertNotNull(bob.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactAlice.getSignalProtocolAddressName())).collect(Collectors.toList()));
+    // Keyed by the FULL address now - the address name alone is public and the device id beside it
+    // is the sender's to choose, so a name-keyed log is one two peers share.
+    //
+    // These were assertNotNull on the result of a collect(), which is never null: they held whether
+    // or not a single message had been stored. They now assert what they were named for, which is
+    // also what makes the get(0) below safe rather than an exception waiting to be misread.
+    assertFalse("Alice's log must hold the message she exchanged with Bob",
+        messagesWith(alice, contactBob).isEmpty());
+    assertFalse("and Bob's must hold the one he exchanged with Alice",
+        messagesWith(bob, contactAlice).isEmpty());
 
-    assertEquals(unencryptedMessage2, Objects.requireNonNull(alice.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactBob.getSignalProtocolAddressName())).collect(Collectors.toList())).get(1).getUnencryptedMessage());
-    assertEquals(unencryptedMessage2, Objects.requireNonNull(bob.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contactAlice.getSignalProtocolAddressName())).collect(Collectors.toList())).get(1).getUnencryptedMessage());
+    assertEquals(unencryptedMessage2, messagesWith(alice, contactBob).get(1).getUnencryptedMessage());
+    assertEquals(unencryptedMessage2, messagesWith(bob, contactAlice).get(1).getUnencryptedMessage());
   }
 
   @Test

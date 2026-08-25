@@ -205,9 +205,17 @@ public class StorageHelper {
       for (final Object entry : (java.util.List<?>) storedRetired) {
         if (entry instanceof java.util.List) {
           final java.util.List<?> pair = (java.util.List<?>) entry;
+          // Three elements, not two. retireDisplayName writes {first, last, addressName} and both
+          // the suppression in hasRetiredDisplayName and the de-duplication in retireDisplayName
+          // are gated on length > 2 - so dropping the address here did not lose a nicety, it made
+          // both of them dead code. reloadAccount runs on every setInputView, so the reloaded
+          // shape is the only shape production ever sees: the suppression never fired, and every
+          // delete-and-re-add appended another copy to a bounded list whose oldest entry is the one
+          // an attacker wants evicted.
           retired.add(new String[] {
               pair.size() > 0 && pair.get(0) != null ? String.valueOf(pair.get(0)) : "",
-              pair.size() > 1 && pair.get(1) != null ? String.valueOf(pair.get(1)) : ""});
+              pair.size() > 1 && pair.get(1) != null ? String.valueOf(pair.get(1)) : "",
+              pair.size() > 2 && pair.get(2) != null ? String.valueOf(pair.get(2)) : ""});
         } else if (entry instanceof String[]) {
           retired.add((String[]) entry);
         }

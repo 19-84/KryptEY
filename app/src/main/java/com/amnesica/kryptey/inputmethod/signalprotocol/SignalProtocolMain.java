@@ -1100,13 +1100,34 @@ public class SignalProtocolMain {
   public static boolean hasRetiredDisplayName(final String firstName, final String lastName,
                                               final SignalProtocolAddress excluding) {
     if (sInstance.mAccount == null) return false;
-    final String excludedName = excluding == null ? null : excluding.getName();
+
+    // The suppression's premise, enforced rather than assumed.
+    //
+    // It exists because "deletion keeps the pin, so a re-add at the SAME address is provably the
+    // same identity". Two things were missing from the check. It compared address NAMES, but a name
+    // is not an address - the device id beside it is the sender's to choose, so the attacker reused
+    // the deleted contact's name at any other device id and landed on an address where nothing was
+    // ever pinned, with the one control covering that door switched off. And it never asked whether
+    // a pin actually survives: after rejectContactKey the pin is gone at the exact same address, and
+    // that sequence is what the app's own advice produces - compare, mismatch, reject, delete, ask
+    // for a fresh invite.
+    //
+    // So: the full address must match, AND there must still be a pinned key at it. With no pin
+    // there is nothing that makes this "provably the same identity", and the warning is the only
+    // thing left.
+    final boolean excludedIsStillPinned = excluding != null
+        && sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore()
+            .getIdentity(excluding) != null;
+    final String excludedAddress = ProtocolAddresses.key(excluding);
 
     for (final String[] retired : sInstance.mAccount.getRetiredDisplayNames()) {
       if (!displayNamesMatch(retired[0], retired[1], firstName, lastName)) continue;
       // Entries written before the address was recorded have length 2; treat those as matching
       // nothing in particular rather than silently suppressing.
-      if (excludedName != null && retired.length > 2 && excludedName.equals(retired[2])) continue;
+      if (excludedIsStillPinned && retired.length > 2
+          && excludedAddress.equals(retired[2])) {
+        continue;
+      }
       return true;
     }
     return false;
@@ -1329,8 +1350,11 @@ public class SignalProtocolMain {
     //
     // rejectedAddresses was deliberately made to outlive removeIdentity on exactly this reasoning.
     // The display name got no such treatment and was erased by one tap, with no confirmation.
+    // The FULL address, not the address name: the suppression that reads this back is what makes
+    // a re-add at the same address unwarned, and a name shared with another device id is a
+    // different identity that must not inherit that.
     mAccount.retireDisplayName(contactToRemove.getFirstName(), contactToRemove.getLastName(),
-        contactToRemove.getSignalProtocolAddressName());
+        ProtocolAddresses.key(contactToRemove.getSignalProtocolAddress()));
 
     Log.d(TAG, "Deleting session for contact");
     if (mAccount.getSignalProtocolStore().getSessionStore().containsSession(contactToRemove.getSignalProtocolAddress())) {
@@ -1383,7 +1407,12 @@ public class SignalProtocolMain {
 
   private List<StorageMessage> getUnencryptedMessagesListFromAccount(Contact contact) throws UnknownContactException {
     if (mAccount != null && contact != null) {
-      List<StorageMessage> messagesWithContact = mAccount.getUnencryptedMessages().stream().filter(m -> m.getContactUUID().equals(contact.getSignalProtocolAddressName())).collect(Collectors.toList());
+      final boolean unambiguous =
+          mAccount.hasExactlyOneContactNamed(contact.getSignalProtocolAddressName());
+      List<StorageMessage> messagesWithContact = mAccount.getUnencryptedMessages().stream()
+          .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId(),
+              unambiguous))
+          .collect(Collectors.toList());
       if (messagesWithContact.size() == 0) {
         throw new UnknownContactException("No messages were found for contact: " + contact.getFirstName() + " " + contact.getLastName());
       }
@@ -1604,11 +1633,16 @@ public class SignalProtocolMain {
     if (!recipient.isPresent())
       throw new InvalidContactException("No contact found with signalProtocolAddress: " + signalProtocolAddress);
 
+    // Filed under the full address. See StorageMessage.chatLogKey: the address NAME is public and
+    // the device id beside it is the sender's to choose, so a name-keyed log put an impostor's
+    // messages inside the genuine contact's conversation.
+    final String logKey = StorageMessage.chatLogKey(
+        signalProtocolAddress.getName(), signalProtocolAddress.getDeviceId());
     StorageMessage storageMessage;
     if (isFromOwnAccount) {
-      storageMessage = new StorageMessage(signalProtocolAddress.getName(), account.getSignalProtocolAddress().getName(), signalProtocolAddress.getName(), timestamp, decryptedMessage);
+      storageMessage = new StorageMessage(logKey, account.getSignalProtocolAddress().getName(), signalProtocolAddress.getName(), timestamp, decryptedMessage);
     } else {
-      storageMessage = new StorageMessage(signalProtocolAddress.getName(), signalProtocolAddress.getName(), account.getSignalProtocolAddress().getName(), timestamp, decryptedMessage);
+      storageMessage = new StorageMessage(logKey, signalProtocolAddress.getName(), account.getSignalProtocolAddress().getName(), timestamp, decryptedMessage);
     }
 
     recipient.ifPresent(contact -> account.addUnencryptedMessage(contact, storageMessage));

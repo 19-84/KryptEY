@@ -50,6 +50,40 @@ public class StorageMessage {
     return unencryptedMessage;
   }
 
+  /**
+   * The key a chat log is filed under: the FULL address, not the address name.
+   *
+   * <p>The address name alone is not an identity. It is public - it travels in every envelope the
+   * messenger relays - and the device id beside it is one byte the sender chooses. Filing messages
+   * by the name alone meant two contacts differing only in device id shared one thread, so an
+   * impostor's words rendered inside the genuine contact's conversation, under their name, their
+   * tag and their badge. That is the substitution the pin refuses, achieved without touching a key.
+   * Deleting the impostor - the action the duplicate-name warning steers the user towards - took
+   * the genuine contact's history with it.
+   */
+  public static String chatLogKey(final String addressName, final int deviceId) {
+    return com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.key(
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.of(
+            addressName, deviceId));
+  }
+
+  /**
+   * Whether this message belongs to the given contact's log.
+   *
+   * <p>The legacy arm exists so an upgrade does not silently empty everyone's history: messages
+   * written before the key included the device id are matched by name, but ONLY when the contact
+   * list holds exactly one contact with that address name. When it holds two, the whole point is
+   * that the app cannot tell which of them a legacy message belonged to - and guessing is precisely
+   * what the attack relies on, so the ambiguous ones stay unfiled rather than being handed to
+   * whichever row asked first.
+   */
+  public boolean belongsTo(final String addressName, final int deviceId,
+      final boolean nameIsUnambiguous) {
+    if (contactUUID == null) return false;
+    if (contactUUID.equals(chatLogKey(addressName, deviceId))) return true;
+    return nameIsUnambiguous && contactUUID.equals(addressName);
+  }
+
   public String getContactUUID() {
     return contactUUID;
   }

@@ -67,4 +67,17 @@ public final class ProtocolAddresses {
   public static SignalProtocolAddress of(final String name, final int deviceId) {
     return new SignalProtocolAddress(name, sanitizeDeviceId(deviceId));
   }
+
+  /**
+   * The canonical string form of a full address: {@code name.deviceId}.
+   *
+   * <p>One definition, because two records key off it - the chat log and the retired display name -
+   * and both were keyed by the address NAME alone. A name is not an identity: it travels in every
+   * envelope the messenger relays, and the device id beside it is one byte the sender chooses. Any
+   * record keyed by the name is a record two different peers share.
+   */
+  public static String key(final SignalProtocolAddress address) {
+    if (address == null) return "";
+    return address.getName() + "." + address.getDeviceId();
+  }
 }

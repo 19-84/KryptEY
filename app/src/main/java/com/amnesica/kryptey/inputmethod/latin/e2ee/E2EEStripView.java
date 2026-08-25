@@ -1213,6 +1213,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void setupMessageInputEditTextField() {
     mInputEditText.setMovementMethod(new ScrollingMovementMethod());
+    // The FLAG_SECURE decision must be revised when this field's content changes.
+    //
+    // notifySensitiveVisibility() was reachable from exactly one place - the finally of
+    // showOnlyUIView - so the only events that revised the flag were screen switches. Putting
+    // plaintext into this field is not a screen switch, so the case isShowingSensitiveContent()
+    // leads with ("a decrypted message in the field is exactly what must not be captured") never
+    // raised the flag at all.
+    //
+    // It also fixes the mirror on the dismissal path: clearDecryptedContent empties this field
+    // BEFORE consulting the predicate, so on the main view the predicate had already gone false by
+    // the time it was asked, no screen switch happened, and a flag raised while a draft was on
+    // screen was never lowered - leaving it set for the keyboard's whole life, which the design
+    // explicitly rejects.
+    mInputEditText.addTextChangedListener(new TextWatcher() {
+      @Override
+      public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+
+      @Override
+      public void onTextChanged(CharSequence s, int start, int before, int count) { }
+
+      @Override
+      public void afterTextChanged(Editable s) {
+        notifySensitiveVisibility();
+      }
+    });
     mInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
       if (hasFocus) mRichInputConnection.setOtherIC(mInputEditText);
       mRichInputConnection.setShouldUseOtherIC(hasFocus);
@@ -1515,7 +1540,32 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   public void onKeyboardHidden() {
     clearDecryptedContent();
+    forgetAbandonedInvite();
     forgetChosenRecipient();
+  }
+
+  /**
+   * Drops a half-finished invite when the keyboard is dismissed.
+   *
+   * <p>{@code clearDecryptedContent} leaves the current screen only {@code if
+   * (isShowingSensitiveContent())}, and that predicate enumerates four screens out of six. The
+   * add-contact screen is one it omits, so the one screen the user reaches by acting on the
+   * messenger's own payload was the one that survived the app switch - still up, still pre-filled,
+   * and with the Add button still bound to the attacker's envelope, in whatever app the keyboard
+   * next served.
+   *
+   * <p>The typed name is dropped for the same reason the Cancel button drops it (6354d93): the next
+   * invite's screen would otherwise open pre-filled with the last one's name, so a user who
+   * abandons one invite and accepts the next without re-reading names a new address after the old
+   * contact. Unlike Cancel, this path is one the messenger can trigger itself - any app may hide the
+   * keyboard whenever it likes.
+   */
+  private void forgetAbandonedInvite() {
+    if (mLayoutE2EEAddContactView != null
+        && mLayoutE2EEAddContactView.getVisibility() == VISIBLE) {
+      showOnlyUIView(UIView.MAIN_VIEW);
+    }
+    resetAddContactInputTextFields();
   }
 
   /** The recipient the next message would go to, for tests. */

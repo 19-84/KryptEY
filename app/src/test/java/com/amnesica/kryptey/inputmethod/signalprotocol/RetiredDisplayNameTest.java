@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
@@ -49,6 +50,15 @@ public class RetiredDisplayNameTest {
     final ArrayList<Contact> contacts = new ArrayList<>();
     contacts.add(bob);
     me.setContactList(contacts);
+
+    // A pinned key at Bob's address.
+    //
+    // This fixture had none, which made areAddAtTheSameAddressDoesNotWarn assert the suppression in
+    // precisely the state where its own stated justification - "deletion keeps the pin, so a re-add
+    // there is provably the same identity" - does not hold. The test passed because the code did
+    // not check the premise either. Both now do.
+    me.getSignalProtocolStore().getIdentityKeyStore().saveIdentity(peerAddress,
+        org.signal.libsignal.protocol.IdentityKeyPair.generate().getPublicKey());
   }
 
   private SignalProtocolAddress elsewhere() {
@@ -139,6 +149,10 @@ public class RetiredDisplayNameTest {
   @Test
   public void areAddAtTheSameAddressDoesNotWarn() {
     SignalProtocolMain.removeContactFromContactListAndProtocol(me.getContactList().get(0));
+
+    assertNotNull("precondition: the pin must survive the deletion - it is the entire reason this "
+            + "re-add is provably the same identity, and without it the suppression is a hole",
+        me.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
 
     assertFalse("re-adding the same person at the same address must not warn - the surviving pin "
             + "already proves it is them",
