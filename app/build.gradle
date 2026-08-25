@@ -121,6 +121,13 @@ android {
         // change and replays its last result - which it did, reporting a removed @After cleanup as
         // "survived".
         inputs.dir('src/androidTest/java').withPathSensitivity(PathSensitivity.RELATIVE)
+        // ReleaseManifestHasNoTestScaffoldingTest reads these two source sets to check that the
+        // instrumentation scaffolding cannot reach a release build. Neither is on the unit-test
+        // compile path, so without these a file moved out of src/debug - the exact defect the test
+        // exists to catch - would replay the previous pass. Seventh instance of that trap here.
+        inputs.dir('src/debug/java').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('src/debug/AndroidManifest.xml').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('src/main/AndroidManifest.xml').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../gradle/verification-metadata.xml').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../tools/README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../.github/workflows/build.yml').withPathSensitivity(PathSensitivity.RELATIVE)

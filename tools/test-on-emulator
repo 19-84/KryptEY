@@ -10,7 +10,7 @@
 # for the boot; the tests themselves take about 9 seconds once it is up.
 set -e
 
-IMAGE="${KRYPTEY_EMU_IMAGE:-kryptey-emu:29}"
+IMAGE="${KRYPTEY_EMU_IMAGE:-kryptey-emu:30}"
 NAME="${KRYPTEY_EMU_CONTAINER:-kryptey-emu-run}"
 BOOT_TIMEOUT="${KRYPTEY_EMU_BOOT_TIMEOUT:-1800}"
 ADB=/opt/android-sdk/platform-tools/adb
@@ -26,11 +26,14 @@ cleanup() { docker rm -f "$NAME" > /dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
 
+# Deliberately NOT passing -cores. Multi-core TCG was tried and the guest's system server took a
+# native crash inside four minutes, taking every app down with it (DeadSystemException across the
+# board). More host CPU does not help a workload that is single-threaded per guest core anyway.
 echo "==> starting the emulator"
 docker run -d --name "$NAME" "$IMAGE" bash -lc '
   export ANDROID_AVD_HOME=$HOME/.android/avd
   nohup /opt/android-sdk/emulator/emulator -avd test28 -no-window -no-audio -no-snapshot \
-     -no-accel -gpu swiftshader_indirect -no-boot-anim -memory 2048 \
+     -no-accel -gpu swiftshader_indirect -no-boot-anim -memory 3072 \
      > /tmp/emu.log 2>&1 &
   sleep infinity' > /dev/null
 
@@ -53,6 +56,24 @@ until [ "$(docker exec "$NAME" $ADB shell getprop sys.boot_completed 2>/dev/null
 done
 echo "==> booted: $(docker exec "$NAME" $ADB shell getprop ro.build.version.sdk | tr -d '\r') / $(docker exec "$NAME" $ADB shell getprop ro.product.cpu.abi | tr -d '\r')"
 
+# sys.boot_completed fires before the system services finish registering, and under software
+# emulation that gap is wide - wide enough that an install lands in it and adb reports
+# "Can't find service: input_method" with no hint that the device simply was not ready.
+echo "==> waiting for the input-method service"
+deadline=$((SECONDS + 600))
+until docker exec "$NAME" $ADB shell service check input_method 2>/dev/null | grep -q ": found"; do
+  if [ $SECONDS -ge $deadline ]; then
+    echo "!! the input-method service never registered; the system server may have restarted"
+    exit 1
+  fi
+  sleep 10
+done
+
+# An ANR dialog takes window focus away from whatever is in front, and a test whose field never
+# gets focus never establishes an input connection - so the keyboard is never bound and the
+# failure reads as a broken keyboard rather than a starved emulator.
+docker exec "$NAME" $ADB shell settings put global hide_error_dialogs 1 > /dev/null 2>&1 || true
+
 # x86_64 is not a shipped ABI, so it has to be asked for explicitly - see the splits block.
 echo "==> building the x86_64 APKs"
 tools/build-in-docker assembleDebug assembleDebugAndroidTest -PemulatorAbi
@@ -62,6 +83,13 @@ docker cp app/build/outputs/apk/debug/app-x86_64-debug.apk "$NAME":/tmp/app.apk
 docker cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$NAME":/tmp/test.apk
 docker exec "$NAME" $ADB install -r -t /tmp/app.apk
 docker exec "$NAME" $ADB install -r -t /tmp/test.apk
+
+# Selecting an input method needs shell privileges the test process does not have. Without this
+# the binding test cannot run at all - and it would fail looking like a broken keyboard rather
+# than a harness step that was skipped, which is why the test asserts this as a precondition.
+echo "==> selecting the keyboard as the input method"
+docker exec "$NAME" $ADB shell ime enable com.amnesica.kryptey/.inputmethod.latin.LatinIME
+docker exec "$NAME" $ADB shell ime set com.amnesica.kryptey/.inputmethod.latin.LatinIME
 
 echo "==> running the instrumentation tests"
 out=$(docker exec "$NAME" $ADB shell am instrument -w -r \

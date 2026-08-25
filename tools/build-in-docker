@@ -4,10 +4,17 @@
 # Dependency verification is ON by default: the build fails if any artifact's SHA-256 does not
 # match gradle/verification-metadata.xml. Pass --dependency-verification=off only for local
 # experiments, never for a build you intend to report on.
+#
+# /root/.android is a named volume because the debug keystore lives there. The container is --rm,
+# so without this every build mints a fresh random debug key: the app APK and the androidTest APK
+# come out signed by different keys unless they happen to be built in the same invocation, and the
+# device then refuses the pair with "does not have a signature matching the target". That failure
+# names neither the build nor the keystore, so it is worth preventing rather than recognising.
 set -e
 IMAGE="${KRYPTEY_IMAGE:-kryptey-build:38}"
 exec docker run --rm \
   -v "$(git rev-parse --show-toplevel)":/workspace \
   -v kryptey-gradle-cache:/root/.gradle \
+  -v kryptey-android-home:/root/.android \
   -w /workspace \
   "$IMAGE" ./gradlew --no-daemon "${@:-testDebugUnitTest}"

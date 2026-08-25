@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      A text field for the keyboard to attach to, in the DEBUG source set only.
+
+      It cannot live in the androidTest APK, which is where it started: instrumentation runs inside
+      the target package's process, and startActivitySync refuses an activity belonging to another
+      one - "Intent in process com.amnesica.kryptey resolved to different process
+      com.amnesica.kryptey.test". So it has to be part of the app under test. src/debug keeps it out
+      of every release build, and ReleaseManifestHasNoTestScaffoldingTest checks that rather than
+      trusting it.
+
+      Why any of this is needed: InputMethodManagerService binds an input method lazily, when a
+      client's editable view asks for input. Selecting a keyboard only writes a setting, and dumpsys
+      will report a selected method that was never bound - the state that made exported="false" look
+      settled when nothing had tested it.
+    -->
+    <application>
+        <activity
+            android:name="com.amnesica.kryptey.inputmethod.EditableFieldActivity"
+            android:exported="false"
+            android:label="KryptEY test field" />
+    </application>
+</manifest>

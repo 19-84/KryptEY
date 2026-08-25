@@ -803,10 +803,18 @@ argument.
 com.amnesica.kryptey/.inputmethod.latin.LatinIME filter permission android.permission.BIND_INPUT_METHOD
 ```
 
-An input method *must* be exported — the system server binds it, so `exported="false"` would simply
-break the app, and asking whether it is exported was the wrong question. The right one is what
-guards the binding, and the answer is `BIND_INPUT_METHOD`, a signature-level permission only the
-platform holds. And the requested-permission list on the installed package is exactly
+I wrote here that an input method *must* be exported, that `exported="false"` would simply break
+the app, and that asking about it was the wrong question. **That was wrong, and it was wrong in the
+worst available way: it contradicted the manifest sitting two directories away**, which declares the
+service `android:exported="false"`. It was reasoning presented in the same voice as the measurements
+around it, which is the failure this document is supposed to make hard.
+
+What is actually true, now measured rather than argued: the manifest says `exported="false"`, and
+the platform binds the service anyway. `ImeBindsDespiteExportedFalseTest` selects the keyboard, puts
+a real editable field in front of it, and waits for the service to *start* — not for a setting to
+say it is selected, which is all `dumpsys` reports and all that "selected" ever meant. It starts.
+`exported` is not the gate for an input method; the `BIND_INPUT_METHOD` signature permission is, and
+the input-method framework binds through it. The requested-permission list on the installed package is exactly
 `android.permission.VIBRATE`: **no `INTERNET`**, confirmed by the package manager rather than
 inferred from merged XML. That is the app's whole defence against exfiltration, and it is the kind
 of property a mutation sweep structurally cannot test, because it is the absence of something.
@@ -816,6 +824,22 @@ was verified, not assumed, by running a deliberately failing instrumentation and
 report success. The result has to be read out of the stream, so the script greps for `OK (`. Both
 directions were checked against real output: the passing run matches, the failing run (`FAILURES!!!
 Tests run: 1, Failures: 1`) does not.
+
+**The emulator image is load-bearing, which took a wrong answer to discover.** The first runs of the
+binding test failed, reporting that the service never started — which is exactly what a real
+`exported="false"` problem would look like, and I nearly wrote it up as one. It was the harness.
+On the `google_apis` image, SystemUI cannot keep up with an emulated CPU and goes not-responding
+within minutes of boot; the ANR dialog takes window focus, so the test's field never gets focus,
+never opens an input connection, and no keyboard is ever bound. `dumpsys window` is what showed it:
+`mFocusedApp` was the test activity while `mCurrentFocus` was `Application Not Responding:
+com.android.systemui`. Raising the core count was tried and made it worse — the guest's system
+server took a native crash inside four minutes and every app died with `DeadSystemException`. The
+AOSP (`default`) image carries none of that weight, boots in a third of the time, and does not ANR.
+That is why `tools/emulator/Dockerfile` pins it, and why the runner does not pass `-cores`.
+
+The general lesson is the one this branch keeps relearning: a negative result from a harness nobody
+has validated is not a finding. The first two times the test "failed", the correct next step was to
+ask what the device was actually doing, not to write down what the failure appeared to mean.
 
 **What this still is not.** An emulator is not a phone. There is no StrongBox on it, so the top rung
 of the key ladder is exercised only in the sense that it is correctly refused and stepped down from;
@@ -1822,7 +1846,11 @@ reach IME views would be exactly that, with a test that pins a decision nobody h
 recorded instead is the observation, the mitigation, and the one experiment that settles it — enable
 an autofill service and focus the compose box.
 
-**A manifest question I could not answer, recorded rather than guessed at.** The IME service is
+**A manifest question, since answered on a device.** *Resolved: the platform binds it. See
+[the instrumentation tests run
+now](#the-instrumentation-tests-run-now-on-an-emulator-with-no-hardware-acceleration) — the entry
+below is the original doubt, kept because its reasoning was sound and its resolution cost turned out
+to be accurate.* The IME service is
 declared `android:exported="false"` alongside `android:permission="android.permission.BIND_INPUT_METHOD"`.
 The system's InputMethodManagerService runs in a different UID, so on the plain reading of `exported`
 it could not bind the service at all and the keyboard would never appear in the input-method list —
@@ -1839,6 +1867,15 @@ Settings → Languages & input, and does setting `exported="true"` change anythi
 hardware answers it. It is listed because a reader auditing the manifest will have the same doubt,
 and the useful thing to leave them is the doubt plus its resolution cost, rather than silence or a
 claim I cannot support.
+
+**The answer, measured.** It appears and it binds. `ime list -a` shows it among the available input
+methods; selecting it and putting a real editable field in front of it starts the service, which
+`ImeBindsDespiteExportedFalseTest` asserts by watching for the service to run rather than by reading
+the setting that says it was chosen. `exported` is not what gates an input method — the
+`BIND_INPUT_METHOD` signature permission is, and the input-method framework binds through it. The
+"one minute of hardware" estimate was right about the experiment and wrong about the cost: most of
+the work was proving the harness honest, because the first two runs failed for reasons that had
+nothing to do with the question.
 
 *Also checked while there, and clean:* the app declares exactly one permission, `VIBRATE`, which is
 what the README lists; the boot receiver is `exported="false"`; and the IME service is the only
