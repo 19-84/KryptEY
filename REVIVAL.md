@@ -1878,16 +1878,23 @@ was stored under, so dropping it fails a twentieth of the suite in each directio
 
 ## Where the sweep programme ends
 
-**29 guards, six areas, one survivor.**
+**36 guards, eight areas, one survivor.**
 
 | area | guards | survivors |
 |---|---|---|
 | Phase 1 — crypto box | 5 | 0 |
+| Phase 1 — encrypted store (markers, migration) | 4 | 0 |
+| Phase 1 — storage helper (load, migration gating) | 3 | 0 |
 | Phase 2 — one-time pre-key handling | 2 | 1 (`removePreKey`, judged redundant rather than a defect) |
 | Phase 3 — wire parser | 6 | 0 |
 | Phase 3 — decoder | 5 | 0 |
 | Phase 4 — trust predicates | 6 | 0 |
 | Phase 4 — redirect seam, window and input guards | 7 | 1 (`refreshOpeningMessage`, fixed) |
+
+*This table said "29 guards, six areas" for a day after two more areas had been swept and written up
+in prose three sections earlier.* Recorded rather than silently corrected: it is the same drift this
+document keeps finding elsewhere, in a table I wrote, about the accuracy of my own measurements —
+and the reason the counts in this file are dated and the tests, not the prose, are the authority.
 
 Two qualifications, because the number is worth less than what it does not cover. **Mutation measures
 the guards you think to disarm** — every real defect on this branch was found by a reviewer asking a
