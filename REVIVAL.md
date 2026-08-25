@@ -1083,9 +1083,18 @@ Recorded so the next round does not spend itself re-deriving them.
   test. Two wrong versions of that measurement are recorded in the test: a pre-key message carries
   its own session and survives any number of replays, and a loop that stops at the first success
   measures nothing.
-- **No user-visible signal when the Keystore key is gone** — it currently looks identical to
-  "no data". `destroyMasterKey()` has no production caller (only instrumentation tests), so there is
-  no reset path.
+- **No RESET path when the Keystore key is gone.** This entry used to begin "no user-visible signal",
+  and that half is stale — it was fixed and the entry never followed. `INFO_STORAGE_UNREADABLE` is
+  raised by `refreshOpeningMessage`, `OpeningMessageTest` asserts that an unreadable store does not
+  look like an empty app and that the wording tells the user not to re-invite, and
+  `StorageHelperTest` covers the state detection that feeds it. The banner also disables both action
+  buttons, which is asserted separately.
+
+  What remains true is narrower and worth keeping: `destroyMasterKey()` still has no production
+  caller — only the instrumentation tests, which cannot run here — so a user whose Keystore key is
+  gone is correctly *told*, and has no way to act on it except clearing app data. Telling someone
+  their identity is unrecoverable without offering the one action that recovers the app is a product
+  gap rather than a security one, and it is the last thing on this list that a user would meet.
 - ~~**Non-atomic account write** — 7 independent `commit()`s per save, on the IME main thread.~~
   Resolved. `KeyValueStore` gained a `putAll`; `SharedPreferencesKeyValueStore` overrides it with one
   editor and one commit, and `EncryptedKeyValueStore.putAll` seals the whole batch before handing
