@@ -143,4 +143,38 @@ public class ProtocolAddressesTest {
     // Same device id, different names: still distinct addresses, so no user is ever merged.
     assertFalse(ProtocolAddresses.of("alice", 200).equals(ProtocolAddresses.of("bob", 200)));
   }
+
+  /**
+   * The separator in {@code key()} must be one no address name can contain.
+   *
+   * <p>This is the property the whole chat-log keying rests on, and it is a coupling to a validator
+   * in another file rather than anything local. Two records key off {@code key()}, and both still
+   * compare against BARE address names for upgrade compatibility - so if a name could contain the
+   * separator, the messenger would choose the address name {@code bobsName<SEP>7} and inherit every
+   * message filed for the real Bob at device 7. That is not hypothetical: it is exactly what
+   * happened when the separator was a dot, and the fix is only sound while this holds.
+   *
+   * <p>Asserted through the real envelope codec rather than by reading the validator, because the
+   * codec is the only way an address name enters the app.
+   */
+  @Test
+  public void noaddressNameCanContainTheKeySeparator() throws Exception {
+    final SignalProtocolAddress address = ProtocolAddresses.of("peer-uuid", 7);
+    final String key = ProtocolAddresses.key(address);
+
+    final char separator = key.charAt("peer-uuid".length());
+    assertFalse("the separator must not be a character a peer could put in a name; a dot was, and "
+            + "that cost a HIGH finding", separator >= 0x20 && separator <= 0x7e);
+
+    // And the codec must actually refuse it, in both directions.
+    final String hostileName = "peer-uuid" + separator + "7";
+    assertThrows("an address name containing the key separator must be refused on the way out",
+        java.io.IOException.class,
+        () -> com.amnesica.kryptey.inputmethod.signalprotocol.encoding.BinaryEnvelope.encode(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+                new byte[32], 3, hostileName, 7)));
+
+    assertEquals("and a rendered key must be exactly name, separator, device id", key,
+        "peer-uuid" + separator + "7");
+  }
 }
