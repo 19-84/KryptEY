@@ -1736,25 +1736,6 @@ public class SignalProtocolMain {
     final int kyberPreKeyId = mAccount.getMetadataStore().getActiveKyberPreKeyId();
     final KyberPreKeyRecord kyberRecord = mAccount.getSignalProtocolStore().loadKyberPreKey(kyberPreKeyId);
 
-    // Persist BEFORE the public halves leave this method, and on every path rather than only the
-    // one that lazily mints a Kyber key.
-    //
-    // Three things above this line can put brand-new private key material into the in-memory store
-    // and nowhere else: refreshSignedPreKeyIfNecessary rotates the signed AND Kyber pre keys once a
-    // month, getUnusedOneTimePreKeyId mints a fresh one-time pre key when the pool runs dry, and
-    // the lazy Kyber branch. reloadAccount() runs on every setInputView - a rotation, a theme
-    // change, the next time the keyboard is raised at all - and replaces the account with whatever
-    // is on disk, so an unpersisted private half is simply gone.
-    //
-    // The persist call this replaces was correct and reached, and it fired in exactly the case that
-    // did not need it: on the monthly rotation path rotateSignedPreKey has already stored the new
-    // Kyber key, so containsKyberPreKey() is true, the branch is skipped, and the bundle carrying
-    // the freshly rotated signed and Kyber keys went out with neither of them written down. The
-    // invitee builds a session against key ids this device can never load again and their first
-    // message fails to decrypt for good - the "opaque MAC failure" the old comment describes,
-    // reached by the one path its own guard excluded.
-    storeAllAccountInformationInSharedPreferences();
-
     Log.d(TAG, "Generating PreKeyBundle with pre key id: " + preKeyId
         + " and kyber pre key id: " + kyberPreKeyId);
     final PreKeyBundle preKeyBundle = new PreKeyBundle(
@@ -1769,6 +1750,34 @@ public class SignalProtocolMain {
         kyberPreKeyId,
         kyberRecord.getKeyPair().getPublicKey(),
         kyberRecord.getSignature());
+
+    // Persist BEFORE the public halves leave this method, and on every path rather than only the
+    // one that lazily mints a Kyber key.
+    //
+    // Four things above this line can put brand-new private key material into the in-memory store
+    // and nowhere else, or change what the store says about it: refreshSignedPreKeyIfNecessary
+    // rotates the signed AND Kyber pre keys once a month, getUnusedOneTimePreKeyId mints a fresh
+    // one-time pre key when the pool runs dry, the lazy Kyber branch, and - the reason this call
+    // sits HERE rather than above the construction - loadPreKey inside the argument list, which is
+    // what marks the one-time pre key spent. reloadAccount() runs on every setInputView, a
+    // rotation, a theme change, the next time the keyboard is raised at all, and replaces the
+    // account with whatever is on disk.
+    //
+    // An earlier version of this persist ran before the construction, so it wrote the allocation
+    // and not the spending. The spent mark reached disk only when some later unrelated save
+    // happened to flush it, which means the most recently issued bundle's id was still marked
+    // unused - and the invite has to be carried to a messenger to be delivered, so a reload always
+    // intervenes. findUnusedPreKeyId then handed the same id, backed by the same key material, to
+    // the next person invited; whichever of the two replied second could never be read, because
+    // decrypting the first reply regenerates that id in place. That is the exact failure the
+    // per-bundle allocator exists to prevent, arriving through the durability boundary instead of
+    // through the allocator. See InviteAcrossReloadTest.
+    //
+    // The persist this replaced was correct and reached, and it fired in exactly the case that did
+    // not need it: on the monthly rotation path rotateSignedPreKey has already stored the new Kyber
+    // key, so containsKyberPreKey() is true, the branch is skipped, and the bundle carrying the
+    // freshly rotated signed and Kyber keys went out with neither of them written down.
+    storeAllAccountInformationInSharedPreferences();
 
     return preKeyBundle;
   }

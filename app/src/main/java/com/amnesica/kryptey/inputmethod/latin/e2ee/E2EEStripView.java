@@ -1378,9 +1378,32 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     } else {
       // update contact with preKey information
       setChosenContact(sender);
+      // A bundle arriving where the user reported a mismatch is not a first sighting, whatever the
+      // empty store suggests - and this is the arm it arrives on. Rejecting KEEPS the contact row,
+      // so the very next paste finds a sender here rather than opening the add-contact screen,
+      // which is the only other place this warning is written. The record exists precisely so the
+      // re-delivered forged bundle is a warned pin instead of a silent one; without this it was
+      // consulted by nothing on the route an attacker actually uses.
+      warnIfKeyWasRejected(sender);
       setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
     }
+  }
+
+  /**
+   * Posts the post-rejection warning when a key is about to be pinned at an address the user told
+   * the app was wrong. Returns whether it fired.
+   *
+   * <p>Deliberately not called from the plain signal-message arm above it: that path carries no
+   * bundle, so nothing is pinned there and a warning would be noise on an ordinary message.
+   */
+  private boolean warnIfKeyWasRejected(final Contact sender) {
+    if (sender == null) return false;
+    if (!mE2EEStrip.wasKeyRejected(sender.getSignalProtocolAddress())) return false;
+    final String warning = String.format(INFO_PINNED_AFTER_REJECT, labelFor(sender));
+    Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
+    setWarningMessage(warning);
+    return true;
   }
 
   private void processUpdatedPreKeyResponse(MessageEnvelope messageEnvelope, Contact sender) {
@@ -1391,6 +1414,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     } else {
       // update contact with preKey information
       setChosenContact(sender);
+      // Same reason as the sibling arm above: this envelope carries a bundle too.
+      warnIfKeyWasRejected(sender);
       setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
