@@ -633,6 +633,32 @@ decision nobody had made — because nobody had been in that file.
 
 ---
 
+## A mutant was committed and pushed
+
+Recorded because the mechanism matters more than the incident, and because it is the second time.
+
+A mutation sweep against `ListAdapterContacts` was run in the foreground under a 10-minute tool cap
+and was killed by it mid-run. The runner restores each file in a `finally`, and a killed process runs
+no `finally`. The mutant left behind was `M-E` — the verified and unverified badges swapped on the
+trusted arm — so **a contact the user had compared rendered as unverified**, and the next commit,
+made with `git add -A`, committed and pushed it.
+
+Nothing caught it, which is the point: the whole 716-test suite passed with the badge inverted. It
+was found only because the test being written to close that exact gap started failing for a reason
+its author did not expect, and the several rounds of "the fixture must be wrong" that followed are
+the honest cost of a mutant sitting in a tracked file.
+
+Three things follow, in order of how much they matter:
+
+1. **The gap was real and is now closed.** `VerifiedBadgeRenderTest` renders rows through the real
+   adapter and asserts both directions, plus that a substitution and a standing rejection each take
+   the tick off the row. The shipped mutant is one of its negative controls.
+2. **`git add -A` is not safe after a sweep.** Read `git diff` against the last known-good commit for
+   every production file before committing, not just the ones you meant to touch.
+3. **A git-based restore in the runner is not the fix.** It was tried immediately and made things
+   worse: with a legitimate uncommitted fix in the tree, `git checkout --` reverted *that*. The
+   working restore is to keep sweeps well inside the time cap and to diff before committing.
+
 ## Checked this round and clean
 
 Recorded so the next round does not spend itself re-deriving them.

@@ -102,8 +102,8 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     final ImageButton unverifiedContactButton = convertView.findViewById(R.id.e2ee_verify_contact_unverified_button);
     if (com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.isContactKeyTrustworthy(contact)) {
       verifiedContactButton.setOnClickListener(v -> mListener.verifyContact(contact));
-      verifiedContactButton.setVisibility(View.INVISIBLE);
-      unverifiedContactButton.setVisibility(View.VISIBLE);
+      verifiedContactButton.setVisibility(View.VISIBLE);
+      unverifiedContactButton.setVisibility(View.INVISIBLE);
     } else {
       unverifiedContactButton.setOnClickListener(v -> mListener.verifyContact(contact));
       unverifiedContactButton.setVisibility(View.VISIBLE);
