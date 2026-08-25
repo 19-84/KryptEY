@@ -1778,6 +1778,26 @@ Recorded so the next round does not spend itself re-deriving them.
   ignore it, which is worse than not having it — the same reasoning that declined a catch-all
   exception net and a redundant second condition earlier here.
 
+- **The ProGuard rules work, which nothing had ever established.** `minifyEnabled` is false, so
+  `proguard-rules.pro` is 63 lines of configuration that has never been applied — and its own comment
+  says why that is a hazard: AGP 9 forces `proguard-android-optimize.txt`, which drops `-dontoptimize`,
+  so whoever turns minification on next would hit silent breakage in exactly the code that persists
+  the user's identity keys.
+
+  Tested by turning it on in a throwaway build. **R8 completed with no errors and no missing-class
+  warnings**, and the minified dex still contains every reflective entry point the rules exist to
+  keep: `Account`, `GcmCryptoBox`, `Contact`, `PreKeyWithStatus`, libsignal's `IdentityKey`, and
+  Jackson's `jsr310` module — the last being the `ServiceLoader` lookup whose absence would silently
+  change how an `Instant` is stored rather than failing loudly.
+
+  "R8 ran" is not "the rules worked", which is why the probes matter rather than the exit code. The
+  flag stays **false**: this measured that the configuration is sound, not that minification is safe
+  to ship, and runtime reflection breakage is precisely what a JVM test suite cannot see.
+
+  One number worth carrying: the minified dex is **1.4 MB against 6.0 MB**. That does not change the
+  withdrawn APK-size decision — 42.6 MB of desktop binaries and 64 MB of DWARF dwarf it — but it is
+  the third measurement showing how much of that artifact was never the cost of PQXDH.
+
 - **The CI workflow was read, and it is sound — but my own gate could break it.** Sixty-six lines of
   executable config that runs on every push with repository credentials, added by this revival and
   never audited. It holds up well: every action is pinned to a commit SHA rather than a tag, with the
