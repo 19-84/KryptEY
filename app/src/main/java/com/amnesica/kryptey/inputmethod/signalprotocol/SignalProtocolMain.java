@@ -1587,7 +1587,12 @@ public class SignalProtocolMain {
         }
         Log.d(TAG, "Session with PreKeyBundle created: " + sessionExists(signalProtocolAddress));
         Log.d(TAG, "Amount of pre key ids: " + mAccount.getSignalProtocolStore().getPreKeyStore().getSize());
-        storeAllAccountInformationInSharedPreferences();
+        // No persist here. buildSession's success arm has already written the account, and this
+        // line is reachable only when that arm ran - a failed build returns above it. Two writes for
+        // one fact made both unkillable: delete either and nothing observable changes, so a mutation
+        // sweep reported each as a surviving guard when neither was guarding anything on its own.
+        // That is the same reason a catch-all RuntimeException net was declined on the decrypt
+        // listener. PinnedIdentitySurvivesTheNextRaiseTest kills the remaining one.
       }
     } catch (IOException e) {
       e.printStackTrace();

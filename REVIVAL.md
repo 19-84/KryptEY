@@ -1720,9 +1720,24 @@ still be in force after the next raise), `encrypt` (a sent message and the ratch
 the change, so losing the write puts a green tick back on a contact whose key the app has just
 refused.
 
-Still open, named so they are a decision rather than an oversight: `processPreKeyResponse`,
-`buildSession`'s success arm, `createAndAddContactToList`, `decrypt`'s final persist, and both
-`Account` write-backs. Each needs the same shape of test — do the thing, reload, assert it is still
+**Two of those thirteen were not gaps at all, and finding out changed what the list means.**
+`processPreKeyResponse` and `buildSession`'s success arm both wrote the account, for the same fact,
+one immediately after the other — and the second is reachable only when the first has run, because a
+failed build returns above it. So each mutant was immortal: delete either and nothing observable
+changes. A sweep reports that as *two surviving guards*, when neither was guarding anything alone.
+
+Measured rather than assumed: `PinnedIdentitySurvivesTheNextRaiseTest` passes with either one
+deleted and fails with both, which is what a duplicated write looks like from the outside. The
+redundant one is now gone and the remaining one is killable — the same reasoning that declined a
+catch-all `RuntimeException` net on the decrypt listener, applied to a write instead of a catch.
+
+The property itself was worth pinning regardless. Trust-on-first-use is only "first" if the app
+remembers the first: without that write the store has no identity for the address after a reload, so
+the *next* bundle is a clean first sighting and is accepted in silence — no warning, because nothing
+was displaced. The attacker never has to defeat the pin, only arrive after it was forgotten.
+
+Still open, and now genuinely so: `createAndAddContactToList`, `decrypt`'s final persist, and both
+`Account` write-backs. Each needs checking for the same duplication before being treated as a gap. Each needs the same shape of test — do the thing, reload, assert it is still
 true — and they are listed rather than batch-fixed because a sweep that closes nine at once tends to
 produce nine tests that all pass for the same reason.
 
