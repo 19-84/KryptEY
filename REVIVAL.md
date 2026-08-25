@@ -612,10 +612,36 @@ pre-upgrade history, which is the round-one defect exactly, still live for every
 before the change. Deleting a contact alone under its name made it look ambiguous, so its own
 plaintext survived the only action a user has for erasing it, with no row left to reach it from.
 
-Two things are worth taking from this. The legacy arm is the source of all of it: every one of these
-defects is a consequence of matching two key formats at read time rather than migrating once. And the
-analysis that cleared the dot separator was not sloppy — it was rigorous about the wrong pair of
-objects, which no amount of care about the pair you chose will catch.
+**Then the legacy arm itself went.** A review round was asked the design question rather than only
+being sent hunting, and its answer settled it: the read-time arm is a *fixed point*. Its gate — "does
+this address name identify exactly one contact?" — is a property of the contact list at the moment it
+is asked, and the messenger moves the contact list. It adds a rival row so the history is correctly
+withheld, replays a message until decryption fails, the user follows the app's own delete-and-re-invite
+advice, and the name is unambiguous again with the attacker's row the one left to inherit the whole
+conversation and to delete it. Asking before the prune instead only swaps which required behaviour
+breaks: **a delete cannot tell an impostor from the contact it imitates, because that is what
+ambiguous means.** The retired-name arm had the same opposition — a legacy entry records no device id,
+so the legitimate re-add and the attack are literally the same string.
+
+The same round found why the separator was not sufficient alone. `requireDisplaySafeName` guards the
+wire, but contacts are also read back off disk, and 0.1.5 validated nothing — so a contact planted
+before the upgrade could carry the separator in its address name.
+
+So the question is asked **once**, at the first load after the upgrade, when the contact list is still
+exactly what the pre-upgrade binary wrote. Unambiguous chat-log entries are re-keyed; ambiguous ones
+are deleted rather than orphaned, because plaintext no row can reach cannot be erased by the user
+either and can later be handed to whoever survives. Retired names are re-keyed from the contact row
+or, failing that, from the surviving pin — deletion keeps it, which is the case the arm existed for —
+and blanked when neither identifies the address, which leaves the warning on. Both read arms are gone,
+and nothing anywhere compares a chat-log key to a bare address name. That last part is what makes the
+stored-name gap unexploitable without retrofitting validation onto the deserialiser.
+
+Three things are worth taking from this. The legacy arm was the source of all of it: every one of
+these defects is a consequence of matching two key formats at read time rather than migrating once.
+The analysis that cleared the dot separator was not sloppy — it was rigorous about the wrong pair of
+objects, which no amount of care about the pair you chose will catch. And the round that ended it was
+the one asked for an opinion rather than a bug list; three rounds of finding defects in each other's
+fixes had not produced the observation that no fix existed at that layer.
 
 ## The one structural lesson from the review rounds
 
