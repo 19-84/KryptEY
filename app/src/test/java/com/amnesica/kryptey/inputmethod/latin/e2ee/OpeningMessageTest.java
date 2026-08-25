@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 
 import org.junit.Test;
+import org.robolectric.RuntimeEnvironment;
 
 /**
  * What the strip says when it first opens, when the user's storage cannot be decrypted.
@@ -115,5 +116,61 @@ public class OpeningMessageTest {
               + "state would re-enable them and wipe the warning - the listener must not reach it",
           E2EEStripView.disablesActionButtons(message));
     }
+  }
+
+  /**
+   * The help must tell the user HOW to compare a safety number, not just that they should.
+   *
+   * <p>Every banner in this app says "by voice". The help screen - the one place a user goes to
+   * learn the procedure - said only "compare the number with your chat partner\u0027s number", and a
+   * user who follows that by pasting the number into the same chat has performed no check at all: a
+   * messenger able to substitute keys is able to rewrite the numbers each side sees. The instruction
+   * and the reason are both asserted, because an instruction without its reason is the first thing
+   * to be dropped as clutter.
+   */
+  @Test
+  public void thehelpTellsTheUserToCompareOutsideTheMessenger() {
+    final String help = helpText();
+
+    assertTrue("the help must name the channel: comparing by voice is what makes it a check",
+        help.contains("by voice"));
+    assertTrue("and must say not to send the number through the messenger being used",
+        help.contains("not by sending it through the messenger"));
+    assertTrue("and must give the reason, or the instruction reads as fussiness",
+        help.contains("change the numbers you send each other"));
+  }
+
+  /**
+   * And it must not claim the app can tell how an invite travelled.
+   *
+   * <p>The help now explains that handing an invite over out of band keeps the messenger from seeing
+   * the first key. That is true and worth telling people. What must never appear beside it is any
+   * suggestion that KryptEY knows which way was used - it cannot: the exported bundle is
+   * byte-identical to the one the invite flow sends. This project already removed provenance as a
+   * source of trust once, and the wording is where it would come back.
+   */
+  @Test
+  public void thehelpDoesNotClaimToKnowHowAnInviteTravelled() {
+    final String help = helpText();
+
+    assertTrue("the out-of-band option must be explained", help.contains("in person"));
+    assertTrue("and disclaimed in the same breath",
+        help.contains("cannot tell which way you used"));
+  }
+
+  /** The help text as it ships, read from the resource rather than through Android. */
+  private static String helpText() {
+    for (final String candidate
+        : new String[] {"src/main/res/values/strings.xml", "app/src/main/res/values/strings.xml"}) {
+      final java.nio.file.Path path = java.nio.file.Paths.get(candidate);
+      if (!java.nio.file.Files.isDirectory(path.getParent())) continue;
+      try {
+        return new String(java.nio.file.Files.readAllBytes(path),
+            java.nio.charset.StandardCharsets.UTF_8);
+      } catch (java.io.IOException e) {
+        throw new IllegalStateException("could not read " + path, e);
+      }
+    }
+    throw new IllegalStateException("could not locate strings.xml");
   }
 }
