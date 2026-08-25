@@ -735,7 +735,15 @@ Recorded so the next round does not spend itself re-deriving them.
   rewinding the ratchet and resetting `trustedKeys`. Needs a monotonic counter the attacker cannot
   rewind; not solvable at the storage layer.
 - **Bundle replay.** No freshness check, so replaying a captured envelope forces a session rebuild.
-  Halved (the bundle was being processed twice per message) but not eliminated.
+  Halved (the bundle was being processed twice per message) but not eliminated. **Now measured
+  rather than described** (`BundleReplayTest`): a replay is accepted and replaces the session, but
+  it does **not** move the pin and does **not** disturb the chat log, so it costs availability and
+  the forward secrecy of the current chain — not confidentiality. A held-back message survives
+  because libsignal archives the session it displaces; it takes **41** replays to exhaust the
+  archive and lose that message, and the number is pinned so a change in either direction fails a
+  test. Two wrong versions of that measurement are recorded in the test: a pre-key message carries
+  its own session and survives any number of replays, and a loop that stops at the first success
+  measures nothing.
 - **No user-visible signal when the Keystore key is gone** — it currently looks identical to
   "no data". `destroyMasterKey()` has no production caller (only instrumentation tests), so there is
   no reset path.
