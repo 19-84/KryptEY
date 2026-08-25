@@ -1,8 +1,13 @@
 # KryptEY revival — state of the work
 
-Branch `revival`, 99 commits on top of 0.1.5. This documents what changed, what is verified, and
-what is deliberately still open, because the diff is large and several decisions in it are not
-obvious from the code alone.
+Branch `revival`, on top of 0.1.5. This documents what changed, what is verified, and what is
+deliberately still open, because the diff is large and several decisions in it are not obvious from
+the code alone.
+
+*Counts in this file are dated to a commit and go stale by design.* `git rev-list --count
+master..revival` and `testDebugUnitTest` are the authorities; this header has now been corrected
+twice for drifting away from them, which is the same failure the document records about comments,
+about its own mutation ledger, and about every entry on its deferred list.
 
 Baseline: KryptEY 0.1.5 (May 2023) — libsignal 0.21.1, cleartext key storage, `jcenter()` build.
 
@@ -13,8 +18,9 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Tests: 31 → 665 (664 run, 1 permanently skipped), all passing.** Debug and release both assemble; dependency verification pins 386
-artifacts by SHA-256.
+**Tests: 31 → 843 as of `bfb71c1`** (842 run, 1 permanently skipped — `FixtureGenerator`, which is a
+tool rather than coverage), all passing, and green from an empty cache rather than only warm. Debug
+and release both assemble; dependency verification pins 386 artifacts by SHA-256.
 
 ---
 
