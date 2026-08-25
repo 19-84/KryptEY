@@ -424,10 +424,10 @@ The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` �
 **Reasoned but NOT verified:**
 
 - `AndroidKeystoreCryptoBox`'s Keystore CALLS are executed by zero JVM tests; its key-resolution
-  DECISIONS now are, and more thoroughly than this entry used to say: `KeyResolutionTest` (11 tests,
+  DECISIONS now are, and more thoroughly than this entry used to say: `KeyResolutionTest` (10 tests,
   via a `KeystoreOps` seam) covers the resolve behaviour — refusing to generate when data is at
   stake, stepping down a rung on a failed self-test, clearing the alias between attempts, and
-  self-testing every candidate — and `KeyCandidateLadderTest` (9 tests) pins the ladder's *order*,
+  self-testing every candidate — and `KeyCandidateLadderTest` (8 tests) pins the ladder's *order*,
   which is a security preference rather than an implementation detail: strongest first, weakest
   last, `unlockedDeviceRequired` given up only after StrongBox, and the API-28 floor. Checked by
   mutation: reversing the StrongBox preference so a non-StrongBox key is chosen over a StrongBox one
