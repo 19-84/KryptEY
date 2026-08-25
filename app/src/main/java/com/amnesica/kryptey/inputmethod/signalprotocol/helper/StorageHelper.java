@@ -414,7 +414,13 @@ public class StorageHelper {
     }
 
     final KeyValueStore raw = new SharedPreferencesKeyValueStore(sharedPreferences);
-    final boolean alreadyEncrypted = EncryptedKeyValueStore.isEncrypted(raw);
+    // hasEncryptedData, not isEncrypted. This boolean is the sole input to the Keystore box's
+    // refusal to mint a replacement master key, so it must mean "is any of this unreadable without
+    // the existing key", not "did a marker survive". put() and putAll() write the values and the
+    // completion marker as two separate durable commits, and this process is killed routinely - so
+    // ciphertext with no marker above it is an ordinary state, not a corrupt one, and it is still
+    // the user's identity.
+    final boolean alreadyEncrypted = EncryptedKeyValueStore.hasEncryptedData(raw);
     final CryptoBox cryptoBox = mCryptoBoxFactory.create(mContext, alreadyEncrypted);
     final EncryptedKeyValueStore store = new EncryptedKeyValueStore(raw, cryptoBox);
 

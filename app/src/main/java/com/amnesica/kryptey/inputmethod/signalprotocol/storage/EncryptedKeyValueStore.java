@@ -64,8 +64,10 @@ public final class EncryptedKeyValueStore {
    * Whether {@code store} carries a schema marker at all.
    *
    * <p>Cannot verify it without the master key, so this only answers "has this store ever been
-   * touched by the encrypted schema". Callers deciding whether data is at stake should prefer
-   * {@link #hasEncryptedData()}.
+   * touched by the encrypted schema". It is the marker half of {@link #hasEncryptedData(
+   * KeyValueStore)} and not a substitute for it: a store whose marker never reached disk, or whose
+   * marker an attacker deleted, still holds the user's identity as ciphertext and answers false
+   * here. Callers deciding whether data is at stake must call {@code hasEncryptedData}.
    */
   public static boolean isEncrypted(final KeyValueStore store) {
     return store.get(SCHEMA_KEY) != null;
@@ -79,9 +81,21 @@ public final class EncryptedKeyValueStore {
    * a Keystore-backed box mint a replacement key and orphan what had already been converted.
    */
   public boolean hasEncryptedData() {
-    if (delegate.get(SCHEMA_KEY) != null) return true;
-    for (final String key : payloadKeys()) {
-      final String value = delegate.get(key);
+    return hasEncryptedData(delegate);
+  }
+
+  /**
+   * The same question, asked of a raw store before any {@link CryptoBox} exists.
+   *
+   * <p>Needs no key: the marker check is a presence test and {@link #looksLikeEnvelope} is
+   * structural. That is what lets {@code StorageHelper} ask it at the one point where the answer
+   * matters - it has to decide what to tell the Keystore box <em>while constructing</em> the box,
+   * so an instance method on a store that already holds one is too late.
+   */
+  public static boolean hasEncryptedData(final KeyValueStore store) {
+    if (isEncrypted(store)) return true;
+    for (final String key : payloadKeys(store)) {
+      final String value = store.get(key);
       if (value != null && looksLikeEnvelope(value)) return true;
     }
     return false;
@@ -304,7 +318,7 @@ public final class EncryptedKeyValueStore {
    * Cheap structural pre-filter, used only to decide whether trial decryption is worth attempting.
    * Never load-bearing on its own — a false positive costs one failed decrypt, not a wrong decision.
    */
-  private boolean looksLikeEnvelope(final String raw) {
+  private static boolean looksLikeEnvelope(final String raw) {
     try {
       final byte[] bytes = Base64.decode(raw);
       return bytes.length > 1 + GcmCryptoBox.NONCE_BYTES && bytes[0] == GcmCryptoBox.VERSION;
@@ -314,7 +328,11 @@ public final class EncryptedKeyValueStore {
   }
 
   private Set<String> payloadKeys() {
-    final Set<String> keys = new HashSet<>(delegate.keys());
+    return payloadKeys(delegate);
+  }
+
+  private static Set<String> payloadKeys(final KeyValueStore store) {
+    final Set<String> keys = new HashSet<>(store.keys());
     keys.remove(SCHEMA_KEY);
     return keys;
   }
