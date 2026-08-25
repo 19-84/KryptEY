@@ -173,14 +173,13 @@ dependencies {
 // PQXDH" as SETTLED, on a premise nobody had measured; the real cost is around 10 MB. A settled
 // entry is one nobody revisits, so the silence is what made it durable.
 //
-// Detection is deliberately crude: section-name strings such as .debug_info appear verbatim in a
-// stripped-of-nothing ELF and are absent once llvm-strip has run. That is enough to tell the two
-// cases apart without parsing section headers in Groovy, and a false positive here is a build that
-// asks a question rather than one that ships something wrong.
-//
-// Environments without an NDK - this project's own build container among them - can pass
-// -Pkryptey.allowUnstrippedNatives=true. That is an explicit statement that the artifact is not
-// shippable, which is the point: the flag makes the limitation loud instead of invisible.
+// Detection reads the ELF section headers. An earlier version searched the raw bytes for the
+// string ".debug_info", which was wrong in the direction that matters: llvm-strip removes the
+// DWARF sections but leaves their NAMES in the section-header string table, so a correctly
+// stripped library still contains that substring and the gate failed every build. It was
+// controlled in both directions when written - unstripped fails, a marker that exists nowhere
+// passes - but never against a genuinely stripped library, because this image had no NDK to
+// produce one. A synthetic negative is not a negative.
 tasks.register('verifyReleaseNativesStripped') {
     description = 'Fails if a release APK carries native libraries with DWARF debug sections.'
     group = 'verification'
@@ -189,22 +188,49 @@ tasks.register('verifyReleaseNativesStripped') {
         if (apks.isEmpty()) {
             throw new GradleException('no release APK found; run assembleRelease first')
         }
+        def le = { byte[] b, int off, int width ->
+            long v = 0
+            for (int i = width - 1; i >= 0; i--) { v = (v << 8) | (b[off + i] & 0xff) }
+            return v
+        }
+        def debugBytesIn = { byte[] b ->
+            if (b.length < 64 || b[0] != (byte) 0x7f || b[1] != (byte) 'E') return -1L
+            boolean elf64 = b[4] == 2
+            long shoff = elf64 ? le(b, 0x28, 8) : le(b, 0x20, 4)
+            int shentsize = (int) (elf64 ? le(b, 0x3a, 2) : le(b, 0x2e, 2))
+            int shnum = (int) (elf64 ? le(b, 0x3c, 2) : le(b, 0x30, 2))
+            int shstrndx = (int) (elf64 ? le(b, 0x3e, 2) : le(b, 0x32, 2))
+            if (shoff <= 0 || shnum <= 0 || shstrndx >= shnum) return -1L
+            def header = { int i ->
+                long off = shoff + (long) i * shentsize
+                long nameOff = le(b, (int) off, 4)
+                long secOff = elf64 ? le(b, (int) off + 0x18, 8) : le(b, (int) off + 0x10, 4)
+                long size = elf64 ? le(b, (int) off + 0x20, 8) : le(b, (int) off + 0x14, 4)
+                return [nameOff, secOff, size]
+            }
+            def strTab = header(shstrndx)
+            long total = 0
+            for (int i = 0; i < shnum; i++) {
+                def h = header(i)
+                int nameAt = (int) (strTab[1] + h[0])
+                if (nameAt < 0 || nameAt >= b.length) continue
+                int end2 = nameAt
+                while (end2 < b.length && b[end2] != 0) end2++
+                String name = new String(b, nameAt, end2 - nameAt, 'US-ASCII')
+                if (name.startsWith('.debug')) total += h[2]
+            }
+            return total
+        }
         def offenders = []
         apks.each { apk ->
             new java.util.zip.ZipFile(apk).withCloseable { zip ->
                 zip.entries().findAll { it.name.endsWith('.so') }.each { entry ->
                     def bytes = zip.getInputStream(entry).bytes
-                    def marker = '.debug_info'.getBytes('US-ASCII')
-                    boolean found = false
-                    for (int i = 0; i + marker.length <= bytes.length && !found; i++) {
-                        boolean match = true
-                        for (int j = 0; j < marker.length && match; j++) {
-                            if (bytes[i + j] != marker[j]) match = false
-                        }
-                        if (match) found = true
-                    }
-                    if (found) {
-                        offenders << "${apk.name}: ${entry.name} (${(long) (entry.size / 1e6)} MB)"
+                    long dwarf = debugBytesIn(bytes)
+                    if (dwarf > 0) {
+                        offenders << "${apk.name}: ${entry.name} carries ${(long) (dwarf / 1e6)} MB of DWARF"
+                    } else if (dwarf < 0) {
+                        offenders << "${apk.name}: ${entry.name} is not a parseable ELF - refusing to guess"
                     }
                 }
             }

@@ -770,8 +770,30 @@ Two consequences worth separating, because they are not the same kind of thing:
   does — which is a reproducibility problem for a project whose README points at F-Droid, and it
   means no size or content claim about "the release APK" is meaningful without naming the host.
 
-Installing an NDK is a build-image change of a different order from anything else on this branch, so
-that is still not done. What **is** done is that the silence is gone: `verifyReleaseNativesStripped`
+**Fixed at the source.** `tools/Dockerfile` now installs `ndk;28.2.13676358`, which is what AGP needs
+for `llvm-strip`. The release APK goes from **74 MB to 9.4 MB** (arm64) and 68 MB to 7.7 MB
+(armeabi-v7a); the native library itself drops from 74 MB to 6.7 MB with **zero** DWARF sections
+remaining. Combined with excluding the desktop binaries, the artifact is **115 MB → 9.4 MB**, and the
+withdrawn "that is the cost of PQXDH" claim was out by more than a factor of ten.
+
+I had called this "a build-image change of a different order" and left it. That was wrong in a way
+worth recording: the image is *committed to this repository* and is the documented way to build, so
+an image that cannot produce a distributable artifact is a defect in the tooling, not an environment
+limitation. What changed my mind was adding a gate that made the project's own build path fail.
+
+**And the gate itself was broken.** It searched the raw bytes of each `.so` for the string
+`.debug_info`. `llvm-strip` removes the DWARF sections but leaves their **names** in the section-header
+string table — so a correctly stripped library still contains that substring, and the gate failed
+every build. It would have turned CI permanently red the moment an NDK appeared.
+
+It was controlled in both directions when written: unstripped fails, and a marker string that exists
+nowhere passes. **Both controls were synthetic.** There was no NDK in the image, so there was no
+genuinely stripped library to test against, and a fabricated negative proved only that the code could
+say yes. It now parses ELF section headers — handling 32- and 64-bit, and refusing to guess at
+anything it cannot parse — and is verified against real artifacts in both directions: stripped passes,
+unstripped fails naming 64 MB and 60 MB of DWARF.
+
+What **is** done is that the silence is gone: `verifyReleaseNativesStripped`
 runs after `assembleRelease` and fails if a packaged `.so` still carries DWARF sections, naming each
 file and its size.
 
