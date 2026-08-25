@@ -1567,6 +1567,39 @@ rejected address, through the one arm of three that never asked. `getMessageType
 and nothing else, so choosing that arm costs them nothing.
 
 
+### What the host *returns*, as opposed to what it declares
+
+The re-spawned round finished the surface the first one never reached, and the three findings share a
+shape the first three did not: **the app bounded the number the host announces, not the bytes it
+sends.**
+
+- **A request for 1024 characters was answered with 1,000,000.** `reloadTextCache` asks for
+  `EDITOR_CONTENTS_CACHE_SIZE` and appends the reply whole into a buffer on the one
+  `RichInputConnection` the service owns. `LatinIME.onWindowHidden`'s own comment justifies clearing
+  those buffers by saying "the IME keeps up to 1024 characters of text around the cursor" — which is
+  a bound on the *request*. Measured: the cache held 1,000,000. It runs on every cursor move, every
+  `setSelection`, and every input-session start.
+- **Recapitalisation bounded the selection the host declared.** Its comment — *"we don't want to suck
+  possibly multiple-megabyte data"* — guards `selectionEnd - selectionStart`, which comes from
+  `onUpdateSelection`. It then calls `getSelectedText` and uses the reply unchecked. Measured with a
+  host declaring **five** characters and answering with a million: `RecapitalizeStatus` held all of
+  it, and so did two service-lifetime buffers — the same buffers a decrypted message travels through.
+  The declared-length check is kept, because it avoids the IPC entirely; the two check **different
+  values**, so this is not a second guard on the first.
+- **A process-lifetime cache keyed on a string the host picks.** `KeyboardId` mixes
+  `EditorInfo.actionLabel` into `equals` and `hashCode`, and `sKeyboardCache` is a static map whose
+  *values* are soft references but whose *keys* are strong — each pinning that session's whole
+  `EditorInfo`, including the arbitrary `Bundle` in `extras`. Measured from empty: 200 sessions with
+  distinct labels left 201 entries; 200 more on one label added one. Exactly one permanent entry per
+  string the host has ever declared, and no forgery required — the app on screen decides how often a
+  field takes focus and what label it carries.
+
+Also worth keeping is what the round measured and left alone: `packageName` is never trusted to
+identify the host (its only consumer is a debug dump behind a `false` constant), and `fieldId`,
+`hintText`, `label` and `extras` are read nowhere in `app/src/main`. A clean negative on the rest of
+`EditorInfo` is what makes the three above worth acting on.
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from

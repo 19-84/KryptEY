@@ -424,6 +424,23 @@ public final class InputLogic {
       final CharSequence selectedText =
           mConnection.getSelectedText(0 /* flags, 0 for no styles */);
       if (TextUtils.isEmpty(selectedText)) return; // Race condition with the input connection
+      // The bail-out above measures the selection the host DECLARED. This measures what it
+      // actually handed over, which is a different number and also the host's to choose.
+      //
+      // selectionEnd - selectionStart comes from mExpectedSelStart/End, which are written only
+      // from EditorInfo.initialSelStart/End and onUpdateSelection - the host describing its own
+      // field. getSelectedText then goes back to that same host for the text, and its reply is
+      // under no obligation to be that long. So the comment above - "we don't want to suck
+      // possibly multiple-megabyte data" - was guarding against a number the attacker announces
+      // rather than the bytes it sends. Measured with a host declaring a five-character selection
+      // and answering with 1,000,000: RecapitalizeStatus held all of it, and so did
+      // mCommittedTextBeforeComposingText and mTempObjectForCommitText - three buffers that live
+      // as long as the service, in a process that is not recreated when the user switches apps,
+      // and the same three that hold a decrypted message on the way to the field.
+      //
+      // Refuse rather than truncate: recapitalising half of what is selected would commit a
+      // silently shortened string back into the field.
+      if (selectedText.length() > Constants.MAX_CHARACTERS_FOR_RECAPITALIZATION) return;
       mRecapitalizeStatus.start(selectionStart, selectionEnd, selectedText.toString(), mLatinIME.getCurrentLayoutLocale());
       // We trim leading and trailing whitespace.
       mRecapitalizeStatus.trim();

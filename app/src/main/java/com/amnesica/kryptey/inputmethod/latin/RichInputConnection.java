@@ -426,6 +426,35 @@ public final class RichInputConnection {
         n, flags);
   }
 
+  /**
+   * Trim the host's answer down to the number of characters this keyboard asked for.
+   *
+   * <p>Applied at the two methods below, which are the only places an answer from the host's
+   * {@code InputConnection} enters this object. {@code n} is what this keyboard asked for; the
+   * length of what comes back is the host's to choose, and nothing checked it.
+   * {@code reloadTextCache} asks for {@link Constants#EDITOR_CONTENTS_CACHE_SIZE} characters and
+   * appends the reply whole into {@code mCommittedTextBeforeComposingText}, a buffer on the one
+   * connection the service owns - so "the IME keeps up to 1024 characters of text around the
+   * cursor", which is the bound
+   * {@code LatinIME.onWindowHidden} states in its own comment for why it clears these buffers, is a
+   * bound on the REQUEST and not on what is kept. Measured against a host that answers 1,000,000
+   * characters to a request for 1,024: the cache held 1,000,000. That runs on every cursor move,
+   * every {@code setSelection} and every input session start, in a process that is not recreated
+   * when the user switches apps.
+   *
+   * <p>Clamped here rather than at {@code reloadTextCache}, because this is where the value the
+   * host chose arrives, and all three readers - the cache reload, the partial reload behind
+   * {@code getTextBeforeCursor}, and {@code getTextAfterCursor} - come through these two methods.
+   * The contract of {@code InputConnection#getTextBeforeCursor} is "at most n characters ENDING at
+   * the cursor", so the tail is the part to keep; for {@code getTextAfterCursor} it is the head.
+   */
+  private static CharSequence clampToRequest(final CharSequence result, final int n,
+                                             final boolean keepTail) {
+    if (result == null || n < 0 || result.length() <= n) return result;
+    return keepTail ? result.subSequence(result.length() - n, result.length())
+        : result.subSequence(0, n);
+  }
+
   private CharSequence getTextBeforeCursorAndDetectLaggyConnection(
       final int operation, final long timeout, final int n, final int flags) {
     if (!isConnected()) {
@@ -434,7 +463,7 @@ public final class RichInputConnection {
     final long startTime = SystemClock.uptimeMillis();
     final CharSequence result = getIC().getTextBeforeCursor(n, flags);
     detectLaggyConnection(operation, timeout, startTime);
-    return result;
+    return clampToRequest(result, n, true /* keepTail */);
   }
 
   private CharSequence getTextAfterCursorAndDetectLaggyConnection(
@@ -445,7 +474,7 @@ public final class RichInputConnection {
     final long startTime = SystemClock.uptimeMillis();
     final CharSequence result = getIC().getTextAfterCursor(n, flags);
     detectLaggyConnection(operation, timeout, startTime);
-    return result;
+    return clampToRequest(result, n, false /* keepTail */);
   }
 
   private void detectLaggyConnection(final int operation, final long timeout, final long startTime) {

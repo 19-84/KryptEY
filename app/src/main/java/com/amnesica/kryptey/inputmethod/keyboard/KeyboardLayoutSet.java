@@ -70,6 +70,36 @@ public final class KeyboardLayoutSet {
   private static final Keyboard[] sForcibleKeyboardCache = new Keyboard[FORCIBLE_CACHE_SIZE];
   private static final HashMap<KeyboardId, SoftReference<Keyboard>> sKeyboardCache =
       new HashMap<>();
+
+  /**
+   * How many distinct keyboards may be remembered before the cache is dropped and rebuilt.
+   *
+   * <p>The VALUES here are soft references and can be collected under memory pressure. The KEYS
+   * cannot: a {@link KeyboardId} is an ordinary strong key, it holds the {@code EditorInfo} the
+   * host supplied, and one component of every comparison it takes part in is
+   * {@code EditorInfo.actionLabel} - a {@code CharSequence} the host writes and this app copies
+   * into {@code KeyboardId.mCustomActionLabel}, where it is compared by {@code equals} and mixed
+   * into {@code hashCode}. So each distinct label the host declares is a new key, permanently, in
+   * a static map that lives as long as the input-method process, each key pinning that session's
+   * whole {@code EditorInfo} including the arbitrary {@code Bundle} in its {@code extras}. The
+   * same label reaches {@code sUniqueKeysCache} through the enter key it labels, which is an
+   * unbounded strong-keyed {@code HashMap} of its own.
+   *
+   * <p>Nothing about that requires a forged anything: {@code onStartInputView} runs whenever a
+   * field takes focus, and the app on screen decides how often that happens and what
+   * {@code actionLabel} it carries. Measured from an empty cache: 200 input sessions with a
+   * distinct label each left 201 entries, and 200 further sessions on ONE label added a single
+   * entry - so the growth is exactly one permanent entry per string the host has ever declared.
+   *
+   * <p>Dropping the whole cache rather than evicting one entry is what {@code clearKeyboardCache}
+   * already does for a theme or locale change, and it is the only form that also bounds
+   * {@code sUniqueKeysCache}. The cost is that the next few layouts are rebuilt;
+   * {@code sForcibleKeyboardCache} still holds the recent alphabet layouts strongly, so the
+   * keyboard on screen is not affected. The bound is well above what real use produces - a session
+   * builds one entry per element id it visits, and a handful of fields with different input types
+   * do not approach it.
+   */
+  private static final int MAX_CACHED_KEYBOARDS = 64;
   private static final UniqueKeysCache sUniqueKeysCache = UniqueKeysCache.newInstance();
 
   @SuppressWarnings("serial")
@@ -178,6 +208,11 @@ public final class KeyboardLayoutSet {
     final int keyboardXmlId = elementParams.mKeyboardXmlId;
     builder.load(keyboardXmlId, id);
     final Keyboard keyboard = builder.build();
+    if (sKeyboardCache.size() >= MAX_CACHED_KEYBOARDS) {
+      // See MAX_CACHED_KEYBOARDS: the host picks part of every key in this map and nothing ever
+      // removes one.
+      clearKeyboardCache();
+    }
     sKeyboardCache.put(id, new SoftReference<>(keyboard));
     if ((id.mElementId == KeyboardId.ELEMENT_ALPHABET
         || id.mElementId == KeyboardId.ELEMENT_ALPHABET_AUTOMATIC_SHIFTED)) {
