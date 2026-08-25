@@ -795,6 +795,18 @@ Recorded so the next round does not spend itself re-deriving them.
   and the `Log` calls are not in the APK. That was already true; what was missing was anything
   stopping one character from changing it, in files nobody in this revival had had reason to open.
   `DebugLoggingStaysOffTest` now asserts it over the whole source tree rather than a hand-kept list.
+- **Eight inherited compatibility guards that can no longer branch.** `minSdk` is 26, so three
+  `SDK_INT <= KITKAT` tests are always false, four `SDK_INT >= N` tests are always true, and one
+  `SDK_INT < LOLLIPOP` test is always false — in `EditorInfoCompatUtils`, `RichInputMethodManager`,
+  `PreferencesSettingsFragment`, `ViewOutlineProviderCompatUtils`, `PreferenceManagerCompat`,
+  `LocaleUtils`, `TwoStatePreferenceHelper` and `SubScreenFragment`. All inherited AOSP, none
+  security-relevant, none worth the churn of removing. Recorded because a reader meeting one of
+  these reasons about a branch that cannot execute — and because whoever eventually raises `minSdk`
+  needs to know these are where the dead code accumulates. One of them, `PreferenceManagerCompat`'s
+  `>= N`, is the reason preferences land in device-protected storage: always taken, not sometimes.
+  No test: a test asserting a fixed list of dead branches records the status quo and fires only when
+  someone adds a ninth, which is not worth a file.
+
 - **The numbers in this document**, audited against the tree: 386 pinned components, `KeyResolutionTest`
   at 10 tests, 11 instrumentation `@Test` methods, the 4096-character invite threshold, and the
   strip's six screens all check out. The test count did not, and is now dated rather than absolute.
