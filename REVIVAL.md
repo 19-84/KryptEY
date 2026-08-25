@@ -28,8 +28,11 @@ builds of the crypto library. They stay on the *test* classpath, where Robolectr
 them, so the fix belongs in packaging and not in the dependency. Found by opening the APK rather
 than by reading the build script, while checking a claim this file makes about release assembling.
 
-**Tests: 31 → 843 as of `bfb71c1`** (842 run, 1 permanently skipped — `FixtureGenerator`, which is a
-tool rather than coverage), all passing, and green from an empty cache rather than only warm. Debug
+**Tests: 31 → 843 as of `bfb71c1`** (**4 skipped**, not the 1 this line
+claimed for weeks: `FixtureGenerator` is a tool rather than coverage and gives up via
+`Assume.assumeTrue`, and three assertions in `StripCarriedStateRound5Test` are `@Ignore`d as
+deliberate rejections — one vacuous, two superseded by `r0`. All four are now listed in
+`IgnoredTestsAreAccountedForTest`, so a fifth fails the build until somebody writes down what it is), all passing, and green from an empty cache rather than only warm. Debug
 and release both assemble; dependency verification pins 386 artifacts by SHA-256.
 
 ---
