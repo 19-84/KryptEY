@@ -462,9 +462,26 @@ The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` �
 
 ## Open
 
-1. **UI for out-of-band exchange.** `exportOwnKeyBundle` / `importOutOfBandKeyBundle` exist and are
-   tested; nothing in the keyboard invokes them. QR would be a dependency decision (ZXing); string
-   transfer needs none. *Not* on this list any more: UI for accepting an identity change. That is
+1. **Out-of-band exchange: the capability is already reachable; what is missing is guidance.** This
+   entry read as "the mechanism exists, the UI does not", and that overstates the gap in one
+   direction and understates a subtlety in the other.
+
+   *Export already works.* The invite button commits the bundle into whichever app's field currently
+   has focus — the user picks the channel by picking the app. Sending it through a notes app, an
+   email draft or a device-to-device transfer is out-of-band exchange, today, with no new code.
+
+   *Import already works too.* An out-of-band bundle pasted anywhere the strip can see it is
+   detected by the ordinary clipboard path and handled by `processPreKeyResponseMessage`.
+   `importOutOfBandKeyBundle` is that same call plus one thing: `markKeyOutOfBand`. And **nothing
+   reads that flag** — `isKeyOutOfBand` has no caller outside the store — because this project
+   decided, correctly, that provenance cannot be observed: the exported bundle is byte-identical to
+   the invite one, so the code can only see that a method was called, never how the bytes travelled.
+
+   So wiring that method up is not the task, and would add a stamp that means nothing. What would
+   genuinely help is wording — telling the user that handing this text over in person avoids the
+   messenger entirely — and that has to be written without implying the app can tell the difference,
+   which is the false assurance the design deliberately removed. QR would be a dependency decision
+   (ZXing); string transfer needs none, and needs no new mechanism either. *Not* on this list any more: UI for accepting an identity change. That is
    now a decision rather than a gap — the exit is discard via deletion, and adopt-in-place stays
    unavailable on purpose.
 2. ~~**A screen showing the offered safety number beside the pinned one.**~~ **Blocked, and on
