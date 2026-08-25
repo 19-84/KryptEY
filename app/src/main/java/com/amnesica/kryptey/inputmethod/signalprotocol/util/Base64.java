@@ -42,7 +42,6 @@ import java.nio.charset.StandardCharsets;
  *   signs) too soon. Also added an option to suppress the automatic decoding
  *   of gzipped streams. Also added experimental support for specifying a
  *   class loader when using the
- *   {@link #decodeToObject(java.lang.String, int, java.lang.ClassLoader)}
  *   method.</li>
  *  <li>v2.3.3 - Changed default char encoding to US-ASCII which reduces the internal Java
  *   footprint with its CharEncoders and so forth. Fixed some javadocs that were
@@ -139,6 +138,19 @@ import java.nio.charset.StandardCharsets;
  * @version 2.3.3
  */
 public class Base64 {
+
+  // The file and object-serialisation halves of this vendored class have been removed.
+  //
+  // decodeToObject fed base64 straight into ObjectInputStream.readObject(); encodeToFile,
+  // decodeToFile, decodeFromFile, encodeFromFile, encodeFileToFile read and wrote arbitrary paths.
+  // None had a caller anywhere in the app or its tests. They shipped anyway - minifyEnabled is
+  // false - inside the one class that handles attacker-controlled base64, since the wire format is
+  // base64 and every envelope the messenger relays passes through here.
+  //
+  // Deleted rather than left dead, on the same reasoning that removed crypto/AESCrypt: a Java
+  // deserialisation entry point one call away from untrusted input is not made safe by nobody
+  // having made that call yet.
+
 
   /* ********  P U B L I C   F I E L D S  ******** */
 
@@ -1364,346 +1376,20 @@ public class Base64 {
   }   // end decode
 
 
-  /**
-   * Attempts to decode Base64 data and deserialize a Java
-   * Object within. Returns <tt>null</tt> if there was an error.
-   *
-   * @param encodedObject The Base64 data to decode
-   * @return The decoded and deserialized object
-   * @throws NullPointerException   if encodedObject is null
-   * @throws java.io.IOException    if there is a general error
-   * @throws ClassNotFoundException if the decoded object is of a
-   *                                class that cannot be found by the JVM
-   * @since 1.5
-   */
-  public static Object decodeToObject(String encodedObject)
-      throws java.io.IOException, java.lang.ClassNotFoundException {
-    return decodeToObject(encodedObject, NO_OPTIONS, null);
-  }
+  
+
+    // end decodeObject
 
 
-  /**
-   * Attempts to decode Base64 data and deserialize a Java
-   * Object within. Returns <tt>null</tt> if there was an error.
-   * If <tt>loader</tt> is not null, it will be the class loader
-   * used when deserializing.
-   *
-   * @param encodedObject The Base64 data to decode
-   * @param options       Various parameters related to decoding
-   * @param loader        Optional class loader to use in deserializing classes.
-   * @return The decoded and deserialized object
-   * @throws NullPointerException   if encodedObject is null
-   * @throws java.io.IOException    if there is a general error
-   * @throws ClassNotFoundException if the decoded object is of a
-   *                                class that cannot be found by the JVM
-   * @since 2.3.4
-   */
-  public static Object decodeToObject(
-      String encodedObject, int options, final ClassLoader loader)
-      throws java.io.IOException, java.lang.ClassNotFoundException {
-
-    // Decode and gunzip if necessary
-    byte[] objBytes = decode(encodedObject, options);
-
-    java.io.ByteArrayInputStream bais = null;
-    java.io.ObjectInputStream ois = null;
-    Object obj = null;
-
-    try {
-      bais = new java.io.ByteArrayInputStream(objBytes);
-
-      // If no custom class loader is provided, use Java's builtin OIS.
-      if (loader == null) {
-        ois = new java.io.ObjectInputStream(bais);
-      }   // end if: no loader provided
-
-      // Else make a customized object input stream that uses
-      // the provided class loader.
-      else {
-        ois = new java.io.ObjectInputStream(bais) {
-          @Override
-          public Class<?> resolveClass(java.io.ObjectStreamClass streamClass)
-              throws java.io.IOException, ClassNotFoundException {
-            Class c = Class.forName(streamClass.getName(), false, loader);
-            if (c == null) {
-              return super.resolveClass(streamClass);
-            } else {
-              return c;   // Class loader knows of this class.
-            }   // end else: not null
-          }   // end resolveClass
-        };  // end ois
-      }   // end else: no custom class loader
-
-      obj = ois.readObject();
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e;    // Catch and throw in order to execute finally{}
-    }   // end catch
-    catch (java.lang.ClassNotFoundException e) {
-      throw e;    // Catch and throw in order to execute finally{}
-    }   // end catch
-    finally {
-      try {
-        bais.close();
-      } catch (Exception e) {
-      }
-      try {
-        ois.close();
-      } catch (Exception e) {
-      }
-    }   // end finally
-
-    return obj;
-  }   // end decodeObject
 
 
-  /**
-   * Convenience method for encoding data to a file.
-   *
-   * <p>As of v 2.3, if there is a error,
-   * the method will throw an java.io.IOException. <b>This is new to v2.3!</b>
-   * In earlier versions, it just returned false, but
-   * in retrospect that's a pretty poor way to handle it.</p>
-   *
-   * @param dataToEncode byte array of data to encode in base64 form
-   * @param filename     Filename for saving encoded data
-   * @throws java.io.IOException  if there is an error
-   * @throws NullPointerException if dataToEncode is null
-   * @since 2.1
-   */
-  public static void encodeToFile(byte[] dataToEncode, String filename)
-      throws java.io.IOException {
-
-    if (dataToEncode == null) {
-      throw new NullPointerException("Data to encode was null.");
-    }   // end iff
-
-    Base64.OutputStream bos = null;
-    try {
-      bos = new Base64.OutputStream(
-          new java.io.FileOutputStream(filename), Base64.ENCODE);
-      bos.write(dataToEncode);
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e; // Catch and throw to execute finally{} block
-    }   // end catch: java.io.IOException
-    finally {
-      try {
-        bos.close();
-      } catch (Exception e) {
-      }
-    }   // end finally
-
-  }   // end encodeToFile
 
 
-  /**
-   * Convenience method for decoding data to a file.
-   *
-   * <p>As of v 2.3, if there is a error,
-   * the method will throw an java.io.IOException. <b>This is new to v2.3!</b>
-   * In earlier versions, it just returned false, but
-   * in retrospect that's a pretty poor way to handle it.</p>
-   *
-   * @param dataToDecode Base64-encoded data as a string
-   * @param filename     Filename for saving decoded data
-   * @throws java.io.IOException if there is an error
-   * @since 2.1
-   */
-  public static void decodeToFile(String dataToDecode, String filename)
-      throws java.io.IOException {
-
-    Base64.OutputStream bos = null;
-    try {
-      bos = new Base64.OutputStream(
-          new java.io.FileOutputStream(filename), Base64.DECODE);
-      bos.write(dataToDecode.getBytes(PREFERRED_ENCODING));
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e; // Catch and throw to execute finally{} block
-    }   // end catch: java.io.IOException
-    finally {
-      try {
-        bos.close();
-      } catch (Exception e) {
-      }
-    }   // end finally
-
-  }   // end decodeToFile
 
 
-  /**
-   * Convenience method for reading a base64-encoded
-   * file and decoding it.
-   *
-   * <p>As of v 2.3, if there is a error,
-   * the method will throw an java.io.IOException. <b>This is new to v2.3!</b>
-   * In earlier versions, it just returned false, but
-   * in retrospect that's a pretty poor way to handle it.</p>
-   *
-   * @param filename Filename for reading encoded data
-   * @return decoded byte array
-   * @throws java.io.IOException if there is an error
-   * @since 2.1
-   */
-  public static byte[] decodeFromFile(String filename)
-      throws java.io.IOException {
-
-    byte[] decodedData = null;
-    Base64.InputStream bis = null;
-    try {
-      // Set up some useful variables
-      java.io.File file = new java.io.File(filename);
-      byte[] buffer = null;
-      int length = 0;
-      int numBytes = 0;
-
-      // Check for size of file
-      if (file.length() > Integer.MAX_VALUE) {
-        throw new java.io.IOException("File is too big for this convenience method (" + file.length() + " bytes).");
-      }   // end if: file too big for int index
-      buffer = new byte[(int) file.length()];
-
-      // Open a stream
-      bis = new Base64.InputStream(
-          new java.io.BufferedInputStream(
-              new java.io.FileInputStream(file)), Base64.DECODE);
-
-      // Read until done
-      while ((numBytes = bis.read(buffer, length, 4096)) >= 0) {
-        length += numBytes;
-      }   // end while
-
-      // Save in a variable to return
-      decodedData = new byte[length];
-      System.arraycopy(buffer, 0, decodedData, 0, length);
-
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e; // Catch and release to execute finally{}
-    }   // end catch: java.io.IOException
-    finally {
-      try {
-        bis.close();
-      } catch (Exception e) {
-      }
-    }   // end finally
-
-    return decodedData;
-  }   // end decodeFromFile
 
 
-  /**
-   * Convenience method for reading a binary file
-   * and base64-encoding it.
-   *
-   * <p>As of v 2.3, if there is a error,
-   * the method will throw an java.io.IOException. <b>This is new to v2.3!</b>
-   * In earlier versions, it just returned false, but
-   * in retrospect that's a pretty poor way to handle it.</p>
-   *
-   * @param filename Filename for reading binary data
-   * @return base64-encoded string
-   * @throws java.io.IOException if there is an error
-   * @since 2.1
-   */
-  public static String encodeFromFile(String filename)
-      throws java.io.IOException {
 
-    String encodedData = null;
-    Base64.InputStream bis = null;
-    try {
-      // Set up some useful variables
-      java.io.File file = new java.io.File(filename);
-      byte[] buffer = new byte[Math.max((int) (file.length() * 1.4), 40)]; // Need max() for math on small files (v2.2.1)
-      int length = 0;
-      int numBytes = 0;
-
-      // Open a stream
-      bis = new Base64.InputStream(
-          new java.io.BufferedInputStream(
-              new java.io.FileInputStream(file)), Base64.ENCODE);
-
-      // Read until done
-      while ((numBytes = bis.read(buffer, length, 4096)) >= 0) {
-        length += numBytes;
-      }   // end while
-
-      // Save in a variable to return
-      encodedData = new String(buffer, 0, length, Base64.PREFERRED_ENCODING);
-
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e; // Catch and release to execute finally{}
-    }   // end catch: java.io.IOException
-    finally {
-      try {
-        bis.close();
-      } catch (Exception e) {
-      }
-    }   // end finally
-
-    return encodedData;
-  }   // end encodeFromFile
-
-  /**
-   * Reads <tt>infile</tt> and encodes it to <tt>outfile</tt>.
-   *
-   * @param infile  Input file
-   * @param outfile Output file
-   * @throws java.io.IOException if there is an error
-   * @since 2.2
-   */
-  public static void encodeFileToFile(String infile, String outfile)
-      throws java.io.IOException {
-
-    String encoded = Base64.encodeFromFile(infile);
-    java.io.OutputStream out = null;
-    try {
-      out = new java.io.BufferedOutputStream(
-          new java.io.FileOutputStream(outfile));
-      out.write(encoded.getBytes(StandardCharsets.US_ASCII)); // Strict, 7-bit output.
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e; // Catch and release to execute finally{}
-    }   // end catch
-    finally {
-      try {
-        out.close();
-      } catch (Exception ex) {
-      }
-    }   // end finally
-  }   // end encodeFileToFile
-
-
-  /**
-   * Reads <tt>infile</tt> and decodes it to <tt>outfile</tt>.
-   *
-   * @param infile  Input file
-   * @param outfile Output file
-   * @throws java.io.IOException if there is an error
-   * @since 2.2
-   */
-  public static void decodeFileToFile(String infile, String outfile)
-      throws java.io.IOException {
-
-    byte[] decoded = Base64.decodeFromFile(infile);
-    java.io.OutputStream out = null;
-    try {
-      out = new java.io.BufferedOutputStream(
-          new java.io.FileOutputStream(outfile));
-      out.write(decoded);
-    }   // end try
-    catch (java.io.IOException e) {
-      throw e; // Catch and release to execute finally{}
-    }   // end catch
-    finally {
-      try {
-        out.close();
-      } catch (Exception ex) {
-      }
-    }   // end finally
-  }   // end decodeFileToFile
 
 
   /* ********  I N N E R   C L A S S   I N P U T S T R E A M  ******** */

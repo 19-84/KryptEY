@@ -1,7 +1,10 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -68,5 +71,46 @@ public class NoWeakCryptoTest {
     assertTrue("weak cipher construction in shipped source - minifyEnabled is false, so anything "
         + "here reaches the APK whether or not it is called:\n  "
         + String.join("\n  ", offences), offences.isEmpty());
+  }
+
+  /**
+   * No Java deserialisation entry point in the code that handles the wire format.
+   *
+   * <p>The vendored {@code Base64} shipped {@code decodeToObject}, which fed base64 straight into
+   * {@code ObjectInputStream.readObject()}, alongside five methods that read and wrote arbitrary
+   * file paths. Nothing called any of them — and they were in the one class every envelope the
+   * messenger relays passes through, since the wire format is base64. {@code minifyEnabled} is
+   * false, so dead code ships.
+   *
+   * <p>They are gone. This is the guard against them coming back, or appearing elsewhere: a
+   * deserialisation sink one call away from untrusted input is not made safe by nobody having made
+   * that call yet, and the distance between "unused" and "used" is one line in a future commit.
+   */
+  @Test
+  public void nothingDeserialisesJavaObjectsInTheProtocolCode() throws IOException {
+    final List<String> offenders = new ArrayList<>();
+    int scanned = 0;
+
+    try (Stream<Path> walk = Files.walk(Paths.get("src/main/java").toFile().exists()
+        ? Paths.get("src/main/java") : Paths.get("app/src/main/java"))) {
+      for (final Path source : walk.filter(p -> p.toString().endsWith(".java"))
+          .collect(Collectors.toList())) {
+        scanned++;
+        // Comments stripped first. The comment recording why these methods were deleted names
+        // them, and a scanner that flags its own explanation is a false positive that invites the
+        // next reader to weaken it rather than heed it.
+        final String text = new String(Files.readAllBytes(source), StandardCharsets.UTF_8)
+            .replaceAll("(?s)/\\*.*?\\*/", "")
+            .replaceAll("(?m)//.*$", "");
+        if (text.contains("ObjectInputStream") || text.contains("readObject(")) {
+          offenders.add(source.toString());
+        }
+      }
+    }
+
+    assertTrue("this test scans source; scanning nothing means it tests nothing", scanned >= 50);
+    assertEquals("Java deserialisation has appeared in the app. Every envelope the messenger sends "
+        + "is parsed by this code, and readObject on attacker-controlled bytes is arbitrary code "
+        + "execution:\n" + String.join("\n", offenders), 0, offenders.size());
   }
 }
