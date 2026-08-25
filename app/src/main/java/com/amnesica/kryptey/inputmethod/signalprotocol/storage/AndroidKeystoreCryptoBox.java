@@ -227,15 +227,34 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
         .setKeySize(256);
 
+    applyApi28Protections(spec, strongBox, requireUnlocked);
+
+    generator.init(spec.build());
+    return generator.generateKey();
+  }
+
+  /**
+   * Ask the spec for whatever this API level can actually grant, or refuse the candidate.
+   *
+   * <p>Split out of {@link #generate} because that method cannot run in a test: it calls the real
+   * Keystore provider, and every ladder test therefore drives a fake {@link KeystoreOps}. That left
+   * this branch - the only place {@link #needsApi28} is consulted in production - executed by no
+   * test at all. It was measured rather than assumed: deleting the refusal outright, so a pre-28
+   * device silently received a key with none of the protections the ladder had asked for, kept all
+   * 843 tests green and left {@code needsApi28} called only from tests.
+   *
+   * <p>Taking a builder rather than a boolean is the point. A predicate can be tested and still be
+   * wired to nothing; this is the wiring, and it needs no Keystore to run, so a Robolectric test at
+   * a chosen SDK level can execute the real thing on both sides of the branch.
+   */
+  static void applyApi28Protections(final KeyGenParameterSpec.Builder spec, final boolean strongBox,
+      final boolean requireUnlocked) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       if (requireUnlocked) spec.setUnlockedDeviceRequired(true);
       if (strongBox) spec.setIsStrongBoxBacked(true);
     } else if (needsApi28(strongBox, requireUnlocked)) {
       throw new IllegalStateException("StrongBox / unlocked-device-required need API 28");
     }
-
-    generator.init(spec.build());
-    return generator.generateKey();
   }
 
   /**
