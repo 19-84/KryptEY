@@ -465,10 +465,22 @@ The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` �
    Robolectric inflates it cleanly, which a later round proved by doing it, and seven mutations then
    survived the entire suite. The sentence was the most consequential in this file, because a reader
    deciding whether review had converged would read it and conclude yes.
-   What is actually true: `signalprotocol/` is swept; `latin/e2ee/` has had two rounds against
-   `E2EEStripView` and none against `E2EEStrip` or the adapters beyond rendering; and the ~7,300
-   lines of inherited AOSP keyboard (`keyboard/`, `latin/`, `latin/settings/`, `latin/utils/`,
-   `latin/inputlogic/`) have never been examined by anyone. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
+   **And the correction went stale in its turn**, which is the same failure one level deeper and is
+   why it is being rewritten rather than patched. What is true as of `f3c1667`:
+
+   - `signalprotocol/` is swept, and an independent round that went looking there specifically
+     reported back that it could not break it — the first well-evidenced convergence signal this
+     branch has had. Treat it as done unless something changes underneath it.
+   - `latin/e2ee/` has had several rounds against `E2EEStripView`, a sweep of `E2EEStrip`'s
+     send-side cap (sweep 5) and of `ListAdapterContacts`' badge render (sweep 4, where inverting
+     the trust condition passed the whole suite). `ListAdapterMessages` was examined and found
+     already covered. The same round called this directory converged too.
+   - The **seam** between the inherited keyboard and the strip is where the live defects are: seven
+     in two rounds, including a redirection of the user's plaintext into the messenger's own field.
+     It has its own section below.
+   - Genuinely unexamined still: the rendering and layout bulk of `keyboard/`, `latin/utils/`,
+     `latin/settings/`. Only the debug switches have been looked at there, and only because they
+     are keyloggers in this app specifically. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
    them were one pattern: guards written `a == null || b == null` where every test supplies both, so
    only the both-present arm ever runs. Nine of those were closed with tests; the rest were either
    already covered by later commits (the sweep runs against a snapshot, so re-verifying before
