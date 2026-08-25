@@ -1078,13 +1078,25 @@ a defect.
 Also checked while there: no setting in `latin/settings/` touches the strip, the clipboard or the
 E2EE path at all, so there is no configuration that weakens any of this.
 
-**Toasts are the open one.** A toast is a separate system window and the flag does not reach it. None
-of the strip's 26 carry message plaintext — that was checked — but several carry a contact's display
-name, and in most of those cases the same text is also written to the banner, which *is* covered. So
-the exposure is a contact's identity, to a screen recording taken while the strip itself is
-protected. Not fixed here: deciding which of those messages need to be toasts at all is a product
-question, and several of them are the only feedback a user gets for an action. Recorded so it is a
-decision rather than an oversight.
+**Toasts are the open one.** A toast is a separate system window and the flag does not reach it.
+None of the **30** the strip raises carry message plaintext — but that sentence used to be the whole
+protection, and it was wrong in its own count: it said 26, and there are 25 in `E2EEStripView` plus
+5 in `E2EEStrip`, with two more commented out. What an asserted count is worth, asserted nowhere.
+
+The property is now pinned by `NoToastCarriesMessageContentTest`, and writing it turned up the part
+that mattered. Two sites toast `e.getMessage()` verbatim, and they are safe **only** because each
+sits under `catch (TooManyCharsException e)` — all four throw sites of that exception build their
+text from byte counts. Merging those two catches into the `catch (IOException e)` directly below
+them is a plausible tidy-up, a one-word edit that does not touch the toast line, and it puts
+arbitrary exception text into an unprotected window from a method whose local variable is the
+user's plaintext. Nothing would have failed. That mutant is now a control.
+
+What remains open is unchanged: several toasts carry a contact's display name, in most cases
+duplicating text also written to the banner, which *is* covered. So the exposure is a contact's
+identity to a screen recording taken while the strip itself is protected. Not fixed here, because
+deciding which of these need to be toasts at all is a product question and several are the only
+feedback a user gets for an action. Recorded so it is a decision rather than an oversight — and the
+test permits display names deliberately, rather than by omission.
 
 The wider point stands on its own: there was not one occurrence of `FLAG_SECURE` in the source. The
 E2EE surface is a view inlined into the IME rather than an Activity, so it never inherited one, and
