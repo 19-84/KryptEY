@@ -866,6 +866,20 @@ but this document has spent its time replacing exactly that kind of inference wi
 second run found the first one's claim had quietly become too narrow: it proved the tests build, at a
 moment when `assembleRelease` could not have succeeded at all.
 
+*The committed script itself has now been run, which is not the same as running a copy of it.* Every
+cold verification quoted above used a wrapper in a scratch directory; `tools/verify-cold` is what the
+README tells a contributor to use, and after the image tag moved to `:38` nothing had exercised it.
+It works: **BUILD SUCCESSFUL in 8m1, 965 tests, 0 failures**.
+
+Worth reading the task counts rather than the headline, though: **6 executed, 33 up-to-date**. An
+empty Gradle volume is a cold *dependency* cache, not a clean build directory — the script mounts the
+working tree, so anything already built is reused. That is exactly what the script is for, and its own
+comment says so, but "cold verification, 965 tests" invites a reader to hear "rebuilt from nothing".
+The tests did genuinely re-run here — `testDebugUnitTest` appears without an `UP-TO-DATE` marker, and
+compilation ran with it — which was worth checking rather than assuming, since a task that skips
+silently is how a stale number gets reported as a fresh one. The fresh-clone run above is the one that
+covers what this does not.
+
 One hazard learned the hard way: `verify-cold` mounts **this** repository, so running it in the
 background while doing foreground builds means two Gradle invocations sharing one `build/`
 directory, and the `clean` pulls it out from under the other one. A foreground build failed that
