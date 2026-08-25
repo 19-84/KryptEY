@@ -1744,7 +1744,26 @@ it dies. **Three duplicated writes have now been found by trying to kill one**, 
 for the technique in one line: a mutant that survives is at least as often a redundancy as a gap, and
 you cannot tell which by reading.
 
-Still open: `decrypt`'s final persist and both `Account` write-backs. The receive-side one was
+### What the thirteen survivors turned out to be
+
+The raw number was read as "thirteen unguarded durable writes". Working through them, it is four
+different things, and only one of them is a coverage gap:
+
+| disposition | sites | what it means |
+|---|---|---|
+| **genuine gap, now closed** | `rejectContactKey`, `dismissIdentityChange`, `encrypt`, `decrypt`'s `recordIdentityChange` arm, `buildSession`'s success arm, `createAndAddContactToList` | a fact that reached memory and not disk, with a test that now fails if the write goes |
+| **duplicated write** | `processPreKeyResponse` (removed) | two writes for one fact; each deletion unobservable, so a sweep counts two survivors where neither guards anything alone |
+| **acknowledged equivalent mutant** | `reloadAccount`'s write-back | the inner method guards null itself, so inverting the outer guard changes nothing — verified, not assumed, and kept because the inner guard lives in a different method and a refactor could remove it |
+| **open, and honestly so** | `decrypt`'s final persist | attempted; the obstacle is the harness, not the property |
+
+Two of those four categories are *not* defects, and one is the opposite of one — a redundancy that
+made the sweep's own output misleading. **A survivor count is not a coverage figure**, which is the
+same caveat recorded against the 29-guard sweep and is now demonstrated rather than argued.
+
+The remainder of the thirteen were not individually examined, and that is stated rather than papered
+over: the six closed above were chosen by consequence, not by working down a list.
+
+Still open: `decrypt`'s final persist. The receive-side one was
 attempted and left undone deliberately — the obstacle is the harness, not the property. This suite
 drives two "devices" through one singleton and one `SharedPreferences`, swapping the storage helper in
 and out, and each attempt to make the peer send twice hit an artefact of that arrangement rather than
