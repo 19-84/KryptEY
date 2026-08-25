@@ -1207,6 +1207,40 @@ Recorded so the next round does not spend itself re-deriving them.
   margin under the 4096 threshold is 1612. It is the number the threshold was chosen against, so
   silent growth eats the margin and the first symptom would be that nobody can send an invite.
 
+## The help offered a choice the app does not
+
+Sending an invite is the one moment trust-on-first-use has nothing behind it: there is no earlier
+key, so a messenger that substitutes this bundle is caught by nothing. The help says so, and then
+told the user what to do about it — hand it over "in person, in an email, in a note", which "keeps
+the messenger from ever seeing that first key".
+
+It cannot. The invite button generates the bundle and immediately commits it into the messenger's own
+compose field, and it does so **deliberately**: `sendEncryptedMessageToApplication` lowers the typing
+redirect first, precisely so the text lands in the messenger rather than in the strip. Nothing in the
+app hands the user their invite any other way — the strip's only `setPrimaryClip` writes an *empty*
+clip, because its job is clearing. By the time the user could route it elsewhere, the app they were
+told to route it around is holding it in an EditText it owns.
+
+The sentence conflated two adversaries the rest of this codebase separates carefully: the messenger's
+**servers**, which see the invite only if the user presses send, and the messenger **app**, which
+already has it. `FLAG_SECURE`, the typing redirect, clearing the IME caches on send, clearing the
+clipboard — every one of those exists because the app is the adversary. Advice protecting only
+against the servers, in the section explaining the one uncovered moment in the trust model, tells a
+careful reader they have closed a hole they have not.
+
+This one was written during this revival, in `ab07778`, as the fix for the *previous* round of this
+same class. That is the thing worth recording: the correction introduced a new instance of what it
+was correcting, because it was reasoned from the threat model rather than checked against the flow.
+`InviteAdviceMatchesTheFlowTest` asserts the behaviour first — the commit path, and the absence of
+any copy affordance — and only then judges the wording, so the words are measured against the code.
+
+**The real fix is deferred and is a product change:** give the user a way to obtain their invite
+without committing it to the host app — a copy action on the strip, or a confirmation step before
+the text is typed out. Until that exists the honest wording is what shipped: the invite is in that
+app's text box before you decide anything, and what you still control is whether it travels onward.
+If the affordance is added, `theinviteGoesStraightIntoTheMessengerAndNothingOffersItAnyOtherWay`
+fails on purpose, and the wording should be revisited rather than the scan loosened.
+
 ## Known-deferred defects
 
 - **Store rollback.** Restoring an old `protocol.xml` presents envelopes that verify perfectly,

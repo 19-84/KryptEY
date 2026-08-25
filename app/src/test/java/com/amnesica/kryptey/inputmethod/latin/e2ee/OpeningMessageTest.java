@@ -143,11 +143,19 @@ public class OpeningMessageTest {
   /**
    * And it must not claim the app can tell how an invite travelled.
    *
-   * <p>The help now explains that handing an invite over out of band keeps the messenger from seeing
-   * the first key. That is true and worth telling people. What must never appear beside it is any
-   * suggestion that KryptEY knows which way was used - it cannot: the exported bundle is
-   * byte-identical to the one the invite flow sends. This project already removed provenance as a
-   * source of trust once, and the wording is where it would come back.
+   * <p>The help explains that an invite can be handed over out of band, and why the first key is the
+   * exposed moment. What must never appear beside it is any suggestion that KryptEY knows which way
+   * was used - it cannot: the exported bundle is byte-identical to the one the invite flow sends.
+   * This project already removed provenance as a source of trust once, and the wording is where it
+   * would come back.
+   *
+   * <p>This javadoc used to add "handing an invite over out of band keeps the messenger from seeing
+   * the first key - that is true and worth telling people". It is not true, and
+   * {@link InviteAdviceMatchesTheFlowTest} is why: the invite button commits the bundle into the
+   * messenger's own compose field before the user can route it anywhere, deliberately lowering the
+   * typing redirect to do so, and no affordance in the app hands it over any other way. Corrected
+   * here rather than only in the string, because a test's reasoning is where a fixed claim comes
+   * back from.
    */
   @Test
   public void thehelpDoesNotClaimToKnowHowAnInviteTravelled() {
