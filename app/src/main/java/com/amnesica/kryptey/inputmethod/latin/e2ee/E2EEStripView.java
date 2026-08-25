@@ -401,6 +401,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mHostFieldIsPassword = isPassword;
     if (isPassword) {
       clearDecryptedContent();
+      // And stop collecting what the user types here.
+      //
+      // The guard's own javadoc gives both halves: decrypting "would hand a decrypted message to
+      // that app's storage", and "Encrypting is the mirror - a password typed into the compose box
+      // would be encrypted and pasted somewhere as ciphertext nobody wants". Only the first half
+      // was enforced. The second was answered by darkening the Encrypt button, which stops the
+      // press and not the capture: the redirect was left UP, so every character of the user's
+      // password was committed into the strip's compose box instead of into the password field -
+      // the field itself received nothing - and it stayed there, on screen, in the IME's caches,
+      // and in the box that Encrypt sends the moment the user moves to an ordinary field and the
+      // button comes back on. Measured: hostReceived=[], composeAfterTyping=[the password].
+      //
+      // A third deliberate lowering, alongside a send and the keyboard being dismissed. It is
+      // deliberate in the same sense: the app has just announced that it will not encrypt anything
+      // typed here, so it must not be collecting it either. The mid-compose case - the messenger
+      // flipping inputType while a draft is being typed - loses only what is typed AFTER the flip,
+      // because clearDecryptedContent above already destroys the draft itself, and the user is
+      // shown an emptied box, a changed banner and two dark buttons rather than nothing.
+      stopComposingInsideTheKeyboard();
       // Not over a standing warning. LatinIME calls this on EVERY input session with the host
       // field's inputType, and the messenger owns the inputType of every field it presents - so
       // "your session expired, re-enter your PIN" erased the substitution warning, and the flag
@@ -408,6 +427,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // reading "encryption is turned off here" while the actions were back on and working.
       setInfoUnlessWarned(INFO_PASSWORD_FIELD);
     } else if (wasPassword) {
+      // What was typed into the password field must not outlive it either.
+      //
+      // The caches are cleared when the guard is ARMED and nothing cleared them when it is
+      // lowered, so everything typed while it was up accumulated in buffers that live as long as
+      // the service. resetCachesUponCursorMoveAndReturnSuccess runs on the new input session and
+      // does not close this: it reloads mCommittedTextBeforeComposingText from the new field and
+      // empties mComposingText, but leaves mTempObjectForCommitText - "the third buffer on this
+      // object, and the one that is easy to forget", holding a verbatim copy of the last
+      // commitText argument, which over a password field is the password.
+      //
+      // Through the same helper as every other end of a message's life, for the reason that
+      // helper exists: a rule remembered at each call site is not a rule. The compose box is
+      // already empty here - the redirect was down for the whole of the password field - so this
+      // is the cache half in practice.
+      clearComposeFieldAndCaches();
       // The notice must not outlive the guard it describes.
       //
       // Lowering the flag wrote nothing, so "Encryption and decryption are turned off here" stayed
@@ -1345,10 +1379,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       }
     });
     mInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
-      if (hasFocus) {
-        mRichInputConnection.setOtherIC(mInputEditText);
-        mRichInputConnection.setShouldUseOtherIC(true);
-      }
+      if (hasFocus) composeInsideTheKeyboard();
       // Losing focus does NOT send typing back to the host app.
       //
       // It used to, and that was the app's central promise broken by one unprivileged call: any
@@ -2134,7 +2165,76 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     clearComposeFieldAndCaches();
   }
 
+  /**
+   * Hands typing back to the host's field.
+   *
+   * <p>The counterpart of {@link #composeInsideTheKeyboard()}, and used by exactly one caller: the
+   * password-field guard. The other two lowerings - a send, and the keyboard being dismissed - do
+   * it inline where they have other work to do in a particular order; see the compose box's focus
+   * listener for why focus loss is not one of them.
+   *
+   * <p>{@code clearFocus()} alone is not enough and its failure is silent: the box may not have
+   * focus to lose - any app can take it away with {@code InputMethodManager.showSoftInput} - while
+   * the redirect is up regardless, which is the whole point of that asymmetry.
+   */
+  private void stopComposingInsideTheKeyboard() {
+    if (mRichInputConnection != null) mRichInputConnection.setShouldUseOtherIC(false);
+    if (mInputEditText != null) mInputEditText.clearFocus();
+    // Explicitly, rather than relying on the blur: with no focus to lose no listener fires, and the
+    // affordances would go on claiming the user composes here while typing goes to the host.
+    changeVisibilityInputFieldButtons(false);
+  }
+
+  /**
+   * Points the user's typing at the compose box.
+   *
+   * <p>One implementation, because raising the redirect from two places is how the two would come
+   * to disagree - and they did: see {@link #changeVisibilityInputFieldButtons}.
+   *
+   * <p>Through focus first, so the caret is where the characters are going and a user's tap and
+   * this arrive by the same route. Then the redirect itself, because {@code requestFocus()} returns
+   * false silently whenever the view cannot take focus at that moment - a {@code GONE} ancestor, a
+   * window not yet focusable - and a silent failure here is precisely the disclosure this exists to
+   * prevent.
+   */
+  private void composeInsideTheKeyboard() {
+    if (mInputEditText == null || mRichInputConnection == null) return;
+    // Guarded, because requestFocus() on an already-focused view is a no-op but the listener it
+    // would fire re-enters changeVisibilityInputFieldButtons, which calls this again.
+    if (!mInputEditText.hasFocus()) mInputEditText.requestFocus();
+    mRichInputConnection.setOtherIC(mInputEditText);
+    mRichInputConnection.setShouldUseOtherIC(true);
+  }
+
+  /**
+   * Shows or hides the compose box's own buttons - and, when it shows them, makes what they claim
+   * true.
+   *
+   * <p>These buttons ARE the app's statement that the user is composing inside the keyboard: the
+   * clear button and the encoding selector appear on focus and vanish on blur, and nothing else on
+   * the strip distinguishes "typing goes here" from "typing goes to the messenger". They were shown
+   * from two places. One was the focus listener, where the redirect really had just been raised.
+   * The other was the decrypt path, which raised nothing.
+   *
+   * <p>So after decrypting a message the strip rendered the peer's plaintext in the compose box and
+   * lit the compose affordances beside it, while {@code shouldUseOtherIC} was still false - and the
+   * reply the user typed next was committed straight into the messenger's own field in cleartext,
+   * one character at a time. No adversary and no unusual gesture: receive, decrypt, reply is the
+   * app's documented workflow, and the redirect is raised by exactly one thing, the compose box's
+   * focus listener, which that workflow never fires. {@code TypingDestinationTest} asserts that
+   * losing focus must not LOWER the redirect; that showing decrypted content must RAISE it is the
+   * same property from the receive side, and nothing asserted it.
+   *
+   * <p>Made true here rather than at the two call sites, for the reason
+   * {@code clearComposeFieldAndCaches} gives one screen away: a rule that has to be remembered at
+   * every call site is not a rule.
+   *
+   * <p>Hiding them does NOT lower the redirect. That asymmetry is deliberate and is the property
+   * the focus listener's comment argues for at length - only a send and the keyboard being
+   * dismissed lower it.
+   */
   private void changeVisibilityInputFieldButtons(boolean shouldBeVisible) {
+    if (shouldBeVisible) composeInsideTheKeyboard();
     if (mClearUserInputButton != null && mSelectEncodingFairyTaleButton != null && mSelectEncodingRawButton != null) {
       if (shouldBeVisible) {
         mClearUserInputButton.setVisibility(VISIBLE);
