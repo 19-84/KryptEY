@@ -1140,8 +1140,23 @@ at a time against the full suite:
 | `getIC` ignores the redirect and returns the host field | killed (19) |
 | `forgetCachedText` leaves the third commit buffer holding the last message | killed (4) |
 
-Nothing survived. The 19 is the one to read: routing plaintext to the messenger's own field instead
-of the strip fails a fifth of the strip suite, which is what that should look like.
+Four more guards in the same layer, swept after those:
+
+| guard removed | result |
+|---|---|
+| `FLAG_SECURE` never applied to the window | killed (1) |
+| the messenger controls Enter in the compose box | killed (2) |
+| the window is never told the content is sensitive | killed (3) |
+| changing recipient keeps the staged message | killed (5) |
+
+Nothing survived either round. The 19 is the one to read: routing plaintext to the messenger's own
+field instead of the strip fails a fifth of the strip suite, which is what that should look like.
+
+**Where the sweeps now stand.** Nineteen guards disarmed one at a time across four areas — the wire
+parser (6), the trust predicates (6), the redirect seam (3), the window and input guards (4) — each
+against the full suite. **One survivor**, `refreshOpeningMessage` overwriting a standing warning,
+found and fixed. That is a coverage claim with a method and a number behind it, which is what this
+document has been wrong about often enough to stop asserting any other way.
 
 **Two ways this sweep reported a result that was not true, both caught here rather than believed.**
 They belong beside the recorded mutation discipline, because each produces a confident, plausible,
