@@ -225,9 +225,18 @@ work.
 
 QR is purely a UX layer over the same string and needs a dependency decision.
 
-**Mutation-sweep ledger.** Four sweeps are recorded below; a fifth (151 mutants against `SignalProtocolMain`) is summarised under Open #3, and round 24's seven `E2EEStripView` mutants live only in commit messages. This ledger exists because a previous commit claimed "all 21 survivors killed or documented" with nothing to audit against - and it had itself stopped being a complete record, which is the same failure one level up. Recording the
-outcomes here because a previous commit claimed "all 21 survivors killed or documented" with nothing
-in the tree to audit that against.
+**Mutation-sweep ledger.** Six sweeps are recorded below, numbered 1-6; a seventh (151 mutants
+against `SignalProtocolMain`) is summarised under Open #3, and round 24's seven `E2EEStripView`
+mutants live only in commit messages. The header used to say "four sweeps" while three were
+labelled — the count was wrong and had been for a long time, which is a small thing except that
+this is a ledger, and a ledger whose total does not match its entries is the one artefact that
+should never need checking against itself. This ledger exists because a previous commit claimed "all 21 survivors
+killed or documented" with nothing in the tree to audit against — and it had then stopped being a
+complete record itself, which is the same failure one level up, twice. It has now done it a third
+time: sweeps 4, 5 and 6 below were run and acted on several rounds before anyone added them here.
+The lesson is not "remember to update the ledger", which has now failed three times; it is that a
+record kept by hand beside the work it describes will drift, and the only claims worth trusting are
+the ones a test makes.
 
 *Sweep 1 — `EncryptedKeyValueStore`, `GcmCryptoBox`, `SharedPreferencesKeyValueStore`,
 `BinaryEnvelope` (93 mutants, 21 survivors).* Killed by new tests: `isEncrypted` (`StorageSchemaStateTest`),
@@ -270,6 +279,28 @@ survived every sweep because the suite had one round-trip fixture and the bug is
 the message, not the encoder. Scope: `Encoder.RAW` is the default and FAIRYTALE is an opt-in
 toggle, so this hit users who switched encoders - but decoding is chosen by sniffing the text
 for invisible characters, so a default-RAW user *receiving* a FairyTale message hit it too.
+
+*Sweep 4 — `ListAdapterContacts`, the verified-badge render (5 mutants, 2 survivors).* Both
+survivors were the same gap and it was total: **inverting the trust condition, so every untrusted
+contact renders as verified, passed the entire suite**, and so did replacing it with `true`.
+`isContactKeyTrustworthy` is tested hard as a function; the line turning its answer into an icon was
+tested by nothing, and that icon is the only thing a user told to compare safety numbers is given to
+act on. Closed by `VerifiedBadgeRenderTest`, which asserts both directions, the substitution and the
+rejection cases, and — after a reviewer found the gap — that the *visible* badge is the one carrying
+the click listener. This sweep is also the one that was killed by a time cap mid-run and stranded a
+mutant in a tracked file; see the section on that.
+
+*Sweep 5 — `E2EEStrip`, the send-side length cap (3 mutants, 2 survivors).* Deleting the invite
+refusal outright, and moving its boundary by one, both survived. The cap is the only thing between
+the send path and a bundle the recipient cannot decode. Closed from above and below, since a cap
+tested only from above is satisfied by refusing everything.
+
+*Sweep 6 — `LegacyKeyMigration` (3 mutants, 2 survivors).* Keeping ambiguous chat-log entries instead
+of dropping them, and keeping an unidentifiable retirement's bare name instead of blanking it, both
+survived — the two choices that decide whether the migration is safer than what it replaced. Closed
+by `LegacyKeyMigrationTest`. The third mutant, removing the marker check, was "killed" only by the
+stranded-mutant tripwire noticing `if (false)`, which is what exposed the marker as an efficiency
+guard rather than the safety property.
 
 *Sweep 2 — the pre-key/session stores and `StorageHelper` (88 mutants).* Clean through
 `KyberPreKeyStoreImpl`, `PreKeyStoreImpl`, `SignedPreKeyStoreImpl`, `SessionStoreImpl` and
