@@ -1279,6 +1279,44 @@ inputs, so changing one invalidates the task. `build.gradle` is the case where t
 is not on any path Gradle tracks for it.
 
 
+## A record kept, and never shown on the route that matters
+
+A round sent to hunt "the app knows something, stores it correctly, and never surfaces it where the
+adversary actually goes" found three, and the class turns out to have three distinct shapes.
+
+**Erased by the gesture its own text asks for.** The post-rejection banner tells the user to open the
+contact list and compare the number. Tapping the row calls `selectContact`, which clears the standing
+warning and then re-asserts exactly one record — `hasUnacceptedIdentityChange` — arguing in-method
+that a pending change "is a state, not a notice that has been read". A rejection is a state by the
+same argument, and every other reader treats it as one: its own javadoc says it is "cleared only by a
+fresh comparison … never by anything an attacker can trigger", and it outranks a verified badge. It
+was not re-asserted here. Measured end state: `Chosen contact: Bob Jones #6646-2750b6`, byte-identical
+to a healthy contact, over the attacker's freshly pinned key. The sibling was pinned by a test; this
+one was not.
+
+**Reaching one screen and not the one next to it.** An unreadable store surfaces on the main banner
+and nowhere else. The contact-list button is not disabled, and one tap renders an **empty list** under
+"if you want to chat with someone new, invite them via the add button" — verbatim the fresh-install
+reading `StorageHelper`'s javadoc says must never be presented, because it invites the user to
+re-invite everyone and discard every pin they verified. And the invite button that line points at
+**crashed**: `NullPointerException` out of `View.performClick`, which takes the IME process down in
+whatever app the user is in.
+
+**Computed and then thrown away.** `duplicateNameMessage` asked "is this name known AND not retired",
+so any retirement suppressed the live wording — including when a live row of that name was in the
+list at the same time, which is the attacker's *second* attempt at a name this user already deleted
+once. The suppressed sentence is the only one that says "both now appear in your list, tagged by
+address": the sentence pointing at the tag the whole disambiguation rests on, dropped in the case
+furthest along.
+
+**A survivor kept deliberately, and why it is not a gap.** The fix declines to put a second
+`storageIsUnreadable()` check on the invite listener. A duplicated condition would mask the real
+guard — delete either and nothing observable changes, so both mutations live. That pattern has
+already cost this file two undetectable deletions. The unchecked-`RuntimeException` net behind it is
+kept as defence in depth and is *not* killable while the guard stands; the two layers carry
+deliberately different toast text, which is what makes the guard itself killable.
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from

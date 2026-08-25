@@ -1065,6 +1065,21 @@ public class SignalProtocolMain {
    */
   public static boolean hasContactWithSameDisplayName(final String firstName,
       final String lastName, final SignalProtocolAddress excluding) {
+    return hasLiveContactWithSameDisplayName(firstName, lastName, excluding)
+        || hasRetiredDisplayName(firstName, lastName, excluding);
+  }
+
+  /**
+   * The live half of the question above, on its own.
+   *
+   * <p>Separated because the two halves need different words. Only a live row makes "both now
+   * appear in your list, tagged by address" true, and only a deletion makes "you deleted a contact
+   * called X" true. Folding them together and asking "is this name known" left the caller unable to
+   * say which, and it chose the deleted-contact wording whenever a retirement matched - including
+   * when a live row of that name was in the list at the same time.
+   */
+  public static boolean hasLiveContactWithSameDisplayName(final String firstName,
+      final String lastName, final SignalProtocolAddress excluding) {
     if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return false;
     for (final Contact existing : sInstance.mAccount.getContactList()) {
       if (existing.getSignalProtocolAddress().equals(excluding)) continue;
@@ -1073,7 +1088,7 @@ public class SignalProtocolMain {
         return true;
       }
     }
-    return hasRetiredDisplayName(firstName, lastName, excluding);
+    return false;
   }
 
   /**
@@ -1696,6 +1711,18 @@ public class SignalProtocolMain {
   }
 
   private MessageEnvelope createPreKeyResponseMessage() {
+    // There must be an account to build a bundle from.
+    //
+    // Everything below dereferences it - getPreKeyBundle first, on its very first statement - and
+    // there is no account whenever the store cannot be decrypted, which is a state the app renders
+    // a whole banner for. The one caller is a click listener, so the NullPointerException that
+    // produced went nowhere except out of View.performClick, and an unchecked throw from a click
+    // listener takes the input-method process down in whatever app the user is in. Returning null
+    // is what the caller already handles: it raises IOException on a null bundle.
+    if (mAccount == null) {
+      Log.e(TAG, "No account is loaded; cannot build a key bundle");
+      return null;
+    }
     try {
       final PreKeyResponse preKeyResponse = createPreKeyResponse();
       return new MessageEnvelope(preKeyResponse, mAccount.getSignalProtocolAddress().getName(), mAccount.getSignalProtocolAddress().getDeviceId());

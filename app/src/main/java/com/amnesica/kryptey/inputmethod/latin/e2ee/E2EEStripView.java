@@ -208,6 +208,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_SIGNAL_MESSAGE_NO_CONTACT_FOUND = "Please add the contact first";
   private final String INFO_MESSAGE_ENCRYPTION_FAILED = "Message could not be encrypted";
   private final String INFO_UPDATE_CONTACT_FAILED = "Could not update contact information";
+  // Says which state this is, not just that something failed. The commonest cause is the one the
+  // storage banner describes, and "try again" would be wrong advice for it.
+  static final String INFO_INVITE_UNAVAILABLE = "No invite could be built. This usually means your saved identity cannot be unlocked on this device - check that before re-inviting anyone, because re-inviting replaces every key you have already verified.";
+  /** The should-never-happen half; see the unchecked catch in sendPreKeyResponseMessageToApplication. */
+  private final String INFO_INVITE_FAILED = "Could not build an invite.";
 
   private static class E2EEStripVisibilityGroup {
     private final View mE2EEStripView;
@@ -613,7 +618,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     createContactListReturnButtonClickListener();
     createContactListInviteButtonClickListener();
 
-    setInfoTextViewMessage(mContactListInfoTextView, INFO_CONTACT_LIST);
+    refreshContactListInfoField();
 
     loadContactsIntoContactsListView();
   }
@@ -621,6 +626,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void createMessagesListReturnButtonClickListener() {
     if (mMessagesListReturnButton == null) return;
     mMessagesListReturnButton.setOnClickListener(v -> showOnlyUIView(UIView.MAIN_VIEW));
+  }
+
+  /**
+   * What the contact list says about itself, which is not always the ordinary line.
+   *
+   * <p>An unreadable store reaches exactly one surface - the main banner, and the button state
+   * derived from its text. The contact list is one button away, that button is not disabled, and
+   * there is no account to load rows from, so it rendered an EMPTY list under "if you want to chat
+   * with someone new, invite them via the add button". That is the fresh-install reading
+   * INFO_STORAGE_UNREADABLE exists to prevent, on the screen the banner is not on, next to the one
+   * action it tells the user not to take.
+   */
+  private void refreshContactListInfoField() {
+    if (mContactListInfoTextView == null) return;
+    setInfoTextViewMessage(mContactListInfoTextView,
+        storageIsUnreadable() ? INFO_STORAGE_UNREADABLE : INFO_CONTACT_LIST);
   }
 
   private void createContactListReturnButtonClickListener() {
@@ -631,6 +652,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void createContactListInviteButtonClickListener() {
     if (mContactListInviteButton == null) return;
     mContactListInviteButton.setOnClickListener(v -> {
+      // No storage check here, deliberately. A second copy of the condition would mask the guard in
+      // createPreKeyResponseMessage - the one place that can actually see whether an account
+      // loaded - so removing either would change nothing observable and both mutations would live.
+      // That pattern has already cost this file two undetectable deletions.
       showOnlyUIView(UIView.MAIN_VIEW);
       sendPreKeyResponseMessageToApplication();
     });
@@ -1056,10 +1081,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Separated so the choice can be tested without an inflated IME.
    */
   private String duplicateNameMessage(final Contact contact) {
-    final boolean live = SignalProtocolMain.hasContactWithSameDisplayName(
-        contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress())
-        && !SignalProtocolMain.hasRetiredDisplayName(contact.getFirstName(),
-            contact.getLastName(), contact.getSignalProtocolAddress());
+    // Asked of the LIVE list alone. This used to be "the name is known AND it is not retired", so a
+    // retirement suppressed the live wording even when a live row of that name was sitting in the
+    // list - and the live wording is the only one that ends "Both now appear in your list, tagged
+    // by address", which is the sentence pointing at the tag the user is meant to read. The case
+    // where both hold is the attacker's second attempt at a name this user already deleted once,
+    // i.e. the one furthest along.
+    final boolean live = SignalProtocolMain.hasLiveContactWithSameDisplayName(
+        contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress());
     return live ? INFO_DUPLICATE_CONTACT_NAME : INFO_RETIRED_CONTACT_NAME;
   }
 
@@ -1153,6 +1182,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       mLayoutE2EEHelpView.setVisibility(GONE);
       mLayoutE2EEVerifyContactView.setVisibility(GONE);
     } else if (uiView.equals(UIView.CONTACT_LIST_VIEW)) {
+      // Read live, every time the screen is shown. The state can only be discovered when storage is
+      // next touched, and this view is built once for the life of the strip.
+      refreshContactListInfoField();
       mLayoutE2EEMainView.setVisibility(GONE);
       mLayoutE2EEAddContactView.setVisibility(GONE);
       mLayoutE2EEContactListView.setVisibility(VISIBLE);
@@ -1302,9 +1334,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       e.printStackTrace();
       return;
     } catch (IOException e) {
-      Toast.makeText(getContext(), "Generating pre key message failed!", Toast.LENGTH_SHORT).show();
+      // Names the state rather than reporting a failure. The commonest way to get here is the one
+      // INFO_STORAGE_UNREADABLE describes - no account loaded, so no bundle can be built - and
+      // "generating failed" reads as something to try again, which is the wrong move for it.
+      Toast.makeText(getContext(), INFO_INVITE_UNAVAILABLE, Toast.LENGTH_LONG).show();
       Log.e(TAG, "Generating pre key message failed!");
       e.printStackTrace();
+      return;
+    } catch (RuntimeException e) {
+      // Nothing unchecked may escape a click listener. Out of one there is nothing left to catch it
+      // and the input-method process dies, in whatever app the user is in - the same reason the
+      // clipboard listener and E2EEStrip.decryptMessage each carry an unchecked catch.
+      //
+      // Not hypothetical: getPreKeyBundle dereferenced the account on its first statement, and
+      // there is no account whenever the store cannot be decrypted, so pressing Invite on that
+      // install threw NullPointerException straight through View.performClick. That cause is closed
+      // where it lives, in createPreKeyResponseMessage; this stops the class.
+      //
+      // Deliberately a DIFFERENT message from the branch above, and not for the user's benefit -
+      // it is what makes the two layers separable. With one message, deleting either the guard or
+      // this catch left the screen identical and no test could tell them apart. Reaching here means
+      // something threw that nothing here anticipated, which is not the storage story.
+      Toast.makeText(getContext(), INFO_INVITE_FAILED, Toast.LENGTH_LONG).show();
+      Log.e(TAG, "Building a key bundle raised an unchecked exception");
       return;
     }
     mInputEditText.setText(encoded);
@@ -2015,7 +2067,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // "Chosen contact: Bob" replaced the substitution warning for good - the one screen the user
     // goes to when something looks wrong was also the one that made it stop looking wrong.
     // Re-assert it. Only comparing the number, or another deliberate response, may put it down.
-    if (!warnIfIdentityChanged(contact)) {
+    //
+    // And a standing REJECTION is a state by the same argument, which this route used to answer for
+    // only one of the two records. rejectedAddresses is documented as "cleared only by a fresh
+    // comparison ... never by anything an attacker can trigger", and isContactKeyTrustworthy makes
+    // it outrank a verified badge - so every other reader treats it as a state. Here it was treated
+    // as a notice: after a rejected address was re-pinned and warned about, one tap on the contact
+    // row left "Chosen contact: Bob" over the attacker's key, which is byte-identical to a healthy
+    // contact. The warning's own last sentence is "Compare the number by voice before sending
+    // anything", and opening the contact list to do that is the gesture that erased it.
+    if (!warnIfIdentityChanged(contact) && !warnIfKeyWasRejected(contact)) {
       showChosenContactInMainInfoField();
     }
     showOnlyUIView(UIView.MAIN_VIEW);
