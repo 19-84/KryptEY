@@ -5,7 +5,7 @@ been a source of confusion at least once: which JDK, which Android platform, whi
 whether dependency verification was actually on.
 
 ```
-docker build -t kryptey-build:36 -f tools/Dockerfile tools/
+docker build -t kryptey-build:37 -f tools/Dockerfile tools/
 tools/build-in-docker testDebugUnitTest
 ```
 
@@ -17,11 +17,25 @@ tools/build-in-docker testDebugUnitTest
   time, and everyone who touched this repo worked around it by relabelling a copy of the 35.0.0
   directory. That worked, and it meant nobody was building with the tools AGP actually selects.
   Both are installed now so no relabelling is needed.
-- **Gradle 9.7.1**, from `gradle/wrapper/gradle-wrapper.properties`, fetched by the wrapper.
+- **Gradle 9.7.1**, from `gradle/wrapper/gradle-wrapper.properties`, fetched by the wrapper. The
+  distribution is pinned by `distributionSha256Sum`, and the committed `gradle-wrapper.jar` - which
+  runs *before* any of that verification applies - is reproducible from that pinned distribution:
+  running `gradle wrapper --gradle-version 9.7.1` with the distribution's own binary emits a
+  byte-identical jar.
+- **NDK 28.2.13676358**, for one reason: `llvm-strip`. Without it AGP cannot strip native libraries,
+  only *warns* that it could not, and ships `libsignal_jni.so` whole - 64 MB of DWARF against a
+  4.7 MB `.text`, making the release APK 74 MB instead of 9.4 MB. `verifyReleaseNativesStripped`
+  fails the build if that happens, so this image is what makes `assembleRelease` produce something
+  distributable.
+
+  **The tag moved from `:36` to `:37` when the NDK was added.** An image built under the old tag has
+  no NDK, and reusing it now fails the strip gate - which looks like a broken build rather than a
+  stale image. Rebuild rather than passing `-Pkryptey.allowUnstrippedNatives=true`; that flag is a
+  statement that the artifact is not for distribution.
 
 ## Dependency verification
 
-`gradle/verification-metadata.xml` pins the SHA-256 of every artifact - 387 components. A build
+`gradle/verification-metadata.xml` pins the SHA-256 of every artifact - 386 components. A build
 whose checksums do not match fails rather than warning.
 
 Verification passing on YOUR machine is weaker than it looks, because a warm Gradle cache never
@@ -32,8 +46,13 @@ effect, so regenerating the metadata cannot record them, and every warm build pa
 Two such entries once survived dozens of "clean verified build" reports while a fresh clone could
 not configure at all.
 
-Last cold verification: `assembleDebug` from an empty cache, BUILD SUCCESSFUL, zero verification
-failures.
+Last cold verification, at `85c3049`: a `git clone` into a fresh directory, an empty cache volume,
+and `testDebugUnitTest assembleRelease` - BUILD SUCCESSFUL in 6m21, 957 tests, zero verification
+failures, release APKs of 9.4 MB and 7.7 MB with the strip gate passing unaided.
+
+A clone rather than this working tree, deliberately: every earlier cold run mounted the directory it
+was checking, so it proved the dependency story and could not have noticed a build that depended on
+an untracked or ignored file.
 
 ## What this environment cannot do
 

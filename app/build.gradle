@@ -102,6 +102,9 @@ android {
         // change and replays its last result - which it did, reporting a removed @After cleanup as
         // "survived".
         inputs.dir('src/androidTest/java').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../gradle/verification-metadata.xml').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../tools/README.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../.github/workflows/build.yml').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {

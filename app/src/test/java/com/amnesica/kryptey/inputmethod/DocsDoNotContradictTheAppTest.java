@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -56,6 +57,44 @@ public class DocsDoNotContradictTheAppTest {
     assertTrue("the store description must name PQXDH", text.contains("PQXDH"));
     assertFalse("and must not still present X3DH as the key agreement in use",
         text.contains("X3DH Key Agreement Protocol"));
+  }
+
+  /**
+   * Every document quoting the pinned-artifact count must quote the real one.
+   *
+   * <p>Three files state it — the CI workflow, `tools/README.md` and REVIVAL.md — and two of the
+   * three were wrong at the same time: 368 in the workflow and 387 in the tooling README against an
+   * actual 386. Nobody mistypes a number twice in the same direction by accident; it drifted because
+   * the metadata grew and the prose did not, which is the failure this whole file exists for.
+   *
+   * <p>Counted from `verification-metadata.xml` rather than hard-coded here, so this test cannot
+   * become the fourth stale copy of the same figure.
+   */
+  @Test
+  public void everyDocumentQuotesTheRealPinnedArtifactCount() throws IOException {
+    final String metadata = read("gradle/verification-metadata.xml");
+    final int components = metadata.split("<component ", -1).length - 1;
+    assertTrue("this test counts <component> entries and found almost none; it has stopped testing "
+        + "anything", components > 100);
+
+    final java.util.regex.Pattern quoted =
+        java.util.regex.Pattern.compile("(\\d{3,4}) (?:components|artifacts|pinned)");
+    for (final String doc : new String[] {
+        ".github/workflows/build.yml", "tools/README.md", "REVIVAL.md"}) {
+      final String text = read(doc);
+      final java.util.regex.Matcher m = quoted.matcher(text);
+      while (m.find()) {
+        // A number introduced by ~ or opening a quotation is being CITED, not claimed. This file
+        // records its own corrections, so it quotes superseded figures on purpose - "the comment
+        // said ~368 artifacts and the count is 386" must not be read as two claims. Skipping them
+        // is what lets the document keep its history instead of erasing it to satisfy a checker.
+        final char before = m.start() == 0 ? ' ' : text.charAt(m.start() - 1);
+        if (before == '~' || before == '"' || before == '\u201c') continue;
+        assertEquals(doc + " quotes " + m.group(1) + " pinned artifacts; the metadata pins "
+            + components + ". Two of these three files were wrong at once before this test existed",
+            components, Integer.parseInt(m.group(1)));
+      }
+    }
   }
 
   /**

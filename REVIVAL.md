@@ -102,7 +102,7 @@ resolve `libsignal` at all. Replaced with `mavenCentral()` under `dependencyReso
 - AGP 7.3.1 → **9.3.1**, Gradle 7.4 → **9.7.1**, Java 11 → **17**, compileSdk 33 → **35**
 - Jackson 2.14.1 → **2.22.2** via BOM; `protobuf-javalite` **deleted** (a HIGH CVE carried for one
   call that nothing invoked)
-- `gradle/verification-metadata.xml` — 382 components pinned by SHA-256, enforced in CI
+- `gradle/verification-metadata.xml` — 386 components pinned by SHA-256, enforced in CI
 - CI actions pinned to commit SHAs, not mutable tags
 
 **targetSdk stays at 33.** compileSdk is 35, but Android 15 enforces edge-to-edge and this fork has
