@@ -1736,8 +1736,22 @@ remembers the first: without that write the store has no identity for the addres
 the *next* bundle is a clean first sighting and is accepted in silence — no warning, because nothing
 was displaced. The attacker never has to defeat the pin, only arrive after it was forgotten.
 
-Still open, and now genuinely so: `createAndAddContactToList`, `decrypt`'s final persist, and both
-`Account` write-backs. Each needs checking for the same duplication before being treated as a gap. Each needs the same shape of test — do the thing, reload, assert it is still
+`createAndAddContactToList` is now closed too, and closing it found the same trap a second time. The
+first version of the test pinned a bundle immediately after adding the contact — the realistic-looking
+sequence — and the persist inside *that* path wrote the contact as well, so deleting the contact's own
+write changed nothing and the mutant survived. Adding a contact **on its own** isolates the write, and
+it dies. **Three duplicated writes have now been found by trying to kill one**, which is the argument
+for the technique in one line: a mutant that survives is at least as often a redundancy as a gap, and
+you cannot tell which by reading.
+
+Still open: `decrypt`'s final persist and both `Account` write-backs. The receive-side one was
+attempted and left undone deliberately — the obstacle is the harness, not the property. This suite
+drives two "devices" through one singleton and one `SharedPreferences`, swapping the storage helper in
+and out, and each attempt to make the peer send twice hit an artefact of that arrangement rather than
+anything about the code. One was instructive: with no reply, libsignal correctly keeps sending
+`PreKeySignalMessage`s against a one-time pre-key the receiver has already consumed, so the failure
+was right and the *scenario* was wrong. A test that passes because its scenario was bent until it did
+is worth less than none. Each needs the same shape of test — do the thing, reload, assert it is still
 true — and they are listed rather than batch-fixed because a sweep that closes nine at once tends to
 produce nine tests that all pass for the same reason.
 
