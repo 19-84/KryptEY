@@ -74,6 +74,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two siblings, and the call site picked the weaker one](#two-siblings-and-the-call-site-picked-the-weaker-one)
 - [A guard that was false on exactly the path that needed it](#a-guard-that-was-false-on-exactly-the-path-that-needed-it)
 - [A record kept, and never shown on the route that matters](#a-record-kept-and-never-shown-on-the-route-that-matters)
+- [An unchecked throw out of a click listener kills the keyboard](#an-unchecked-throw-out-of-a-click-listener-kills-the-keyboard)
 - [The text is a security surface, and it had never been read as one](#the-text-is-a-security-surface-and-it-had-never-been-read-as-one)
 - [The help offered a choice the app does not](#the-help-offered-a-choice-the-app-does-not)
 - [One record keyed three ways, and what each fix cost](#one-record-keyed-three-ways-and-what-each-fix-cost)
@@ -1571,7 +1572,17 @@ Recorded so the next round does not spend itself re-deriving them.
   cloud backup and device-to-device transfer — which matters because `allowBackup` alone does not
   stop transfer on Android 12+, and a transferred store is one the new device can never decrypt. The
   IME service is `exported="false"` behind `BIND_INPUT_METHOD`; the broadcast receiver is not
-  exported; the only exported component is the launcher activity. Nothing to fix.
+  exported; the only exported component is the launcher activity. Exactly one permission is declared,
+  `VIBRATE`, which is what the README lists.
+
+  **One correction to this entry, made later and worth leaving visible.** It used to end "Nothing to
+  fix", and that closed a question it should have left open: `exported="false"` on a service the
+  *system* must bind is, on the plain reading of the attribute, a service the system cannot bind. It
+  almost certainly works — the attribute predates this revival and the app is published and used —
+  but nothing here can run an IME, and this document has spent its time removing exactly this kind of
+  confident sentence. The open form of it is on the hardware list. Two sections of one file disagreed
+  for two days, which is the same failure the invite advice produced: an audit that reads sections in
+  isolation cannot see them contradict each other.
 - **The inherited keyboard's debug switches**, all nineteen of them. Several are keyloggers in this
   app specifically: `KeyboardState.DEBUG_EVENT` logs every key pressed and released,
   `PointerTracker.DEBUG_LISTENER` resolves `CODE_OUTPUT_TEXT` to the literal output string, and
@@ -1590,6 +1601,12 @@ Recorded so the next round does not spend itself re-deriving them.
   flag is kept as `-Dkryptey.isolateClasses=true` so the check is repeatable rather than a one-off
   someone has to reconstruct; it costs about seven minutes against under two, because JVM start
   dominates.
+
+  **Re-run at 920 tests, and the figures above are from 796.** 124 tests were added after that check,
+  many of them using the very static seams that make leakage possible, so the claim was 124 tests out
+  of date and nobody had noticed — the check is repeatable precisely so it does not have to be
+  believed. The isolated run is clean again at 920, but it did not come back clean the first time:
+  it surfaced a genuinely failing test, which turned out not to be leakage at all (see below).
 
   That check rules out leakage *between* classes and says nothing about order *within* one, which is
   a distinction worth keeping rather than letting "the suite is order-independent" stand for both.
