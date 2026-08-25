@@ -1524,7 +1524,42 @@ attacker-supplied *text* around it. Five more guards, disarmed one at a time aga
 | partial byte accepted (length not a multiple of 8) | killed (2) |
 | empty bit string decoded as zero bytes | killed (2) |
 
-Nothing survived. That brings the sweep programme to **24 guards across five areas, one survivor**.
+Nothing survived.
+
+## Phase 1's crypto box, swept and clean
+
+The last unswept area, and the one everything at rest depends on:
+
+| guard removed | result |
+|---|---|
+| AAD not bound in on `seal` | killed (43 tests) |
+| AAD not checked on `open` | killed (43) |
+| provider nonce length unchecked | killed (2) |
+| short envelope accepted | killed (2) |
+| any storage envelope version accepted | killed (3) |
+
+Nothing survived. The two 43s are the ones to read: the AAD is what binds a sealed blob to the key it
+was stored under, so dropping it fails a twentieth of the suite in each direction.
+
+## Where the sweep programme ends
+
+**29 guards, six areas, one survivor.**
+
+| area | guards | survivors |
+|---|---|---|
+| Phase 1 — crypto box | 5 | 0 |
+| Phase 2 — one-time pre-key handling | 2 | 1 (`removePreKey`, judged redundant rather than a defect) |
+| Phase 3 — wire parser | 6 | 0 |
+| Phase 3 — decoder | 5 | 0 |
+| Phase 4 — trust predicates | 6 | 0 |
+| Phase 4 — redirect seam, window and input guards | 7 | 1 (`refreshOpeningMessage`, fixed) |
+
+Two qualifications, because the number is worth less than what it does not cover. **Mutation measures
+the guards you think to disarm** — every real defect on this branch was found by a reviewer asking a
+question nobody had asked, not by this sweep, and the sweep's own survivor count would have been zero
+if I had not thought to mutate `refreshOpeningMessage`. And **five separate times the harness returned
+a confident wrong answer**, each recorded above. The programme is worth its cost as evidence that the
+guards which exist are pinned; it is not evidence that the right guards exist.
 
 
 **An invite stops working once ~50 later invites have been published.** Every bundle allocates its
