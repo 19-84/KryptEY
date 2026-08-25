@@ -552,6 +552,14 @@ vendors, and nothing in this environment can run the keyboard — so *which* scr
 tested and *whether the flag takes effect* is not. Of everything in this branch, this is the change
 that most needs a device before it is trusted.
 
+The same is now true of one smaller change. The safety-number digits count up over a second, and
+nothing cancelled those animators, so switching contacts left the previous contact's animation to
+finish painting its number into the views a moment later — under the new contact's name, on the one
+screen whose whole purpose is comparing that number by voice. The animators are now cancelled when
+the digits are blanked and when a new number is loaded. It has no test: under Robolectric an
+un-cancelled animator delivers no further frames once the looper is idled past the view change, so
+the late repaint never happens and a test of it passes either way. The fix is unverified.
+
 The wider point stands on its own: there was not one occurrence of `FLAG_SECURE` in the source. The
 E2EE surface is a view inlined into the IME rather than an Activity, so it never inherited one, and
 an app whose premise is that the messenger cannot read the message was painting the message into a

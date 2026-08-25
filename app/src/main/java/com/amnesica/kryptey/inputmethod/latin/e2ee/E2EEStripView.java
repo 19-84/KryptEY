@@ -431,8 +431,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     setFingerprintViews(fingerprint, true);
   }
 
+  /**
+   * Animators still counting up into the digit views.
+   *
+   * <p>Each runs for a second after the screen is drawn. Nothing used to stop them, so blanking the
+   * screen or opening a different contact left the previous contact's animation to finish writing
+   * its digits into the views a moment later - a safety number the user could then read and compare
+   * while believing it belonged to whoever is named above it.
+   *
+   * <p>Untested, deliberately: under Robolectric an un-cancelled animator delivers no further
+   * frames once the looper is idled past the view change, so the late repaint does not happen and
+   * a test of it passes with or without this cancel. Removing the cancel is therefore invisible
+   * here. It is on the device-check list in REVIVAL.md with FLAG_SECURE, for the same reason.
+   */
+  private final java.util.List<ValueAnimator> mCodeAnimators = new ArrayList<>();
+
+  private void cancelCodeAnimations() {
+    for (final ValueAnimator animator : mCodeAnimators) {
+      animator.cancel();
+    }
+    mCodeAnimators.clear();
+  }
+
   /** Blanks the safety-number digits and disables confirmation. */
   private void clearFingerprintViews() {
+    cancelCodeAnimations();
     for (final TextView code : mCodes) {
       if (code != null) code.setText("");
     }
@@ -453,6 +476,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void setFingerprintViews(Fingerprint fingerprint, boolean animate) {
+    // Whatever the previous contact's screen started must not still be running: it would count up
+    // into these same views over the top of this contact's number.
+    cancelCodeAnimations();
     String[] segments = getSegments(fingerprint, mCodes.length);
 
     for (int i = 0; i < mCodes.length; i++) {
@@ -474,6 +500,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         -> Math.round(startValue + (endValue - startValue) * fraction));
 
     valueAnimator.setDuration(1000);
+    mCodeAnimators.add(valueAnimator);
     valueAnimator.start();
   }
 
@@ -1549,7 +1576,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   public void selectContact(Contact contact) {
     clearStandingWarning();   // the user chose this contact; they have seen whatever was on screen
     setChosenContact(contact);
-    showChosenContactInMainInfoField();
+    // ...but a pending identity change is a state, not a notice that has been read. Choosing the
+    // contact from the list is not the user having dealt with it, and clearing the flag here meant
+    // "Chosen contact: Bob" replaced the substitution warning for good - the one screen the user
+    // goes to when something looks wrong was also the one that made it stop looking wrong.
+    // Re-assert it. Only comparing the number, or another deliberate response, may put it down.
+    if (!warnIfIdentityChanged(contact)) {
+      showChosenContactInMainInfoField();
+    }
     showOnlyUIView(UIView.MAIN_VIEW);
   }
 

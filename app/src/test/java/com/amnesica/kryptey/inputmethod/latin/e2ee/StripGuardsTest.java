@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -488,4 +489,34 @@ public class StripGuardsTest {
     assertTrue("the post-rejection warning must still be the thing on screen: " + shown,
         shown.toLowerCase().contains("did not match"));
   }
+
+  /**
+   * Choosing the contact from the list must not be what makes the warning go away.
+   *
+   * <p>A pending identity change is a state, not a notice that has been read. selectContact cleared
+   * the standing flag and wrote "Chosen contact: Bob" over the substitution warning, so the screen
+   * the user opens when something looks wrong was also the screen that made it stop looking wrong -
+   * and nothing would raise it again short of another failed decryption.
+   */
+  @Test
+  public void choosingTheContactDoesNotDismissAPendingIdentityChange() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue("precondition: a change must be pending",
+        SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+
+    strip.selectContact(bob());
+
+    final String shown = infoField().getText().toString();
+    assertFalse("the all-clear must not stand in for the warning: " + shown,
+        shown.startsWith("Chosen contact"));
+    assertTrue("the substitution warning must be re-asserted: " + shown,
+        shown.toLowerCase().contains("number"));
+
+    // And it must still be standing, not merely painted once.
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.onClipboardChangedForTest();
+    assertEquals("re-asserted, then wiped by the next post, is no better", shown,
+        infoField().getText().toString());
+  }
+
 }
