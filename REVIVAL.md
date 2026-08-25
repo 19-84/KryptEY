@@ -855,6 +855,13 @@ Recorded so the next round does not spend itself re-deriving them.
   someone has to reconstruct; it costs about seven minutes against under two, because JVM start
   dominates.
 
+  That check rules out leakage *between* classes and says nothing about order *within* one, which is
+  a distinction worth keeping rather than letting "the suite is order-independent" stand for both.
+  So the second half was measured too: every class temporarily annotated
+  `@FixMethodOrder(NAME_ASCENDING)` — a deterministic order, and a different one from JUnit's
+  hash-based default — 114 classes, **796 tests, zero failures again**. Not proof over all orders;
+  evidence over a second one, which is what was actually available.
+
 - **The messenger picks the compose box's shift state.** `InputLogic.getCurrentAutoCapsState` reads
   `getCurrentInputEditorInfo().inputType` — the HOST's — to decide auto-capitalisation, and goes on
   doing so while the user is typing into the strip. So an app that declares
