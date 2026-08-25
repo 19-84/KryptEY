@@ -1381,6 +1381,30 @@ fails on purpose, and the wording should be revisited rather than the scan loose
 
 ## Known-deferred defects
 
+**An invite stops working once ~50 later invites have been published.** Every bundle allocates its
+own one-time pre-key id — deliberately, because the allocator used to hard-code id 1 and regenerate
+*in place*, so handing out a second invite destroyed the material the first invitee already held.
+Consumed records are then retained only to `USED_PRE_KEY_RETENTION` (50), which means "each bundle
+gets its own id" holds until enough later bundles push an earlier one out of retention.
+
+Measured, not reasoned: with 10 later invites published, an invite handed out earlier still opens;
+past the retention bound it does not, and the invitee's first message can never be read by the
+sender. `AbandonedInviteRetentionTest` pins both sides, and the control confirms it distinguishes
+them — set below the bound, the "pruned away" test fails because the message decrypts.
+
+This is reachable without anyone abandoning anything deliberately: an invite that fails its length
+check has already allocated its id, and there is no rollback. That is the right call rather than a
+defect — rolling the id back means handing the same number out twice with different material, which
+is the hazard the per-bundle design exists to prevent, and the app cannot know whether the bundle
+escaped. Retention has to be bounded too; the store cannot grow forever. So the line exists on
+purpose, and what was missing was knowing where it is.
+
+Not fixed here, and the fix is a product decision rather than a correction: either raise retention,
+or tell a user whose invite has aged out that the invite is stale instead of letting the invitee send
+a message nobody can read. The app's standard decryption-failure advice — delete and re-invite — is
+for once exactly right in this case, which is why it is deferred rather than urgent.
+
+
 **Deleting a contact does not erase an un-attributed legacy log entry.** The help says "if you delete
 the contact, the message history will be deleted too". For every message this version writes that is
 true. For one class of pre-upgrade entry it is not.
