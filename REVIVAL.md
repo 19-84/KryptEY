@@ -688,6 +688,55 @@ objects, which no amount of care about the pair you chose will catch. And the ro
 the one asked for an opinion rather than a bug list; three rounds of finding defects in each other's
 fixes had not produced the observation that no fix existed at that layer.
 
+## The seam nobody had looked at
+
+Twelve rounds went into the crypto, the storage, the trust model and the strip's own state machine.
+A round told to look *where previous rounds had not* found seven defects in two days, all in one
+place: the join between the inherited AOSP keyboard and the E2EE strip. Its verdict on the rest was
+that `signalprotocol/` and `latin/e2ee/` have converged — everything it probed there came back clean
+or already covered — and that is worth as much as the findings.
+
+**One root cause.** `RichInputConnection.shouldUseOtherIC` switches where an edit *goes*: true, and
+the character lands in the strip's compose box; false, and it is committed into the host
+application's field. Nothing switches the state the edit is *computed from*, which is still the
+host's — and the host is the adversary.
+
+- **Focus loss redirected typing into the messenger's own field, in cleartext.** Any app may call
+  `InputMethodManager.showSoftInput`; it reaches `LatinIME.onShowInputRequested`, whose first
+  statement clears focus on the compose box. The focus listener lowered the flag and every
+  subsequent keystroke went to the host — with the box still on screen holding the draft, the only
+  visible change being two small buttons disappearing. It also fired with no adversary: opening any
+  other strip screen sets the main layout `GONE`, which clears focus. Focus loss is not the user
+  asking to type into the host; a send and a dismissal are, and they lower it explicitly.
+- **The messenger decided what Enter did** inside the compose box, because Enter is dispatched from
+  the host's `EditorInfo`. `IME_ACTION_SEND` — what chat apps declare — made it a silent no-op;
+  `IME_ACTION_NEXT` moved focus off the box, reaching the disclosure above by a route the app chooses.
+- **A selection the host reported for its own field deleted the draft.** `mExpectedSelStart/End` are
+  written only by `LatinIME.onUpdateSelection`. One backspace took the whole message, or an
+  attacker-chosen prefix of one the user then encrypted and sent.
+- **The plaintext survived pressing send**, in the IME's own caches, on an object living as long as
+  the service, while the keyboard stayed up in the messenger's app. Then the same for the clear
+  button, a recipient change, and the password-field guard — four paths, found one at a time by
+  asking "what else ends a message's life?". They are now one operation, and the test is an
+  invariant over every path rather than one test per button, because one-test-per-button is how it
+  was missed three times.
+- **A configuration change discarded the lot.** The strip is rebuilt on a theme change, on night
+  mode at sunset, on rotation — and the redirect went on pointing at the *discarded* compose box, so
+  typing after a rebuild landed in an object no clearing path could reach and survived dismissal. A
+  standing identity-change warning went with it: a rebuild does not erase the banner, it throws away
+  the object the banner is drawn on, which reaches every defect in the banner-erasure family without
+  touching any path those fixes guard.
+
+**Clearing on rebuild is the wrong fix**, and the round that found it said so about its own control:
+clearing lowers the redirect, so the next keystroke after a rotation goes into the messenger's field
+in plaintext — a residue defect traded for a disclosure one. State is carried instead, which is also
+what the user means mid-message.
+
+**Why twelve rounds walked past it.** The comment at the top of `clearFocusEditTextView` records
+someone reading that method, writing down that it "clears focus, not text", fixing the text-lifetime
+bug they were hunting, and never asking what clearing focus *does*. Every round before this one was
+pointed at a subsystem. This one was pointed at a join, and the difference is the whole finding.
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
