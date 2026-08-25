@@ -770,8 +770,8 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
 For most of this branch's life the 11 `AndroidKeystoreCryptoBoxTest` methods were the one piece of
 the project nothing could execute. They were compiled (a build failure now guards against silent
 rot) and they were read by hand, which is the weakest form of review there is. They have now been
-run: **14 tests, 0 failures, on Android 28 x86_64** — the original 11 keystore tests, plus three
-added since to settle the `exported="false"` question below.
+run: **17 tests, 0 failures, on Android 28 x86_64** — the original 11 keystore tests, plus three
+that settle the `exported="false"` question below and three that settle the autofill one.
 
 The reason they could not run before was a wrong inference, not a missing capability. This machine
 has no `/dev/kvm`, and `/proc/cpuinfo` advertises no `vmx` or `svm` — nested virtualisation is not
@@ -855,9 +855,10 @@ ask what the device was actually doing, not to write down what the failure appea
 
 **What this still is not.** An emulator is not a phone. There is no StrongBox on it, so the top rung
 of the key ladder is exercised only in the sense that it is correctly refused and stepped down from;
-what a StrongBox device does still has no test here. Eleven of the suite's fourteen tests are about
-the crypto box; the other three bind the keyboard but never type into anything. Nothing here drives
-the IME through a real messenger, and the autofill question remains open. What changed is that the category "cannot be run in this environment" is smaller than
+what a StrongBox device does still has no test here. Eleven of the suite's seventeen tests are about
+the crypto box; three bind the keyboard and three watch what autofill is handed, but none of them
+types anything. Nothing here drives the IME through a real messenger, and nothing drives the strip's
+own UI. What changed is that the category "cannot be run in this environment" is smaller than
 it was, and it was worth an hour to find out that it was never as large as the document said.
 
 ## The release APK built here is not the one users would get
@@ -1839,7 +1840,10 @@ the digits are blanked and when a new number is loaded. It has no test: under Ro
 un-cancelled animator delivers no further frames once the looper is idled past the view change, so
 the late repaint never happens and a test of it passes either way.
 
-**A second device question, from the layouts.** The compose box that holds decrypted plaintext
+**A second device question, since answered on a device.** *Resolved: autofill never sees the
+compose box, and the mitigation is still not added — now because it was measured to be unnecessary
+rather than because nobody had checked. The entry below is the original reasoning; the measurement
+follows it.* The compose box that holds decrypted plaintext
 (`e2ee_input_field`) is an ordinary `EditText` declaring `inputType="textMultiLine"`, and neither the
 layout nor any code sets `importantForAutofill` or `importantForAccessibility` — checked across
 `app/src/main`, which contains no occurrence of either.
@@ -1857,6 +1861,39 @@ guards it could not demonstrate a need for, and adding hardening against a mecha
 reach IME views would be exactly that, with a test that pins a decision nobody has justified. What is
 recorded instead is the observation, the mitigation, and the one experiment that settles it — enable
 an autofill service and focus the compose box.
+
+**The experiment, run.** `RecordingAutofillService` is a debug-only autofill service that fills
+nothing and writes down every `AssistStructure` it is handed. With it registered as the device's
+autofill provider and the KryptEY keyboard bound and connected over a real text field,
+`AutofillDoesNotReachTheKeyboardTest` reads back what the framework actually delivered.
+**`e2ee_input_field` never appears.** The structure carries the host activity's own field and
+nothing belonging to the keyboard's window.
+
+That is an absence, which is the weakest kind of evidence and the easiest to fake, so it stands on
+five controls rather than on its own:
+
+1. Autofill actually ran — the service recorded at least one fill request. Absence from zero
+   structures would be worth nothing.
+2. The structure was populated and identifies fields by resource id: the host activity's own field
+   (`autofill_probe_field`, an id that exists only so this control can be written) is in it.
+3. The keyboard was bound and holding a live input connection at the time, so its window existed.
+4. The string being searched for names a real view. A renamed id would otherwise make this test
+   pass, with growing confidence, forever.
+5. The detector discriminates: pointed at `autofill_probe_field` — a field that *is* in the
+   structure — the assertion fails. Verified by running it that way.
+
+**What this does and does not settle.** It settles the pathway that mattered: a fill request for
+some other app's field does not carry the keyboard's views along with it, so the decrypted message
+sitting in the compose box is not handed to whatever autofill provider the user installed. It does
+*not* prove the IME could never start a session of its own. Autofill sessions are begun by an
+autofill *client*, which is an Activity; an `InputMethodService` is not one. That is an argument
+rather than a measurement, and it is written here as an argument — driving the strip's own compose
+box to focus needs a tap at coordinates that depend on which of the strip's six screens is showing,
+which is a harness this does not have. `uiautomator dump` was tried as a cross-check and cannot see
+IME windows at all, so it settled nothing either way.
+
+So `android:importantForAutofill="no"` is still not added, and the reason has changed from "no
+demonstrated need" to "measured absent on the pathway that would have carried it".
 
 **A manifest question, since answered on a device.** *Resolved: the platform binds it. See
 [the instrumentation tests run

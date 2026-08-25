@@ -73,10 +73,18 @@ entry added there is a finding nobody will look at again.
 
 ## Instrumentation tests
 
-`tools/test-on-emulator` runs them. There are 14: eleven cover the Android Keystore, which has no
-JVM equivalent because there is no TEE behind a desktop provider, and three cover whether the
-platform will bind a service declared `exported="false"` as an input method. Until recently none of
-them had ever executed anywhere.
+`tools/test-on-emulator` runs them. There are 17: eleven cover the Android Keystore, which has no
+JVM equivalent because there is no TEE behind a desktop provider; three cover whether the platform
+will bind a service declared `exported="false"` as an input method; and three establish that the
+decrypted-message compose box is never handed to an autofill service. Until recently none of them
+had ever executed anywhere.
+
+The last two groups need device state that only shell can set - a selected input method, a
+registered autofill service - so the script sets it and the tests assert it as a precondition
+rather than passing vacuously when it is missing. The script also reboots the device once after
+writing `hide_error_dialogs`, because ActivityManager only re-reads that on a configuration change
+and an ANR dialog that steals window focus is this harness's most reliable way to produce a
+confident wrong answer.
 
     tools/test-on-emulator
 
@@ -101,6 +109,8 @@ Two things are easy to trip over:
 StrongBox. The emulator has none, so the top rung of the key ladder is only ever exercised as a
 refusal that gets stepped down from. What a StrongBox-backed device actually does remains untested.
 
-Nothing here drives the keyboard through a real messenger either. The three IME tests establish that
-the system binds the keyboard and opens an input connection to a field; no test types a message,
-encrypts it, and reads it back out of another app.
+Nothing here drives the keyboard through a real messenger either. The IME tests establish that the
+system binds the keyboard and opens an input connection to a field, and that autofill does not
+receive the compose box; no test types a message, encrypts it, and reads it back out of another app.
+Nor does anything drive the strip's own UI - reaching its compose box needs a tap at coordinates
+that depend on which screen the strip is showing.

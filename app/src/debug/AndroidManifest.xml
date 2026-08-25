@@ -21,5 +21,22 @@
             android:name="com.amnesica.kryptey.inputmethod.EditableFieldActivity"
             android:exported="false"
             android:label="KryptEY test field" />
+
+        <!--
+          An autofill service that fills nothing and records what it is shown. Debug-only: an app
+          that ships its own autofill service is a different app. Guarded by
+          ReleaseManifestHasNoTestScaffoldingTest, which derives its list from src/debug/java.
+        -->
+        <service
+            android:name="com.amnesica.kryptey.inputmethod.RecordingAutofillService"
+            android:exported="false"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/recording_autofill_service" />
+        </service>
     </application>
 </manifest>

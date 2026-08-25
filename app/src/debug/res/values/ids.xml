@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      A resource id for the scaffolding field, so an AssistStructure names it.
+
+      Autofill identifies views by their resource entry name; a programmatically created view has
+      none, and every node would come back with a null id. Without this the "autofill really did
+      see the host's field" control could not be written, and the test would be asserting the
+      absence of one id from a structure it never established was populated at all.
+    -->
+    <item name="autofill_probe_field" type="id" />
+</resources>

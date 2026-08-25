@@ -32,6 +32,9 @@ public class EditableFieldActivity extends Activity {
 
     final LinearLayout root = new LinearLayout(this);
     field = new EditText(this);
+    // Named so an AssistStructure can identify it - autofill reports views by resource entry name,
+    // and a view created in code has none.
+    field.setId(R.id.autofill_probe_field);
     field.setFocusable(true);
     field.setFocusableInTouchMode(true);
     root.addView(field);
