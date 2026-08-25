@@ -852,11 +852,18 @@ untracked or ignored sitting in it. Such a run proves the *dependency* story (an
 verification on, 386 components fetched and checked) and says nothing about whether the tracked
 content is sufficient. A build quietly depending on an ignored file would pass every one of them.
 
-Tested at `49a451e`: `git clone` of the branch into a fresh directory, an empty Gradle volume, and
-`testDebugUnitTest` — **BUILD SUCCESSFUL in 5m37, 939 tests, 0 failures, 4 skipped**, 37 of 39 tasks
-executed. So what a new contributor gets from `git clone` alone is a working build. The inference was
-available beforehand — only build outputs and `.claude/` are ignored — but this document has spent its
-time replacing exactly that kind of inference with a run.
+Tested at `49a451e`, and again at `85c3049` once the build image gained an NDK and the strip gate was
+corrected. The second run is the one that matters, because it covers the whole path rather than the
+tests alone: `git clone` into a fresh directory, an empty Gradle volume, the committed image, and
+`testDebugUnitTest assembleRelease` — **BUILD SUCCESSFUL in 6m21, 957 tests, 0 failures, 4 skipped**,
+and release APKs of **9.4 MB / 7.7 MB** with `verifyReleaseNativesStripped` passing on its own, no
+opt-out flag.
+
+So what a new contributor gets from `git clone` alone is a working build *and a distributable
+artifact*. The inference was available beforehand — only build outputs and `.claude/` are ignored —
+but this document has spent its time replacing exactly that kind of inference with a run, and the
+second run found the first one's claim had quietly become too narrow: it proved the tests build, at a
+moment when `assembleRelease` could not have succeeded at all.
 
 One hazard learned the hard way: `verify-cold` mounts **this** repository, so running it in the
 background while doing foreground builds means two Gradle invocations sharing one `build/`
