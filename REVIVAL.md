@@ -1368,6 +1368,37 @@ kept as defence in depth and is *not* killable while the guard stands; the two l
 deliberately different toast text, which is what makes the guard itself killable.
 
 
+## An unchecked throw out of a click listener kills the keyboard
+
+A round hunting this class found three, all reproduced out of `View.performClick`, all in one state
+nobody had covered — and the messenger arms the trap itself.
+
+**The state.** `UNREADABLE` is defended: the strip notices, posts a standing warning, and the text
+watcher disables Encrypt and Decrypt off that banner. The undefended state is **no account loaded
+with `storageState() == NONE`** — a reload that yields nothing, or a storage helper that could not be
+built. `NONE` is also the right answer for a fresh install, so the ordinary "No contact chosen" line
+renders and nothing is disabled.
+
+**And the messenger can arm it.** The clipboard listener needs no account, so the first KryptEY-shaped
+payload it posts writes *"Keybundle detected: click on decrypt to save the content"* over the banner —
+and `afterTextChanged` treats any banner other than the two named ones as a reason to **enable both
+action buttons**. Measured: decrypt `enabled=false` before the paste, `true` after. The user then
+presses the button the app just told them to press, and the input-method process dies in whatever app
+they are typing in.
+
+Three guards, at the three places that can see `mAccount`: `getAccountName` (reached by Decrypt *and*
+the chat-log button), `createAndAddContactToList` (the add-contact screen the first press delivers
+them to), and `encrypt`. Each returns null, which every caller already handles — checked rather than
+assumed: the decrypt comparison has the envelope's name as receiver and the account name as argument,
+so a null loses the comparison, and `ListAdapterMessages` null-checks before every use.
+
+**No catch-all net was added, deliberately.** A `catch (RuntimeException)` mirroring the one
+`sendPreKeyResponseMessageToApplication` got would have been an immortal mutant: with the guards in
+place there is no second reachable unchecked throw on that path to kill it with. Recorded as the
+right move *if* a new unchecked source appears below that listener — which is a different statement
+from "defence in depth is always worth it".
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from

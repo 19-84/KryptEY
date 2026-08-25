@@ -1343,6 +1343,22 @@ public class SignalProtocolMain {
     if (firstName == null || firstName.length() == 0 || signalProtocolAddressName == null || deviceId == 0)
       throw new InvalidContactException("Error: Contact is invalid. Some information is missing!");
 
+    // No account means nowhere to keep a contact. Dereferencing it here threw
+    // NullPointerException out of the add-contact Add button's click listener -
+    // E2EEStrip.createAndAddContactToContacts catches the two checked contact exceptions and
+    // nothing else - and out of a click listener nothing catches it, so the input-method process
+    // died in whatever app the user was typing in. That screen is the one the messenger's own
+    // payload delivers the user to: an envelope from an address this install does not know opens
+    // it, and with no account loaded no address is known.
+    //
+    // Null rather than an exception because that is how this path already reports failure:
+    // E2EEStrip returns whatever this returns, and E2EEStripView.addContact aborts the add and
+    // tells the user when it is null.
+    if (mAccount == null) {
+      Log.e(TAG, "Cannot add a contact: no account is loaded");
+      return null;
+    }
+
     final Contact recipient = new Contact(String.valueOf(firstName), String.valueOf(lastName), signalProtocolAddressName, deviceId, false);
     mAccount.addContactToContactList(recipient);
     storeAllAccountInformationInSharedPreferences();
@@ -1459,12 +1475,45 @@ public class SignalProtocolMain {
     return sInstance.getAccountName();
   }
 
+  /**
+   * The account's address name, or {@code null} when no account is loaded.
+   *
+   * <p>This dereferenced {@code getAccount()} unguarded, and there is no account whenever a reload
+   * yields nothing - which is not the same state as {@code UNREADABLE}: with no protocol data on
+   * disk {@code storageState()} reports {@code NONE}, the strip shows its ordinary "No contact
+   * chosen" banner, and nothing is disabled. In that state the first KryptEY-shaped thing the
+   * messenger posts enables the Decrypt button through the clipboard listener, and pressing it
+   * threw {@code NullPointerException} straight through {@code View.performClick}. Out of a click
+   * listener nothing catches it and the input-method process dies, in whatever app the user is
+   * typing in. The chat-log button reached the same line from its own listener.
+   *
+   * <p>Null rather than an exception because both callers already handle it: the decrypt path
+   * compares an envelope's address name against this and a null loses that comparison, and
+   * {@code ListAdapterMessages} checks {@code accountName != null} before every use. The
+   * {@code String.valueOf} below was already written for a null NAME; it is the missing account
+   * that was never considered.
+   */
   private String getAccountName() {
-    return String.valueOf(getAccount().getName());
+    final Account account = getAccount();
+    if (account == null) {
+      Log.e(TAG, "No account is loaded; there is no account name to report");
+      return null;
+    }
+    return String.valueOf(account.getName());
   }
 
   private MessageEnvelope encrypt(final String unencryptedMessage, final SignalProtocolAddress signalProtocolAddress) {
     if (unencryptedMessage == null || signalProtocolAddress == null) return null;
+    // And no account is the third way there is nothing to encrypt with. The first statement of the
+    // try below dereferences mAccount, and the only catches around it are for checked protocol
+    // exceptions - so with no account loaded this raised NullPointerException out of the Encrypt
+    // button's click listener, which catches TooManyCharsException and IOException. Returning null
+    // is how this method already reports that no envelope could be built, and the view renders
+    // that as INFO_MESSAGE_ENCRYPTION_FAILED.
+    if (mAccount == null) {
+      Log.e(TAG, "Error: cannot encrypt, no account is loaded");
+      return null;
+    }
     try {
       MessageEnvelope messageEnvelope = null;
       // check age of signedPreKey and generate new one if necessary (and delete old ones after archive age)
