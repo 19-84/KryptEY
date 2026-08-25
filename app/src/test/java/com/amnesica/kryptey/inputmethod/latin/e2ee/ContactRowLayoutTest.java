@@ -552,4 +552,59 @@ public class ContactRowLayoutTest {
       }
     }
   }
+
+  /**
+   * The CJK starvation case, pinned as a limit instead of described as one.
+   *
+   * <p>REVIVAL.md carries this as deferred: ten CJK characters want about twice the advance of ten
+   * Latin ones, so at 320dp the two weighted name views run out of column before the last name gets
+   * a single character. A {@code minEms} floor fixes it and breaks the empty-last-name case, because
+   * the floor is reserved whether or not the view holds anything, so it trades one defect for
+   * another. The real fix renders the two fields as one ellipsised string.
+   *
+   * <p>{@code everyNameShowsAtLeastOneCharacterEverywhere} deliberately excludes this case rather
+   * than asserting it away, which is honest — but it leaves the claim unmeasured and the exclusion
+   * unpinned. This measures it. If the layout is fixed this fails, and the deferred entry can be
+   * retired on evidence; if it degrades further it fails too. Prose about a defect drifts from the
+   * defect, and three of the four entries on that list turned out to say something untrue.
+   */
+  @Test
+  @Config(qualifiers = "w320dp")
+  public void thecjkStarvationLimitIsWhereThisSaysItIs() {
+    final Context context = RuntimeEnvironment.getApplication();
+    final View row = inflateRow(context);
+    final TextView firstName = row.findViewById(R.id.e2ee_contact_first_name_element);
+    final TextView lastName = row.findViewById(R.id.e2ee_contact_last_name_element);
+    assertNotNull(firstName);
+    assertNotNull(lastName);
+
+    // Ten CJK characters, which is an ordinary length for a name in those scripts.
+    firstName.setText("\u5f35\u5049\u5eb7\u738b\u5c0f\u660e\u674e\u5a1c\u5468\u6770");
+    lastName.setText("Jones");
+
+    final float density = context.getResources().getDisplayMetrics().density;
+    final int widthPx = (int) (320 * density);
+    row.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+    row.layout(0, 0, widthPx, row.getMeasuredHeight());
+
+    assertTrue("precondition: the first name must actually be taking the column, or this is "
+        + "measuring something else entirely", firstName.getWidth() > 0);
+
+    // What is actually true, which is not what the deferred entry said.
+    //
+    // It claimed the column runs out "before the last name gets a single character". Measured at
+    // 320dp with ten CJK characters, the last name gets 39dp - squeezed to roughly three or four
+    // Latin characters, so an ellipsised "Jon..." rather than nothing at all. Both halves are pinned
+    // because they fail in opposite directions: if a fix lands the width grows and the upper bound
+    // fails, and the entry can be retired on evidence; if the layout degrades to the starvation the
+    // entry described, the lower bound fails.
+    final int lastNameDp = (int) (lastName.getWidth() / density);
+    assertTrue("the last name must not be starved to nothing - it got " + lastNameDp + "dp, and if "
+            + "that is now zero the layout has degraded to what the deferred entry describes",
+        lastNameDp > 0);
+    assertTrue("and it must still be squeezed - it got " + lastNameDp + "dp. If this is now a "
+            + "comfortable width the layout has been fixed and the entry in REVIVAL.md should be "
+            + "retired on this evidence", lastNameDp < 64);
+  }
 }

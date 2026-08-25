@@ -1109,9 +1109,13 @@ Recorded so the next round does not spend itself re-deriving them.
   at all — no characters, no ellipsis. Rows are taller: 55px instead of 40 at default scale, 97px at
   fontScale 2.0. That is the trade, and it is worth it — fontScale 2.0 is set by the people who most
   need to read the names.
-- **A long CJK first name still starves the last name at 320dp.** Ten CJK characters want about
-  twice the advance of ten Latin ones, so the two weighted name views run out of column before the
-  last name gets a single character. A `minEms` floor fixes it and breaks the empty-last-name case,
+- **A long CJK first name squeezes the last name at 320dp.** Ten CJK characters want about twice
+  the advance of ten Latin ones, so the two weighted name views run the column short. **Measured**
+  (`ContactRowLayoutTest#thecjkStarvationLimitIsWhereThisSaysItIs`): the last name gets **39dp**,
+  roughly three or four Latin characters — an ellipsised "Jon…" rather than the nothing this entry
+  used to claim. It said the column ran out "before the last name gets a single character", and that
+  was never checked. The measurement is pinned from both sides, so a fix retires the entry on
+  evidence and a degradation to real starvation fails too. A `minEms` floor fixes it and breaks the empty-last-name case,
   because the floor is reserved whether or not the view holds anything — trading one defect for
   another. The real fix is probably to render the two fields as one ellipsised string, which is what
   most contact lists do, but that changes the adapter and the sanitiser together and is not
