@@ -1492,6 +1492,41 @@ fails on purpose, and the wording should be revisited rather than the scan loose
 
 ## Known-deferred defects
 
+**Nine durable writes are still asserted by nothing.** A review round swept all 18
+`storeAllAccountInformationInSharedPreferences()` call sites in `SignalProtocolMain`, deleting one per
+run: **13 survived**. `reloadAccount` runs on every `setInputView`, so a decision that never reaches
+disk is a decision the next theme change undoes — and the method returns `void` and swallows
+`StorageCryptoException`, so no caller can tell a completed write from a lost one.
+
+Four are now closed: `rejectContactKey` and `dismissIdentityChange` (a rejection and a dismissal must
+still be in force after the next raise), `encrypt` (a sent message and the ratchet it advanced), and
+`decrypt`'s `recordIdentityChange` arm — the incoming-`PreKeySignalMessage` substitution path, whose
+*sibling* was pinned while it was not. That last one strips the verified badge as well as recording
+the change, so losing the write puts a green tick back on a contact whose key the app has just
+refused.
+
+Still open, named so they are a decision rather than an oversight: `processPreKeyResponse`,
+`buildSession`'s success arm, `createAndAddContactToList`, `decrypt`'s final persist, and both
+`Account` write-backs. Each needs the same shape of test — do the thing, reload, assert it is still
+true — and they are listed rather than batch-fixed because a sweep that closes nine at once tends to
+produce nine tests that all pass for the same reason.
+
+## Phase 3's decoder, swept and clean
+
+The earlier Phase 3 sweep covered `BinaryEnvelope`; it did not reach the code that parses the
+attacker-supplied *text* around it. Five more guards, disarmed one at a time against the full suite:
+
+| guard removed | result |
+|---|---|
+| decompression-bomb budget removed | killed (4 tests) |
+| truncated stream accepted as a prefix | killed (1) |
+| non-bit characters accepted in the bit string | killed (2) |
+| partial byte accepted (length not a multiple of 8) | killed (2) |
+| empty bit string decoded as zero bytes | killed (2) |
+
+Nothing survived. That brings the sweep programme to **24 guards across five areas, one survivor**.
+
+
 **An invite stops working once ~50 later invites have been published.** Every bundle allocates its
 own one-time pre-key id — deliberately, because the allocator used to hard-code id 1 and regenerate
 *in place*, so handing out a second invite destroyed the material the first invitee already held.
