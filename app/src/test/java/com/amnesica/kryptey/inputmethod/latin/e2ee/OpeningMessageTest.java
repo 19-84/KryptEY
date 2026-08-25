@@ -173,4 +173,37 @@ public class OpeningMessageTest {
     }
     throw new IllegalStateException("could not locate strings.xml");
   }
+
+  /**
+   * The verify screen itself must name the channel, not only the help does.
+   *
+   * <p>This is the screen where the comparison actually happens, and it read "compare the numbers
+   * above with their device" — which a user satisfies by pasting the numbers into the chat they are
+   * already in. That is not a check: whatever could substitute the keys could substitute the numbers
+   * being compared. The help was fixed first and this is the more important of the two, because a
+   * user standing on this screen is not reading the Q&amp;A.
+   *
+   * <p>Read from source rather than through resources: this string is a field on the view, and the
+   * point is what ships in it.
+   */
+  @Test
+  public void theverifyScreenNamesTheChannelForComparing() throws java.io.IOException {
+    final java.nio.file.Path strip = java.nio.file.Paths.get(
+        java.nio.file.Files.isDirectory(java.nio.file.Paths.get("src/main/java"))
+            ? "src/main/java" : "app/src/main/java",
+        "com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStripView.java");
+    final String source = new String(java.nio.file.Files.readAllBytes(strip),
+        java.nio.charset.StandardCharsets.UTF_8);
+
+    final int at = source.indexOf("INFO_VERIFY_CONTACT =");
+    assertTrue("the verify-screen instruction must still exist", at > 0);
+    final String instruction = source.substring(at, source.indexOf(";", at));
+
+    assertTrue("it must say to compare by voice: " + instruction,
+        instruction.contains("by voice"));
+    assertTrue("and must warn against sending the numbers through the messenger: " + instruction,
+        instruction.contains("Do not send the numbers through the messenger"));
+    assertTrue("and must give the reason, or it reads as an arbitrary rule: " + instruction,
+        instruction.contains("could change those numbers"));
+  }
 }

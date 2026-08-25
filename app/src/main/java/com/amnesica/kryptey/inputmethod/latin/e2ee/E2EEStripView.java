@@ -159,7 +159,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_HELP = "Q&A";
   private final String INFO_MESSAGES_LIST_DEFAULT = "Choose a contact first to see messages here";
   private final String INFO_NO_SAVED_MESSAGES = "There are no saved messages for this contact";
-  private final String INFO_VERIFY_CONTACT = "To verify the security of your end-to-end encryption with %s, compare the numbers above with their device";
+  private final String INFO_VERIFY_CONTACT = "To check your encryption with %s, read the numbers above out to them by voice - in person or on a call - and have them read theirs back. Do not send the numbers through the messenger you are chatting in: anything that could change your keys could change those numbers to match.";
   private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
 
   // Deliberately does not tell the user to delete the contact. That advice was the app's standard
