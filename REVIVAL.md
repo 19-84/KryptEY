@@ -401,8 +401,10 @@ further decryption.
 
 ## Settled
 
-- **APK size accepted** at 114 MB (arm64) / 108 MB (armeabi-v7a). libsignal 0.86 is ~74 MB of native
-  code per ABI; that is the cost of PQXDH.
+- **APK size accepted** at 115.1 MB (arm64) / 109.2 MB (armeabi-v7a), re-measured at `fc83fc9` from
+  the cold build above. libsignal 0.86 is ~74 MB of native code per ABI; that is the cost of PQXDH.
+  The previously recorded 114/108 was close but stale — these are debug APKs and the figure drifts
+  with the code, so it is dated rather than absolute.
 - **Invite threshold accepted** at 4096 characters, up from 500. A PQXDH bundle is 2484 and
   irreducible (Kyber-1024 is 87% of it, and key material does not compress). Clears Telegram and
   above; does not fit SMS, but neither did 500.
@@ -540,8 +542,11 @@ and why. The image also installs build-tools 36.0.0, which AGP actually selects;
 carried only 35.0.0, and everyone working here relabelled a copy of the 35.0.0 directory to get
 past it — which worked, and meant nobody was building with the tools AGP chooses.
 
-Last cold verification: `assembleDebug` from an empty cache, BUILD SUCCESSFUL, zero verification
-failures across all 386 pinned components. Every declared dependency is at its latest stable
+Last cold verification, at `fc83fc9`: `clean assembleDebug` from an empty Gradle volume, with
+verification ON, **39 of 39 tasks executed** — BUILD SUCCESSFUL, zero verification failures across
+all 386 pinned components. The task count is quoted because the first attempt was not a cold build
+at all: the Gradle volume was fresh but the project's `build/` directory was mounted warm, so 33 of
+37 tasks were up-to-date and nothing was really recompiled. `clean` is part of the claim. Every declared dependency is at its latest stable
 release; Robolectric's only newer version is a beta, which is not appropriate for the harness that
 decides whether the security tests measure anything.
 
