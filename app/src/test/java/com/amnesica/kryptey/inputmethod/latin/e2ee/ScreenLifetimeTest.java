@@ -90,7 +90,9 @@ public class ScreenLifetimeTest {
 
   /** What {@code LatinIME.onWindowHidden} does when the user leaves for another app. */
   private void switchAway() {
-    strip.clearDecryptedContent();
+    // The strip's whole dismissal path, not a copy of the two calls it happened to make when this
+    // test was written - it had already gone stale once.
+    strip.onKeyboardHidden();
   }
 
   /**

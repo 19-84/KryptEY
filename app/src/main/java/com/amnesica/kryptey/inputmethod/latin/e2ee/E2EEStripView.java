@@ -1471,6 +1471,58 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
+  /**
+   * Forgets who the next message was going to, when the keyboard is dismissed.
+   *
+   * <p>This resolves a conflict a review round raised and deliberately did not decide: the banner
+   * naming the chosen contact ("Chosen contact: Bob #a1b2") survived an app switch, so the keyboard
+   * rose in the next app still saying who the user talks to. The obvious fix - blank the banner on
+   * hide - collides head-on with {@code mWarningStanding}, whose entire purpose is that a security
+   * warning survives everything the messenger can cause, and an app CAN cause this: any app may
+   * hide the keyboard whenever it likes. Blanking on hide would have handed the messenger a
+   * one-call warning eraser, which is the exact failure this branch has spent several rounds
+   * closing.
+   *
+   * <p>Blanking the TEXT while keeping the recipient is worse than either: encryption would still
+   * go to a contact the screen no longer names, which is an invisible recipient - the same shape as
+   * the cross-recipient disclosure already fixed here, and a mis-send rather than a disclosure.
+   *
+   * <p>So the recipient itself is forgotten. It costs the user a tap to re-choose after the
+   * keyboard has been dismissed, and it costs nothing else: the compose field is already cleared on
+   * the same event, so no draft is lost that was not lost before. A standing warning still owns the
+   * banner and is left exactly where it is - a warning that names a contact is a disclosure the
+   * user needs more than they need the privacy, and that trade is stated rather than assumed.
+   *
+   * <p>What this does NOT do is stop someone reading the screen over the user's shoulder while a
+   * warning stands. That residue is accepted: the adversary in this threat model is the messenger,
+   * which cannot capture the IME window at all.
+   */
+  public void forgetChosenRecipient() {
+    setChosenContact(null);
+    // No standing-warning check here: showChosenContactInMainInfoField refuses over one itself, and
+    // a second copy of that condition is a mutation nothing can kill - it was written, measured as
+    // equivalent, and removed rather than left to read as a live guard.
+    showChosenContactInMainInfoField();
+  }
+
+  /**
+   * Everything this strip must do when the keyboard is dismissed.
+   *
+   * <p>One entry point rather than a list at the call site, so a test drives the same code the IME
+   * does. It was two calls for about an hour, and in that hour the existing test for it was already
+   * a stale copy of the old list - which is the failure this codebase keeps naming: a test that
+   * re-implements the body proves only that the copy behaves.
+   */
+  public void onKeyboardHidden() {
+    clearDecryptedContent();
+    forgetChosenRecipient();
+  }
+
+  /** The recipient the next message would go to, for tests. */
+  Contact chosenContactForTest() {
+    return chosenContact;
+  }
+
   /** The real add-contact path, entered as the Add button enters it. */
   void addContactForTest(final MessageEnvelope messageEnvelope) {
     addContact(messageEnvelope);

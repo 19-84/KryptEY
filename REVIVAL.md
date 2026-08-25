@@ -340,6 +340,28 @@ to one writer, both mutations die. The same pass found that a failed session the
 fresh invite" over the surviving warning: the delete-and-re-invite advice the warning exists to talk
 the user out of, left standing over a flag that made it uncorrectable.
 
+**Who the user talks to also outlived it, and the obvious fix was a trap.** The banner naming the
+chosen contact rode through an app switch, so the keyboard rose in the next app still saying "Chosen
+contact: Bob ⁨#a1b2⁩". Blanking it on hide would have been a one-call warning eraser handed straight
+to the adversary — any app may hide the keyboard whenever it likes, and `mWarningStanding` exists
+precisely so that a security warning survives everything the messenger can cause. Blanking the text
+while keeping the recipient is worse than either: encryption would still go to a contact the screen
+no longer names, which is a mis-send rather than a disclosure, and the same shape as the
+cross-recipient bug already fixed here.
+
+So the *recipient* is forgotten instead. It costs a tap to re-choose and nothing else — the compose
+field is already cleared on the same event, so no draft is lost that was not lost before. A standing
+warning keeps the banner: a warning that names a contact is a disclosure the user needs more than
+they need the privacy, and that trade is stated rather than assumed. What remains uncovered is
+someone reading the screen over the user's shoulder while a warning stands. That residue is
+accepted, because the adversary in this threat model is the messenger, and the messenger cannot
+capture the IME window at all.
+
+The dismissal path is now one method on the strip rather than a list of calls in `LatinIME`. It was
+a list for about an hour, and in that hour the test covering it was already a stale copy of the old
+list — the same "a test that re-implements the body proves only that the copy behaves" failure this
+document keeps recording, arriving faster than usual.
+
 **And the plaintext outlived the keyboard.** `clearDecryptedContent()`, which `onWindowHidden` calls,
 cleared the compose field only. The chat-log screen stayed visible with the entire decrypted
 conversation in its adapter, and because the IME view is not recreated on an app switch, that history

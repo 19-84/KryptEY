@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
@@ -633,5 +634,59 @@ public class StripGuardsTest {
     strip.onClipboardChangedForTest();
     assertNotEquals("after the user has compared and confirmed, the banner must be writable again",
         before, infoField().getText().toString());
+  }
+
+  /**
+   * Who the user talks to must not ride through an app switch on the banner.
+   *
+   * <p>"Chosen contact: Bob #a1b2" survived the keyboard being dismissed, so it was on screen when
+   * the keyboard next rose - in whatever app that was.
+   */
+  @Test
+  public void therecipientIsForgottenWhenTheKeyboardIsDismissed() {
+    strip.selectContact(bob());
+    assertTrue("precondition: the banner must name the contact",
+        infoField().getText().toString().startsWith("Chosen contact"));
+
+    strip.onKeyboardHidden();
+
+    assertFalse("the next app must not be told who the user talks to: "
+            + infoField().getText(),
+        infoField().getText().toString().contains("Bob"));
+  }
+
+  /**
+   * And forgetting the recipient must not become the messenger's warning eraser.
+   *
+   * <p>Any app may hide the keyboard whenever it likes, so this runs on demand for an attacker. It
+   * is the reason the recipient is dropped rather than the banner blanked.
+   */
+  @Test
+  public void forgettingTheRecipientLeavesAStandingWarningAlone() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+    final String warned = infoField().getText().toString();
+
+    strip.onKeyboardHidden();
+
+    assertEquals("hiding the keyboard must not erase a security warning - an app can do that at "
+        + "will", warned, infoField().getText().toString());
+  }
+
+  /**
+   * The recipient really is gone, not merely unnamed.
+   *
+   * <p>Clearing the text while keeping the recipient would be worse than leaving both: encryption
+   * would go to a contact the screen no longer names.
+   */
+  @Test
+  public void forgettingTheRecipientAlsoStopsTheNextMessageGoingToThem() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+
+    strip.onKeyboardHidden();
+
+    assertNull("even with the warning still owning the banner, there must be no recipient left",
+        strip.chosenContactForTest());
   }
 }

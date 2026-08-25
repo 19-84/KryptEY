@@ -629,7 +629,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     // recreated when the user switches apps, so without this a decrypted message came back on
     // screen the next time the keyboard rose - in whatever app that was.
     if (mE2EEStripView != null) {
-      mE2EEStripView.clearDecryptedContent();
+      mE2EEStripView.onKeyboardHidden();
     }
     // The visible field is not the only copy. The IME keeps up to 1024 characters of text around
     // the cursor and up to 100KB in the recapitalisation buffers, both on objects that live as long
