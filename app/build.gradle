@@ -88,6 +88,11 @@ android {
         // result. That is not theoretical: two controls against this file "survived" until the task
         // was forced to re-run, and the test had been biting correctly all along.
         inputs.file('build.gradle').withPathSensitivity(PathSensitivity.RELATIVE)
+        // RevivalIndexIsCompleteTest reads REVIVAL.md the same way, and the same rule applies: a
+        // file a test reads at run time but Gradle does not know about leaves the task UP-TO-DATE
+        // and replays the last result. That already cost two controls on this branch which reported
+        // "survived" against a test that was biting correctly.
+        inputs.file('../REVIVAL.md').withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     testOptions {

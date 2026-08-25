@@ -37,6 +37,57 @@ and release both assemble; dependency verification pins 386 artifacts by SHA-256
 
 ---
 
+## How to read this
+
+Twenty-nine sections, written in the order things were found rather than by subject, so the
+sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
+reordered, because moving this much prose to tidy it is how paragraphs get lost.
+
+**What changed**
+
+- [What was done, by phase](#what-was-done-by-phase)
+
+**What is verified, and how**
+
+- [Verified vs. reasoned](#verified-vs-reasoned)
+- [Verifying a build honestly](#verifying-a-build-honestly)
+- [The release APK built here is not the one users would get](#the-release-apk-built-here-is-not-the-one-users-would-get)
+- [Phase 1's crypto box, swept and clean](#phase-1s-crypto-box-swept-and-clean)
+- [Phase 3's parser, swept and clean](#phase-3s-parser-swept-and-clean)
+- [Phase 3's decoder, swept and clean](#phase-3s-decoder-swept-and-clean)
+- [Phase 4's trust predicates, swept and clean](#phase-4s-trust-predicates-swept-and-clean)
+- [The typing-redirect seam, swept and clean — and two ways a sweep lies](#the-typing-redirect-seam-swept-and-clean-and-two-ways-a-sweep-lies)
+- [Where the sweep programme ends](#where-the-sweep-programme-ends)
+- [What the double ratchet gives this app, measured](#what-the-double-ratchet-gives-this-app-measured)
+
+**Decisions, and what is still open**
+
+- [Settled](#settled)
+- [Open](#open)
+- [Settled during review](#settled-during-review)
+- [Known-deferred defects](#known-deferred-defects)
+- [Not verified on hardware, and most needing it](#not-verified-on-hardware-and-most-needing-it)
+
+**Defect classes this review found**
+
+- [A predicate can be tested and wired to nothing](#a-predicate-can-be-tested-and-wired-to-nothing)
+- [Two siblings, and the call site picked the weaker one](#two-siblings-and-the-call-site-picked-the-weaker-one)
+- [A guard that was false on exactly the path that needed it](#a-guard-that-was-false-on-exactly-the-path-that-needed-it)
+- [A record kept, and never shown on the route that matters](#a-record-kept-and-never-shown-on-the-route-that-matters)
+- [The text is a security surface, and it had never been read as one](#the-text-is-a-security-surface-and-it-had-never-been-read-as-one)
+- [The help offered a choice the app does not](#the-help-offered-a-choice-the-app-does-not)
+- [One record keyed three ways, and what each fix cost](#one-record-keyed-three-ways-and-what-each-fix-cost)
+- [The seam nobody had looked at](#the-seam-nobody-had-looked-at)
+- [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
+
+**How this document, and its tests, have been wrong**
+
+- [The comment-drift problem, and why it has no test](#the-comment-drift-problem-and-why-it-has-no-test)
+- [A fifth way the harness lied: a test Gradle did not know it had to re-run](#a-fifth-way-the-harness-lied-a-test-gradle-did-not-know-it-had-to-re-run)
+- [A mutant was committed and pushed](#a-mutant-was-committed-and-pushed)
+- [Checked this round and clean](#checked-this-round-and-clean)
+
+---
 ## What was done, by phase
 
 ### Phase 0 — the build
