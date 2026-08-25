@@ -374,8 +374,9 @@ further decryption.
 
 **Verified by execution:**
 
-- 665 JVM tests, including an end-to-end conversation across all four phases and a real MITM
-  identity substitution driven through libsignal
+- 701 JVM tests as of `cd67fb3`, including an end-to-end conversation across all four phases and a
+  real MITM identity substitution driven through libsignal. This figure is point-in-time and goes
+  stale on every commit; `testDebugUnitTest` is the authority, not this line
 - A golden wire vector, re-checked against the three mutants that previously survived
 - Robolectric tests against real SharedPreferences
 - Negative controls on the highest-stakes regressions (legacy-peer crash, one-time pre-key
@@ -631,6 +632,28 @@ screen-recordable window. Whether it should be a user setting, as Signal makes i
 decision nobody had made — because nobody had been in that file.
 
 ---
+
+## Checked this round and clean
+
+Recorded so the next round does not spend itself re-deriving them.
+
+- **The manifest.** `allowBackup="false"`, and `data_extraction_rules` excludes everything from both
+  cloud backup and device-to-device transfer — which matters because `allowBackup` alone does not
+  stop transfer on Android 12+, and a transferred store is one the new device can never decrypt. The
+  IME service is `exported="false"` behind `BIND_INPUT_METHOD`; the broadcast receiver is not
+  exported; the only exported component is the launcher activity. Nothing to fix.
+- **The inherited keyboard's debug switches**, all nineteen of them. Several are keyloggers in this
+  app specifically: `KeyboardState.DEBUG_EVENT` logs every key pressed and released,
+  `PointerTracker.DEBUG_LISTENER` resolves `CODE_OUTPUT_TEXT` to the literal output string, and
+  `RichInputConnection.DEBUG_PREVIOUS_TEXT` dumps the text around the cursor — which here is the
+  plaintext of an encrypted message. All are `static final false`, so javac folds the branches away
+  and the `Log` calls are not in the APK. That was already true; what was missing was anything
+  stopping one character from changing it, in files nobody in this revival had had reason to open.
+  `DebugLoggingStaysOffTest` now asserts it over the whole source tree rather than a hand-kept list.
+- **The numbers in this document**, audited against the tree: 386 pinned components, `KeyResolutionTest`
+  at 10 tests, 11 instrumentation `@Test` methods, the 4096-character invite threshold, and the
+  strip's six screens all check out. The test count did not, and is now dated rather than absolute.
+  The 2484-character bundle figure was not re-measured this round and is carried on trust.
 
 ## Known-deferred defects
 
