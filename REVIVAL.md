@@ -817,6 +817,19 @@ a `PopupWindow`, which is a live direction for a future change to take and would
 keystroke of a plaintext message outside the protection, so
 `NothingRendersOutsideTheSecureWindowTest` pins both halves.
 
+**Accessibility is a third channel, and it is not covered either — but it is not fixable.** A service
+with `canRetrieveWindowContent` reads the compose box like any other text field, and `FLAG_SECURE`
+does nothing about that. The two mitigations Android offers both break the app for the people they
+exist to serve: a password `inputType` hides the message from the user typing it, and
+`importantForAccessibility="no"` makes the compose box unusable to anyone who needs a screen reader.
+Checked and worth knowing: this fork has **no** `accessibility/` package at all — AOSP's spoken key
+feedback was stripped — so nothing announces individual keystrokes, and the exposure is passive
+reading of a field the user must be able to read too. Recorded as a limit of the design rather than
+a defect.
+
+Also checked while there: no setting in `latin/settings/` touches the strip, the clipboard or the
+E2EE path at all, so there is no configuration that weakens any of this.
+
 **Toasts are the open one.** A toast is a separate system window and the flag does not reach it. None
 of the strip's 26 carry message plaintext — that was checked — but several carry a contact's display
 name, and in most of those cases the same text is also written to the banner, which *is* covered. So
