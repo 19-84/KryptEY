@@ -113,6 +113,30 @@ public class JacksonCompatTest {
     assertNotNull(address);
     assertTrue("address name lost", address.getName().length() > 0);
     assertTrue("device id lost", address.getDeviceId() > 0);
+
+    // And the device id is still a LEGACY one, outside libsignal's [1,127].
+    //
+    // That is what a 0.1.5 store actually held - ids were minted with nextInt(10000) - and it is
+    // the property that makes this fixture a stand-in for one rather than a copy of what today's
+    // code would write. FixtureGenerator's procedure says to pin the old Jackson version before
+    // regenerating, which protects the serialisation half; nothing protected this half, and
+    // regenerating now silently produces a folded id because address construction folds. Measured:
+    // 7296 becomes 67.
+    //
+    // Asserted here rather than described in the generator, because a note in a file someone runs
+    // once a year is not a guard.
+    final String raw = fixture("protocol-address.json");
+    final int storedDeviceId = Integer.parseInt(
+        raw.replaceAll(".*\"deviceId\"\\s*:\\s*(\\d+).*", "$1"));
+
+    assertTrue("the fixture on disk must hold a legacy out-of-range device id (found "
+            + storedDeviceId + "): regenerating without preserving that turns a "
+            + "backward-compatibility fixture into a copy of what today\u0027s code writes",
+        storedDeviceId > com.amnesica.kryptey.inputmethod.signalprotocol.util
+            .ProtocolAddresses.MAX_DEVICE_ID);
+    assertTrue("and reading it must fold that into libsignal's range, which is the behaviour this "
+            + "fixture exists to exercise", address.getDeviceId()
+            <= com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.MAX_DEVICE_ID);
   }
 
   @Test
