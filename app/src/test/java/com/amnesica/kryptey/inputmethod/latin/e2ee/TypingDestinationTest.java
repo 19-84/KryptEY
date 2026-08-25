@@ -264,4 +264,31 @@ public class TypingDestinationTest {
             + bufferField(connection, "mCommittedTextBeforeComposingText"),
         bufferField(connection, "mCommittedTextBeforeComposingText").toString().contains(SECRET));
   }
+
+  /**
+   * The clear button must take the keyboard's copy of the draft with it too.
+   *
+   * <p>Send was the path nobody had looked at; this is its sibling. A user who types a message and
+   * changes their mind presses clear, and every visible trace goes - while the IME's own caches, on
+   * an object that lives as long as the service, still hold what they typed.
+   */
+  @Test
+  public void clearingTheDraftClearsTheKeyboardsCopyToo() throws Exception {
+    assertTrue(compose.requestFocus());
+    connection.commitText(SECRET, 1);
+    assertTrue("precondition: the keyboard's cache must hold the draft",
+        bufferField(connection, "mCommittedTextBeforeComposingText").toString().contains(SECRET)
+            || bufferField(connection, "mTempObjectForCommitText").toString().contains(SECRET));
+
+    strip.clearUserInputStringForTest();
+
+    assertEquals("precondition: the visible draft must be gone", "",
+        compose.getText().toString());
+    assertFalse("and the keyboard's own copy with it: "
+            + bufferField(connection, "mCommittedTextBeforeComposingText"),
+        bufferField(connection, "mCommittedTextBeforeComposingText").toString().contains(SECRET));
+    assertFalse("including the commit buffer: "
+            + bufferField(connection, "mTempObjectForCommitText"),
+        bufferField(connection, "mTempObjectForCommitText").toString().contains(SECRET));
+  }
 }

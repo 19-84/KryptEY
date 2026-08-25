@@ -795,6 +795,17 @@ Recorded so the next round does not spend itself re-deriving them.
   and the `Log` calls are not in the APK. That was already true; what was missing was anything
   stopping one character from changing it, in files nobody in this revival had had reason to open.
   `DebugLoggingStaysOffTest` now asserts it over the whole source tree rather than a hand-kept list.
+- **The messenger picks the compose box's shift state.** `InputLogic.getCurrentAutoCapsState` reads
+  `getCurrentInputEditorInfo().inputType` — the HOST's — to decide auto-capitalisation, and goes on
+  doing so while the user is typing into the strip. So an app that declares
+  `TYPE_TEXT_FLAG_CAP_CHARACTERS` on its own field gets the user's message typed in capitals, and one
+  that declares nothing suppresses sentence caps. Cosmetic, and left alone deliberately: the fix
+  means giving the compose box its own `EditorInfo`, which is a larger change than the defect
+  warrants, and nothing about the ciphertext or the trust model depends on letter case. Recorded
+  because it is the same root cause as three HIGH findings — code reading host-owned state while the
+  destination has been switched — and the next person to meet it should know it was seen and judged,
+  not missed.
+
 - **Eight inherited compatibility guards that can no longer branch.** `minSdk` is 26, so three
   `SDK_INT <= KITKAT` tests are always false, four `SDK_INT >= N` tests are always true, and one
   `SDK_INT < LOLLIPOP` test is always false — in `EditorInfoCompatUtils`, `RichInputMethodManager`,

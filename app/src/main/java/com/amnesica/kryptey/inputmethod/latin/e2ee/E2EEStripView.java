@@ -1707,8 +1707,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mE2EEStrip.clearClipboard();
   }
 
+  /** The clear button's real path, for tests. */
+  void clearUserInputStringForTest() {
+    clearUserInputString();
+  }
+
   private void clearUserInputString() {
     if (mInputEditText != null) mInputEditText.setText("");
+    // And the keyboard's own copy. The send path learned this first; this is its sibling, reached
+    // by a user who types a message and changes their mind. Clearing what is on screen while the
+    // IME's caches - on an object that lives as long as the service - still hold the words is the
+    // same defect with a different button on it.
+    if (mRichInputConnection != null) mRichInputConnection.forgetCachedText();
   }
 
   private void changeVisibilityInputFieldButtons(boolean shouldBeVisible) {
