@@ -1778,6 +1778,27 @@ Recorded so the next round does not spend itself re-deriving them.
   ignore it, which is worse than not having it — the same reasoning that declined a catch-all
   exception net and a redundant second condition earlier here.
 
+- **The Gradle wrapper jar is reproducible from the pinned distribution.** Dependency verification
+  pins 386 components by SHA-256, and every one of those checks happens *inside* a build that
+  `gradle-wrapper.jar` has already started. That jar is 47 KB of executable code, it is committed to
+  this repository, this branch modified it, and nothing covered it — a tampered wrapper could ignore
+  `distributionSha256Sum` entirely, since it is the thing that enforces it.
+
+  Closed, offline and decisively: running `gradle wrapper --gradle-version 9.7.1` using the *pinned
+  distribution's own* binary emits a jar byte-identical to the committed one —
+  `7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d`, 47505 bytes. So the trust chain
+  closes on itself: the properties file pins the distribution by hash, and the distribution
+  reproduces the jar that fetches it.
+
+  Two weaker checks were run first and are recorded because neither is sufficient. The jar's
+  *structure* is clean — 34 entries, only `org/gradle/{cli,wrapper,internal/file,util/internal}`,
+  no stray resources or scripts — which rules out obvious padding but not an altered method body.
+  And comparing its classes against the distribution's own `gradle-cli` and `gradle-wrapper-*` jars
+  reported **31 of 32 differing**, which looks alarming and means nothing: the wrapper embeds a
+  trimmed copy, so the same class name is 2316 bytes there against 14075 in the distribution.
+  Reporting that as a finding would have been exactly the confident wrong answer this file keeps
+  cataloguing.
+
 - **No test in this suite depends on the date.** A test that passes today and fails in a month, or
   that quietly stops exercising anything as time passes, would undermine every number in this file
   and would be found by nobody until it broke. Checked: every wall-clock use in the tests is a
