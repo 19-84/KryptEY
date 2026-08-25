@@ -739,6 +739,32 @@ host's — and the host is the adversary.
   the object the banner is drawn on, which reaches every defect in the banner-erasure family without
   touching any path those fixes guard.
 
+**And then the fix needed fixing, twice.** Carrying state across the rebuild has now been through
+three review rounds, each finding defects in what the previous one wrote:
+
+1. the rebuild discarded the standing warning, the draft, and left the redirect pointing at the
+   discarded compose box;
+2. against that fix — the password-field guard was not carried at all, an ordinary banner *was*
+   carried and painted over a fresher warning, a warning the user had already resolved came back,
+   and the chosen wire encoding reset to RAW;
+3. and the worst of those was not the dropped guard but the carried banner: the strip went on saying
+   "encryption is turned off here" over a password box while the actions were back on. Carrying the
+   reassurance while dropping the thing it reassures about is worse than dropping both.
+
+The recurring shape is one sentence: **security state was living on an object whose lifetime is
+shorter than the threat it defends against.** `mWarningStanding`'s javadoc says nothing the messenger
+can cause may clear it — and the messenger can cause a rebuild. The password guard is re-armed by
+`onStartInputViewInternal`, which then triggers a synchronous rebuild eight lines later, so it was
+armed on a view already condemned. Neither is a bug in a line of code; both are a bug in where the
+field lives.
+
+Enumerating fields to carry has now failed twice, which is the signal that enumeration is the wrong
+instrument — the same signal the chat-log legacy arm gave before it was replaced wholesale rather
+than patched again. What is *not* wrong is the direction: the round that checked confirmed with a
+passing test that the recipient, the visible screen and the add-contact envelope are genuinely safe
+to lose, because a carried draft cannot reach the wrong person — re-choosing anyone is a change from
+null, and `setChosenContact` empties the box on any change.
+
 **Clearing on rebuild is the wrong fix**, and the round that found it said so about its own control:
 clearing lowers the redirect, so the next keystroke after a rotation goes into the messenger's field
 in plaintext — a residue defect traded for a disclosure one. State is carried instead, which is also
