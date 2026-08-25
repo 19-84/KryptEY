@@ -798,6 +798,28 @@ raise `INFO_STORAGE_UNREADABLE`, and overwriting it wiped "do NOT re-invite anyo
 button state is derived from the banner text, flipped encrypt and decrypt back on for an install
 whose account cannot be decrypted.
 
+**Round five says converged, and the evidence is a probe rather than an absence.** It took a weak
+reference to the strip, forced a rebuild, and asserted the strip is collected — it is, and reverting
+round four's `releaseClipboardListener()` makes that probe fail. So the mechanism is genuinely
+fixed, and the discarded strip is now garbage rather than a retained object holding a conversation.
+
+That probe then disqualified two of the same round's own findings: it had a failing test showing the
+contact list still on the discarded strip, and threw it out, because content on an object the
+collector takes is true of everything the collector takes. Its own words for what continued review
+of this area now produces: *restatements of a problem already solved.* Two findings survived — the
+destroy path (`LatinIME.onDestroy` → `clear()`) had never been given the last rites `setInputView`
+got, which is round four's defect on the one entry point round four did not look for; and the carried
+encoding was applied after the indicator that renders from it, so the strip showed RAW while it would
+encode FairyTale. Both fixed.
+
+There is a cost side, and it is recorded because it is the argument for stopping: `adoptState` is now
+six ordered steps whose *ordering* has itself become a defect source, `surrenderState` duplicates the
+dismissal path, and `EveryStripFieldIsClassifiedTest` is 130 lines guarding ten fields with two
+exclusion holes the same round named — `final` fields are skipped, so `mCodeAnimators` is listed but
+never examined, and "views are rendering only" is falsified by `CarriedState.banner`, which *is* a
+`TextView`'s text. **This thread is closed.** The next thing that would genuinely move it is the
+structural work below, or a device.
+
 **Named work, not yet done.** The reviewer's argument for why enumeration cannot converge is
 convincing and is recorded here rather than acted on inside a review round:
 

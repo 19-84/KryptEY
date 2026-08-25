@@ -1824,6 +1824,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   public void adoptState(final CarriedState carried) {
     if (carried == null) return;
 
+    // Before anything renders from it. adoptState re-raises the redirect with requestFocus(), whose
+    // listener calls changeVisibilityInputFieldButtons, which reads encodingMethod to decide which
+    // encoding indicator to show - so applying the carried value afterwards left the strip showing
+    // RAW while it would in fact encode FairyTale. No plaintext exposure; the app understating its
+    // own steganography to the user who chose it.
+    if (carried.encoding != null) encodingMethod = carried.encoding;
+
     if (mInputEditText != null && carried.draft.length() > 0) {
       mInputEditText.setText(carried.draft);
     }
@@ -1878,7 +1885,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     setHostFieldIsPassword(carried.hostFieldIsPassword);
     // Choosing FairyTale is the user saying "do not let this look like ciphertext in the
     // transcript". A rebuild put it back to RAW and the messenger picks when rebuilds happen.
-    if (carried.encoding != null) encodingMethod = carried.encoding;
+
 
     // The window's FLAG_SECURE decision belongs to whatever is on screen NOW. Nothing else tells
     // it: notifySensitiveVisibility is reachable only from a screen switch, and a rebuild is not
@@ -1996,6 +2003,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   public void clear() {
+    // The same last rites the rebuild path performs, because this throws the strip away too.
+    //
+    // LatinIME.onDestroy reaches here, and this used to remove the child views and stop. The
+    // clipboard registration survived it, so a strip discarded when the IME is destroyed stayed
+    // attached to the process-wide ClipboardManager and went on running EnvelopeCodec.fromWire on
+    // messenger-chosen bytes - and kept the whole decrypted conversation in its chat-log adapter.
+    //
+    // setInputView is one of two paths that discard a strip. The previous round fixed that one and
+    // did not look for a second.
+    clearDecryptedContent();
+    resetAddContactInputTextFields();
+    clearFingerprintViews();
+    releaseClipboardListener();
+    if (mRichInputConnection != null) mRichInputConnection.setOtherIC(null);
+
     mE2EEMainStrip.removeAllViews();
     mE2EEStripVisibilityGroup.showE2EEStrip();
   }
