@@ -86,7 +86,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 **How this document, and its tests, have been wrong**
 
 - [The comment-drift problem, and why it has no test](#the-comment-drift-problem-and-why-it-has-no-test)
-- [A fifth way the harness lied: a test Gradle did not know it had to re-run](#a-fifth-way-the-harness-lied-a-test-gradle-did-not-know-it-had-to-re-run)
+- [The way the harness lied six times, and how it stopped](#the-way-the-harness-lied-six-times-and-how-it-stopped)
 - [A mutant was committed and pushed](#a-mutant-was-committed-and-pushed)
 - [Checked this round and clean](#checked-this-round-and-clean)
 
@@ -1331,7 +1331,7 @@ answer from mutation testing, every one of which has happened on this branch. Th
 its cost; the harness around it is not optional.
 
 
-## A fifth way the harness lied: a test Gradle did not know it had to re-run
+## The way the harness lied six times, and how it stopped
 
 `ReleasePackagingTest` reads `app/build.gradle` at run time. Gradle has no way to know that, so the
 task stayed **UP-TO-DATE** when the script changed and the test replayed its previous pass. Two
@@ -1347,6 +1347,26 @@ in the first place — mutate the script, run the suite *without* any force flag
 The scanner tests that read Java sources are not affected: those files are already compilation
 inputs, so changing one invalidates the task. `build.gradle` is the case where the file a test reads
 is not on any path Gradle tracks for it.
+
+**It then happened five more times** — `README.md`, `HELP.md`, `KRYPTEY.md`, the F-Droid description,
+and `src/androidTest/java`, which `dependsOn` compiles without tracking. Each was fixed by declaring
+one more input, which is fixing an instance rather than the pattern. By the sixth I expected it before
+believing the result, and that is the only reason the guard involved is not sitting in the tree
+passing for the wrong reason.
+
+`EveryFileATestReadsIsATaskInputTest` closes it: any repo path a test names that Gradle has no reason
+to know about fails the build until it is declared, and any declared input nobody reads fails too, so
+the list cannot rot in either direction. Sources under `src/main/java`, `src/test/java`,
+`src/main/res` and `src/test/resources` are exempt because compiling or processing them already makes
+them inputs — and that exemption is precisely why the trap was subtle, since the scanner tests reading
+Java sources always worked and gave no hint the markdown ones would not.
+
+Two things about writing it are worth keeping. Its first version scanned for `Paths.get("literal")`,
+which this codebase almost never writes — the idiom is a candidate array tried in turn, because the
+working directory is the module and not the repository root — so it found two literals in the whole
+tree and was caught by its own vacuity assertion. And it flagged a classpath fixture as an undeclared
+file, which is now filtered by asking whether the path exists on disk rather than by the shape of the
+string: a rule that stays right when either set changes.
 
 
 ## A record kept, and never shown on the route that matters
