@@ -226,7 +226,12 @@ public class StripWarningErasureTest {
     assertTrue("precondition: the verify screen must be up",
         strip.isShowingSensitiveContent());
 
-    strip.clearDecryptedContent();
+    // Through the dismissal entry point, not one of its three parts. The verify screen sets the
+    // chosen contact, and isShowingSensitiveContent is the FLAG_SECURE decision rather than "which
+    // screen is up" - with a recipient still chosen the main view's banner names them, which is the
+    // same fact this predicate covers the contact list for. forgetChosenRecipient is the part of
+    // dismissal that answers it, and onKeyboardHidden is what runs all three.
+    strip.onKeyboardHidden();
 
     assertFalse("nothing sensitive may still be on screen after the keyboard is dismissed",
         strip.isShowingSensitiveContent());

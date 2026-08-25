@@ -53,6 +53,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Verifying a build honestly](#verifying-a-build-honestly)
 - [The release APK built here is not the one users would get](#the-release-apk-built-here-is-not-the-one-users-would-get)
 - [Phase 1's crypto box, swept and clean](#phase-1s-crypto-box-swept-and-clean)
+- [Phase 1's encrypted store, swept and clean](#phase-1s-encrypted-store-swept-and-clean)
 - [Phase 3's parser, swept and clean](#phase-3s-parser-swept-and-clean)
 - [Phase 3's decoder, swept and clean](#phase-3s-decoder-swept-and-clean)
 - [Phase 4's trust predicates, swept and clean](#phase-4s-trust-predicates-swept-and-clean)
@@ -74,6 +75,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two siblings, and the call site picked the weaker one](#two-siblings-and-the-call-site-picked-the-weaker-one)
 - [A guard that was false on exactly the path that needed it](#a-guard-that-was-false-on-exactly-the-path-that-needed-it)
 - [A record kept, and never shown on the route that matters](#a-record-kept-and-never-shown-on-the-route-that-matters)
+- [A decision read from rendered text](#a-decision-read-from-rendered-text)
 - [An unchecked throw out of a click listener kills the keyboard](#an-unchecked-throw-out-of-a-click-listener-kills-the-keyboard)
 - [The text is a security surface, and it had never been read as one](#the-text-is-a-security-surface-and-it-had-never-been-read-as-one)
 - [The help offered a choice the app does not](#the-help-offered-a-choice-the-app-does-not)
@@ -1398,6 +1400,64 @@ so a null loses the comparison, and `ListAdapterMessages` null-checks before eve
 place there is no second reachable unchecked throw on that path to kill it with. Recorded as the
 right move *if* a new unchecked source appears below that listener — which is a different statement
 from "defence in depth is always worth it".
+
+
+## A decision read from rendered text
+
+Whether Encrypt and Decrypt are usable was decided by looking at *the string currently in the info
+banner*: two named messages meant disabled, and **anything unrecognised meant enabled**. A round sent
+to hunt that shape found three defects and one of them is the sharpest single sentence on this branch.
+
+**Focusing another app's password box was the only event in this app that turned the action buttons
+on by announcing that they were off.** `setHostFieldIsPassword(true)` writes "Encryption and
+decryption are turned off here"; the watcher saw a string that was not one of the two named ones, and
+lit both buttons. The clicks were still refused — both paths check `actionsAreAvailable()` — so this
+was a lie about state rather than a way to run the action. That distinction matters less than it
+sounds: an app whose only lasting surface says one thing while its buttons say the other has spent
+the credibility it needs for the warnings that do matter.
+
+Two worse corners followed from the same coupling. Lowering the guard wrote nothing, so the notice
+outlived the field it described — an ordinary field in the same app, both actions working, the banner
+still saying they are off. And with a security warning standing, `setInfoUnlessWarned` correctly
+refuses to write the notice, so there is no banner change, so there is no watcher: over a password box
+**with a substitution warning on screen**, both buttons stayed lit. That is the one state where both
+of the app's reasons to refuse are live at once.
+
+**And the invite path asked nothing at all.** Its two siblings open with `actionsAreAvailable()`;
+`sendPreKeyResponseMessageToApplication` did not, and it ends in the same `mListener.onTextInput` they
+do — with the longest string this app produces. Over another app's password box, two taps committed a
+whole encoded key bundle into it, handed to that app's storage, autofill and whatever it syncs. That
+is the sentence `mHostFieldIsPassword`'s javadoc exists for, on the one screen button the app
+deliberately never disables.
+
+Third: `FLAG_SECURE` was computed from view properties — visibilities plus whether the compose box had
+characters — and answered *false* while the banner read `Chosen contact: Bob Jones #46f9-2ab88e`. Who
+the user talks to, and the tag distinguishing them from a second contact of the same name: the exact
+pair this method's own javadoc gives as its reason for covering the contact list, and which
+`forgetChosenRecipient` spends a paragraph calling a disclosure worth a tap to prevent. Two sections
+of the file agreed; the predicate between them did not. Not a moment — the whole interval between
+choosing a recipient and typing, plus every standing warning.
+
+The fix keeps the banner-text half, because it is still load-bearing: dropping it alone fails
+pre-existing tests. What changed is that it is no longer the *whole* answer. And
+`isShowingSensitiveContent` asks `chosenContact` rather than reading the banner, which would have been
+the same coupling moved one method over.
+
+## Phase 1's encrypted store, swept and clean
+
+The sweep programme closed at six areas and this was the seventh, unswept: the marker and migration
+logic that decides whether stored data is readable at all.
+
+| guard removed | result |
+|---|---|
+| cleartext laundered into a migrated store accepted | killed (2 tests) |
+| an undecryptable envelope overwritten rather than refused | killed (1) |
+| a schema key with an unreadable marker accepted | killed (1) |
+| migration re-runs over a completed store | killed (5) |
+
+Nothing survived. **33 guards across seven areas, one survivor** — with the caveat that still stands:
+this measures the guards someone thought to disarm, and every real defect on this branch came from a
+reviewer asking a question nobody had asked.
 
 
 ## The one structural lesson from the review rounds

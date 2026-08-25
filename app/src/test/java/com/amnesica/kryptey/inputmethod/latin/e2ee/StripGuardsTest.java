@@ -383,7 +383,11 @@ public class StripGuardsTest {
     assertTrue("the log must actually be populated, or this test proves nothing",
         list.getAdapter() != null && list.getAdapter().getCount() > 0);
 
-    strip.clearDecryptedContent();
+    // Through the dismissal entry point, not one of its three parts. isShowingSensitiveContent is
+    // the window's FLAG_SECURE decision, not "which screen is up": it also answers true on the main
+    // view while the banner names the chosen recipient, and clearDecryptedContent deliberately does
+    // not un-choose anyone - forgetChosenRecipient does, and onKeyboardHidden is what runs both.
+    strip.onKeyboardHidden();
 
     assertFalse("the chat log must not still be on screen",
         strip.isShowingSensitiveContent());

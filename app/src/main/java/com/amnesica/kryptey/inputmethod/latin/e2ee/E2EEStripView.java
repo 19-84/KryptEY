@@ -350,8 +350,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return isUp(mLayoutE2EEMessagesListView)
         || isUp(mLayoutE2EEVerifyContactView)
         || isUp(mLayoutE2EEContactListView)
-        || (isUp(mLayoutE2EEMainView) && mInputEditText != null
-            && mInputEditText.getText().length() > 0);
+        // The main view holds two different things worth covering, and this used to name one.
+        //
+        // The compose box is the obvious one. The other is the banner: with a recipient chosen it
+        // reads "Chosen contact: Bob  #a1b2-...", which is who the user talks to AND the tag that
+        // tells them apart from a second contact of the same name - the very pair this method's own
+        // javadoc gives as the reason the contact list is on the list. forgetChosenRecipient spends
+        // a paragraph on the same fact, calling that banner surviving an app switch a disclosure
+        // worth costing the user a tap to prevent. So two sections of this file already agreed it
+        // is sensitive and the predicate between them did not, and the gap is not a moment: it is
+        // the whole interval between choosing a recipient and typing anything, plus every standing
+        // warning, all of which name the contact and none of which put a character in the box.
+        //
+        // Asked of chosenContact rather than of the banner text. Every main-view banner that names
+        // a contact is written on a path where it is set, and reading the rendered string to decide
+        // this would be the same coupling refreshActionButtons was just taken off.
+        || (isUp(mLayoutE2EEMainView)
+            && (chosenContact != null
+                || (mInputEditText != null && mInputEditText.getText().length() > 0)));
   }
 
   private static boolean isUp(final View view) {
@@ -381,6 +397,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   /** Called by the IME as each input session starts. */
   public void setHostFieldIsPassword(final boolean isPassword) {
+    final boolean wasPassword = mHostFieldIsPassword;
     mHostFieldIsPassword = isPassword;
     if (isPassword) {
       clearDecryptedContent();
@@ -390,7 +407,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // stayed set, which meant nothing could ever write the banner again. The strip was left
       // reading "encryption is turned off here" while the actions were back on and working.
       setInfoUnlessWarned(INFO_PASSWORD_FIELD);
+    } else if (wasPassword) {
+      // The notice must not outlive the guard it describes.
+      //
+      // Lowering the flag wrote nothing, so "Encryption and decryption are turned off here" stayed
+      // on the banner - the app's only lasting surface - for the rest of the session, on an
+      // ordinary field where both actions were back on and working. That is the pairing the comment
+      // four lines above already records as a defect, reached from the other direction: there the
+      // notice erased a warning, here it survives the field it was written for. The messenger needs
+      // one throwaway password box to arrange it, because it declares the inputType of every field
+      // it presents.
+      //
+      // What goes back is what the MODEL says, not what the banner said before - there is no record
+      // of that and re-rendering one would be the same mistake in a third place.
+      // showChosenContactInMainInfoField refuses over a standing warning itself.
+      //
+      // ONLY when coming off a password field, which is why wasPassword is read. Unconditionally
+      // this runs on every input session, and the messenger starts one whenever it likes - so
+      // "Keybundle detected: click on decrypt" would be wiped by the user tapping the chat box
+      // immediately after copying, which is the next gesture in the app's own workflow.
+      showChosenContactInMainInfoField();
     }
+    // The guard can change without the banner changing, and then nothing else repaints the
+    // buttons. See refreshActionButtons.
+    refreshActionButtons();
   }
 
   /** Whether the E2EE actions may run against the field that currently has focus. */
@@ -1027,24 +1067,49 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
       @Override
       public void afterTextChanged(Editable s) {
-        // The buttons are driven by the info TEXT, which means every new message added here is a
-        // decision about whether encrypt and decrypt are usable - and the default for an
-        // unrecognised message is ENABLED.
-        //
-        // Adding INFO_STORAGE_UNREADABLE re-enabled both buttons on an install whose account
-        // cannot be decrypted, because it simply was not INFO_NO_CONTACT_CHOSEN. There is no
-        // account to encrypt with in that state, so the buttons offered an action that cannot
-        // work. Coupling behaviour to a string comparison makes that the failure mode for the next
-        // message too; naming the disabled states is the least that keeps it visible.
-        if (disablesActionButtons(s.toString())) {
-          changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
-          changeImageButtonState(mEncryptButton, ButtonState.DISABLED);
-        } else {
-          changeImageButtonState(mDecryptButton, ButtonState.ENABLED);
-          changeImageButtonState(mEncryptButton, ButtonState.ENABLED);
-        }
+        // A banner change is one of the two events that can change the answer. The other is the
+        // password-field guard being armed or lowered, which does not always write a banner - see
+        // refreshActionButtons.
+        refreshActionButtons();
       }
     });
+  }
+
+  /**
+   * Decides whether Encrypt and Decrypt are usable, and paints that.
+   *
+   * <p>The banner text is still consulted, and that half is unchanged: it is how "no contact
+   * chosen" and "the store cannot be decrypted" reach the buttons. What it is NOT allowed to be any
+   * more is the WHOLE answer. Deriving the button state from rendered prose means every message
+   * anyone adds to this file is a silent decision about whether both actions are offered, with
+   * ENABLED as the default for anything unrecognised - and the password-field notice was exactly
+   * that: {@code setHostFieldIsPassword(true)} wrote "Encryption and decryption are turned off
+   * here" onto the banner, the watcher read a string that was not one of the two named ones, and
+   * both buttons came ON. Focusing another app's password box was the only event in this app that
+   * turned the action buttons on by announcing that they were off.
+   *
+   * <p>{@code actionsAreAvailable()} is the fact behind that sentence, so it is asked directly. The
+   * two click paths already refuse on it, which is why the defect was a lie about state rather than
+   * a way to run either action - but the buttons are the control surface and the prose is beside
+   * it, and an app whose only lasting surface says one thing while its buttons say the other has
+   * spent the credibility it needs for the warnings that matter.
+   *
+   * <p>Called from the text watcher AND from {@code setHostFieldIsPassword}, because the guard can
+   * change without the banner changing: {@code setInfoUnlessWarned} correctly refuses to write the
+   * notice over a standing security warning, and with no banner change there was no watcher, so
+   * over a password box with a substitution warning on screen both buttons stayed lit - the one
+   * state where both of the app's reasons to refuse are live at once.
+   */
+  private void refreshActionButtons() {
+    // The same guard setMainInfoTextTextChangeListener carries, and no more: the buttons come from
+    // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
+    // here would be a line no test could ever reach.
+    if (mInfoTextView == null) return;
+    final ButtonState state =
+        !actionsAreAvailable() || disablesActionButtons(mInfoTextView.getText().toString())
+            ? ButtonState.DISABLED : ButtonState.ENABLED;
+    changeImageButtonState(mDecryptButton, state);
+    changeImageButtonState(mEncryptButton, state);
   }
 
   /**
@@ -1320,6 +1385,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void sendPreKeyResponseMessageToApplication() {
+    // The same first statement its two siblings carry, on the path that writes the LONGEST string
+    // this app produces into the host field.
+    //
+    // encryptAndSendInputFieldContent and decryptMessageInClipboard both open by asking whether the
+    // actions may run against the field that has focus; this one asked nothing, and it ends in the
+    // same mListener.onTextInput they do. So over another app's password box the strip said
+    // "Encryption and decryption are turned off here" and then committed a whole encoded key bundle
+    // into it - handed to that app's storage, autofill and whatever it syncs, which is the sentence
+    // mHostFieldIsPassword's own javadoc exists for. Two taps, on the one screen button the app
+    // deliberately never disables.
+    if (!actionsAreAvailable()) {
+      Toast.makeText(getContext(), INFO_PASSWORD_FIELD, Toast.LENGTH_LONG).show();
+      return;
+    }
     final String encoded;
     try {
       // Serialization can now fail (the binary codec validates what it is given), so it belongs
