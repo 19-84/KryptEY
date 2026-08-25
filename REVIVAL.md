@@ -1025,6 +1025,37 @@ also **accept** the plain rung, or an API 26–27 device could never mint a key 
 refused everything below 28 would be exactly as broken, in the direction nobody tests for.
 
 
+## Two siblings, and the call site picked the weaker one
+
+The hunt for "a predicate tested and consulted by nothing" turned up a variant that is worse, because
+the predicate *was* consulted — by a caller that should have been asking its sibling.
+
+`StorageHelper.secureStore` computed `EncryptedKeyValueStore.isEncrypted(raw)`, which asks only
+whether a schema marker survived, and passed it to the Keystore box as `alreadyEncrypted`. That
+boolean is the **sole** input to the box's refusal to mint a replacement master key over data it
+cannot decrypt — the guard that stops a start-up from silently orphaning the user's identity.
+`hasEncryptedData` is the predicate for that question, exists precisely for "ciphertext with the
+marker unset", and had five references, every one from a test. `isEncrypted`'s own javadoc told
+callers deciding whether data is at stake to prefer it, and the single caller that had to did not.
+
+The state is ordinary rather than exotic. `put` and `putAll` write the values and the completion
+marker as two separate durable commits, and an IME is killed routinely, so ciphertext with no marker
+above it is an interrupted save — and still the user's identity. Setting `alreadyEncrypted = false`
+outright, disarming the refusal on every device, left all 854 tests green.
+
+**Why this shape hides better than an unwired predicate.** A predicate nothing calls is at least
+visibly unused. Here both predicates are used, both are tested, the names differ by one word, and the
+javadoc that distinguishes them lives on the *weaker* one — where a reader who already picked it has
+no reason to look. The test suite covered the two predicates thoroughly and never asked which one the
+decision consulted; `StorageSchemaStateTest` even names the attacker version of this exact state and
+asserts the predicate rather than the wiring.
+
+The rule that falls out: **where two predicates answer nearly the same question, the security
+decision must name which one it needs and a test must pin the call site, not the answer.** The
+javadoc now says callers *must* call `hasEncryptedData`, rather than *should prefer* it — the earlier
+wording was true, unheeded, and cost nothing to ignore.
+
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
