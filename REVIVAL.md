@@ -990,6 +990,15 @@ Recorded so the next round does not spend itself re-deriving them.
   hash-based default — 114 classes, **796 tests, zero failures again**. Not proof over all orders;
   evidence over a second one, which is what was actually available.
 
+- **No other code-execution sink is shipping.** Deleting `Base64`'s dead deserialisation raised the
+  obvious follow-up — what else is dead, dangerous and shipping, given `minifyEnabled` is false?
+  Scanned for dynamic class loading (`DexClassLoader`, `PathClassLoader`), process execution
+  (`Runtime.getRuntime`, `ProcessBuilder`), reflection (`Class.forName`, `getDeclaredMethod`,
+  `setAccessible`) and `WebView`/`addJavascriptInterface` across all of `app/src/main`. **Not one
+  occurrence of any of them.** `NoWeakCryptoTest` now guards the first two categories; reflection and
+  `Class.forName` are deliberately left out, because those have honest uses and a guard that cries
+  wolf gets deleted rather than heeded.
+
 - **The messenger picks the compose box's shift state.** `InputLogic.getCurrentAutoCapsState` reads
   `getCurrentInputEditorInfo().inputType` — the HOST's — to decide auto-capitalisation, and goes on
   doing so while the user is typing into the strip. So an app that declares

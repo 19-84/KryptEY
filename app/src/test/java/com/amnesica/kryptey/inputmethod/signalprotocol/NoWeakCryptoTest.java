@@ -103,14 +103,22 @@ public class NoWeakCryptoTest {
             .replaceAll("(?s)/\\*.*?\\*/", "")
             .replaceAll("(?m)//.*$", "");
         if (text.contains("ObjectInputStream") || text.contains("readObject(")) {
-          offenders.add(source.toString());
+          offenders.add(source + " (java deserialisation)");
+        }
+        // Dynamic code loading and process execution, which have no legitimate use in a keyboard
+        // and every use in getting from a parser bug to running code. Narrow on purpose: reflection
+        // and Class.forName are not listed, because those do have honest uses and a guard that
+        // cries wolf gets deleted.
+        for (final String sink : new String[] {
+            "DexClassLoader", "PathClassLoader", "Runtime.getRuntime", "ProcessBuilder"}) {
+          if (text.contains(sink)) offenders.add(source + " (" + sink + ")");
         }
       }
     }
 
     assertTrue("this test scans source; scanning nothing means it tests nothing", scanned >= 50);
-    assertEquals("Java deserialisation has appeared in the app. Every envelope the messenger sends "
-        + "is parsed by this code, and readObject on attacker-controlled bytes is arbitrary code "
-        + "execution:\n" + String.join("\n", offenders), 0, offenders.size());
+    assertEquals("a code-execution sink has appeared in the app. Every envelope the messenger "
+        + "sends is parsed by this code, so the distance from a parser bug to running code is what "
+        + "these cost:\n" + String.join("\n", offenders), 0, offenders.size());
   }
 }
