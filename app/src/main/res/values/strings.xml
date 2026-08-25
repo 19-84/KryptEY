@@ -134,6 +134,7 @@
 			<ul>
 				<li>Copy the invite message to your clipboard and click on the \"decrypt\" button (open lock icon).</li>
 				<li>A new context menu will open where you have to save the name of the chat partner. Then click on the \"done\" button.</li>
+				<li>Before you send anything private, compare the security number with them by voice or in person - see \"How can I verify that my chat partner is who they claim to be?\". The invite reached you through the messenger, and that comparison is the only step in this list that tells your chat partner apart from the messenger.</li>
 				<li>Select your chat partner via the contact list (person icon) and send them an encrypted message (closed envelope icon).</li>
 			</ul>
 
@@ -168,8 +169,9 @@
 			<ul>
 				<li>There are two different modes in which you can send your encrypted messages. </li>
 				<li>In Raw mode, the public keys and other information are displayed in their raw form.
-				In Fairy Tale mode all information is hidden in a decoy text.</li>
-				<li>In both modes, all messages are still encrypted and cannot be read by third parties.</li>
+				In Fairy Tale mode the same information is carried by invisible characters placed after a sentence from a fairy tale.</li>
+				<li>Fairy Tale mode makes a message look unremarkable to somebody glancing at your screen. It does not conceal anything from the messenger: every Fairy Tale message ends in a run of invisible characters that nothing else produces, and the visible sentence is one the app ships. If your reason for choosing it is to stop the messenger knowing that you encrypt, it does not do that.</li>
+				<li>In both modes, all messages are still encrypted and cannot be read by third parties - provided the key you pinned really belongs to your chat partner, which is what comparing the security number by voice establishes. Encryption on its own does not rule out the messenger, because the messenger is what delivered the key.</li>
 				<li>You can switch between the modes by clicking on the raw/book symbol in the KryptEY text field on the left.</li>
 			</ul>
 

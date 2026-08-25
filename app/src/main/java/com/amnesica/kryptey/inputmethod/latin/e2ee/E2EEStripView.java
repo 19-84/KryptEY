@@ -767,7 +767,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // more ordinary invite under a fresh name at a fresh address, the user accepts it -
           // accepting invites is what this app is for - and neither of the two conditions above
           // fires, so "Contact Carol created" used to land straight on top of the warning.
-          setInfoUnlessWarned("Contact " + labelFor(chosenContact) + " created. You can send messages now");
+          // "You can send messages now" was the only one of the four outcomes here that did
+          // not send the user to the security number, and it is the one where nothing else
+          // is protecting them: the other three fire BECAUSE the app noticed something. This
+          // one fires because it noticed nothing, which is exactly what pinning a key the
+          // messenger chose looks like when the substitution succeeded.
+          setInfoUnlessWarned("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.");
         }
       } else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
