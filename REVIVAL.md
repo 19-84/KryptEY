@@ -810,7 +810,10 @@ Recorded so the next round does not spend itself re-deriving them.
 - **The numbers in this document**, audited against the tree: 386 pinned components, `KeyResolutionTest`
   at 10 tests, 11 instrumentation `@Test` methods, the 4096-character invite threshold, and the
   strip's six screens all check out. The test count did not, and is now dated rather than absolute.
-  The 2484-character bundle figure was not re-measured this round and is carried on trust.
+  The 2484-byte bundle figure has now been re-measured too, and pinned: `PreKeyBundleSizeTest`
+  builds ten bundles, asserts they are all the same size, asserts that size is 2484, and asserts the
+  margin under the 4096 threshold is 1612. It is the number the threshold was chosen against, so
+  silent growth eats the margin and the first symptom would be that nobody can send an invite.
 
 ## Known-deferred defects
 

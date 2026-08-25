@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
@@ -71,5 +72,37 @@ public class PreKeyBundleSizeTest {
             + "rejects invites above " + UI_CHAR_THRESHOLD + ". Key exchange is impossible until "
             + "either the threshold is raised or the bundle is made smaller.",
         encoded.length() <= UI_CHAR_THRESHOLD);
+  }
+
+  /**
+   * The bundle is a fixed 2484 bytes, and the margin under the invite threshold is 1612.
+   *
+   * <p>REVIVAL.md has carried that figure since the threshold was chosen, and until now it was the
+   * one number in that document nobody had re-measured — it was explicitly recorded as "carried on
+   * trust". It is load-bearing: the 4096-character invite threshold was picked against it, so
+   * silent growth eats the margin and the first symptom is that no user can send an invite at all.
+   *
+   * <p>Pinned rather than bounded because the size is deterministic. Every field in a PQXDH bundle
+   * is fixed-width — Kyber-1024 and Curve25519 keys, a UUID address name, a signature — so a change
+   * here means a change to what the bundle carries, which is exactly the event worth failing on.
+   * Ten bundles are measured, so a size that varied per key would show up as a disagreement rather
+   * than as a flake later.
+   */
+  @Test
+  public void thebundleIsAfixedSizeAndTheMarginIsPinned() throws Exception {
+    final java.util.Set<Integer> sizes = new java.util.HashSet<>();
+    for (int i = 0; i < 10; i++) {
+      SignalProtocolMain.initialize(null);
+      sizes.add(EnvelopeCodec.toWire(realPreKeyResponseEnvelope())
+          .getBytes(StandardCharsets.UTF_8).length);
+    }
+
+    assertEquals("a PQXDH bundle is built from fixed-width fields, so every one must be the same "
+        + "size; a disagreement means something variable got in: " + sizes, 1, sizes.size());
+    assertEquals("the bundle size is what the 4096-character invite threshold was chosen against. "
+            + "If this changed, re-derive the threshold rather than adjusting this number",
+        2484, sizes.iterator().next().intValue());
+    assertEquals("and the margin under the threshold, stated so shrinkage is visible",
+        1612, UI_CHAR_THRESHOLD - 2484);
   }
 }
