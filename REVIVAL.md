@@ -698,6 +698,35 @@ Two related rules fall out, both now pinned by tests:
   as recommending it. Provenance was removed as a source of trust in the code once already; wording
   is where it would come back.
 
+A second review round, spawned specifically to hunt that class rather than to proofread, found four
+more. The pattern in three of them is sharper than the original two:
+
+- **The app warned on every derivative case and green-lit the base case.** Four outcomes of
+  accepting an invite write a message. Three — a key at a previously rejected address, a name
+  collision with a live contact, one with a deleted contact — all said "compare by voice". The
+  fourth, the ordinary first contact, said *"You can send messages now"*. Those three fire **because
+  the app noticed something**; the fourth fires because it noticed nothing, which is exactly what a
+  successful substitution looks like from inside. The one outcome with nothing else standing behind
+  it was the one that told the user to go ahead.
+- **A guarantee the app cannot know it has.** The help said messages "cannot be read by third
+  parties", unconditionally, in a section three below the one explaining why the voice comparison is
+  the check. The messenger *is* the third party, and the claim holds only against a key the user
+  actually compared. Stated without its condition, it tells the reader the comparison is optional.
+- **A feature described by what it looks like rather than what it does.** Fairy Tale mode "hides all
+  information in a decoy text". It hides it from someone glancing at the screen. From the messenger
+  it hides nothing: one sentence from the app's own shipped stories, then two characters per payload
+  byte from a fixed 16-character invisible alphabet, so a single substring test identifies a KryptEY
+  message. The only reason to prefer a decoy over Raw is to stop the messenger knowing you encrypt,
+  and that is precisely what it does not do. The reviewer asserted the encoder's real output first,
+  so the wording is measured against behaviour rather than taste.
+
+The fourth was the received-invite walkthrough — copy, save the name, send — which never mentioned
+the safety number, on the side that actually pins an incoming key.
+
+**Whether a string needs the warning is not a matter of tone.** It follows from whether the app
+noticed anything, and the answer is inverted from where attention naturally goes: the alarming cases
+defend themselves, and the quiet one is where the user is alone.
+
 ## The comment-drift problem, and why it has no test
 
 Nine review rounds found a security comment the code contradicts, several written in the very commit
@@ -929,6 +958,37 @@ what the user means mid-message.
 someone reading that method, writing down that it "clears focus, not text", fixing the text-lifetime
 bug they were hunting, and never asking what clearing focus *does*. Every round before this one was
 pointed at a subsystem. This one was pointed at a join, and the difference is the whole finding.
+
+## A predicate can be tested and wired to nothing
+
+`AndroidKeystoreCryptoBox.needsApi28` was extracted, in its own words, "so the refusal can be
+tested", and it was: four assertions pin it as a pure function, a fifth checks it against the
+ladder. Every one of them passes when the branch that consults it is deleted.
+
+That was measured, not inferred. Removing the refusal outright — so a pre-28 device asking for
+StrongBox silently received a key with neither StrongBox nor unlocked-device-required — left the
+suite at **843 tests, 0 failures**, and left `needsApi28` a production method called only from
+tests. Nothing noticed that either.
+
+The cause is worth stating carefully, because the fix for one problem created it. `generate()` calls
+the real Keystore provider and cannot run off a device, so the `KeystoreOps` seam was introduced to
+make the ladder testable — and every ladder test therefore drives a *fake* `KeystoreOps` and never
+reaches the branch. **The seam that put the ladder in reach put this out of it.** A seam relocates
+the untestable part; it does not shrink it, and the part it relocates to is the part nobody looks at
+again.
+
+The general form: *extracting a decision for testability tests the decision, not the wiring.* A
+predicate answering correctly and being consulted are separate claims, and only the first is cheap
+to assert. Where the two are split, something has to pin the join — here the branch was reshaped to
+take a `KeyGenParameterSpec.Builder`, which needs no Keystore, so the real code runs on both sides
+of it under Robolectric at a chosen SDK.
+
+Both directions are load-bearing, and only one is obvious. Pre-28 must **refuse**, because the
+ladder logs the protections it believes it obtained: a silent downgrade makes rung one claim
+StrongBox for a software key, indistinguishable afterwards from the good outcome. But pre-28 must
+also **accept** the plain rung, or an API 26–27 device could never mint a key at all. A branch that
+refused everything below 28 would be exactly as broken, in the direction nobody tests for.
+
 
 ## The one structural lesson from the review rounds
 
