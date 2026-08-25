@@ -226,6 +226,40 @@ public class StripGuardsTest {
         "Someone offered a different key for Bob.", infoField().getText().toString());
   }
 
+  /**
+   * Nor does the opening message, on a rebuild while a warning is standing.
+   *
+   * <p>The third writer of this banner, and the one that had no test. {@code refreshOpeningMessage}
+   * is called by {@code LatinIME.setInputView} on every configuration change — a theme switch, night
+   * mode at sunset, a rotation an app can force — and it runs <em>before</em> {@code adoptState}
+   * restores the carried warning. Making its {@code else if (!mWarningStanding)} unconditional
+   * survived the whole strip suite.
+   *
+   * <p>The sibling case is covered from the other side: when storage is unreadable this method
+   * raises a warning, and two tests pin that. Nothing asked what it does when storage is fine and a
+   * warning from some other source is already on screen — which is the identity-change and
+   * post-reject case, the two banners with no second guard behind them.
+   *
+   * <p>Found by mutation rather than by reading, after {@code mayOverwriteInfoBanner},
+   * {@code setInfoUnlessWarned}, {@code showChosenContactInMainInfoField}, the password-field guard
+   * and {@code adoptState}'s carried-warning arm were each mutated and each killed by 2 to 10 tests.
+   * This was the one that survived.
+   */
+  @Test
+  public void theopeningMessageNeverOverwritesAstandingWarning() {
+    // Storage is fine; the warning comes from elsewhere - a substituted key, or a rejected one.
+    SignalProtocolMain.setStorageStateForTest(
+        com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper.StorageState.READABLE);
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+
+    strip.refreshOpeningMessage();
+
+    assertEquals("a rebuild must not wipe a security warning with the opening message. This runs on "
+            + "every configuration change, before the carried warning is restored, so an attacker "
+            + "who can provoke one - or who waits for night mode - gets the banner cleared for free",
+        "Someone offered a different key for Bob.", infoField().getText().toString());
+  }
+
   /** And once the user has acted, the routine banner appears normally. */
   @Test
   public void thecontactBannerAppearsOnceTheWarningIsCleared() {
