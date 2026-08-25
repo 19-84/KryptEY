@@ -58,15 +58,32 @@ public final class LegacyKeyMigration {
           each.remove();
           continue;
         }
-        if (key.indexOf(com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses
-            .SEPARATOR) >= 0) {
-          continue;   // already a rendered address
-        }
+        // No "is this already re-keyed?" test.
+        //
+        // There was one - skip any key containing the separator - and it was a hole. The separator
+        // cannot appear in a name the WIRE accepts, but a 0.1.5 store was never held to that check,
+        // and the chat log was keyed by the peer-supplied address name. So the messenger picked the
+        // address name "bobName<SEP>5", which is byte-for-byte the rendered key of Bob at device 5,
+        // and its own pre-upgrade messages were waved through as "already rendered" straight into
+        // Bob's conversation. EncryptedKeyValueStore's javadoc had already written the rule this
+        // broke: deciding "already converted" from the shape of the bytes is a guess.
+        //
+        // The marker is what answers that question, and it is the only thing that can: it is a
+        // fact about the store, written by this app, not a value the messenger supplied. When it is
+        // absent every key in the log is pre-upgrade by definition, whatever it looks like.
         final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact owner =
             account.soleContactNamed(key);
         if (owner == null) {
-          Log.w(TAG, "Dropping a chat-log entry whose address name identifies no single contact");
-          each.remove();
+          // Kept, not deleted.
+          //
+          // Deleting was chosen when an unattributed entry could still be matched by a bare-name
+          // reader and handed to whichever row survived. No reader does that any more - belongsTo
+          // compares the full rendered address and nothing produces a bare name to match - so an
+          // un-re-keyed entry is inert: invisible to every contact including the attacker's. That
+          // turned deletion from a safety measure into a destruction primitive, one ordinary invite
+          // sent before the upgrade being enough to have a genuine conversation classed ambiguous
+          // and erased with no prompt and no way back.
+          Log.w(TAG, "Leaving a chat-log entry whose address name identifies no single contact");
         } else {
           message.setContactUUID(com.amnesica.kryptey.inputmethod.signalprotocol.util
               .ProtocolAddresses.key(owner.getSignalProtocolAddress()));
@@ -78,30 +95,23 @@ public final class LegacyKeyMigration {
     if (retired != null) {
       for (final String[] entry : retired) {
         if (entry.length < 3 || entry[2] == null || entry[2].isEmpty()) continue;
-        if (entry[2].indexOf(com.amnesica.kryptey.inputmethod.signalprotocol.util
-            .ProtocolAddresses.SEPARATOR) >= 0) {
-          continue;
-        }
-        // A contact row first, then the pin. A display name is retired when its contact is
-        // DELETED, so the row is usually gone by definition - but deletion deliberately keeps the
-        // pin, so the identity store still names the address. Without the second lookup every
-        // pre-upgrade retirement would be unidentifiable and every legitimate re-add would warn.
-        final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact owner =
-            account.soleContactNamed(entry[2]);
-        org.signal.libsignal.protocol.SignalProtocolAddress address =
-            owner == null ? null : owner.getSignalProtocolAddress();
-        if (address == null && account.getSignalProtocolStore() != null) {
-          address = account.getSignalProtocolStore().getIdentityKeyStore()
-              .solePinnedAddressNamed(entry[2]);
-        }
-        // Still nothing means the entry can no longer say which address the name was retired FROM,
-        // and an entry that cannot say that must not suppress the warning. Blanking leaves the name
-        // recorded and the suppression off, which is the safe side: a false alarm on a legitimate
-        // re-add, rather than silence on an impersonation.
-        entry[2] = address == null ? ""
-            : com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.key(address);
+        // Blanked, always - no attempt to identify the address from the name.
+        //
+        // Looking it up by contact row or by surviving pin was reachable: the messenger chooses its
+        // own address name, so it plants a row (or gets a pin, which deletion deliberately keeps)
+        // bearing the victim's address name at another device id. Nothing warns about that - the
+        // display names differ and no row exists at that exact address - and once the genuine
+        // contact is deleted the attacker's is the only thing left bearing the name, so the
+        // migration would write the ATTACKER's address into the victim's retirement and suppress
+        // the duplicate warning for it permanently.
+        //
+        // Moving the question from read time to load time did not take the messenger out of it; it
+        // froze its answer. A bare name simply does not identify an address, and no moment exists
+        // at which it does. Blanking costs a false alarm on a legitimate re-add of a contact
+        // retired before the upgrade; the alternative is silence on an impersonation, and this
+        // codebase has settled that trade in the same direction every time it has come up.
+        entry[2] = "";
       }
     }
-
   }
 }

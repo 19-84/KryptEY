@@ -71,21 +71,27 @@ public class RetiredNameFormatMigrationTest {
    * the passing case only in which format the entry on disk happens to be in.
    */
   @Test
-  public void apreUpgradeRetirementAtTheSameAddressMustStillSuppressTheWarning() {
+  public void apreUpgradeRetirementWarnsBecauseItsAddressCannotBeIdentified() {
     // Exactly what the pre-f3e7baf removeContact wrote: the address NAME, not the rendered address.
     final LinkedList<String[]> retired = new LinkedList<>();
     retired.add(new String[] {"Bob", "Jones", peerAddress.getName()});
     victim.setRetiredDisplayNames(retired);
     // What the first load after the upgrade does with a pre-upgrade entry: re-key it. The reader
-    // no longer accepts a bare name, so this is the only thing that makes the entry usable - and
-    // the address is identified by the surviving PIN, since deleting the contact took its row.
+    // no longer accepts a bare name, so the migration is the only thing that touches the entry -
+    // and it blanks the address rather than trying to identify it.
     com.amnesica.kryptey.inputmethod.signalprotocol.helper.LegacyKeyMigration.apply(victim);
 
-    assertNotNull("fixture: the pin must still be at this address - that is the whole premise",
+    assertNotNull("fixture: the pin must still be at this address, so the warning below is NOT "
+            + "explained by the pin having gone",
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
 
-    assertFalse("a re-add at the address the contact was deleted from, whose pin is still there, "
-            + "is warned about because the stored entry is in the previous format",
+    // The accepted cost, stated as an assertion rather than left as a surprise. Identifying the
+    // address from a bare name was reachable by the messenger - it plants a row or gets a pin
+    // bearing the victim's address name - so the entry is blanked instead, and a contact retired
+    // before the upgrade warns on re-add. A false alarm on one re-add per pre-upgrade retirement,
+    // against silence on an impersonation.
+    assertTrue("a retirement recorded before the upgrade cannot say which address it was retired "
+            + "from, so it must not suppress - this is a deliberate false alarm",
         SignalProtocolMain.hasRetiredDisplayName("Bob", "Jones", peerAddress));
   }
 

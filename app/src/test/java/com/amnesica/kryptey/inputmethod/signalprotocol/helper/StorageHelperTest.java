@@ -487,6 +487,10 @@ public class StorageHelperTest {
   @Test
   public void afailureOnTheLastValueLeavesTheWholeSaveUnwritten() {
     final Account account = newAccount();
+    // So the schema marker takes part in this batch too. It is the one value whose meaning is a
+    // claim about all the others - "every key in this store is a rendered address" - so it must not
+    // be the one that survives a save nothing else survived.
+    account.setKeysAreRendered(true);
     account.setContactList(new ArrayList<>(List.of(
         new Contact("Bob", "Jones", "peer-uuid", 7, false))));
 

@@ -251,6 +251,29 @@ public class Account {
    * between the write and the read; asked at the first load after upgrade it is a question about a
    * contact list the pre-upgrade binary wrote, which nothing since has been able to touch.
    */
+  /**
+   * Whether every key in this account is known to be a rendered full address.
+   *
+   * <p>Decides whether the schema marker is written when the account is saved, and it has to be a
+   * property of THIS account rather than a constant, which cost two attempts to get right. Writing
+   * the marker only after a migration meant a fresh install never wrote one, so its next load
+   * treated its own modern retirements as pre-upgrade. Writing it unconditionally meant a load that
+   * could not read the contact list - which the loader deliberately tolerates - sealed the marker
+   * over a log it had not re-keyed, stranding every entry unreachable and unerasable.
+   *
+   * <p>True in exactly three cases: the store already said so, the migration just ran against a
+   * contact list it could actually read, or the account is new and has no legacy data to hold.
+   */
+  private transient boolean keysAreRendered;
+
+  public void setKeysAreRendered(final boolean rendered) {
+    this.keysAreRendered = rendered;
+  }
+
+  public boolean keysAreRendered() {
+    return keysAreRendered;
+  }
+
   public Contact soleContactNamed(final String addressName) {
     if (contactList == null || addressName == null) return null;
     Contact found = null;

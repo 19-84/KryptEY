@@ -1834,6 +1834,10 @@ public class SignalProtocolMain {
 
     // create account for device
     mAccount = new Account(uniqueUserId, deviceId, identityKeyPair, metadataStore, signalProtocolStore, signalProtocolAddress);
+    // A brand-new account holds nothing that predates the current key format, so its store may
+    // carry the schema marker from its very first save. Without this a fresh install never wrote
+    // one, and its next load treated the retirements it had written itself as pre-upgrade.
+    mAccount.setKeysAreRendered(true);
 
     storeAllAccountInformationInSharedPreferences();
   }

@@ -63,14 +63,19 @@ public class LegacyKeyMigrationTest {
   /**
    * An entry no single contact can claim is deleted, not left in place.
    *
-   * <p>Leaving it is what the read-time gate did, and it is how the whole conversation ended up
-   * inheritable: an unattributed message has no owner, so whichever row survived the next deletion
-   * took it. It also cannot be erased by the user, because erasing a conversation means deleting
-   * the contact and no contact owns it. Unrecoverable history is the honest cost of the upgrade;
-   * plaintext that can later be handed to an impostor is not a cost, it is the defect.
+   * <p>This asserted the opposite one round ago, and the reasoning that changed it is worth keeping.
+   * Deleting was chosen because an unattributed entry could still be matched by a bare-name reader
+   * and handed to whichever row survived a deletion. No reader does that any more - {@code belongsTo}
+   * compares the full rendered address and nothing produces a bare name to match - so the premise
+   * expired when the read arms did. What was left was a destruction primitive: one ordinary invite
+   * sent before the upgrade, bearing an existing contact's address name at another device id,
+   * passes both add-path checks silently and has the genuine conversation erased at the next load,
+   * with no prompt and no way back.
+   *
+   * <p>So it is kept, and inert: invisible to every contact row including the attacker's.
    */
   @Test
-  public void anambiguousLegacyEntryIsDroppedRatherThanOrphaned() {
+  public void anambiguousLegacyEntryIsKeptBecauseItIsNowInert() {
     addContact("Bob", "peer-uuid", 7);
     addContact("Bob", "peer-uuid", 8);   // same address name, different device
     writeLegacyMessage("peer-uuid", "the whole conversation");
@@ -79,8 +84,11 @@ public class LegacyKeyMigrationTest {
 
     LegacyKeyMigration.apply(account);
 
-    assertEquals("an entry no single contact can claim must be deleted, not left for whichever "
-        + "row survives the next deletion", 0, account.getUnencryptedMessages().size());
+    assertEquals("an entry no single contact can claim must be KEPT - nothing can read it, and "
+        + "deleting it is a destruction primitive one pre-upgrade invite away", 1,
+        account.getUnencryptedMessages().size());
+    assertEquals("and left exactly as it was, not half-rewritten", "peer-uuid",
+        account.getUnencryptedMessages().get(0).getContactUUID());
   }
 
   /** And an entry exactly one contact can claim is re-keyed rather than dropped. */
@@ -121,9 +129,19 @@ public class LegacyKeyMigrationTest {
         "", account.getRetiredDisplayNames().get(0)[2]);
   }
 
-  /** A retirement whose address survives as a pin is re-keyed, so a legitimate re-add is quiet. */
+  /**
+   * A retirement is blanked even when a pin bearing its name survives.
+   *
+   * <p>This too asserted the opposite one round ago. Identifying the address from the name - by
+   * contact row or by surviving pin - was reachable: the messenger chooses its own address name, so
+   * it plants a row or gets a pin bearing the victim's address name at another device id, and once
+   * the victim is deleted the attacker's is the only thing left bearing that name. The migration
+   * would then write the ATTACKER's address into the victim's retirement and suppress the duplicate
+   * warning for it permanently. Moving the question to load time froze the messenger's answer
+   * rather than removing it.
+   */
   @Test
-  public void aretirementIdentifiedByAsurvivingPinIsReKeyed() {
+  public void aretirementIsBlankedEvenWhenApinBearingItsNameSurvives() {
     account.getSignalProtocolStore().getIdentityKeyStore().saveIdentity(peerAddress,
         org.signal.libsignal.protocol.IdentityKeyPair.generate().getPublicKey());
     final LinkedList<String[]> retired = new LinkedList<>();
@@ -132,8 +150,8 @@ public class LegacyKeyMigrationTest {
 
     LegacyKeyMigration.apply(account);
 
-    assertEquals("deletion keeps the pin, so the identity store can still name the address the "
-            + "contact row no longer does", ProtocolAddresses.key(peerAddress),
+    assertEquals("a bare name does not identify an address, and no moment exists at which it does "
+            + "- so the address is dropped and the warning stays on", "",
         account.getRetiredDisplayNames().get(0)[2]);
   }
 
@@ -151,7 +169,7 @@ public class LegacyKeyMigrationTest {
    * a rival row added after the migration ran.
    */
   @Test
-  public void themigrationIsIdempotentEvenAfterTheContactListChanges() {
+  public void themigrationRunsOnceBecauseTheMarkerSaysSo() {
     final Context context = RuntimeEnvironment.getApplication();
     final SharedPreferences preferences =
         context.getSharedPreferences("protocol", Context.MODE_PRIVATE);
@@ -162,6 +180,10 @@ public class LegacyKeyMigrationTest {
 
     final StorageHelper helper = new StorageHelper(context, workingBox());
     helper.storeAllInformationInSharedPreferences(account);
+    // Stand in for a store the pre-upgrade binary wrote: no marker. Every store this code writes
+    // carries one, which is what makes the migration a one-shot.
+    preferences.edit().remove(com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier
+        .KEY_SCHEMA_MIGRATED.toString()).commit();
 
     final Account firstLoad =
         new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
@@ -181,12 +203,13 @@ public class LegacyKeyMigrationTest {
         new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
     assertNotNull(secondLoad);
 
-    // Directly, not via the marker: this must hold even if the migration runs again.
-    LegacyKeyMigration.apply(secondLoad);
-    LegacyKeyMigration.apply(secondLoad);
+    // NOT by applying the transformation again. It is not content-idempotent and must not be:
+    // deciding "already re-keyed?" from the shape of the key was a guess about a value the
+    // messenger wrote, and a 0.1.5 store could hold an address name that renders exactly like a
+    // migrated key. The marker is what makes this run once, because it is a fact about the store
+    // written by this app rather than a value supplied to it.
 
-    assertEquals("a re-keyed entry must survive any number of further passes, whatever the contact "
-            + "list has become - that is what makes doing this at load time safe", 1,
+    assertEquals("the second load must not migrate again, whatever the contact list has become", 1,
         secondLoad.getUnencryptedMessages().size());
     assertEquals("and must keep the owner it was given when the answer was still sound",
         afterFirst, secondLoad.getUnencryptedMessages().get(0).getContactUUID());

@@ -105,12 +105,20 @@ public class RetiredNameLegacyArmReachTest {
     com.amnesica.kryptey.inputmethod.signalprotocol.helper.LegacyKeyMigration.apply(victim);
   }
 
-  /** The arm doing its intended job: a re-add where the pin genuinely survived is not warned. */
+  /**
+   * The arm is gone, and with it the suppression it provided.
+   *
+   * <p>This asserted the suppression when the arm existed. The sibling test below is why it does
+   * not any more: the arm could not tell the legitimate re-add from the attack, because a legacy
+   * entry records no device id and the two are literally the same string. Blanking the address at
+   * migration costs this false alarm and closes that.
+   */
   @Test
-  public void thearmSuppressesTheReAddItWasAddedFor() {
+  public void there_addTheArmSuppressedNowWarnsInstead() {
     assertNotNull("fixture: deletion keeps the pin",
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(retiredFrom));
-    assertFalse("a re-add at the address the name was retired from must not warn",
+    assertTrue("with no way to tell this from the attack the sibling test describes, the warning "
+            + "is the safe side - a false alarm on one re-add per pre-upgrade retirement",
         SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", retiredFrom));
   }
 

@@ -165,6 +165,7 @@ public class StorageHelper {
     }
     ArrayList<Contact> contactList = JsonUtil.convertContactsList(
         (ArrayList<Contact>) getClassFromSharedPreferences(ProtocolIdentifier.CONTACTS));
+    final boolean contactsWereReadable = contactList != null;
     if (contactList == null) {
       Log.e(TAG, "Error: stored contacts could not be read; continuing with an empty list");
       contactList = new ArrayList<>();
@@ -223,7 +224,7 @@ public class StorageHelper {
       account.setRetiredDisplayNames(retired);
     }
 
-    migrateLegacyKeys(account);
+    migrateLegacyKeys(account, contactsWereReadable);
     return account;
   }
 
@@ -238,12 +239,31 @@ public class StorageHelper {
    * to act on however the contact list has changed. The marker saves rescanning the whole log on
    * every setInputView, which happens a great deal.
    */
-  private void migrateLegacyKeys(final Account account) {
+  private void migrateLegacyKeys(final Account account, final boolean contactsWereReadable) {
     if (account == null) return;
-    if (getClassFromSharedPreferences(ProtocolIdentifier.KEY_SCHEMA_MIGRATED) != null) return;
+    if (getClassFromSharedPreferences(ProtocolIdentifier.KEY_SCHEMA_MIGRATED) != null) {
+      account.setKeysAreRendered(true);   // the store already said so
+      return;
+    }
+
+    // Not against a contact list that failed to load.
+    //
+    // The load deliberately tolerates an unreadable contact list and continues with an empty one,
+    // which was harmless while readers matched at read time. It is not harmless for a one-shot
+    // irreversible pass: every legacy entry would be unattributable against an empty list, the
+    // marker would seal that answer, and the next write-back would persist it. One unreadable
+    // value would have cost the user their entire pre-upgrade history, permanently and silently.
+    if (!contactsWereReadable) {
+      Log.w(TAG, "Not migrating legacy keys: the contact list could not be read, and the answer "
+          + "this migration gives is not reversible");
+      return;
+    }
 
     LegacyKeyMigration.apply(account);
-    storeInSharedPreferences(ProtocolIdentifier.KEY_SCHEMA_MIGRATED, "1");
+    account.setKeysAreRendered(true);
+
+    // The marker is NOT written here - it travels in the same batch as the data it describes, in
+    // storeAllInformationInSharedPreferences. See the comment there.
   }
 
   /**
@@ -280,6 +300,18 @@ public class StorageHelper {
       batch.put(String.valueOf(ProtocolIdentifier.DISPLAY_TAG_SECRET),
           JsonUtil.toJson(com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64
               .encodeBytes(secret)));
+    }
+
+    // The marker means "every key in this store is a rendered address", so it is written when this
+    // account is known to satisfy that and not otherwise. See Account.keysAreRendered for the three
+    // cases and for the two ways of getting this wrong that came before it.
+    //
+    // In the batch, not before it: as its own durable commit it outran the data, and a kill in
+    // between - routine for an IME - left a store marked migrated whose log was still bare-keyed,
+    // unreachable from every contact row for the life of the install and unerasable, since erasing
+    // a conversation means deleting a contact and no contact owns those entries.
+    if (account.keysAreRendered()) {
+      batch.put(String.valueOf(ProtocolIdentifier.KEY_SCHEMA_MIGRATED), JsonUtil.toJson("1"));
     }
 
     try {
