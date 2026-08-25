@@ -98,5 +98,5 @@ public final class ProtocolAddresses {
    * any address name this app will accept, so a rendered key and a bare name live in provably
    * disjoint spaces. If that validation is ever widened, this is the other place to change.
    */
-  private static final char SEPARATOR = '\u001f';
+  public static final char SEPARATOR = '\u001f';
 }

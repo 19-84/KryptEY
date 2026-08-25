@@ -79,10 +79,17 @@ public class LegacyChatLogDeletionTest {
     victim.setContactList(contacts);
   }
 
-  /** A message as the pre-upgrade code wrote it: filed under the address NAME alone. */
+  /**
+   * A message as the pre-upgrade code wrote it, then put through the load-time migration.
+   *
+   * <p>A bare-name key only ever enters the app through a load, and a load re-keys it. There is no
+   * longer a reader that matches a bare name, so a test planting one and reading it back would be
+   * describing a state the app cannot be in.
+   */
   private void writeLegacyMessage(final String text) {
     victim.getUnencryptedMessages().add(new StorageMessage(peerName, peerName,
         victim.getSignalProtocolAddress().getName(), Instant.now(), text));
+    com.amnesica.kryptey.inputmethod.signalprotocol.helper.LegacyKeyMigration.apply(victim);
   }
 
   private static boolean logContains(final List<StorageMessage> log, final String text) {
@@ -138,8 +145,15 @@ public class LegacyChatLogDeletionTest {
     final Contact impostor = new Contact("Bob", "Jones", peerName, impostorDeviceId, false);
     victim.getContactList().add(impostor);
 
-    assertFalse("fixture: while both rows stand the legacy log is deliberately withheld",
+    // Attribution happened at load, when only the genuine contact existed, so an arrival after
+    // that cannot change who the message belongs to. Under the read-time gate this assertion read
+    // the other way round - the log was withheld from BOTH while the names clashed - and that is
+    // exactly what made the inheritance possible: a withheld message has no owner, so whichever
+    // row survived the next deletion took it.
+    assertTrue("a contact added later must not change who the message belongs to",
         logContains(logOf(genuineContact), LEGACY_TEXT));
+    assertFalse("and the impostor must never see it at all",
+        logContains(logOf(impostor), LEGACY_TEXT));
 
     SignalProtocolMain.removeContactFromContactListAndProtocol(impostor);
 

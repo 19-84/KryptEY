@@ -337,7 +337,10 @@ public class StorageHelperTest {
         new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
             "Real", "Peer", peer, 7, false),
         new com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage(
-            peer, peer, original.getSignalProtocolAddress().getName(),
+            // The modern key. A bare name here would be a PRE-upgrade entry, and the load-time
+            // migration drops one it cannot attribute - which is correct, and a different test.
+            com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage.chatLogKey(peer, 7),
+            peer, original.getSignalProtocolAddress().getName(),
             java.time.Instant.ofEpochSecond(1_700_000_000L), "hello there"));
     new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(original);
 

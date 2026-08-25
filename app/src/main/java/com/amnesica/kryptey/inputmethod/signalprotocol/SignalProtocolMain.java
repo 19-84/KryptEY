@@ -1124,21 +1124,15 @@ public class SignalProtocolMain {
       if (!displayNamesMatch(retired[0], retired[1], firstName, lastName)) continue;
       // Entries written before the address was recorded have length 2; treat those as matching
       // nothing in particular rather than silently suppressing.
+      // The full address, and nothing looser. A migration arm here used to accept entries written
+      // before the record held a rendered address, by comparing the bare address NAME - and it was
+      // reachable: the attacker picks the deleted contact's address name for its own address, gets
+      // a pin there the ordinary way (one accepted invite), and deletion deliberately keeps that
+      // pin - so excludedIsStillPinned was satisfied by the attacker's own key and the duplicate
+      // warning was suppressed. Those entries are re-keyed once at load instead; where the address
+      // could not be identified their address element is blanked, which leaves the warning ON.
       if (excludedIsStillPinned && retired.length > 2
-          && (excludedAddress.equals(retired[2])
-              // Entries retired before the record held a rendered address carry the bare address
-              // NAME. Without this arm the suppression is permanently dead for every retirement a
-              // user already had, so a legitimate re-add at an address whose pin never moved is
-              // warned about - and the wording asserts something the user can check is untrue
-              // ("this new one has a different address"). Habituation is this control's documented
-              // failure mode, so a false alarm is not the safe side here.
-              //
-              // Safe because it is inside the pin requirement, which is what makes the whole
-              // suppression sound. The attacker's variant of this is a fresh address carrying a
-              // deleted contact's name, and nothing is pinned there, so this arm is never reached
-              // for it. Reaching it needs a surviving pin at the address being added, which is
-              // exactly the "provably the same identity" case.
-              || excluding.getName().equals(retired[2]))) {
+          && excludedAddress.equals(retired[2])) {
         continue;
       }
       return true;
@@ -1430,11 +1424,8 @@ public class SignalProtocolMain {
 
   private List<StorageMessage> getUnencryptedMessagesListFromAccount(Contact contact) throws UnknownContactException {
     if (mAccount != null && contact != null) {
-      final boolean unambiguous =
-          mAccount.hasExactlyOneContactNamed(contact.getSignalProtocolAddressName());
       List<StorageMessage> messagesWithContact = mAccount.getUnencryptedMessages().stream()
-          .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId(),
-              unambiguous))
+          .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId()))
           .collect(Collectors.toList());
       if (messagesWithContact.size() == 0) {
         throw new UnknownContactException("No messages were found for contact: " + contact.getFirstName() + " " + contact.getLastName());

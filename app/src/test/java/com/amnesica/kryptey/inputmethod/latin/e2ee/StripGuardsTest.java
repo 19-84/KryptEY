@@ -335,7 +335,8 @@ public class StripGuardsTest {
   @Test
   public void thechatLogDoesNotSurviveTheKeyboardBeingHidden() {
     victim.addUnencryptedMessage(bob(), new StorageMessage(
-        peerAddress.getName(), peerAddress.getName(),
+        StorageMessage.chatLogKey(peerAddress.getName(), peerAddress.getDeviceId()),
+        peerAddress.getName(),
         victim.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
         "the plaintext that must not outlive the keyboard"));
 

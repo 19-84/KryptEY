@@ -231,6 +231,27 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    * Records that the user un-pinned this address after comparing numbers and finding a mismatch.
    * Kept separately from the pin so it outlives {@link #removeIdentity}.
    */
+  /**
+   * The single pinned address bearing this name, or null if none or more than one does.
+   *
+   * <p>For the one-time key migration only. A display name is retired when its contact is deleted,
+   * and deletion deliberately KEEPS the pin - so after a delete-and-re-add the contact list no
+   * longer names the address but the identity store still does. Without this, a pre-upgrade
+   * retirement could not be re-keyed and its entry would be blanked, turning every legitimate
+   * re-add into a false alarm.
+   */
+  public SignalProtocolAddress solePinnedAddressNamed(final String addressName) {
+    if (addressName == null) return null;
+    SignalProtocolAddress found = null;
+    for (final TrustedKey trustedKey : trustedKeys) {
+      if (trustedKey == null || trustedKey.getSignalProtocolAddress() == null) continue;
+      if (!addressName.equals(trustedKey.getSignalProtocolAddress().getName())) continue;
+      if (found != null) return null;
+      found = trustedKey.getSignalProtocolAddress();
+    }
+    return found;
+  }
+
   public void markKeyRejected(final SignalProtocolAddress address) {
     if (address == null) return;
     final String key = addressKey(address);

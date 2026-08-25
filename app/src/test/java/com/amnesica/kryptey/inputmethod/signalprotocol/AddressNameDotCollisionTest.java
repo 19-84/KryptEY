@@ -132,8 +132,9 @@ public class AddressNameDotCollisionTest {
             + "this is a same-address collision",
         false, genuineContact.getSignalProtocolAddressName()
             .equals(attackerContact.getSignalProtocolAddressName()));
-    assertTrue("fixture: and the ambiguity gate must therefore answer 'exactly one'",
-        victim.hasExactlyOneContactNamed(attackerContact.getSignalProtocolAddressName()));
+    assertNotNull("fixture: one contact bears that name, which is the state the deleted legacy "
+            + "arm would have treated as attributable",
+        victim.soleContactNamed(attackerContact.getSignalProtocolAddressName()));
 
     assertFalse("the genuine contact's conversation is being rendered inside the attacker's: "
         + logOf(attackerContact), logContains(logOf(attackerContact), priv));

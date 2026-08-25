@@ -53,7 +53,10 @@ public class MessageLogRetrievalTest {
 
   private void log(final Contact contact, final String text) {
     account.addUnencryptedMessage(contact, new StorageMessage(
-        contact.getSignalProtocolAddressName(), contact.getSignalProtocolAddressName(),
+        // The key production writes: the full address. A bare name is the pre-upgrade format, and
+        // it is re-keyed once at load rather than matched here.
+        StorageMessage.chatLogKey(contact.getSignalProtocolAddressName(), contact.getDeviceId()),
+        contact.getSignalProtocolAddressName(),
         account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L), text));
   }
 

@@ -223,7 +223,27 @@ public class StorageHelper {
       account.setRetiredDisplayNames(retired);
     }
 
+    migrateLegacyKeys(account);
     return account;
+  }
+
+  /**
+   * Runs the one-time key migration, once, at the first load after the upgrade.
+   *
+   * <p>The transformation itself lives in {@link LegacyKeyMigration}; this decides whether it has
+   * already happened. The marker is an efficiency guard, not the safety property - a first version
+   * of this comment claimed it was what made the load-time answer sound, and a test written against
+   * that claim passed with the check removed. What actually makes it safe is that re-keying is
+   * idempotent: a re-keyed entry carries the separator and is skipped, so a second pass has nothing
+   * to act on however the contact list has changed. The marker saves rescanning the whole log on
+   * every setInputView, which happens a great deal.
+   */
+  private void migrateLegacyKeys(final Account account) {
+    if (account == null) return;
+    if (getClassFromSharedPreferences(ProtocolIdentifier.KEY_SCHEMA_MIGRATED) != null) return;
+
+    LegacyKeyMigration.apply(account);
+    storeInSharedPreferences(ProtocolIdentifier.KEY_SCHEMA_MIGRATED, "1");
   }
 
   /**

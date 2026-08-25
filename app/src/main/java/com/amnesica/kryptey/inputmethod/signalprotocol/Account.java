@@ -236,28 +236,31 @@ public class Account {
   }
 
   public void removeAllUnencryptedMessages(Contact contact) {
-    final boolean unambiguous = hasExactlyOneContactNamed(contact.getSignalProtocolAddressName());
     List<StorageMessage> operatedList = new ArrayList<>();
     mUnencryptedMessages.stream()
-        .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId(),
-            unambiguous))
+        .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId()))
         .forEach(operatedList::add);
     mUnencryptedMessages.removeAll(operatedList);
   }
 
   /**
-   * Whether one address name identifies a single contact.
+   * The single contact bearing this address name, or null if none or more than one does.
    *
-   * <p>Gates the legacy chat-log key. Two contacts sharing an address name is the impostor case, and
-   * in it no legacy message can be attributed to either without guessing.
+   * <p>Used ONCE, by the one-time key migration, and deliberately nowhere else. Asked at read time
+   * this is a question the messenger can change the answer to, by adding or removing a contact
+   * between the write and the read; asked at the first load after upgrade it is a question about a
+   * contact list the pre-upgrade binary wrote, which nothing since has been able to touch.
    */
-  public boolean hasExactlyOneContactNamed(final String addressName) {
-    if (contactList == null || addressName == null) return false;
-    int matches = 0;
+  public Contact soleContactNamed(final String addressName) {
+    if (contactList == null || addressName == null) return null;
+    Contact found = null;
     for (final Contact other : contactList) {
-      if (addressName.equals(other.getSignalProtocolAddressName())) matches++;
+      if (addressName.equals(other.getSignalProtocolAddressName())) {
+        if (found != null) return null;
+        found = other;
+      }
     }
-    return matches == 1;
+    return found;
   }
 
   public ArrayList<Contact> getContactList() {

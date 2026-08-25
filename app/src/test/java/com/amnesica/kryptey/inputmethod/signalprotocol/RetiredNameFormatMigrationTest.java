@@ -76,6 +76,10 @@ public class RetiredNameFormatMigrationTest {
     final LinkedList<String[]> retired = new LinkedList<>();
     retired.add(new String[] {"Bob", "Jones", peerAddress.getName()});
     victim.setRetiredDisplayNames(retired);
+    // What the first load after the upgrade does with a pre-upgrade entry: re-key it. The reader
+    // no longer accepts a bare name, so this is the only thing that makes the entry usable - and
+    // the address is identified by the surviving PIN, since deleting the contact took its row.
+    com.amnesica.kryptey.inputmethod.signalprotocol.helper.LegacyKeyMigration.apply(victim);
 
     assertNotNull("fixture: the pin must still be at this address - that is the whole premise",
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));

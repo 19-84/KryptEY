@@ -70,18 +70,17 @@ public class StorageMessage {
   /**
    * Whether this message belongs to the given contact's log.
    *
-   * <p>The legacy arm exists so an upgrade does not silently empty everyone's history: messages
-   * written before the key included the device id are matched by name, but ONLY when the contact
-   * list holds exactly one contact with that address name. When it holds two, the whole point is
-   * that the app cannot tell which of them a legacy message belonged to - and guessing is precisely
-   * what the attack relies on, so the ambiguous ones stay unfiled rather than being handed to
-   * whichever row asked first.
+   * <p>One comparison, against the full address. There used to be a second arm matching a bare
+   * address name, for messages written before the device id joined the key, gated on that name
+   * identifying exactly one contact. It produced two HIGH findings in consecutive review rounds and
+   * could not be fixed where it lived: the gate asks a question about the contact list at the moment
+   * it is asked, and the messenger moves the contact list. Legacy entries are now re-keyed once, at
+   * the first load after the upgrade, by {@code StorageHelper.migrateLegacyKeys} - which is the only
+   * moment that question has an answer the messenger has not had a chance to influence.
    */
-  public boolean belongsTo(final String addressName, final int deviceId,
-      final boolean nameIsUnambiguous) {
+  public boolean belongsTo(final String addressName, final int deviceId) {
     if (contactUUID == null) return false;
-    if (contactUUID.equals(chatLogKey(addressName, deviceId))) return true;
-    return nameIsUnambiguous && contactUUID.equals(addressName);
+    return contactUUID.equals(chatLogKey(addressName, deviceId));
   }
 
   public String getContactUUID() {
