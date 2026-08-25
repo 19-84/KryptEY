@@ -311,6 +311,43 @@ is no second row, so `Bob`, `Bob J`, `Robert Jones` and `Bob Jones (new phone)` 
 Matching loosely would fire on ordinary names and habituate the user, which is the failure mode the
 whole control exists to avoid.
 
+**The warning banner is the only lasting control, and almost everything could erase it.** Every
+mechanism above ends in one place: a line of text on a strip four buttons wide. There is no
+notification, no badge that persists across screens, no modal. So "can the messenger overwrite that
+line?" is not a UI question — it is the question of whether any of this reaches the user at all.
+
+`mWarningStanding` marks a banner as a warning, and passive events must not write over one. The flag
+was correct; the set of writers that respected it was not. Found and closed, each of them costing an
+attacker one ordinary chat message:
+
+- A paste that fails to decode, and declining an invite, both wrote "No contact chosen" over a
+  warning — and left the flag set, so the strip was *wedged*: the flag said a warning was on screen,
+  which blocked replacement, while the text said nothing was wrong and the watcher read it as a
+  reason to disable both buttons. Declining an unexpected invite is the *correct* response to a
+  suspicious one; it was the action that erased the reason for taking it.
+- Three banners on the decrypt path — "Keybundle detected" and two "Detected contact:" lines. The
+  press is the user's, but the payload is the attacker's.
+- `selectContact` cleared the flag outright, on the reasoning that choosing a contact means having
+  seen what was on screen. True of a notice; false of a pending identity change, which is a *state*.
+  The screen a user opens when something looks wrong was the screen that made it stop looking wrong.
+- The duplicate-name and same-address warnings were posted as ordinary banners, so one more post
+  removed them. The duplicate-name one is the only control covering the case the pin cannot.
+
+Two of these had a mutation-testing wrinkle worth recording. Deleting either copy of the
+post-rejection or duplicate-name warning changed nothing observable, because each was posted twice —
+once before session creation and again after — and each copy masked the other's deletion. Consolidated
+to one writer, both mutations die. The same pass found that a failed session then painted "ask for a
+fresh invite" over the surviving warning: the delete-and-re-invite advice the warning exists to talk
+the user out of, left standing over a flag that made it uncorrectable.
+
+**And the plaintext outlived the keyboard.** `clearDecryptedContent()`, which `onWindowHidden` calls,
+cleared the compose field only. The chat-log screen stayed visible with the entire decrypted
+conversation in its adapter, and because the IME view is not recreated on an app switch, that history
+was still on screen the next time the keyboard rose — in whatever app that was. `FLAG_SECURE` stops a
+screenshot of it and does nothing about the person next to you. It now leaves the screen and drops the
+adapter: returning to the main view alone would have kept the log one button-press away with no
+further decryption.
+
 ## Verified vs. reasoned
 
 **Verified by execution:**
