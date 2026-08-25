@@ -413,6 +413,14 @@ further decryption.
 - Negative controls on the highest-stakes regressions (legacy-peer crash, one-time pre-key
   overwrite, Jackson fixture corruption)
 
+**A note on which SDK the tests run at.** Robolectric runs at `compileSdk` — 35 — unless a test
+says otherwise, and `minSdk` is 26. Every `SDK_INT <` branch in the app is therefore code real users
+on API 26–32 execute and that no test had ever entered. `LegacyApiClipboardTest` closes the one that
+is a security behaviour rather than a compatibility detail: `clearClipboard()`, called on every exit
+of the decrypt path, uses `clearPrimaryClip()` only from API 28 and overwrites the clip below that.
+It is asserted at 26, 27, 28 and 35, and each branch has a control that fails exactly its own two.
+The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` — remain unentered.
+
 **Reasoned but NOT verified:**
 
 - `AndroidKeystoreCryptoBox`'s Keystore CALLS are executed by zero JVM tests; its key-resolution
@@ -573,9 +581,15 @@ and why. The image also installs build-tools 36.0.0, which AGP actually selects;
 carried only 35.0.0, and everyone working here relabelled a copy of the 35.0.0 directory to get
 past it — which worked, and meant nobody was building with the tools AGP chooses.
 
-Last cold verification, at `fc83fc9`: `clean assembleDebug` from an empty Gradle volume, with
-verification ON, **39 of 39 tasks executed** — BUILD SUCCESSFUL, zero verification failures across
-all 386 pinned components. The task count is quoted because the first attempt was not a cold build
+Last cold verification, at `d5848cd`: `clean testDebugUnitTest` from an empty Gradle volume, with
+verification ON — BUILD SUCCESSFUL in 4m31, the whole suite green from scratch rather than warm.
+The run before it covered `clean assembleDebug` the same way (39 of 39 tasks executed, zero
+verification failures across all 386 pinned components).
+
+One hazard learned the hard way: `verify-cold` mounts **this** repository, so running it in the
+background while doing foreground builds means two Gradle invocations sharing one `build/`
+directory, and the `clean` pulls it out from under the other one. A foreground build failed that
+way and the failure looked like a real one for several minutes. Run it alone. The task count is quoted because the first attempt was not a cold build
 at all: the Gradle volume was fresh but the project's `build/` directory was mounted warm, so 33 of
 37 tasks were up-to-date and nothing was really recompiled. `clean` is part of the claim. Every declared dependency is at its latest stable
 release; Robolectric's only newer version is a beta, which is not appropriate for the harness that
