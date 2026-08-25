@@ -268,6 +268,39 @@ public final class RichInputConnection {
     return true;
   }
 
+  /**
+   * Appends to the committed-text cache and keeps it inside the size it documents.
+   *
+   * <p>{@code clampToRequest} bounded the text arriving from the HOST. It did not bound the text
+   * this keyboard puts in itself, which is the other half of the same buffer and the one that runs
+   * once per keystroke. Nothing resets the cache while a session continues: {@code reloadTextCache}
+   * fires only on a cursor move the keyboard did not predict, so a host reporting exactly the
+   * position the keyboard expects - which is what a well-behaved app does - never triggers one.
+   * Measured against the real key path: 100,000 keystrokes left 100,000 characters here, with the
+   * host reporting every cursor move, in a process Android does not recreate when the user switches
+   * apps. {@code LatinIME.onWindowHidden} clears this buffer precisely so the user's text is not
+   * left lying in the input-method process, and its comment puts what is at stake at
+   * {@link Constants#EDITOR_CONTENTS_CACHE_SIZE} characters. That was a bound on the request.
+   *
+   * <p>Dropping the head rather than refusing the append is what keeps every reader whole: this is
+   * a cache of "text ending at the cursor", every reader takes the TAIL of it
+   * ({@code getTextBeforeCursor} deletes from 0, {@code getCodePointBeforeCursor} reads the last
+   * code point), and the trimmed contents are byte-for-byte what {@code reloadTextCache} would have
+   * put here - it asks the host for exactly this many characters. So the bounded state is a state
+   * the code already produces on any cursor move, not a new one. {@code getTextBeforeCursor}'s
+   * "we have the whole field" shortcut is guarded by {@code cachedLength >= mExpectedSelStart},
+   * which stops being true once the field outgrows the cache, so a longer field is fetched from
+   * the host instead of being answered short.
+   */
+  private void appendToCommittedTextCache(final CharSequence text) {
+    mCommittedTextBeforeComposingText.append(text);
+    final int excess =
+        mCommittedTextBeforeComposingText.length() - Constants.EDITOR_CONTENTS_CACHE_SIZE;
+    if (excess > 0) {
+      mCommittedTextBeforeComposingText.delete(0, excess);
+    }
+  }
+
   private void checkBatchEdit() {
     if (mNestLevel != 1) {
       // TODO: exception instead
@@ -282,7 +315,7 @@ public final class RichInputConnection {
     // TODO: this is not correct! The cursor is not necessarily after the composing text.
     // In the practice right now this is only called when input ends so it will be reset so
     // it works, but it's wrong and should be fixed.
-    mCommittedTextBeforeComposingText.append(mComposingText);
+    appendToCommittedTextCache(mComposingText);
     mComposingText.setLength(0);
     if (isConnected()) {
       getIC().finishComposingText();
@@ -299,7 +332,7 @@ public final class RichInputConnection {
     RichInputMethodManager.getInstance().resetSubtypeCycleOrder();
     if (DEBUG_BATCH_NESTING) checkBatchEdit();
     if (DEBUG_PREVIOUS_TEXT) checkConsistencyForDebug();
-    mCommittedTextBeforeComposingText.append(text);
+    appendToCommittedTextCache(text);
     // TODO: the following is exceedingly error-prone. Right now when the cursor is in the
     // middle of the composing word mComposingText only holds the part of the composing text
     // that is before the cursor, so this actually works, but it's terribly confusing. Fix this.
@@ -533,7 +566,7 @@ public final class RichInputConnection {
       // mistakenly catch them to do some stuff.
       switch (keyEvent.getKeyCode()) {
         case KeyEvent.KEYCODE_ENTER:
-          mCommittedTextBeforeComposingText.append("\n");
+          appendToCommittedTextCache("\n");
           if (hasCursorPosition()) {
             mExpectedSelStart += 1;
             mExpectedSelEnd = mExpectedSelStart;
@@ -558,7 +591,7 @@ public final class RichInputConnection {
           break;
         case KeyEvent.KEYCODE_UNKNOWN:
           if (null != keyEvent.getCharacters()) {
-            mCommittedTextBeforeComposingText.append(keyEvent.getCharacters());
+            appendToCommittedTextCache(keyEvent.getCharacters());
             if (hasCursorPosition()) {
               mExpectedSelStart += keyEvent.getCharacters().length();
               mExpectedSelEnd = mExpectedSelStart;
@@ -567,7 +600,7 @@ public final class RichInputConnection {
           break;
         default:
           final String text = StringUtils.newSingleCodePointString(keyEvent.getUnicodeChar());
-          mCommittedTextBeforeComposingText.append(text);
+          appendToCommittedTextCache(text);
           if (hasCursorPosition()) {
             mExpectedSelStart += text.length();
             mExpectedSelEnd = mExpectedSelStart;

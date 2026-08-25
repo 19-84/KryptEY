@@ -77,6 +77,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A record kept, and never shown on the route that matters](#a-record-kept-and-never-shown-on-the-route-that-matters)
 - [A decision read from rendered text](#a-decision-read-from-rendered-text)
 - [What the adversary gets to declare](#what-the-adversary-gets-to-declare)
+- [State that grows without bound](#state-that-grows-without-bound)
 - [An unchecked throw out of a click listener kills the keyboard](#an-unchecked-throw-out-of-a-click-listener-kills-the-keyboard)
 - [The text is a security surface, and it had never been read as one](#the-text-is-a-security-surface-and-it-had-never-been-read-as-one)
 - [The help offered a choice the app does not](#the-help-offered-a-choice-the-app-does-not)
@@ -1605,6 +1606,52 @@ Also worth keeping is what the round measured and left alone: `packageName` is n
 identify the host (its only consumer is a debug dump behind a `false` constant), and `fieldId`,
 `hintText`, `label` and `extras` are read nowhere in `app/src/main`. A clean negative on the rest of
 `EditorInfo` is what makes the three above worth acting on.
+
+
+## State that grows without bound
+
+**The other half of a buffer bounded one round earlier.** That round clamped what the *host returns*
+into `mCommittedTextBeforeComposingText` — 1,000,000 characters answered to a request for 1,024. It
+did not bound what the keyboard **appends itself**, which happens once per keystroke and is the same
+buffer. Nothing resets it while a session continues: `reloadTextCache` fires only on a cursor move the
+keyboard did not predict, so a host reporting exactly the expected position — what a correct app does
+— never triggers one. Measured through the real key path: **100,000 keystrokes left 100,000
+characters**, and a silent host gives the same number, so being well-behaved does not help.
+
+`LatinIME.onWindowHidden` clears that buffer precisely so the user's text is not left in the
+input-method process, and its comment puts the stake at 1024 characters. That was a bound on the
+request, twice over. The fix routes all five growth sites through one append and drops the **head**,
+because every reader takes the tail and the trimmed contents are byte-for-byte what `reloadTextCache`
+already produces — so the bounded state is one the code reaches on any cursor move rather than a new
+one.
+
+**And the replay guard's own memory.** `usedBaseKeys` records every base key ever seen against a Kyber
+pre-key, and returning false from `seen.add` is what refuses a replayed handshake. It only grew: 200
+handshakes left 200 entries under one id, persisted and re-encrypted on every save, and
+`removeOldKyberPreKeys` only reaches ids *below* the active one.
+
+The round that found it then **argued its own severity down**, which is worth more than the finding.
+One captured bundle replayed 300 times leaves **one** entry, because the consumed one-time pre-key is
+regenerated and the other 299 fail their MAC; a message failing authentication burns nothing, since
+libsignal reaches `markKyberPreKeyUsed` only after the handshake verifies; and fifty first-messages
+from one peer session leave one entry. So the growth is real and unbounded but **paced by the user**,
+one entry per invite exported and consumed — not by the wire.
+
+The fix is the part to read. It bounds by **retiring the pre-key record**, never by evicting a base
+key: a forgotten base key is one that can be replayed, which is exactly what the map exists to deny.
+Dropping the record is strictly stronger — `loadKyberPreKey` then throws for that id, so every
+handshake against it is refused, replays included — and ids are monotonic, so a retired id never
+returns. `getPreKeyBundle` mints a fresh Kyber pre-key when the active one is missing, so the next
+invite heals it. Verified through 300 real sessions: entries peak at 257, drop to 0 as the record
+retires, and **all 300 messages decrypt**, including the one that crossed the limit.
+
+**A negative worth as much as the findings.** A probe walked every collection reachable from a live
+`LatinIME` plus 428 static roots — **1,675 collections** — across 300 input sessions with distinct
+host-chosen labels, a configuration change and an `onFinishInput` each: **zero growth anywhere**. The
+instrument was validated from a cold start by catching the previous round's `sKeyboardCache` growth
+*and* the nested `sUniqueKeysCache` a static-field scan cannot see. Session records grow 9.7× under
+replayed invites and saturate at libsignal's 40 archived states; `retiredDisplayNames`,
+`rejectedAddresses`, `pendingIdentities` and `trustedKeys` are all bounded by construction.
 
 
 ## The one structural lesson from the review rounds

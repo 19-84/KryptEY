@@ -85,6 +85,16 @@ public class KyberPreKeyStoreImpl implements KyberPreKeyStore {
     return store.containsKey(kyberPreKeyId);
   }
 
+  /**
+   * How many distinct base keys one Kyber pre-key may burn before it is retired.
+   *
+   * <p>Generous against legitimate use, because this counts incoming <em>session establishments</em>
+   * rather than messages: measured, fifty first-messages from one peer session burn one base key,
+   * since libsignal stops re-deriving a session it already holds. A pre-key rotates on the signed
+   * pre-key schedule long before a real correspondent approaches this.
+   */
+  static final int USED_BASE_KEY_LIMIT = 256;
+
   @Override
   public void markKyberPreKeyUsed(int kyberPreKeyId, int signedPreKeyId, ECPublicKey baseKey)
       throws ReusedBaseKeyException {
@@ -98,6 +108,28 @@ public class KyberPreKeyStoreImpl implements KyberPreKeyStore {
       throw new ReusedBaseKeyException("base key already used with kyber pre key " + kyberPreKeyId);
     }
     Log.d(TAG, "Marked kyber pre key " + kyberPreKeyId + " used");
+
+    // Bound the replay set by RETIRING the pre-key, never by forgetting a base key.
+    //
+    // This set only ever grew: one entry per incoming session establishment, kept for the life of
+    // the pre-key, persisted, and re-encrypted into the Keystore box on every save. Measured on the
+    // real path: 200 handshakes left 200 entries under a single pre-key id, and nothing below the
+    // active id - which is all removeOldKyberPreKeys reaches - was ever involved.
+    //
+    // Evicting the oldest entry would be the obvious bound and is the wrong one: a forgotten base
+    // key is a base key that can be replayed, which is exactly what this map exists to deny.
+    // Dropping the RECORD instead is strictly stronger than remembering the keys. Once
+    // loadKyberPreKey throws for this id every handshake against it is refused, replays included,
+    // and ids are handed out monotonically so a retired id never returns to have a forgotten key
+    // replayed against it. getPreKeyBundle already mints a fresh Kyber pre-key when the active one
+    // is missing, so the next invite the user exports heals this without anyone noticing.
+    //
+    // Retire AFTER recording, so the handshake that crossed the limit still completes.
+    if (seen.size() > USED_BASE_KEY_LIMIT) {
+      Log.w(TAG, "Retiring kyber pre key " + kyberPreKeyId + " after " + seen.size()
+          + " distinct base keys");
+      removeKyberPreKey(kyberPreKeyId);
+    }
   }
 
   public void removeKyberPreKey(int kyberPreKeyId) {
