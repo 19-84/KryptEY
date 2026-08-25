@@ -51,6 +51,22 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
+    // The instrumentation tests must at least keep compiling.
+    //
+    // They are the only coverage of the real Android Keystore - the seal/open round trip against a
+    // hardware-backed key, the StrongBox ladder, CALLER_NONCE_PROHIBITED - and they cannot run here:
+    // there is no /dev/kvm and the host exposes no virtualisation extensions, so an emulator is not
+    // slow but impossible. That makes them uniquely easy to rot. Nothing compiles androidTest during
+    // an ordinary test run, so a change to Account or StorageHelper could break them and the suite
+    // would stay green for months.
+    //
+    // Making the unit-test task depend on their compilation costs a few seconds and turns silent rot
+    // into a build failure. It does NOT make them run, and nothing here should be read as claiming
+    // they have.
+    tasks.matching { it.name == 'testDebugUnitTest' }.configureEach {
+        dependsOn 'compileDebugAndroidTestJavaWithJavac'
+    }
+
     testOptions {
         unitTests {
             // Required by Robolectric. Deliberately does NOT set returnDefaultValues: unmocked

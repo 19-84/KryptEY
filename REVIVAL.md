@@ -425,7 +425,12 @@ The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` �
 
 - `AndroidKeystoreCryptoBox`'s Keystore CALLS are executed by zero JVM tests; its key-resolution
   DECISIONS now are (`KeyResolutionTest`, 10 tests, via a `KeystoreOps` seam). 11 instrumentation
-  tests are written and compile, but need hardware or a KVM runner.
+  tests are written and compile, but need hardware or a KVM runner. **"And compile" is now
+  enforced**: nothing used to build `androidTest` during an ordinary run, so the only coverage of the
+  real Keystore could have been broken by a rename and stayed broken silently for months — it is the
+  code most exposed to that, precisely because it cannot run here. `testDebugUnitTest` now depends on
+  compiling it, which costs a few seconds and turns silent rot into a build failure. It does not make
+  them run, and nothing here should be read as claiming it does.
 
   **Not** the `CALLER_NONCE_PROHIBITED` fix, which this entry went on calling "sound in principle and
   untested in fact" long after `CallerNonceProhibitedTest` had verified it. That test registers a JCE
