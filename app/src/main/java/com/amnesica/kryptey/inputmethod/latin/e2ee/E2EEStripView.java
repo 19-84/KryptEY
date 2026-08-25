@@ -831,7 +831,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mAddContactCancelButton != null) {
       mAddContactCancelButton.setOnClickListener(v -> {
         showOnlyUIView(UIView.MAIN_VIEW);
-        setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
+        // Cancelling neither chooses nor un-chooses anyone, so say what is actually chosen - and
+        // nothing at all over a standing warning. The flat "No contact chosen" here was wrong
+        // whenever a contact WAS chosen, and it erased every warning in the app for the price of
+        // one post: declining an unexpected invite is the correct response to a suspicious one,
+        // and it was the action that cleared the suspicion from the screen.
+        showChosenContactInMainInfoField();
+        // The typed name used to survive. The next invite's screen then opened pre-filled with it,
+        // so a user who declines one invite and accepts the next without re-reading the field
+        // names a new address after the old contact.
+        resetAddContactInputTextFields();
         mE2EEStrip.clearClipboard();
       });
     }

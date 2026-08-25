@@ -556,4 +556,41 @@ public class StripGuardsTest {
     assertEquals("the warning must survive the user pressing decrypt on the attacker's payload",
         warned, infoField().getText().toString());
   }
+
+  private android.widget.EditText firstNameField() {
+    return strip.findViewById(R.id.e2ee_add_contact_first_name_input_field);
+  }
+
+  /**
+   * Declining an invite must not be what clears the warning about it.
+   *
+   * <p>Cancel wrote "No contact chosen" straight onto the banner. Declining an unexpected invite is
+   * the correct response to a suspicious one, so the action a careful user takes was the action
+   * that erased the reason they took it - and the message was wrong on its own terms whenever a
+   * contact was in fact chosen.
+   */
+  @Test
+  public void cancellingAnInviteDoesNotEraseAStandingWarning() {
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue(strip.warnIfIdentityChanged(bob()));
+    final String warned = infoField().getText().toString();
+
+    assertTrue(strip.findViewById(R.id.e2ee_add_contact_cancel_button).performClick());
+
+    assertEquals("declining the invite must leave the warning about it on screen", warned,
+        infoField().getText().toString());
+  }
+
+  /** And the name typed for a declined invite must not be waiting on the next one's screen. */
+  @Test
+  public void cancellingAnInviteForgetsTheNameThatWasTypedForIt() {
+    firstNameField().setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+
+    assertTrue(strip.findViewById(R.id.e2ee_add_contact_cancel_button).performClick());
+
+    assertEquals("the next invite's screen must not open pre-filled with the last one's name",
+        "", firstNameField().getText().toString());
+  }
 }
