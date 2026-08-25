@@ -764,6 +764,28 @@ So this stays a review-caught defect rather than a test-caught one. The honest m
 claims which *are* checkable have been turned into assertions — the fold rule, the layout invariant,
 the session version — so the comments increasingly point at tests rather than restate them.
 
+**One half of it turned out to be testable after all, and the split is worth naming.** A comment
+explaining *why* is prose and stays unverifiable — which is how a comment came to explain contact
+deletion by naming `hasExactlyOneContactNamed`, a method whose only occurrence anywhere in the
+codebase was that comment. Nothing mechanical could have caught it. But a `{@link}` is not prose: it
+is a machine-checkable claim that a named thing exists, and this build never checked one, because
+javadoc is not run. A link to a deleted method compiles, ships, and reads to the next author as a
+live cross-reference.
+
+`JavadocLinksResolveTest` resolves all 56 in the protocol layer and the strip — against declared
+types, members of the file itself, and the file's own imports. **None were broken**, which is worth
+stating plainly: the contribution is the guard, not a defect. Scoped deliberately, and not extended
+to the AOSP-inherited packages, whose links point at platform internals (`SoftInputWindow`,
+`SuggestionStripView`) that were already dead when the keyboard was forked; adopting those would mean
+a large allowlist saying nothing about this project's drift.
+
+It also caught its author twice before it caught anything else, both times through the vacuity rule
+this section already recommends. The file-count assertion fired on a threshold I had asserted without
+counting — "over 100 links" against an actual 56 — and its only reported finding was its own parser
+taking javadoc's line-leading `*` as part of a link that wrapped across two lines. A guard that has
+never failed for a real reason is worth less than one that has failed for a wrong one and been
+corrected.
+
 ## One record keyed three ways, and what each fix cost
 
 Worth following end to end, because it is the clearest instance of the pattern below: three rounds,
