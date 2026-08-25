@@ -12,7 +12,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -37,10 +39,31 @@ import java.util.stream.Stream;
  */
 public class ReleaseManifestHasNoTestScaffoldingTest {
 
-  /** Anything named here is scaffolding: useful in a debug build, unacceptable in a shipped one. */
-  private static final String[] SCAFFOLDING = {
-      "EditableFieldActivity",
-  };
+  /**
+   * The build script, which is where the mechanism this test relies on actually lives.
+   *
+   * <p>Named as a literal so {@code EveryFileATestReadsIsATaskInputTest} can see that it is read;
+   * it is already a declared input.
+   */
+  private static final String BUILD_SCRIPT = "build.gradle";
+
+  /**
+   * Scaffolding is whatever is in {@code src/debug/java}, derived rather than listed.
+   *
+   * <p>A hand-maintained array was the first version and it had the defect it was meant to prevent:
+   * it only checked list-to-directory, never directory-to-list. A second scaffolding class added
+   * later would never be added to the array, and moving it into {@code src/main} a year on would
+   * ship it with every test still green. Deriving the list means a new file under {@code src/debug}
+   * is covered the moment it exists, without anyone remembering anything.
+   */
+  private static Set<String> scaffolding() throws IOException {
+    final Set<String> names = new LinkedHashSet<>();
+    for (final Path file : filesUnder(at(DEBUG_SOURCES))) {
+      final String name = file.getFileName().toString();
+      if (name.endsWith(".java")) names.add(name.substring(0, name.length() - ".java".length()));
+    }
+    return names;
+  }
 
   /**
    * Paths are written as literals rather than assembled with {@code resolve}, deliberately.
@@ -77,6 +100,11 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
    */
   @Test
   public void noscaffoldingIsDeclaredOutsideTheDebugSourceSet() throws IOException {
+    final Set<String> SCAFFOLDING = scaffolding();
+    assertTrue("nothing under " + DEBUG_SOURCES + " to protect. Either the scaffolding was "
+        + "deleted - in which case delete this test too rather than leaving it to imply a "
+        + "guard - or the path is wrong and this test is checking nothing.",
+        !SCAFFOLDING.isEmpty());
     final List<String> offenders = new ArrayList<>();
     int filesScanned = 0;
 
@@ -84,7 +112,13 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
     // is no src/release in this project, so scanning for one would assert nothing while looking
     // like it asserted something.
     final List<Path> candidates = new ArrayList<>(filesUnder(at(MAIN_SOURCES)));
-    candidates.add(at(MAIN_MANIFEST));
+    final Path mainManifest = at(MAIN_MANIFEST);
+    // Asserted separately from filesScanned. There are ~157 files under src/main/java, so the
+    // vacuity guard below is satisfied whether or not the manifest was ever opened - renaming or
+    // relocating it would silently drop it from the scan while the count stayed reassuring.
+    assertTrue(MAIN_MANIFEST + " must exist and be scanned; a manifest is where a component would "
+        + "actually be declared", Files.exists(mainManifest));
+    candidates.add(mainManifest);
 
     for (final Path file : candidates) {
       if (!Files.exists(file)) continue;
@@ -116,6 +150,7 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
     assertTrue(DEBUG_SOURCES + " must exist; this is where the scaffolding is kept",
         Files.isDirectory(debugSources));
 
+    final Set<String> SCAFFOLDING = scaffolding();
     final List<Path> files = filesUnder(debugSources);
     for (final String scaffold : SCAFFOLDING) {
       boolean found = false;
@@ -126,6 +161,20 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
           + ". Either it moved - in which case the other test in this file is now checking "
           + "nothing - or it was deleted and should be removed from SCAFFOLDING.", found);
     }
+
+    // The mechanism itself. Everything above checks WHERE the scaffolding sits; none of it would
+    // notice the build script being told to compile that directory into the shipped variant, which
+    // reaches the same end with every other assertion here still green.
+    final Path script = at(BUILD_SCRIPT);
+    assertTrue("cannot find " + BUILD_SCRIPT, Files.exists(script));
+    final String buildScript = new String(Files.readAllBytes(script), StandardCharsets.UTF_8);
+    assertFalse("the build script now declares custom sourceSets. src/debug keeps the scaffolding "
+        + "out of a release build only for as long as nobody adds it to another variant's source "
+        + "set - check what this does before deleting this assertion.",
+        buildScript.contains("sourceSets"));
+    assertFalse("the build script now sets testBuildType. If instrumentation tests are built "
+        + "against the release variant, src/debug is no longer what separates scaffolding from "
+        + "shipped code.", buildScript.contains("testBuildType"));
 
     final Path manifest = at(DEBUG_MANIFEST);
     assertTrue("the debug manifest must declare the scaffolding, or it cannot be launched",

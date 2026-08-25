@@ -64,6 +64,16 @@ deadline=$((SECONDS + 600))
 until docker exec "$NAME" $ADB shell service check input_method 2>/dev/null | grep -q ": found"; do
   if [ $SECONDS -ge $deadline ]; then
     echo "!! the input-method service never registered; the system server may have restarted"
+    docker exec "$NAME" tail -30 /tmp/emu.log || true
+    exit 1
+  fi
+  # Same check the boot loop makes, for the same reason: 2>/dev/null on the line above discards
+  # docker's own errors and the pipeline's status is grep's, so a container that has died is
+  # indistinguishable from a service that is merely slow - and this loop would spend its whole
+  # 600s before printing a confident, wrong diagnosis.
+  if ! docker exec "$NAME" pgrep -f qemu-system > /dev/null 2>&1; then
+    echo "!! the emulator process is gone while waiting for the input-method service. Its log:"
+    docker exec "$NAME" tail -30 /tmp/emu.log || true
     exit 1
   fi
   sleep 10
@@ -73,6 +83,14 @@ done
 # gets focus never establishes an input connection - so the keyboard is never bound and the
 # failure reads as a broken keyboard rather than a starved emulator.
 docker exec "$NAME" $ADB shell settings put global hide_error_dialogs 1 > /dev/null 2>&1 || true
+# Read back rather than hope. This is the only mitigation for the failure that has already cost
+# this branch two wrong conclusions, and "best effort, silently" is not good enough for it: the
+# settings provider can still be coming up seconds after the input-method service registers.
+if [ "$(docker exec "$NAME" $ADB shell settings get global hide_error_dialogs | tr -d '\r')" != "1" ]; then
+  echo "!! could not suppress ANR dialogs. An ANR takes window focus, and a test whose field never"
+  echo "!! gets focus reports the keyboard as unbindable. Refusing to run a suite that would lie."
+  exit 1
+fi
 
 # x86_64 is not a shipped ABI, so it has to be asked for explicitly - see the splits block.
 echo "==> building the x86_64 APKs"
@@ -98,9 +116,18 @@ echo "$out"
 
 # am instrument exits 0 whether the tests passed or not, so the result has to be read out of
 # the stream rather than taken from the exit status.
-if echo "$out" | grep -q '^OK ('; then
+# "OK (0 tests)" is also an OK line. A filter that matches nothing, or a test APK that contributed
+# no runnable tests, would otherwise be reported as a pass - which is the vacuous-green shape this
+# repo has had to unpick more than once.
+if echo "$out" | grep -qE '^OK \([1-9][0-9]* tests?\)'; then
   echo "==> PASSED"
 else
   echo "==> FAILED"
+  # The container is about to be removed by the EXIT trap, taking with it the only copy of what
+  # the device was doing - and re-running costs a full cold boot.
+  echo "==> capturing device state before teardown"
+  docker exec "$NAME" $ADB logcat -d -b crash 2>/dev/null | tail -60 || true
+  docker exec "$NAME" $ADB shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' || true
+  docker exec "$NAME" $ADB shell dumpsys input_method 2>/dev/null | grep -E 'mCurId|mCurMethodId|mBoundToMethod' || true
   exit 1
 fi

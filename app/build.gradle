@@ -90,15 +90,17 @@ android {
     // The instrumentation tests must at least keep compiling.
     //
     // They are the only coverage of the real Android Keystore - the seal/open round trip against a
-    // hardware-backed key, the StrongBox ladder, CALLER_NONCE_PROHIBITED - and they cannot run here:
-    // there is no /dev/kvm and the host exposes no virtualisation extensions, so an emulator is not
-    // slow but impossible. That makes them uniquely easy to rot. Nothing compiles androidTest during
-    // an ordinary test run, so a change to Account or StorageHelper could break them and the suite
-    // would stay green for months.
+    // hardware-backed key, the StrongBox ladder, CALLER_NONCE_PROHIBITED - and of whether the
+    // platform will bind a service declared exported="false" as an input method.
     //
-    // Making the unit-test task depend on their compilation costs a few seconds and turns silent rot
-    // into a build failure. It does NOT make them run, and nothing here should be read as claiming
-    // they have.
+    // This comment used to say they could not run here at all: no /dev/kvm, no virtualisation
+    // extensions, "not slow but impossible". That was wrong - KVM is an accelerator, and QEMU
+    // without one emulates the guest in software. tools/test-on-emulator runs them.
+    //
+    // They still do not run in THIS task, which is why the dependency below exists: an emulator run
+    // takes ten minutes and nobody does it on every edit, so a change to Account or StorageHelper
+    // could break them and the JVM suite would stay green for months. Making testDebugUnitTest
+    // depend on their compilation costs a few seconds and turns silent rot into a build failure.
     tasks.matching { it.name == 'testDebugUnitTest' }.configureEach {
         dependsOn 'compileDebugAndroidTestJavaWithJavac'
         // ReleasePackagingTest reads this build script at run time to check that libsignal's

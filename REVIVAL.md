@@ -39,7 +39,17 @@ and release both assemble; dependency verification pins 386 artifacts by SHA-256
 
 ## How to read this
 
-Thirty sections, written in the order things were found rather than by subject, so the
+**Commit hashes quoted in this document no longer resolve.** Every `verified at <hash>` reference
+here and in `tools/README.md` points into history that was rewritten: the branch's 237 commits were
+re-authored to strip a personal email address that should never have been published, which changed
+every SHA after the base. The content, messages and order are byte-identical — `git log` reads the
+same — but the identifiers do not. There is no recovered old-to-new mapping, so rather than invent
+one, the hashes are left as markers of *when* something was checked relative to the rest of the
+document, and anything that needs re-verifying should be re-verified rather than looked up. It is a
+self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
+otherwise conclude the claim was fabricated.
+
+Thirty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -57,7 +67,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Phase 3's parser, swept and clean](#phase-3s-parser-swept-and-clean)
 - [Phase 3's decoder, swept and clean](#phase-3s-decoder-swept-and-clean)
 - [Phase 4's trust predicates, swept and clean](#phase-4s-trust-predicates-swept-and-clean)
-- [The typing-redirect seam, swept and clean — and two ways a sweep lies](#the-typing-redirect-seam-swept-and-clean-and-two-ways-a-sweep-lies)
+- [The typing-redirect seam, swept and clean — and two ways a sweep lies](#the-typing-redirect-seam-swept-and-clean--and-two-ways-a-sweep-lies)
 - [Where the sweep programme ends](#where-the-sweep-programme-ends)
 - [The instrumentation tests run now, on an emulator with no hardware acceleration](#the-instrumentation-tests-run-now-on-an-emulator-with-no-hardware-acceleration)
 - [What the double ratchet gives this app, measured](#what-the-double-ratchet-gives-this-app-measured)
@@ -524,12 +534,13 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
   tests are no longer only compiled — they run, and pass, on an emulator (see below). **"And compile" is now
   enforced**: nothing used to build `androidTest` during an ordinary run, so the only coverage of the
   real Keystore could have been broken by a rename and stayed broken silently for months — it is the
-  code most exposed to that, precisely because it cannot run here. `testDebugUnitTest` now depends on
-  compiling it, which costs a few seconds and turns silent rot into a build failure. It does not make
-  them run, and nothing here should be read as claiming it does.
+  code most exposed to that, because an emulator run costs ten minutes and nobody does one on every
+  edit. `testDebugUnitTest` now depends on compiling it, which costs a few seconds and turns silent
+  rot into a build failure. It does not make them run in that task — `tools/test-on-emulator` does
+  that — and nothing here should be read as claiming otherwise.
 
-  **The instrumentation tests have now been read, which is the only review available for code
-  nothing here can execute.** All eleven carry real assertions — none is a compiling shell — and they
+  **The instrumentation tests were read by hand before anything could run them, which was then
+  the only review available.** All eleven of the keystore tests carry real assertions — none is a compiling shell — and they
   are order-independent on the resource that matters: every one operates on the same Keystore alias
   and several destroy or regenerate the master key mid-test, but `@Before` and `@After` both reset
   it, so each starts from a known state whatever order the runner picks. That is the same question
@@ -759,7 +770,8 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
 For most of this branch's life the 11 `AndroidKeystoreCryptoBoxTest` methods were the one piece of
 the project nothing could execute. They were compiled (a build failure now guards against silent
 rot) and they were read by hand, which is the weakest form of review there is. They have now been
-run: **11 tests, 0 failures, on Android 28 x86_64.**
+run: **14 tests, 0 failures, on Android 28 x86_64** — the original 11 keystore tests, plus three
+added since to settle the `exported="false"` question below.
 
 The reason they could not run before was a wrong inference, not a missing capability. This machine
 has no `/dev/kvm`, and `/proc/cpuinfo` advertises no `vmx` or `svm` — nested virtualisation is not
@@ -843,9 +855,9 @@ ask what the device was actually doing, not to write down what the failure appea
 
 **What this still is not.** An emulator is not a phone. There is no StrongBox on it, so the top rung
 of the key ladder is exercised only in the sense that it is correctly refused and stepped down from;
-what a StrongBox device does still has no test here. The suite is 11 tests about the crypto box, not
-about the keyboard — nothing here drives the IME through a real messenger, and the autofill question
-remains open. What changed is that the category "cannot be run in this environment" is smaller than
+what a StrongBox device does still has no test here. Eleven of the suite's fourteen tests are about
+the crypto box; the other three bind the keyboard but never type into anything. Nothing here drives
+the IME through a real messenger, and the autofill question remains open. What changed is that the category "cannot be run in this environment" is smaller than
 it was, and it was worth an hour to find out that it was never as large as the document said.
 
 ## The release APK built here is not the one users would get
@@ -2162,7 +2174,9 @@ Recorded so the next round does not spend itself re-deriving them.
   someone adds a ninth, which is not worth a file.
 
 - **The numbers in this document**, audited against the tree: 386 pinned components, `KeyResolutionTest`
-  at 10 tests, 11 instrumentation `@Test` methods, the 4096-character invite threshold, and the
+  at 10 tests, the instrumentation `@Test` count (11 when audited, 14 since — the count is dated,
+  and `InstrumentationTestsCleanUpTheKeystoreTest` now floors it), the 4096-character invite
+  threshold, and the
   strip's six screens all check out. The test count did not, and is now dated rather than absolute.
   The 2484-byte bundle figure has now been re-measured too, and pinned: `PreKeyBundleSizeTest`
   builds ten bundles, asserts they are all the same size, asserts that size is 2484, and asserts the
@@ -2516,7 +2530,8 @@ fail.*
   buttons, which is asserted separately.
 
   What remains true is narrower and worth keeping: `destroyMasterKey()` still has no production
-  caller — only the instrumentation tests, which cannot run here — so a user whose Keystore key is
+  caller — only the instrumentation tests, which run on an emulator rather than in this task — so a
+  user whose Keystore key is
   gone is correctly *told*, and has no way to act on it except clearing app data. Telling someone
   their identity is unrecoverable without offering the one action that recovers the app is a product
   gap rather than a security one, and it is the last thing on this list that a user would meet.

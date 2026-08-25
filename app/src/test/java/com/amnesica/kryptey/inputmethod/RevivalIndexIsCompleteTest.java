@@ -18,7 +18,7 @@ import java.util.Set;
 /**
  * REVIVAL.md's index must name every section, and only sections that exist.
  *
- * <p>The document is 1800 lines in 29 sections, written in the order things were found rather than
+ * <p>The document is ~2550 lines in 36 sections, written in the order things were found rather than
  * by subject, so its sweeps are scattered and its deferred list sits between two of them. An index
  * is the fix for that — and a hand-maintained index of a document that drifts is itself a thing that
  * drifts. This branch has now corrected a stale count in that file's header twice, a coverage claim

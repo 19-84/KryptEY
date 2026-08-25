@@ -16,13 +16,16 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The instrumentation tests share one device-global resource, and nothing here can run them.
+ * The instrumentation tests share one device-global resource, and this task cannot run them.
  *
  * <p>They are the only coverage of the real Android Keystore — a JVM key and a Keystore key have
- * materially different semantics, which is how one production-only failure hid in the first place —
- * and they need hardware or a KVM runner, so on this branch they compile and never execute. The
- * build already enforces the compiling half: {@code testDebugUnitTest} depends on compiling
- * {@code androidTest}, so a rename cannot rot them silently.
+ * materially different semantics, which is how one production-only failure hid in the first place.
+ * This javadoc used to say they "compile and never execute"; they execute now, under
+ * {@code tools/test-on-emulator}, on a software-emulated device. What remains true is that they do
+ * not execute in <em>this</em> task: an emulator run costs ten minutes and nobody does it on every
+ * edit. The build enforces the compiling half — {@code testDebugUnitTest} depends on compiling
+ * {@code androidTest}, so a rename cannot rot them silently — and this file enforces the property
+ * a JVM run still cannot observe.
  *
  * <p>This is the half compilation cannot reach. Every one of those tests operates on the same
  * Keystore alias, and several deliberately destroy or regenerate the master key mid-test. They are
@@ -113,8 +116,10 @@ public class InstrumentationTestsCleanUpTheKeystoreTest {
       }
     }
 
-    assertTrue("expected the 11 instrumentation tests this branch carries; found " + tests,
-        tests >= 11);
+    // Raised from 11 when ImeBindsDespiteExportedFalseTest added three. A floor that lags the
+    // real count is a guard that lets you delete the difference for free.
+    assertTrue("expected the 14 instrumentation tests this branch carries; found " + tests,
+        tests >= 14);
     assertTrue("the instrumentation tests must still assert something - they compile whether or not "
             + "they do, and nothing here runs them. Found " + assertions + " assertions across "
             + tests + " tests", assertions >= tests);

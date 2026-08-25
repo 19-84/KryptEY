@@ -33,9 +33,10 @@ tools/build-in-docker testDebugUnitTest
   fails the build if that happens, so this image is what makes `assembleRelease` produce something
   distributable.
 
-  **The tag moved from `:36` to `:37` when the NDK was added.** An image built under the old tag has
-  no NDK, and reusing it now fails the strip gate - which looks like a broken build rather than a
-  stale image. Rebuild rather than passing `-Pkryptey.allowUnstrippedNatives=true`; that flag is a
+  **The tag moves whenever the image changes** - `:36` to `:37` when the NDK was added, and `:38`
+  today, which is what `tools/build-in-docker`, `tools/verify-cold`, `tools/emulator/Dockerfile` and
+  the top of this file all reference. An image built under an older tag has no NDK, and reusing it
+  fails the strip gate - which looks like a broken build rather than a stale image. Rebuild rather than passing `-Pkryptey.allowUnstrippedNatives=true`; that flag is a
   statement that the artifact is not for distribution.
 
 ## Dependency verification
@@ -72,9 +73,10 @@ entry added there is a finding nobody will look at again.
 
 ## Instrumentation tests
 
-`tools/test-on-emulator` runs them. There are 11, they cover the Android Keystore, and until
-recently they had never executed anywhere - the Keystore has no JVM equivalent, so Robolectric
-cannot reach them.
+`tools/test-on-emulator` runs them. There are 14: eleven cover the Android Keystore, which has no
+JVM equivalent because there is no TEE behind a desktop provider, and three cover whether the
+platform will bind a service declared `exported="false"` as an input method. Until recently none of
+them had ever executed anywhere.
 
     tools/test-on-emulator
 
@@ -98,5 +100,7 @@ Two things are easy to trip over:
 
 StrongBox. The emulator has none, so the top rung of the key ladder is only ever exercised as a
 refusal that gets stepped down from. What a StrongBox-backed device actually does remains untested.
-Nothing here drives the keyboard through a real messenger either - the suite is about the crypto
-box, not the IME.
+
+Nothing here drives the keyboard through a real messenger either. The three IME tests establish that
+the system binds the keyboard and opens an input connection to a field; no test types a message,
+encrypts it, and reads it back out of another app.
