@@ -699,9 +699,22 @@ Two consequences worth separating, because they are not the same kind of thing:
   does — which is a reproducibility problem for a project whose README points at F-Droid, and it
   means no size or content claim about "the release APK" is meaningful without naming the host.
 
-Not fixed here: installing an NDK is a build-image change of a different order from anything else on
-this branch, and the honest position is that this environment cannot produce a representative release
-artifact. Recorded so the next person measuring the APK knows which half of the number is theirs.
+Installing an NDK is a build-image change of a different order from anything else on this branch, so
+that is still not done. What **is** done is that the silence is gone: `verifyReleaseNativesStripped`
+runs after `assembleRelease` and fails if a packaged `.so` still carries DWARF sections, naming each
+file and its size.
+
+`-Pkryptey.allowUnstrippedNatives=true` allows it and says so loudly in the log — which is what this
+container needs to pass, and stating that explicitly is the point. The gate exists because the
+warning AGP already prints was not enough: it printed on every release build here, the build reported
+success, and a **settled** entry in this document then accepted 115 MB as "the cost of PQXDH" on a
+premise nobody had measured. A warning that does not stop anything is indistinguishable from no
+warning at all.
+
+Checked in both directions rather than only the failing one: with the marker changed to a string no
+ELF contains, the gate passes — so it is the debug sections driving the result, not an unconditional
+failure, which is the evidence that it will go green on a properly stripped artifact rather than
+having to be disabled.
 
 
 ## Verifying a build honestly

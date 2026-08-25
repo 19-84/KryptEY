@@ -144,3 +144,73 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
     androidTestImplementation 'androidx.test:core:1.7.0'
 }
+
+// ---------------------------------------------------------------------------------------------
+// Release artifacts must not carry native debug symbols.
+//
+// This is a gate rather than a warning because AGP already warns and nobody sees it. Its
+// stripReleaseDebugSymbols task prints "Unable to strip the following libraries, packaging them as
+// they are" and the build still reports success, so a host with no NDK silently produces an APK
+// roughly seven times the size of one built where stripping works - 64.2 MB of DWARF against a
+// .text of 4.7 MB, measured. The same source then yields materially different artifacts depending
+// on the machine, which is a reproducibility problem for a project distributed through F-Droid.
+//
+// It also cost a decision. REVIVAL.md carried "APK size accepted at 115 MB ... that is the cost of
+// PQXDH" as SETTLED, on a premise nobody had measured; the real cost is around 10 MB. A settled
+// entry is one nobody revisits, so the silence is what made it durable.
+//
+// Detection is deliberately crude: section-name strings such as .debug_info appear verbatim in a
+// stripped-of-nothing ELF and are absent once llvm-strip has run. That is enough to tell the two
+// cases apart without parsing section headers in Groovy, and a false positive here is a build that
+// asks a question rather than one that ships something wrong.
+//
+// Environments without an NDK - this project's own build container among them - can pass
+// -Pkryptey.allowUnstrippedNatives=true. That is an explicit statement that the artifact is not
+// shippable, which is the point: the flag makes the limitation loud instead of invisible.
+tasks.register('verifyReleaseNativesStripped') {
+    description = 'Fails if a release APK carries native libraries with DWARF debug sections.'
+    group = 'verification'
+    doLast {
+        def apks = fileTree("$buildDir/outputs/apk/release") { include '**/*.apk' }.files
+        if (apks.isEmpty()) {
+            throw new GradleException('no release APK found; run assembleRelease first')
+        }
+        def offenders = []
+        apks.each { apk ->
+            new java.util.zip.ZipFile(apk).withCloseable { zip ->
+                zip.entries().findAll { it.name.endsWith('.so') }.each { entry ->
+                    def bytes = zip.getInputStream(entry).bytes
+                    def marker = '.debug_info'.getBytes('US-ASCII')
+                    boolean found = false
+                    for (int i = 0; i + marker.length <= bytes.length && !found; i++) {
+                        boolean match = true
+                        for (int j = 0; j < marker.length && match; j++) {
+                            if (bytes[i + j] != marker[j]) match = false
+                        }
+                        if (match) found = true
+                    }
+                    if (found) {
+                        offenders << "${apk.name}: ${entry.name} (${(long) (entry.size / 1e6)} MB)"
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            def message = 'release APKs carry unstripped native libraries:\n  '\
+                + offenders.join('\n  ')\
+                + '\n\nAGP could not strip them - its stripReleaseDebugSymbols task warns and\n'\
+                + 'continues, so this would otherwise ship silently. Install the NDK so stripping\n'\
+                + 'works, or pass -Pkryptey.allowUnstrippedNatives=true to state deliberately that\n'\
+                + 'this artifact is not for distribution.'
+            if (project.hasProperty('kryptey.allowUnstrippedNatives')) {
+                logger.lifecycle("verifyReleaseNativesStripped: ALLOWED BY FLAG\n" + message)
+            } else {
+                throw new GradleException(message)
+            }
+        }
+    }
+}
+
+tasks.matching { it.name == 'assembleRelease' }.configureEach {
+    finalizedBy 'verifyReleaseNativesStripped'
+}
