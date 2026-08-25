@@ -658,6 +658,39 @@ at all: the Gradle volume was fresh but the project's `build/` directory was mou
 release; Robolectric's only newer version is a beta, which is not appropriate for the harness that
 decides whether the security tests measure anything.
 
+## The text is a security surface, and it had never been read as one
+
+Every control in this trust model ends at a sentence. There is no server, no attestation and no
+second channel the app controls: the app refuses a substituted key, records the change, and then
+*tells the user to go and compare a number*. If that sentence is incomplete, the control is
+incomplete, and nothing in the code can tell.
+
+Two were, and neither was false:
+
+- The verify screen — the screen where the comparison actually happens — said "compare the numbers
+  above with their device". A user satisfies that **exactly** by pasting the numbers into the chat
+  they are already in. That is not a check: whatever could substitute the keys could substitute the
+  numbers being compared. Every banner in the app already said "by voice"; the one place a user
+  performs the action did not.
+- The help said the same, and never mentioned that an invite can be handed over out of band at all —
+  which is the only defence against a hostile messenger at first contact, since trust-on-first-use
+  has no earlier key to notice a change from.
+
+The class is worth naming because it is not "wrong text". It is text a careful user can follow to
+the letter and end up unprotected, which is the same shape as a warning banner that is on screen but
+erasable, or a guard that is present but never reached. The wording is the last link and it was the
+only one nobody had reviewed.
+
+Two related rules fall out, both now pinned by tests:
+
+- **An instruction needs its reason.** "Compare by voice" without "because anything that can change
+  your keys can change the numbers you send each other" is an arbitrary-looking rule, and
+  arbitrary-looking rules are what get dropped as clutter by the next person editing the string.
+- **Text must not claim what the app cannot know.** KryptEY cannot tell whether a bundle travelled
+  out of band — the exported bytes are identical either way — so the help says so in the same breath
+  as recommending it. Provenance was removed as a source of trust in the code once already; wording
+  is where it would come back.
+
 ## The comment-drift problem, and why it has no test
 
 Nine review rounds found a security comment the code contradicts, several written in the very commit
