@@ -1424,6 +1424,28 @@ the digits are blanked and when a new number is loaded. It has no test: under Ro
 un-cancelled animator delivers no further frames once the looper is idled past the view change, so
 the late repaint never happens and a test of it passes either way.
 
+**A manifest question I could not answer, recorded rather than guessed at.** The IME service is
+declared `android:exported="false"` alongside `android:permission="android.permission.BIND_INPUT_METHOD"`.
+The system's InputMethodManagerService runs in a different UID, so on the plain reading of `exported`
+it could not bind the service at all and the keyboard would never appear in the input-method list —
+which would be a total failure, not a subtle one.
+
+Almost certainly it is fine: the attribute has been there since the initial commit, predating this
+revival entirely, and the app is published on F-Droid and used. The platform gates IME binding on the
+`BIND_INPUT_METHOD` permission and plausibly treats these services specially. But "the app exists, so
+it must work" is exactly the reasoning this branch has spent its time dismantling, and nothing here
+can run an IME.
+
+So it is written down as a **question**, not a finding: on a device, does the keyboard appear in
+Settings → Languages & input, and does setting `exported="true"` change anything? One minute of
+hardware answers it. It is listed because a reader auditing the manifest will have the same doubt,
+and the useful thing to leave them is the doubt plus its resolution cost, rather than silence or a
+claim I cannot support.
+
+*Also checked while there, and clean:* the app declares exactly one permission, `VIBRATE`, which is
+what the README lists; the boot receiver is `exported="false"`; and the IME service is the only
+component carrying a `BIND_*` permission.
+
 What IS testable is the cancel itself, and asserting that instead found the fix incomplete: only
 `surrenderState` blanked the digits, so dismissing the keyboard left the animators running — for a
 second of painting into hidden views, and for as long as they ran, holding the whole strip alive
