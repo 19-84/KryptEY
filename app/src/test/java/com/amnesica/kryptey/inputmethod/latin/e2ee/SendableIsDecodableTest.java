@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
 import android.content.Context;
@@ -373,5 +374,77 @@ public class SendableIsDecodableTest {
           expected instanceof IOException);
     }
     assertEquals("a null encoder left the plaintext in the chat log", before, chatLogSize());
+  }
+
+  private static String asciiOfLength(final int length) {
+    final StringBuilder builder = new StringBuilder(length);
+    while (builder.length() < length) builder.append('a');
+    return builder.toString();
+  }
+
+  /**
+   * The invite cap refuses, and refuses at the right byte.
+   *
+   * <p>Measured by mutation, both halves of this were open: deleting the {@code throw} outright, so
+   * an oversized invite is emitted with no refusal at all, survived the whole suite - and so did
+   * moving the boundary by one. The message limit is the only thing standing between the send path
+   * and a bundle the recipient cannot decode, which is a defect this branch has already had once,
+   * in a different form ("messages that send but cannot be decoded").
+   *
+   * <p>Both directions are asserted together because a cap tested only from above is satisfied by
+   * refusing everything, and one tested only from below by refusing nothing.
+   */
+  @Test
+  public void theinviteCapRefusesAndDoesSoAtTheDocumentedByte() {
+    final E2EEStrip strip = new E2EEStrip(RuntimeEnvironment.getApplication());
+
+    final String atTheLimit = asciiOfLength(E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE);
+    try {
+      strip.checkMessageLengthForEncodingMethod(atTheLimit, Encoder.RAW, true);
+    } catch (TooManyCharsException refused) {
+      fail("an invite of exactly " + E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE
+          + " bytes must be allowed: " + refused.getMessage());
+    }
+
+    final String oneOver = asciiOfLength(E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE + 1);
+    assertThrows("one byte past the limit must be refused, or the limit is not the limit",
+        TooManyCharsException.class,
+        () -> strip.checkMessageLengthForEncodingMethod(oneOver, Encoder.RAW, true));
+  }
+
+  /**
+   * And an invite far past the cap is refused too, whichever encoder is selected.
+   *
+   * <p>The invite branch returns before the per-encoder checks, so if its own throw is removed
+   * nothing downstream catches an oversized bundle. This is the same property as above stated where
+   * an off-by-one cannot mask it.
+   */
+  @Test
+  public void agrosslyOversizedInviteIsRefusedUnderEveryEncoder() {
+    final E2EEStrip strip = new E2EEStrip(RuntimeEnvironment.getApplication());
+    final String huge = asciiOfLength(E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE * 4);
+
+    for (final Encoder encoder : Encoder.values()) {
+      assertThrows("an invite of " + huge.length() + " bytes must be refused under " + encoder,
+          TooManyCharsException.class,
+          () -> strip.checkMessageLengthForEncodingMethod(huge, encoder, true));
+    }
+  }
+
+  /** The FairyTale limit is enforced as well, not only the raw one. */
+  @Test
+  public void thefairyTaleCapRefusesAndDoesSoAtTheDocumentedByte() {
+    final E2EEStrip strip = new E2EEStrip(RuntimeEnvironment.getApplication());
+
+    try {
+      strip.checkMessageLengthForEncodingMethod(
+          asciiOfLength(E2EEStrip.CHAR_THRESHOLD_FAIRYTALE), Encoder.FAIRYTALE, false);
+    } catch (TooManyCharsException refused) {
+      fail("a message of exactly the FairyTale limit must be allowed: " + refused.getMessage());
+    }
+
+    final String oneOver = asciiOfLength(E2EEStrip.CHAR_THRESHOLD_FAIRYTALE + 1);
+    assertThrows("one byte past the FairyTale limit must be refused", TooManyCharsException.class,
+        () -> strip.checkMessageLengthForEncodingMethod(oneOver, Encoder.FAIRYTALE, false));
   }
 }

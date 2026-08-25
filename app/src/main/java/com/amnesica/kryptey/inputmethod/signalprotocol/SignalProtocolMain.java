@@ -1125,7 +1125,20 @@ public class SignalProtocolMain {
       // Entries written before the address was recorded have length 2; treat those as matching
       // nothing in particular rather than silently suppressing.
       if (excludedIsStillPinned && retired.length > 2
-          && excludedAddress.equals(retired[2])) {
+          && (excludedAddress.equals(retired[2])
+              // Entries retired before the record held a rendered address carry the bare address
+              // NAME. Without this arm the suppression is permanently dead for every retirement a
+              // user already had, so a legitimate re-add at an address whose pin never moved is
+              // warned about - and the wording asserts something the user can check is untrue
+              // ("this new one has a different address"). Habituation is this control's documented
+              // failure mode, so a false alarm is not the safe side here.
+              //
+              // Safe because it is inside the pin requirement, which is what makes the whole
+              // suppression sound. The attacker's variant of this is a fresh address carrying a
+              // deleted contact's name, and nothing is pinned there, so this arm is never reached
+              // for it. Reaching it needs a surviving pin at the address being added, which is
+              // exactly the "provably the same identity" case.
+              || excluding.getName().equals(retired[2]))) {
         continue;
       }
       return true;
@@ -1338,6 +1351,19 @@ public class SignalProtocolMain {
         newContacts.add(contact);
       }
     }
+    // BEFORE the list is pruned.
+    //
+    // removeAllUnencryptedMessages asks hasExactlyOneContactNamed to decide whether a legacy,
+    // name-keyed message can be attributed to this contact. Asked after the removal, that question
+    // is put to a list this contact has already left, and it answers wrongly in both directions:
+    // deleting an impostor who shares an address name makes the name look unambiguous, so the
+    // GENUINE contact's pre-upgrade history is deleted - which is verbatim the defect the keying
+    // change was made to fix - and deleting a contact that is alone under its name makes the name
+    // look ambiguous, so its own plaintext survives the only action a user has for erasing it, with
+    // no row left to reach it from.
+    Log.d(TAG, "Deleting unencrypted messages for contact");
+    mAccount.removeAllUnencryptedMessages(contactToRemove);
+
     mAccount.setContactList(newContacts);
 
     // Remember the name, for the same reason the pin is kept.
@@ -1360,9 +1386,6 @@ public class SignalProtocolMain {
     if (mAccount.getSignalProtocolStore().getSessionStore().containsSession(contactToRemove.getSignalProtocolAddress())) {
       mAccount.getSignalProtocolStore().getSessionStore().deleteSession(contactToRemove.getSignalProtocolAddress());
     }
-
-    Log.d(TAG, "Deleting unencrypted messages for contact");
-    mAccount.removeAllUnencryptedMessages(contactToRemove);
 
     // Deliberately does NOT clear the pinned identity.
     //

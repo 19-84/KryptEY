@@ -98,16 +98,24 @@ public class VerifiedBadgeRenderTest {
     return row;
   }
 
-  private int verifiedVisibility(final View row) {
+  private ImageButton verifiedBadge(final View row) {
     final ImageButton badge = row.findViewById(R.id.e2ee_verify_contact_verified_button);
     assertNotNull(badge);
-    return badge.getVisibility();
+    return badge;
+  }
+
+  private ImageButton unverifiedBadge(final View row) {
+    final ImageButton badge = row.findViewById(R.id.e2ee_verify_contact_unverified_button);
+    assertNotNull(badge);
+    return badge;
+  }
+
+  private int verifiedVisibility(final View row) {
+    return verifiedBadge(row).getVisibility();
   }
 
   private int unverifiedVisibility(final View row) {
-    final ImageButton badge = row.findViewById(R.id.e2ee_verify_contact_unverified_button);
-    assertNotNull(badge);
-    return badge.getVisibility();
+    return unverifiedBadge(row).getVisibility();
   }
 
   /**
@@ -195,5 +203,42 @@ public class VerifiedBadgeRenderTest {
         contact.getAddressTag().isEmpty());
     assertEquals("the tag must render from the first contact, not the second",
         contact.getAddressTag(), tag.getText().toString());
+  }
+
+  /**
+   * The badge that is showing is the one wired to the verify screen.
+   *
+   * <p>The two arms of the render differ by exactly one line each: which button gets the click
+   * listener. Swapping only those two lines leaves the visible badge inert and binds the invisible
+   * one instead, so a user who sees an unverified contact and taps it gets nothing - no way to
+   * reach the safety number at all, which is the one action the whole trust model asks of them.
+   * Every existing test passed with that mutant in place, because they all assert visibility.
+   *
+   * <p>Found by a reviewer who introduced the mutant, saw the suite stay green, and reported it as
+   * a coverage gap rather than a defect. It was not a defect; it is one line away from being one.
+   */
+  @Test
+  public void thevisibleBadgeIsTheOneWiredToTheVerifyScreen() throws Exception {
+    final Contact contact = storedContact();
+
+    // Untrusted: the unverified badge is showing, so that is the one that must respond.
+    View row = renderRow(contact);
+    assertTrue("the visible unverified badge must be clickable",
+        clickListenerOf(unverifiedBadge(row)) != null);
+    assertFalse("and the hidden verified badge must not be the one carrying the listener",
+        clickListenerOf(verifiedBadge(row)) != null);
+
+    // Trusted: the other way round.
+    SignalProtocolMain.verifyContact(contact);
+    row = renderRow(live());
+    assertTrue("the visible verified badge must be clickable",
+        clickListenerOf(verifiedBadge(row)) != null);
+    assertFalse("and the hidden unverified badge must not be",
+        clickListenerOf(unverifiedBadge(row)) != null);
+  }
+
+  /** {@code View.hasOnClickListener()} is not in the compile SDK; the shadow exposes it. */
+  private static View.OnClickListener clickListenerOf(final View view) {
+    return org.robolectric.Shadows.shadowOf(view).getOnClickListener();
   }
 }

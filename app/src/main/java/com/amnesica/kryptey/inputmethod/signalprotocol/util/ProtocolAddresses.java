@@ -78,6 +78,25 @@ public final class ProtocolAddresses {
    */
   public static String key(final SignalProtocolAddress address) {
     if (address == null) return "";
-    return address.getName() + "." + address.getDeviceId();
+    return address.getName() + SEPARATOR + address.getDeviceId();
   }
+
+  /**
+   * A separator no address name can contain.
+   *
+   * <p>A dot was wrong, and the way it was wrong is worth keeping. Two keys built this way never
+   * collide with each other - device ids are dot-free integers, so the last dot splits uniquely -
+   * and that is the collision the obvious analysis looks for. The live one is between a key and a
+   * BARE address name, because the chat log's legacy arm and the retired-name migration arm both
+   * still compare against bare names for upgrade compatibility. The messenger writes address names:
+   * it picks {@code bobsName.7}, which is a perfectly ordinary printable name at a fresh unpinned
+   * address that collides with no contact and triggers no duplicate warning - and every message
+   * filed for the real Bob at device 7 then matches it.
+   *
+   * <p>{@code BinaryEnvelope.requireDisplaySafeName} refuses any sender name outside printable
+   * ASCII, on every envelope, in both directions. A character below 0x20 therefore cannot occur in
+   * any address name this app will accept, so a rendered key and a bare name live in provably
+   * disjoint spaces. If that validation is ever widened, this is the other place to change.
+   */
+  private static final char SEPARATOR = '\u001f';
 }
