@@ -519,4 +519,41 @@ public class StripGuardsTest {
         infoField().getText().toString());
   }
 
+
+  /**
+   * Pressing Decrypt on whatever the messenger posted must not erase a standing warning.
+   *
+   * <p>The press is the user's, but the payload is the attacker's, so "Detected contact: Bob"
+   * landing on the banner cost one ordinary message to arrange - the same one-extra-post erasure
+   * the standing flag prevents everywhere else. Decryption still happens; only the banner is left
+   * alone.
+   *
+   * <p>The warning is raised by the duplicate-name route rather than the substitution one on
+   * purpose: with a change pending for that address the decrypt attempt throws before it reaches
+   * the banner at all, so a test written that way passes whether the guard is there or not.
+   */
+  @Test
+  public void decryptingThemessengersPayloadDoesNotEraseAStandingWarning() throws Exception {
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(EnvelopeCodec.fromWire(attackerBundle));
+
+    final String warned = infoField().getText().toString();
+    assertTrue("precondition: the duplicate-name warning must be standing: " + warned,
+        warned.contains("already have a contact"));
+
+    final android.content.ClipboardManager clipboard =
+        (android.content.ClipboardManager) RuntimeEnvironment.getApplication()
+            .getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("",
+        com.amnesica.kryptey.inputmethod.signalprotocol.encoding.RawEncoder.encode(peerBundle)));
+
+    assertTrue("precondition: the decrypt button must be pressable",
+        strip.findViewById(R.id.e2ee_button_decrypt).performClick());
+
+    assertEquals("the warning must survive the user pressing decrypt on the attacker's payload",
+        warned, infoField().getText().toString());
+  }
 }

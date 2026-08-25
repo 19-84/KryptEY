@@ -183,8 +183,14 @@ public class SignalProtocolMain {
    *
    * <p>A changed safety number is the highest-signal security event the protocol produces: it means
    * someone is impersonating them: a reinstall mints a fresh address, so it can never collide
-   * with an existing pin (see AddressingPremiseTest). The store refuses to send
-   * until it is acknowledged; this is how the UI finds out why.
+   * with an existing pin (see AddressingPremiseTest).
+   *
+   * <p>What the flag does NOT do is block sending. An earlier version of this sentence said the
+   * store refuses to send until it is acknowledged; it does not, and never did. Encryption
+   * continues to the key already pinned - which is the right behaviour, since the offered key was
+   * refused and the old one is still the one the user compared - but a reader who believed the
+   * comment would think there was an interlock here that has to be satisfied. There is not. This
+   * flag exists so the UI can say why a decryption failed and keep saying it.
    */
   public static boolean hasUnacceptedIdentityChange(final SignalProtocolAddress address) {
     if (address == null || sInstance.mAccount == null) return false;

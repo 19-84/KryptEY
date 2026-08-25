@@ -681,6 +681,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // second contact row at an address already taken is never legitimate. Catches the variant that
     // needs no name trickery - an attacker already present as one contact re-introducing that same
     // address under a new name.
+    //
+    // Unreachable as the code stands, and kept anyway. This screen is only shown when
+    // extractContactFromEnvelope found NO contact at the envelope's address, so by construction
+    // there is nothing here to find. It is one flow change away from mattering - anything that
+    // opens the add screen for a known address, or lets the list change while it is open - and a
+    // guard that costs a list scan is not worth removing to save it. What it is not is a control
+    // anyone should count as covering this attack today: the name heuristic above is.
     final Contact sameAddress = mE2EEStrip.existingContactAtSameAddress(
         recipientProtocolAddress, String.valueOf(firstName), String.valueOf(lastName));
     if (sameAddress != null) {
@@ -697,7 +704,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
               SignalProtocolMain.sanitizeForBanner(firstName),
               SignalProtocolMain.displayLabelFor(sameAddress)),
           Toast.LENGTH_LONG).show();
-      setInfoTextViewMessage(mInfoTextView,
+      setWarningMessage(
           String.format(INFO_SAME_ADDRESS_DIFFERENT_NAME,
               SignalProtocolMain.sanitizeForBanner(firstName),
               SignalProtocolMain.displayLabelFor(sameAddress)));
@@ -1288,20 +1295,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       showAddContactView(messageEnvelope);
     } else {
       setChosenContact(sender);
-      setInfoTextViewMessage(mInfoTextView, "Detected contact: " + labelFor(chosenContact));
+      setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
 
   private void processPreKeyResponse(MessageEnvelope messageEnvelope, Contact sender) {
-    setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_DETECTED);
+    setInfoUnlessWarned(INFO_PRE_KEY_DETECTED);
     if (sender == null) {
       // add contact with preKey message
       showAddContactView(messageEnvelope);
     } else {
       // update contact with preKey information
       setChosenContact(sender);
-      setInfoTextViewMessage(mInfoTextView, "Detected contact: " + labelFor(chosenContact));
+      setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
     }
   }
@@ -1314,7 +1321,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     } else {
       // update contact with preKey information
       setChosenContact(sender);
-      setInfoTextViewMessage(mInfoTextView, "Detected contact with updated keybundle: " + labelFor(chosenContact));
+      setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
@@ -1359,8 +1366,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * and nothing is left: an unverified contact after a refused substitution is byte-identical to
    * one the user simply never compared.
    *
-   * <p>So this is cleared by things the USER does - choosing a contact, opening the contact list,
-   * verifying - and never by anything the messenger can cause.
+   * <p>So this is cleared by two deliberate user actions and nothing else: going to compare a
+   * safety number, and - for warnings other than a pending identity change - choosing the contact
+   * the warning is about. Opening the contact list does not clear it; an earlier version of this
+   * sentence said it did. Nothing the messenger can cause clears it.
    */
   private boolean mWarningStanding = false;
 
@@ -1370,6 +1379,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
    * "is a warning on screen" is a property of how it was written rather than a string comparison
    * against a set of format strings someone has to remember to extend.
+   *
+   * <p>That was not true of {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} when this sentence was
+   * written, which is the trouble with an invariant stated in prose: it goes on reading as true.
    */
   private void setWarningMessage(final String message) {
     setInfoTextViewMessage(mInfoTextView, message);
@@ -1552,6 +1564,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mSelectEncodingRawButton.setVisibility(GONE);
       }
     }
+  }
+
+  /**
+   * Writes the banner unless a security warning is standing there.
+   *
+   * <p>For the messenger-supplied side of the decrypt path. The user pressing Decrypt is a
+   * deliberate action, but WHAT they press it on is the attacker's choice, so "Detected contact:
+   * Bob" over an identity-change warning cost one ordinary post to arrange - the same one-extra-
+   * message erasure the standing flag exists to prevent everywhere else.
+   */
+  private void setInfoUnlessWarned(final String message) {
+    if (mWarningStanding) return;
+    setInfoTextViewMessage(mInfoTextView, message);
   }
 
   /** Package-visible so a test can drive the real method rather than a copy of it. */
