@@ -18,7 +18,8 @@ Kyber pre-key were dropped, ignored, or silently unusable, sessions would still 
 suite would stay green while the post-quantum property the upgrade exists for was absent. The
 session version is asserted now, on both sides and on the out-of-band path.
 
-**Release APK: 115 MB → 74 MB.** The libsignal jar carries its *desktop* builds — macOS `.dylib`
+**Release APK: 115 MB → 74 MB** (in this build environment — see below; the saving itself is
+environment-independent)**.** The libsignal jar carries its *desktop* builds — macOS `.dylib`
 and Windows `.dll`, each in a normal and a `_testing_` flavour — at the jar root. Those are java
 resources rather than `jniLibs`, so the existing `jniLibs` exclusion (which correctly drops the
 Android `libsignal_jni_testing.so`) never saw them, and all six were packaged into every release
@@ -648,6 +649,37 @@ again — three rounds. The app cannot *refuse* a second contact under a familia
    `KeyInfo` check on real hardware and nothing here can substitute for it. It registers a provider that imposes that rule and runs the real
    seal/open path against it, so the bug that already shipped once cannot recur silently. That is
    one property, not the whole suite; the rest still needs a device.
+
+## The release APK built here is not the one users would get
+
+`assembleRelease` succeeds, and that claim is now checked rather than asserted. But the artifact it
+produces in this container is **not** the artifact a proper build produces, and anything measured
+from it has to say so.
+
+`lib/arm64-v8a/libsignal_jni.so` is 74 MB, of which **64.2 MB is DWARF debug information** —
+`.debug_str` alone is 43.8 MB against a `.text` of 4.7 MB. AGP knows: `stripReleaseDebugSymbols` runs
+and prints *"Unable to strip the following libraries, packaging them as they are: libsignal_jni.so"*.
+It is a **warning**, not a failure, so an ordinary build says BUILD SUCCESSFUL and ships it.
+
+The cause is the build image, which has the SDK but no NDK — stripping needs the NDK's `llvm-strip`,
+and the container's own `strip` is x86_64 binutils that cannot parse an aarch64 ELF at all
+(*"Unable to recognise the format of the input file"*). A machine with the NDK strips automatically
+and produces an APK around 10 MB rather than 74 MB.
+
+Two consequences worth separating, because they are not the same kind of thing:
+
+- **The desktop-binary exclusion is real and universal.** It is a packaging configuration change:
+  42.6 MB comes off the APK on every build machine, with or without an NDK.
+- **The 64 MB of debug info is an artefact of this environment.** Users installing from F-Droid
+  almost certainly get a stripped library. What is genuinely wrong here is that *the same source
+  produces materially different artifacts depending on the build host*, and nothing fails when it
+  does — which is a reproducibility problem for a project whose README points at F-Droid, and it
+  means no size or content claim about "the release APK" is meaningful without naming the host.
+
+Not fixed here: installing an NDK is a build-image change of a different order from anything else on
+this branch, and the honest position is that this environment cannot produce a representative release
+artifact. Recorded so the next person measuring the APK knows which half of the number is theirs.
+
 
 ## Verifying a build honestly
 
