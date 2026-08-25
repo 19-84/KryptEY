@@ -1801,16 +1801,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *
    * <p>An earlier version of this method emptied the compose box and stopped, with a javadoc saying
    * it left nothing behind. That was false in a way that mattered: the chat-log adapter still held
-   * the entire decrypted conversation, the verify screen still held a safety number, and the
-   * contact list still held who the user talks to - on a view that no clearing path can reach any
-   * more, because every one of them runs on the LIVE strip. {@code clearDecryptedContent}'s own
-   * javadoc argues that leaving the chat-log screen is not enough because the plaintext would be
-   * "one button-press away"; on an orphaned view it is not even that, which is worse rather than
-   * better.
+   * the entire decrypted conversation and the verify screen still held a safety number - on a view
+   * that no clearing path can reach any more, because every one of them runs on the LIVE strip.
+   * {@code clearDecryptedContent}'s own javadoc argues that leaving the chat-log screen is not
+   * enough because the plaintext would be "one button-press away"; on an orphaned view it is not
+   * even that, which is worse rather than better.
    *
    * <p>So the outgoing view gets the same treatment the keyboard being dismissed gives it, plus the
    * two things that keep it alive at all: the clipboard registration, and the input connection's
    * reference to its compose box.
+   *
+   * <p><b>What this does NOT drop, deliberately: the contact-list adapter.</b> This javadoc used to
+   * claim it did, listing "the contact list still held who the user talks to" among the things fixed
+   * here, and that was simply untrue - {@code StripCarriedStateRound5Test} drove an assertion for it
+   * that fails on this method to this day. The assertion was rejected rather than the code changed,
+   * and the reasoning is worth keeping where the method is rather than only where the test is:
+   * after a rebuild nothing reachable points at the discarded view, so its remaining content is
+   * ordinary garbage, which is true of every freed object in the process. That claim is not taken on
+   * faith either - {@code r0TheDiscardedStripMustBecomeUnreachable} asserts it, and
+   * {@code IgnoredTestsAreAccountedForTest} fails if that test is ever renamed or disabled, because
+   * two rejections rest on it.
+   *
+   * <p>Which raises the obvious question about the two things above that <em>are</em> cleared, and
+   * the honest answer is that it is not a principle: they come free, because this method reuses the
+   * dismissal path's last rites, and that path runs on a live view where the same residue really
+   * would be one button-press away.
    */
   public CarriedState surrenderState() {
     final CharSequence draft = mInputEditText == null ? "" : mInputEditText.getText().toString();
