@@ -425,7 +425,20 @@ on API 26–32 execute and that no test had ever entered. `LegacyApiClipboardTes
 is a security behaviour rather than a compatibility detail: `clearClipboard()`, called on every exit
 of the decrypt path, uses `clearPrimaryClip()` only from API 28 and overwrites the clip below that.
 It is asserted at 26, 27, 28 and 35, and each branch has a control that fails exactly its own two.
-The others — StrongBox selection, the navbar colour, `RECEIVER_NOT_EXPORTED` — remain unentered.
+
+StrongBox selection is now entered too, at 26, 27 and 28 — see the predicate-wired-to-nothing section
+for why that took reshaping the branch rather than adding a `@Config`. **This paragraph said it
+"remains unentered" and was made stale by that fix, in this session, three commits later.**
+
+The wider count was also wrong. There are **15** `SDK_INT` comparisons in the app, not the three this
+paragraph named, and eight of them are not "unentered" but *unreachable*: `<= KITKAT` (19) is false
+on every device that can install this app and `>= N` (24) is true on all of them, so one side of each
+is dead at `minSdk` 26. No `@Config` can reach them — a test that entered one would be testing a
+device configuration that cannot exist — and with `minifyEnabled false` they ship and read to an
+auditor like code that runs. All eight are inherited from AOSP, where `minSdk` was lower.
+`MinSdkDeadBranchTest` computes that set from the source rather than listing it, so the ninth fails;
+the eight are named with the reason, and a second test stops those names outliving the code. The
+navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
 
 **Reasoned but NOT verified:**
 
