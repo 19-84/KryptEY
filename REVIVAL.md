@@ -1960,6 +1960,12 @@ Recorded so the next round does not spend itself re-deriving them.
   Reporting that as a finding would have been exactly the confident wrong answer this file keeps
   cataloguing.
 
+- **All four CI tasks pass at `e14bf8b`**, re-run because the baseline was generated four commits
+  earlier and production changed under it: 965 tests, `assembleDebug`, `assembleRelease` producing
+  stripped 9.4 MB and 7.7 MB APKs with the gate passing unaided, and *"Lint found no new issues"*. A
+  baseline that stops covering the code is worth less than no baseline, since it turns a real finding
+  into a silent one — so the check is which commit it was last run at, not whether it exists.
+
 - **The branch history was replayed against its own doc guards, and holds.** Several tests here read
   markdown and build files, which means a documentation-only commit can turn the suite red — and one
   did: `8bac6f6` added a section without indexing it, and a red test sat on `origin` until an
