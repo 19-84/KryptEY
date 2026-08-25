@@ -64,9 +64,19 @@ public class Account {
   }
 
   public byte[] getDisplayTagSecret() {
-    // Older stores predate this field. Minting one lazily keeps tags working after an upgrade; it
-    // changes every existing tag once, which is harmless - they are only ever compared with each
-    // other, never carried between devices or read out to a peer.
+    // Unreachable as the code stands, and kept anyway.
+    //
+    // The comment here used to say this is what keeps tags working after an upgrade from a store
+    // predating the field. It is not: the constructor mints one unconditionally, StorageHelper
+    // calls setDisplayTagSecret only when it has actually decoded a stored value, and no path
+    // deserialises an Account around the constructor. So on any live account this field is already
+    // set, and this branch never runs. The upgrade behaviour it claimed credit for is the
+    // constructor's.
+    //
+    // Worth keeping as belt-and-braces - a null here would otherwise be an NPE inside tag
+    // derivation, on the contact list, in the middle of the one screen a user checks when
+    // something looks wrong. Worth NOT claiming to be load-bearing, because a reader deciding
+    // whether the upgrade path is covered would stop here and conclude yes.
     if (displayTagSecret == null || displayTagSecret.length == 0) {
       displayTagSecret = newDisplayTagSecret();
     }
