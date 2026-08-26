@@ -3,7 +3,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol;
 /**
  * The stored chat log exists but could not be read, so it is refused rather than shown as empty.
  *
- * <p>Its own type rather than a bare {@code IllegalStateException} so the three places that must
+ * <p>Its own type rather than a bare {@code IllegalStateException} so the four places that must
  * survive it can say so precisely, and so a reader grepping for them finds them. Unchecked because
  * it can surface from any read of the log and a checked type would put a throws clause on most of
  * {@code Account}; the compiler is therefore not the thing that guarantees the catches, and

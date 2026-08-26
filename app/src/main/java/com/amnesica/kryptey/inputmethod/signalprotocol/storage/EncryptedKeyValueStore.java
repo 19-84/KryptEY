@@ -210,6 +210,24 @@ public final class EncryptedKeyValueStore {
       }
     }
 
+    // Asked before either in-file guard, because both of those live in the file the attacker
+    // rewrites and a sweep showed both fall to the same move.
+    //
+    // The guard below refuses cleartext that sits BESIDE decryptable data - so the attacker empties
+    // the file first, which costs them nothing: they snapshot it, let one raise seal their row, and
+    // restore the snapshot with that row swapped in. The AAD binds the key name, unchanged in both
+    // states, so it opens. And MARKER_MIGRATING is durable and invalidated only by a SUCCESSFUL
+    // migration, so it can be harvested from a deliberately interrupted run and replayed to disarm
+    // the guard without emptying anything at all.
+    //
+    // This one is answered by the Keystore instead. Once a device has converted a cleartext store
+    // once - or started life with no cleartext at all - it never converts one again.
+    if (!cleartext.isEmpty() && cryptoBox.legacyMigrationIsSealed()) {
+      throw new StorageCryptoException("refusing to encrypt cleartext (" + cleartext
+          + "): this device has already completed the one-time conversion, so cleartext here was "
+          + "written by something other than an upgrade");
+    }
+
     if (sawReadableEnvelope && !cleartext.isEmpty() && !MARKER_MIGRATING.equals(marker)) {
       // Decryptable envelopes alongside cleartext, with no in-progress marker to explain it. A
       // genuine interrupted migration always leaves that marker behind, and the marker is sealed so
@@ -237,6 +255,10 @@ public final class EncryptedKeyValueStore {
     }
 
     writeMarker(MARKER_COMPLETE);
+    // Outside the file, so restoring an older copy of it cannot un-say this. Also reached on a
+    // fresh install, where `cleartext` is empty - which closes the window entirely for anyone who
+    // never had a 0.1.5 store to convert.
+    cryptoBox.sealLegacyMigration();
   }
 
   public String get(final String key) throws StorageCryptoException {

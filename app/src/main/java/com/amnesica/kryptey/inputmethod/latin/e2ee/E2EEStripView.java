@@ -433,6 +433,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // for good. Null-addressed warnings (storage, same-address) still clear here - they have no
       // other exit, and scoping them strictly would recreate the dead end round five removed.
       clearStandingWarningIfAbout(chosenContact);
+      clearCautionIfAbout(chosenContact);
       // Ask BEFORE rejecting: afterwards there is never a pin, so the answer would always be no.
       final boolean hadAkeyToForget =
           mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress());
@@ -472,6 +473,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // Only now: the user has compared the number and confirmed it. Not on arriving at the
         // screen, and not on a failed load, which is why this sits after the guard above.
         clearStandingWarningIfAbout(chosenContact);
+        clearCautionIfAbout(chosenContact);
+      clearCautionIfAbout(chosenContact);
         loadContactsIntoContactsListView();
         showOnlyUIView(UIView.CONTACT_LIST_VIEW);
       } catch (UnknownContactException e) {
@@ -1106,7 +1109,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // on top of a security warning, which StripWarningErasureTest exists to forbid.
           //
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
-          setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.");
+          setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.", chosenContact);
         }
       } else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
@@ -2025,6 +2028,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private String mStandingCaution = null;
 
   /**
+   * The contact that caution is about, so a response about someone else cannot take it down.
+   *
+   * <p>The first version scoped the caution to the standing WARNING and cleared it in
+   * {@code setWarningMessage}, reasoning that a caution belongs to the warning it was shown beside.
+   * That was wrong on a fact: {@code setWarningMessage} does not distinguish replacing a warning
+   * from re-posting the identical one, and {@code warnIfIdentityChanged} re-posts on EVERY decrypt.
+   * So one more relayed message from the contact the warning was about destroyed a caution about a
+   * different contact - the attacker's - with the warning still standing the whole time. That is an
+   * erase of text with the flag up, which is precisely what the invariant sweep cannot see.
+   */
+  private String mStandingCautionAddress = null;
+
+  /**
    * Posts a warning to the info banner and marks it as standing.
    *
    * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
@@ -2041,11 +2057,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * through this whenever a warning is standing.
    */
   private String warningWithRecipient() {
-    if (mStandingWarningText == null) return null;
-    final String withCaution = mStandingCaution == null ? mStandingWarningText
-        : mStandingWarningText + "\n\n" + mStandingCaution;
-    if (chosenContact == null) return withCaution;
-    return withCaution + "\n\nSending to: " + labelFor(chosenContact);
+    if (mStandingWarningText == null && mStandingCaution == null) return null;
+    final String body;
+    if (mStandingWarningText == null) {
+      body = mStandingCaution;
+    } else if (mStandingCaution == null) {
+      body = mStandingWarningText;
+    } else {
+      body = mStandingWarningText + "\n\n" + mStandingCaution;
+    }
+    if (chosenContact == null) return body;
+    return body + "\n\nSending to: " + labelFor(chosenContact);
   }
 
   /**
@@ -2066,10 +2088,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mStandingWarningText = message;
     mStandingWarningAddress = aboutAddress;
     // Any new warning is, by default, not the invite refusal - so a later accepted invite cannot
-    // retract something else that happens to be standing. A caution belonging to the warning being
-    // replaced goes with it: it was shown beside THAT warning, not this one.
+    // retract something else that happens to be standing.
+    //
+    // The caution is NOT cleared here. It is about a contact of its own and outlives whatever
+    // warning happens to share the banner with it; clearing it here meant one more relayed message
+    // from an unrelated contact erased it, because warnIfIdentityChanged re-posts its warning on
+    // every decrypt.
     mStandingWarningIsInviteRefusal = false;
-    mStandingCaution = null;
     mWarningStanding = true;
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
@@ -2297,8 +2322,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * on a system service that a test cannot invoke, and a test that re-implements its body proves
    * only that the copy behaves - which is the failure this codebase keeps finding elsewhere.
    */
+  /** Whether a WARNING (not the caution) is what is holding the banner. For tests only. */
+  boolean mayOverwriteInfoBannerIgnoringCautionForTest() {
+    return !storageIsUnreadable() && !mWarningStanding;
+  }
+
   boolean mayOverwriteInfoBanner() {
-    if (storageIsUnreadable() || mWarningStanding) {
+    if (storageIsUnreadable() || mWarningStanding || mStandingCaution != null) {
+      // The caution counts. It is the notice shown when a key was pinned and the app noticed
+      // nothing about it, which is what a successful substitution looks like - so letting an
+      // ordinary clipboard event paint over it is the erase, whether or not a warning is up too.
       Log.i(TAG, "A security warning is on screen; leaving it in place");
       return false;
     }
@@ -2340,14 +2373,32 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * deliberate response that clears it still works, and {@code warningWithRecipient} still rebuilds
    * from the warning alone rather than from what is on screen.
    */
-  private void setCautionBesideAnyWarning(final String caution) {
-    if (!mWarningStanding) {
-      setInfoTextViewMessage(mInfoTextView, caution);
-      return;
-    }
-    // Stored, then painted through the same builder every repaint uses, so the two cannot drift.
+  private void setCautionBesideAnyWarning(final String caution, final Contact about) {
+    // Stored in BOTH cases, then painted through the same builder every repaint uses.
+    //
+    // The no-warning branch used to write straight to the view and store nothing, and that is the
+    // COMMON case - the one the call site argues matters most, because it fires when the app
+    // noticed nothing, which is what a successful substitution looks like. Every repaint therefore
+    // erased it: one clipboard post, hiding the keyboard, tapping the contact row, or a rotation.
     mStandingCaution = caution;
+    mStandingCautionAddress = about == null ? null
+        : String.valueOf(about.getSignalProtocolAddress());
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+  }
+
+  /**
+   * Takes down a caution once the user has dealt with the contact it is about.
+   *
+   * <p>Scoped to that contact, the same way the warning's clear is: verifying, rejecting or
+   * deleting somebody else says nothing about whether this key was ever compared.
+   */
+  private void clearCautionIfAbout(final Contact contact) {
+    if (mStandingCaution == null) return;
+    if (mStandingCautionAddress == null || (contact != null && mStandingCautionAddress
+        .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
+      mStandingCaution = null;
+      mStandingCautionAddress = null;
+    }
   }
 
   /** Posts the refused-invite warning, tagged so a later good invite can retract it. */
@@ -2378,7 +2429,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void clearStandingWarning() {
     mStandingWarningIsInviteRefusal = false;
-    mStandingCaution = null;
     mStandingWarningText = null;
     mStandingWarningAddress = null;
     mWarningStanding = false;
@@ -2591,6 +2641,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final boolean standingWarningIsInviteRefusal;
     /** The caution shown beside that warning, so a rebuild does not drop it. */
     private final String standingCaution;
+    /** The contact that caution is about, so a rebuild does not widen or narrow its scope. */
+    private final String standingCautionAddress;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
@@ -2598,6 +2650,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final CharSequence banner, final boolean warningStanding,
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
+        final String standingCautionAddress,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -2607,6 +2660,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingWarningAddress = standingWarningAddress;
       this.standingWarningIsInviteRefusal = standingWarningIsInviteRefusal;
       this.standingCaution = standingCaution;
+      this.standingCautionAddress = standingCautionAddress;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -2683,7 +2737,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
-        mHostFieldIsPassword, encodingMethod);
+        mStandingCautionAddress, mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -2749,9 +2803,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // unretractable, so the good invite that should take it down leaves it standing forever - and
       // a rebuild is something the messenger's host app can force at will.
       mStandingWarningIsInviteRefusal = carried.standingWarningIsInviteRefusal;
+    }
+
+    // OUTSIDE the block above, because a caution can stand with no warning at all - and that is the
+    // common case, the one shown when the app noticed nothing about a key it just pinned. Restoring
+    // it only alongside a warning would drop exactly the copies that matter most.
+    if (carried.standingCaution != null && mStandingCaution == null) {
       mStandingCaution = carried.standingCaution;
-      // Repainted through the shared builder so the restored banner shows the caution too, rather
-      // than the warning alone - which is the erase this carry exists to stop.
+      mStandingCautionAddress = carried.standingCautionAddress;
+    }
+    // Repainted through the shared builder so the restored banner shows both, rather than the
+    // warning alone - which is the erase this carry exists to stop.
+    if (mWarningStanding || mStandingCaution != null) {
       setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
     }
 
@@ -2903,6 +2966,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // left. Two guards for one property is deliberate: the outer one covers the frame it was
     // written for, this one covers everything after it.
     if (mWarningStanding) return;
+    // A standing caution holds the banner too, and it carries the recipient line itself - so this
+    // repaints through the shared builder rather than returning, which would leave "Sending to: X"
+    // naming whoever was chosen before.
+    if (mStandingCaution != null) {
+      setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+      return;
+    }
     if (chosenContact != null) {
       setInfoTextViewMessage(mInfoTextView, "Chosen contact: " + labelFor(chosenContact));
     } else {
@@ -3011,6 +3081,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         && mStandingWarningAddress.equals(String.valueOf(contact.getSignalProtocolAddress()))) {
       clearStandingWarning();
     }
+    // The caution about a deleted contact has nothing left to be about, and the verify screen it
+    // points at is gone with the row.
+    clearCautionIfAbout(contact);
     loadContactsIntoContactsListView();
     resetChosenContactAndInfoText();
   }

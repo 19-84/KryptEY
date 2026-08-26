@@ -44,6 +44,15 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
   private static final String PROVIDER = "AndroidKeyStore";
   private static final String KEY_ALIAS = "kryptey.storage.master";
 
+  /**
+   * Presence of this alias means the one-time cleartext conversion has already happened.
+   *
+   * <p>A separate alias rather than a flag inside the store, because the store is the thing the
+   * attacker rewrites. Its key material is never used for anything — only whether it exists is
+   * read — so it is generated with the cheapest parameters that will not prompt the user.
+   */
+  private static final String MIGRATION_SEALED_ALIAS = "kryptey.storage.migration.sealed";
+
   private final Context context;
   /** Whether the caller has data on disk that a newly generated key could not possibly decrypt. */
   private final boolean hasExistingData;
@@ -309,6 +318,43 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
       ks.deleteEntry(KEY_ALIAS);
     } catch (Exception e) {
       Log.w(TAG, "could not delete Keystore alias", e);
+    }
+  }
+
+  @Override
+  public boolean legacyMigrationIsSealed() {
+    try {
+      final KeyStore ks = KeyStore.getInstance(PROVIDER);
+      ks.load(null);
+      return ks.containsAlias(MIGRATION_SEALED_ALIAS);
+    } catch (final Exception e) {
+      // Fail CLOSED. An unreadable Keystore must not read as "conversion never happened", because
+      // that is the answer that lets an attacker's cleartext be sealed. Refusing a legitimate
+      // upgrade on a broken Keystore costs the user an error; the other way round costs them their
+      // identity key.
+      Log.w(TAG, "could not read the migration seal; treating the conversion as already done", e);
+      return true;
+    }
+  }
+
+  @Override
+  public void sealLegacyMigration() {
+    try {
+      final KeyStore ks = KeyStore.getInstance(PROVIDER);
+      ks.load(null);
+      if (ks.containsAlias(MIGRATION_SEALED_ALIAS)) return;
+      final KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER);
+      generator.init(new KeyGenParameterSpec.Builder(MIGRATION_SEALED_ALIAS,
+          KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+          .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+          .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+          .build());
+      generator.generateKey();
+    } catch (final Exception e) {
+      // Not fatal: the conversion itself succeeded and the data is sealed. What is lost is the
+      // protection against a SECOND conversion, so it is logged loudly rather than swallowed.
+      Log.e(TAG, "could not record the migration seal; a future cleartext conversion will not be "
+          + "refused on this device", e);
     }
   }
 }

@@ -24,4 +24,27 @@ public interface CryptoBox {
    *     different key, carries a different {@code aad}, or fails its authentication tag.
    */
   byte[] open(byte[] envelope, byte[] aad) throws StorageCryptoException;
+
+  /**
+   * Whether this device has already completed the one-time conversion of a cleartext 0.1.5 store.
+   *
+   * <p>The fact belongs OUT here, away from the file being converted, and that is the whole point.
+   * The conversion is a laundering primitive — it takes bytes an attacker wrote and hands them back
+   * sealed under the real master key — and every guard on it lived inside the same file the
+   * attacker can rewrite. A Phase 1 sweep showed both guards fall to the same move: snapshot the
+   * file, empty it so nothing decryptable remains, let the keyboard raise once, and restore the
+   * snapshot with the freshly sealed row swapped in. Emptying the file costs nothing, because
+   * {@code hasEncryptedData} gates only whether a master key is MINTED, not whether it is used.
+   *
+   * <p>Answered from the Keystore, which an attacker holding the app's private files cannot edit.
+   * They can destroy the alias, but that destroys the master key with it and the sealed data
+   * becomes unreadable — which leaves them nothing to launder into.
+   */
+  default boolean legacyMigrationIsSealed() {
+    return false;
+  }
+
+  /** Records that the conversion has happened and must never be offered again. */
+  default void sealLegacyMigration() {
+  }
 }

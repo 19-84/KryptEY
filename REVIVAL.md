@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-seven sections, written in the order things were found rather than by subject, so the
+Forty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -103,6 +103,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [One invariant, swept instead of exampled](#one-invariant-swept-instead-of-exampled)
 - [A corrupted chat log was an amplifier for key substitution](#a-corrupted-chat-log-was-an-amplifier-for-key-substitution)
 - [Two storage findings that make a recorded residual wrong](#two-storage-findings-that-make-a-recorded-residual-wrong)
+- [The laundering primitive, closed from outside the file](#the-laundering-primitive-closed-from-outside-the-file)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3559,3 +3560,52 @@ that the marker "cannot be faked" is true of forgery and silent about retention.
 Both are the same underlying gap: **nothing binds a sealed value to the file or the run it was sealed
 in.** Both need the file-access adversary, which is strictly stronger than the messenger — which is
 why they are deferred rather than urgent, and why the honest thing to fix first was the description.
+
+
+## The laundering primitive, closed from outside the file
+
+**Both storage attacks recorded last commit are fixed, and the fix is one line of reasoning: the
+guard cannot live in the thing the attacker rewrites.**
+
+Converting cleartext found on disk is a laundering primitive — it takes bytes an attacker wrote and
+hands them back sealed under the real master key, at which point they are indistinguishable from the
+user's own data. Two guards existed and both sat inside `protocol.xml`. One refuses cleartext beside
+decryptable data, so the attacker empties the file first; emptying costs nothing, because
+`hasEncryptedData` gates only whether a key is *minted*, not whether it is used. The other trusts
+`MARKER_MIGRATING`, which is durable and invalidated only by a *successful* migration, so it can be
+harvested from a deliberately interrupted run and replayed later.
+
+The fact now lives in the **Keystore**: a second alias whose key material is never used, and whose
+mere existence means the one-time conversion has already happened. An attacker holding the app's
+private files cannot edit it. They can destroy it — but that destroys the master key with it, and
+the sealed data they wanted to launder into becomes unreadable, which leaves them nothing.
+
+It is also sealed on a **fresh install**, where there is no cleartext to convert. Otherwise the one
+device that never needed the conversion would be the one that stayed open to it forever.
+
+Two details worth stating. `legacyMigrationIsSealed()` **fails closed**: an unreadable Keystore
+reads as "already converted", because the other answer is the one that seals an attacker's cleartext.
+And `sealLegacyMigration()` failing is logged loudly rather than swallowed — the conversion itself
+succeeded, so the data is safe; what is lost is protection against a *second* one.
+
+Four tests, and the control is the attack: remove the check and three of them fail, including the
+snapshot sequence whose recorded cost — "the user's contact list visibly disappears" — turned out
+not to exist, because the attacker puts the file back.
+
+**Round thirteen found the caution fix from the previous commit was scoped to the wrong thing.** It
+cleared `mStandingCaution` inside `setWarningMessage`, reasoning that a caution belongs to the
+warning it was shown beside. False on a fact: that method does not distinguish *replacing* a warning
+from *re-posting the identical one*, and `warnIfIdentityChanged` re-posts on **every decrypt**. So
+one more relayed message from the contact the warning was about destroyed the caution about a
+different contact — the attacker's — with the warning standing the whole time. Another erase of text
+with the flag up, which is the shape the invariant sweep cannot see, introduced by the commit whose
+own entry says so.
+
+And the other half was never fixed at all: with **no** warning standing — the common case, and the
+one the call site argues matters most — the caution was still written straight to the view and
+stored nowhere, so a clipboard post, hiding the keyboard, tapping the contact row or a rotation all
+erased it.
+
+The caution is a standing item of its own now, with its own address, cleared only by a deliberate
+response about *that* contact, holding the banner against passive repaints the way a warning does,
+and carried across a rebuild whether or not a warning accompanies it.

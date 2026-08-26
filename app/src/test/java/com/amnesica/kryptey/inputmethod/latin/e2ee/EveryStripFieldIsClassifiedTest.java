@@ -58,7 +58,11 @@ public class EveryStripFieldIsClassifiedTest {
       // The caution shown beside a standing warning. Carried for the same reason as the warning's
       // own text: a rotation between creating a contact and reading the caution would otherwise
       // drop the one notice that fires because nothing was noticed.
-      "mStandingCaution"));
+      "mStandingCaution",
+      // And the contact it is about. Carried for the same reason the warning's address is: without
+      // it a rebuild widens the caution's scope to "any contact", so the next deliberate response
+      // about anybody takes it down.
+      "mStandingCautionAddress"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

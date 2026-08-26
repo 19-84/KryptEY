@@ -585,4 +585,81 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
             + "Shown: " + shown,
         shown.contains("set up a key for them anyway"));
   }
+
+  /** Adds Carol through the real path and returns her row. */
+  private Contact addCarol() throws Exception {
+    SignalProtocolMain.initialize(null);
+    final String carolBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Carol");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Smith");
+    strip.addContactForTest(EnvelopeCodec.fromWire(carolBundle));
+    assertTrue("precondition: the caution must be on the banner",
+        bannerText().contains("cannot tell whose it is"));
+    return victim.getContactList().get(victim.getContactList().size() - 1);
+  }
+
+  /**
+   * The caution belongs to its own contact, not to whatever warning shares the banner.
+   *
+   * <p>It was cleared inside {@code setWarningMessage}, on the reasoning that a caution belongs to
+   * the warning it was shown beside. That is false on a fact: {@code setWarningMessage} does not
+   * distinguish replacing a warning from re-posting the identical one, and
+   * {@code warnIfIdentityChanged} re-posts on every decrypt. So one more relayed message from Bob -
+   * ordinary traffic, and the Bob warning tells the user to compare numbers, not to stop reading -
+   * destroyed the caution about Carol, whose key the attacker supplied. The Bob warning stands the
+   * whole time, so this is an erase of text with the flag up: the invariant sweep cannot see it.
+   */
+  @Test
+  public void thecautionSurvivesAnotherMessageFromTheContactTheWarningIsAbout() throws Exception {
+    establishedContact();
+
+    // A substituted bundle for Bob raises the identity-change warning.
+    SignalProtocolMain.initialize(null);
+    final String impostorBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    final MessageEnvelope substituted = new MessageEnvelope(
+        EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
+        peerAddress.getName(), peerAddress.getDeviceId());
+    paste(substituted);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertFalse("precondition: a warning about Bob must be standing",
+        strip.mayOverwriteInfoBanner());
+
+    addCarol();
+
+    // One more message from Bob. warnIfIdentityChanged re-posts the SAME warning.
+    paste(substituted);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    assertTrue("the caution about Carol must survive another message from Bob. Re-posting the same "
+            + "warning is not a deliberate response to anything, and the attacker chooses when it "
+            + "happens. Banner now: " + bannerText(),
+        bannerText().contains("cannot tell whose it is"));
+  }
+
+  /**
+   * And it survives when there is no warning at all, which is the common case.
+   *
+   * <p>The no-warning branch wrote straight to the view and stored nothing, so every repaint erased
+   * it - a clipboard post, hiding the keyboard, tapping the contact row, a rotation. That branch is
+   * the one the call site argues matters most: it fires when the app noticed nothing, which is
+   * exactly what a successful substitution looks like.
+   */
+  @Test
+  public void thecautionSurvivesOrdinaryEventsWhenNoWarningStands() throws Exception {
+    final Contact carol = addCarol();
+    assertTrue("precondition: no warning may be standing in this case",
+        strip.mayOverwriteInfoBannerIgnoringCautionForTest());
+
+    strip.onClipboardChangedForTest();
+    assertTrue("a clipboard post must not erase it - the messenger owns the clipboard: "
+        + bannerText(), bannerText().contains("cannot tell whose it is"));
+
+    strip.selectContact(carol);
+    assertTrue("nor tapping the contact row, which is the gesture it asks for: " + bannerText(),
+        bannerText().contains("cannot tell whose it is"));
+  }
 }
