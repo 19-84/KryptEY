@@ -867,6 +867,28 @@ The general lesson is the one this branch keeps relearning: a negative result fr
 has validated is not a finding. The first two times the test "failed", the correct next step was to
 ask what the device was actually doing, not to write down what the failure appeared to mean.
 
+**The strip's own UI now runs on a device.** Everything exercising the strip was Robolectric, which
+is the right place for its logic and cannot speak for its behaviour on a phone: shadow views, no
+layout pass, and the desktop build of libsignal. The instrumentation suite covered the Keystore, the
+IME binding and the protocol, and had never touched the strip.
+
+`StripRoundTripOnDeviceTest` puts the halves together — a real inflated strip, real Android views,
+the Android libsignal, and the button a user presses. Type a message, press Encrypt, and assert the
+two things the app exists for: what leaves the keyboard is not the message, and the intended
+recipient gets it back.
+
+Getting a control for it took three attempts, and the first two are the interesting part. The first
+raced: `tools/test-on-emulator` rebuilds the APKs, and the source was restored while it was still
+building, so it tested unmutated code. The second was **semantically equivalent** — it sent
+`mInputEditText.getText()` instead of the ciphertext, but `setText(encryptedMessage)` runs on the
+line above, so the field already held the ciphertext and the mutant changed nothing. Only the third,
+capturing the plaintext before that `setText`, actually made the plaintext leave the keyboard, and
+it fails on exactly the assertion that matters. An equivalent mutant looks identical to a passing
+control from the outside.
+
+Still not covered, and worth saying plainly: nothing types on the IME's own key surface, and nothing
+moves text through a real messenger.
+
 **What this still is not.** An emulator is not a phone. There is no StrongBox on it, so the top rung
 of the key ladder is exercised only in the sense that it is correctly refused and stepped down from;
 what a StrongBox device does still has no test here. Eleven of the suite's seventeen tests are about

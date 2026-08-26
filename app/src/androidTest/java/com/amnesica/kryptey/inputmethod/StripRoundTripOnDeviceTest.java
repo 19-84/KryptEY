@@ -89,6 +89,20 @@ public class StripRoundTripOnDeviceTest {
     InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
       strip = new E2EEStripView(
           new ContextThemeWrapper(context, R.style.KeyboardTheme_LXX_Pure_Day), null);
+
+      // The strip writes through a RichInputConnection, and sendEncryptedMessageToApplication
+      // dereferences it. Without one the Encrypt button NPEs - which is what the first run of this
+      // test found, and is a fair thing for a test of the send path to have to provide.
+      final android.view.inputmethod.BaseInputConnection host =
+          new android.view.inputmethod.BaseInputConnection(new android.view.View(context), true);
+      strip.setRichInputConnection(new com.amnesica.kryptey.inputmethod.latin.RichInputConnection(
+          new android.inputmethodservice.InputMethodService() {
+            @Override
+            public android.view.inputmethod.InputConnection getCurrentInputConnection() {
+              return host;
+            }
+          }));
+
       strip.setListener(new E2EEStripView.Listener() {
         @Override
         public void onTextInput(final String rawText) {
