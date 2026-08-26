@@ -176,4 +176,49 @@ public class TrustDecisionsReportAfailedWriteTest {
     assertTrue("a rejection that never happened must not report the previous one's failure",
         SignalProtocolMain.lastRejectionReachedDisk());
   }
+
+  /**
+   * A failed verify must put back everything it retracted, not just the badge.
+   *
+   * <p>Verifying also clears a standing rejection and dismisses a pending identity change, and both
+   * are irreversible in memory. Rolling back only {@code setVerified} left the user told "Nothing
+   * has been marked as verified" while the live store no longer held the rejection — so
+   * {@code wasKeyRejected} went false, the post-rejection warning would not fire the next time a
+   * relayed message pinned a key at that address, and the first successful write from any later
+   * operation would persist the cleared record for good.
+   *
+   * <p>That is the silent trust-on-first-use {@code markKeyRejected} exists to prevent, reached from
+   * the other direction — and the same argument that shaped {@code rejectContactKey} fifty lines
+   * above it.
+   */
+  @Test
+  public void afailedVerifyPutsBackTheRejectionItRetracted() throws Exception {
+    assertTrue("precondition: a key must be pinned to reject",
+        SignalProtocolMain.rejectContactKey(bob));
+    // Re-pin, so Verify has something to compare and the rejection is the standing record.
+    final Account peer = freshPeerPinnedAtBobsAddress();
+    assertTrue("precondition: the rejection must be on record",
+        SignalProtocolMain.wasKeyRejected(bob.getSignalProtocolAddress()));
+
+    writesFail = true;
+    assertFalse("precondition: the verify must report failure",
+        SignalProtocolMain.verifyContact(bob));
+
+    assertTrue("a verify that could not be recorded must leave the rejection standing. Otherwise "
+            + "the user is told nothing was recorded, and the app quietly forgets that they ever "
+            + "rejected a key at this address - so the next key pinned there arrives unwarned.",
+        SignalProtocolMain.wasKeyRejected(bob.getSignalProtocolAddress()));
+  }
+
+  /** Puts a fresh key at Bob's address, the way a re-invite after a rejection does. */
+  private Account freshPeerPinnedAtBobsAddress() throws Exception {
+    final Account keep = SignalProtocolMain.getInstance().getAccount();
+    SignalProtocolMain.initialize(null);
+    final String bundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(keep);
+    assertTrue("precondition: the fresh key must pin",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(bundle), bob.getSignalProtocolAddress()));
+    return keep;
+  }
 }

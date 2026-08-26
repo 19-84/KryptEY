@@ -1879,15 +1879,41 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // that then fails to decrypt, and the comment here called that "the safe direction". It is
       // not: nothing pins, so the warning claims a key that does not exist and the verify screen it
       // points at has no fingerprint to compare. Asked after the attempt instead.
-      // Gated, like both sibling arms. This one discarded the result and asserted the contact
-      // unconditionally, which is the odd one out of three.
+      // Decrypt FIRST, and only adopt the sender as the chosen contact if something came out.
+      //
+      // Gating the "Detected contact" line alone was not enough, and the reason is worth keeping:
+      // decryptMessageInClipboard calls showChosenContactInMainInfoField four statements after this
+      // returns, which paints "Chosen contact: Bob" on the same banner from the same unsigned
+      // header. Suppressing one verb while the other one runs unconditionally changed nothing a
+      // user would see - and the test that "proved" the gate drove processSignalMessage through a
+      // seam, so it never reached the line that undid it.
+      //
+      // The address name and device id are an unsigned header the relay copies out of any envelope
+      // that contact ever sent. A successful decrypt is the only thing on this route that ties the
+      // message to the key pinned at that address, so it is what the strip waits for before naming
+      // anyone.
       final boolean delivered =
           decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       if (messageEnvelope.getCiphertextType()
           == org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE) {
         warnIfKeyWasRejected(sender);
       }
-      if (delivered) setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
+      if (delivered) {
+        setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
+      } else {
+        // Nothing decrypted, so give the recipient back.
+        //
+        // The contact has to be adopted BEFORE the decrypt - setChosenContact clears the staged
+        // message when the recipient changes, so adopting afterwards wipes the plaintext that was
+        // just put on screen. Undoing it here is what makes the adoption conditional in effect.
+        //
+        // Suppressing the "Detected contact" line alone was not enough and is worth recording:
+        // decryptMessageInClipboard calls showChosenContactInMainInfoField four statements after
+        // this returns, which paints "Chosen contact: Bob" on the same banner from the same
+        // unsigned header. Only the verb changed. It also left Encrypt aimed at a recipient an
+        // envelope that decrypted to nothing had chosen.
+        forgetChosenRecipient();
+      }
     }
   }
 

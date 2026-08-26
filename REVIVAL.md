@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-four sections, written in the order things were found rather than by subject, so the
+Fifty-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -110,6 +110,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The first clean round in eleven, and a guard for the class](#the-first-clean-round-in-eleven-and-a-guard-for-the-class)
 - [The canonicality check, the fix that was not one, and what is actually true](#the-canonicality-check-the-fix-that-was-not-one-and-what-is-actually-true)
 - [Sweeping for the class instead of the bug, and what it found](#sweeping-for-the-class-instead-of-the-bug-and-what-it-found)
+- [A gate that changed the verb and nothing else](#a-gate-that-changed-the-verb-and-nothing-else)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3896,3 +3897,44 @@ selected". When the move fails the editor still holds the selection and our mode
 collapsed, so the delete eats that many characters *before the real cursor* — text the user never
 selected, and in the recapitalise path a buffer that can hold decrypted plaintext. The signal is
 restored and both call sites bail.
+
+
+## A gate that changed the verb and nothing else
+
+**The previous commit gated "Detected contact: X" on the decrypt having produced a message. On the
+production route it changed nothing a user would see, and the test that proved it drove a seam that
+skipped the line which undid it.**
+
+`processSignalMessage` has one production caller, `decryptMessageInClipboard`, and four statements
+later that caller runs `showChosenContactInMainInfoField()` unconditionally — which paints
+**"Chosen contact: Bob"** on the same banner, from the same unsigned header. Suppressing one verb
+while the other ran regardless is not a fix. And `processIncomingEnvelopeForTest` calls
+`processSignalMessage` directly and returns, so the test never reached the repaint: a control that
+certified a property the public path undid on the next line. That is the hollow-through-a-seam
+failure this document already has a name for, made again in the commit that cited it.
+
+The real fix is that the sender is not adopted at all unless something decrypted.
+`setChosenContact` must still run *before* the decrypt — it clears the staged message when the
+recipient changes, so adopting afterwards wipes the plaintext just put on screen — so the adoption
+is undone by `forgetChosenRecipient()` when nothing comes out. That also takes away the half the gate
+never touched: Encrypt no longer stays aimed at a recipient chosen by an envelope that decrypted to
+nothing. The test now goes through the clipboard and the Decrypt button, and its control is the
+gate-only version, which it fails.
+
+**And the verify rollback restored the cosmetic half of what it retracted.** Verifying also clears a
+standing rejection and dismisses a pending identity change, both irreversible in memory. The
+rollback added last commit put back `setVerified` and left those applied — so a failed write told
+the user "Nothing has been marked as verified" while the live store had forgotten the rejection.
+`wasKeyRejected` then answers false, `INFO_PINNED_AFTER_REJECT` does not fire the next time a
+relayed message pins a key at that address, and the first successful write from any later operation
+persists the cleared record permanently. That is the silent trust-on-first-use `markKeyRejected`
+exists to prevent, reached from the other direction — and the same argument that shaped
+`rejectContactKey` fifty lines above it. Both retractions are captured before and restored on
+failure.
+
+**The typing-path change shipped without a test**, which a reviewer said plainly and which was fair:
+`setSelection` regained its boolean and two call sites began bailing on it, with nothing exercising
+either. `FailedCursorMoveDoesNotDeleteTest` drives `LatinIME.mInputLogic.onCodeInput` — the real
+path, not the method — with a host connection that refuses to move the caret, and carries an
+anti-vacuity guard proving the ordinary case still reaches the delete. Its control is the unguarded
+delete, which it fails.

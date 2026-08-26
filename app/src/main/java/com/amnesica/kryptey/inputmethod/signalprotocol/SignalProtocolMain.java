@@ -580,6 +580,21 @@ public class SignalProtocolMain {
       return false;
     }
 
+    // Captured before the retractions, so a failed write can put them back.
+    //
+    // Rolling back only setVerified was not enough, and the missing half is the dangerous one: this
+    // method also clears a standing rejection and dismisses a pending identity change, both
+    // irreversible in memory. A failed write left the user told "Nothing has been marked as
+    // verified" while the live store no longer held the rejection - so wasKeyRejected went false,
+    // INFO_PINNED_AFTER_REJECT would not fire the next time a relayed message pinned a key at that
+    // address, and the first successful write from any later operation would persist the cleared
+    // record for good. That is the silent trust-on-first-use markKeyRejected exists to prevent,
+    // reached from the other direction.
+    final boolean hadRejection = wasKeyRejected(contact.getSignalProtocolAddress());
+    final org.signal.libsignal.protocol.IdentityKey pendingBefore =
+        mAccount.getSignalProtocolStore().getIdentityKeyStore()
+            .getPendingIdentity(contact.getSignalProtocolAddress());
+
     // A fresh comparison is the only thing that retires a rejection warning. Nothing an attacker
     // can trigger clears it.
     if (mAccount.getSignalProtocolStore().getIdentityKeyStore()
@@ -608,9 +623,17 @@ public class SignalProtocolMain {
     // isContactKeyTrustworthy agrees with the in-memory flag. That errs open - the user is told the
     // check did not record and shown a green badge anyway - until the next reloadAccount silently
     // takes it away.
-    Log.e(TAG, "Verification could not be persisted; rolling the badge back");
+    Log.e(TAG, "Verification could not be persisted; rolling back everything it retracted");
     contact.setVerified(false);
     mAccount.updateContactInContactList(contact);
+    if (hadRejection) {
+      mAccount.getSignalProtocolStore().getIdentityKeyStore()
+          .markKeyRejected(contact.getSignalProtocolAddress());
+    }
+    if (pendingBefore != null) {
+      mAccount.getSignalProtocolStore().getIdentityKeyStore()
+          .recordIdentityChange(contact.getSignalProtocolAddress(), pendingBefore);
+    }
     return false;
   }
 

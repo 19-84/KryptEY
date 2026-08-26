@@ -1,0 +1,140 @@
+package com.amnesica.kryptey.inputmethod.latin;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import android.content.Context;
+import android.text.InputType;
+import android.view.View;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+
+import com.amnesica.kryptey.inputmethod.event.Event;
+import com.amnesica.kryptey.inputmethod.latin.common.Constants;
+import com.amnesica.kryptey.inputmethod.latin.settings.Settings;
+import com.amnesica.kryptey.inputmethod.latin.settings.SettingsValues;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A delete that depends on a cursor move must not happen when the move failed.
+ *
+ * <p>Backspace over a selection is two steps: collapse the caret to the end of the selection, then
+ * delete backwards over its length. {@code setSelection} was {@code void} with three silent exits —
+ * one of them <em>after</em> assigning the new expected cursor — so the call site could not tell.
+ * When the move fails the editor still holds the selection while the keyboard's model says the caret
+ * is collapsed, and the delete then removes that many characters <b>before the real cursor</b>: text
+ * the user never selected.
+ *
+ * <p>Not exotic. {@code getIC()} returns either the host's connection — the adversary in this threat
+ * model, and dead connections return false routinely on an app switch — or the strip's own, which
+ * returns false once its editable is gone.
+ *
+ * <p>Driven through {@code LatinIME.mInputLogic.onCodeInput} rather than by calling
+ * {@code setSelection} directly, because the property is about what the call site does with the
+ * answer. A test that asserted the return value alone would be true of the method and say nothing
+ * about the delete — a mistake this branch has made twice and recorded both times.
+ */
+@RunWith(RobolectricTestRunner.class)
+public class FailedCursorMoveDoesNotDeleteTest {
+
+  /** A host field that can refuse to move the caret, the way a dead connection does. */
+  private static final class HostField extends BaseInputConnection {
+    final List<int[]> deletes = new ArrayList<>();
+    boolean refuseSelection;
+
+    HostField(final View dummy) {
+      super(dummy, false);
+    }
+
+    @Override
+    public boolean setSelection(final int start, final int end) {
+      if (refuseSelection) return false;
+      return super.setSelection(start, end);
+    }
+
+    @Override
+    public boolean deleteSurroundingText(final int beforeLength, final int afterLength) {
+      deletes.add(new int[] {beforeLength, afterLength});
+      return true;
+    }
+  }
+
+  private EditorInfo hostField;
+  private HostField hostConnection;
+  private LatinIME ime;
+
+  @Before
+  public void setUp() {
+    final Context app = RuntimeEnvironment.getApplication();
+    Settings.init(app);
+    RichInputMethodManager.init(app);
+
+    hostField = new EditorInfo();
+    hostField.inputType = InputType.TYPE_CLASS_TEXT;
+    hostField.imeOptions = EditorInfo.IME_ACTION_NONE;
+    hostConnection = new HostField(new View(app));
+
+    ime = new LatinIME() {
+      @Override
+      public EditorInfo getCurrentInputEditorInfo() {
+        return hostField;
+      }
+
+      @Override
+      public InputConnection getCurrentInputConnection() {
+        return hostConnection;
+      }
+    };
+  }
+
+  private SettingsValues values() {
+    Settings.getInstance().loadSettings(new InputAttributes(hostField, false));
+    return Settings.getInstance().getCurrent();
+  }
+
+  private void pressBackspace() {
+    ime.mInputLogic.onCodeInput(values(), Event.createSoftwareKeypressEvent(
+        Event.NOT_A_CODE_POINT, Constants.CODE_DELETE, 0, 0, false));
+  }
+
+  /**
+   * Anti-vacuity guard: the ordinary path really does reach the delete.
+   *
+   * <p>Without this, the assertion below passes on a harness that never gets there at all — which
+   * is how a control on this branch has been hollow more than once.
+   */
+  @Test
+  public void anordinarySelectionIsStillDeleted() {
+    ime.mInputLogic.onUpdateSelection(3, 8);
+    pressBackspace();
+
+    assertEquals("the harness must reach deleteSurroundingText, or the test below proves nothing",
+        1, hostConnection.deletes.size());
+    assertEquals("and delete exactly the selection's length", 5, hostConnection.deletes.get(0)[0]);
+  }
+
+  /** And when the caret cannot be moved, nothing is deleted. */
+  @Test
+  public void arefusedCursorMoveDeletesNothing() {
+    ime.mInputLogic.onUpdateSelection(3, 8);
+    hostConnection.refuseSelection = true;
+
+    pressBackspace();
+
+    assertTrue("the caret could not be collapsed, so the editor still holds the selection while "
+            + "the keyboard's model says the cursor is at its end. Deleting five characters now "
+            + "takes them from BEFORE the real cursor - text the user never selected, and in the "
+            + "recapitalise path from a buffer that can hold decrypted plaintext. Deletes seen: "
+            + hostConnection.deletes.size(),
+        hostConnection.deletes.isEmpty());
+  }
+}

@@ -3,6 +3,7 @@ package com.amnesica.kryptey.inputmethod.latin.e2ee;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
@@ -241,8 +242,13 @@ public class VerifyScreenNamesAstandingRejectionTest {
     // not decrypt must not have the strip assert a contact - so the old check would fail here for
     // the right reason and hide the property under test. setChosenContact runs on this arm before
     // the decrypt either way, so it is the indicator that survives the gate.
-    assertEquals("the envelope must have reached the arm under test, or the absence below means "
-        + "nothing", bob(), strip.chosenContactForTest());
+    // Reach shown by the decrypt-failure toast, not by the chosen contact.
+    //
+    // The arm gives the recipient back when nothing decrypts - a forged envelope must not leave
+    // Encrypt aimed at someone an unsigned header chose - so chosenContact is null here by design
+    // and cannot be the indicator. The toast is written on that same path and nowhere else.
+    assertNotNull("the envelope must have reached the arm under test, or the absence below means "
+        + "nothing", org.robolectric.shadows.ShadowToast.getTextOfLatestToast());
     assertFalse("a refused bundle was reported as a new key at an address that holds none: "
         + banner, banner.contains("new key for that address"));
   }
@@ -489,10 +495,25 @@ public class VerifyScreenNamesAstandingRejectionTest {
         org.signal.libsignal.protocol.message.CiphertextMessage.WHISPER_TYPE,
         bob().getSignalProtocolAddressName(), bob().getDeviceId());
 
-    strip.processIncomingEnvelopeForTest(forged);
+    // Through the clipboard and the Decrypt button - the production route - NOT
+    // processIncomingEnvelopeForTest. That seam calls processSignalMessage directly and returns,
+    // so it never reaches decryptMessageInClipboard's trailing showChosenContactInMainInfoField,
+    // which is the line that repainted the contact's name from the same unsigned header and made
+    // the first version of this fix inert. A test through the seam certified a property the public
+    // path undid on the next line.
+    final android.content.ClipboardManager clipboard =
+        (android.content.ClipboardManager) org.robolectric.RuntimeEnvironment.getApplication()
+            .getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("",
+        com.amnesica.kryptey.inputmethod.signalprotocol.encoding.RawEncoder.encode(
+            EnvelopeCodec.toWire(forged))));
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
 
-    assertEquals("precondition: the envelope must have reached the arm under test", bob(),
-        strip.chosenContactForTest());
+    assertNotNull("precondition: the envelope must have reached the arm under test - the failure "
+        + "toast is written on this path and nowhere else",
+        org.robolectric.shadows.ShadowToast.getTextOfLatestToast());
+    assertNull("and it must not leave Encrypt aimed at a contact the envelope named but never "
+        + "authenticated", strip.chosenContactForTest());
     final String shown =
         ((TextView) strip.findViewById(R.id.e2ee_info_text)).getText().toString();
     assertFalse("nothing decrypted, so the strip must not name a sender on the banner that stays "
