@@ -175,27 +175,55 @@ public class JsonUtil {
     }
   }
 
+  /**
+   * Parses a sender key back out of a map key, from the right.
+   *
+   * <p>These two classes were broken in both directions and neither half could ever have run: the
+   * serializer called {@code writeStartObject} in a map-key position, which Jackson refuses
+   * outright, so a non-empty sender-key store could not be written at all. The store is only
+   * populated by libsignal's group-session API, which this app never calls, so the map is always
+   * empty and nothing noticed. That is a landmine rather than dead code — the day group messaging
+   * lands, every account save throws.
+   *
+   * <p>Parsing from the right rather than the left, which is the other half of the bug. The
+   * address name is peer-supplied and {@code requireDisplaySafeName} explicitly permits {@code .},
+   * so splitting on the first dots attributes a name like {@code bob.name} to the wrong fields —
+   * and the old code then ran {@code Integer.parseInt} on it and threw {@code NumberFormatException}
+   * out of a deserializer, on the store-load path. The distribution id is a UUID and the device id
+   * is numeric, so the last two dots are unambiguous however many the name contains.
+   */
   public static class SenderKeyDeserializer extends KeyDeserializer {
     @Override
-    public SenderKey deserializeKey(String key, DeserializationContext ctxt) {
-      Log.d(TAG, "SenderKeyDeserializer used");
-      String[] allThree = key.split("\\.");
-      String name = allThree[0];
-      int deviceId = Integer.parseInt(allThree[1]);
-      String distributionId = allThree[2];
-      return new SenderKey(name, deviceId, distributionId);
+    public SenderKey deserializeKey(final String key, final DeserializationContext ctxt)
+        throws IOException {
+      if (key == null) throw new IOException("no sender key");
+      final int lastDot = key.lastIndexOf('.');
+      if (lastDot <= 0) throw new IOException("malformed sender key: " + key);
+      final int secondLastDot = key.lastIndexOf('.', lastDot - 1);
+      if (secondLastDot <= 0) throw new IOException("malformed sender key: " + key);
+
+      final String name = key.substring(0, secondLastDot);
+      final String deviceId = key.substring(secondLastDot + 1, lastDot);
+      final String distributionId = key.substring(lastDot + 1);
+      if (name.isEmpty() || deviceId.isEmpty() || distributionId.isEmpty()) {
+        throw new IOException("malformed sender key: " + key);
+      }
+      try {
+        return new SenderKey(name, Integer.parseInt(deviceId), distributionId);
+      } catch (final NumberFormatException e) {
+        // Unchecked out of a deserializer is how this used to fail, on the store-load path.
+        throw new IOException("malformed sender key: " + key, e);
+      }
     }
   }
 
+  /** Writes a sender key as a map key, in the form {@link SenderKeyDeserializer} reads. */
   public static class SenderKeySerializer extends JsonSerializer<SenderKey> {
     @Override
-    public void serialize(SenderKey value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-      Log.d(TAG, "SenderKeySerializer used");
-      gen.writeStartObject();
-      gen.writeStringField("name", value.getSignalProtocolAddressName());
-      gen.writeNumberField("deviceId", value.getDeviceId());
-      gen.writeStringField("distributionId", value.getDistributionId());
-      gen.writeEndObject();
+    public void serialize(final SenderKey value, final JsonGenerator gen,
+        final SerializerProvider serializers) throws IOException {
+      gen.writeFieldName(value.getSignalProtocolAddressName() + "."
+          + value.getDeviceId() + "." + value.getDistributionId());
     }
   }
 }

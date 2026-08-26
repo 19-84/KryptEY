@@ -110,7 +110,26 @@ public class SecondPreKeyMessageDoesNotClobberAnInviteTest {
         SignalProtocolMain.decryptMessage(EnvelopeCodec.fromWire(first), addressOf(bob)));
 
     // Alice now invites Carol. The invite offers whatever id the allocator considers unused.
-    final String carolOpening = inviteAndOpen(carol, "hello from carol");
+    activate(alice);
+    final MessageEnvelope carolBundle = SignalProtocolMain.getPreKeyResponseMessage();
+    assertNotNull(carolBundle);
+    final int offeredToCarol = carolBundle.getPreKeyResponse().getDevices().get(0)
+        .getPreKey().getKeyId();
+    final int declaredByBob = new org.signal.libsignal.protocol.message.PreKeySignalMessage(
+        EnvelopeCodec.fromWire(second).getCiphertextMessage()).getPreKeyId().orElse(-1);
+
+    // Asserted, not assumed. The scenario only reproduces the bug because Carol's invite is
+    // allocated the very id Bob's second message declares - true today because the regenerated id
+    // sorts below the untouched one and the allocator takes the lowest unused. Change either and
+    // the collision stops happening, and this test would pass while testing nothing.
+    assertEquals("this scenario needs Carol's invite to offer the id Bob's message declares, or "
+        + "there is no collision to detect", declaredByBob, offeredToCarol);
+
+    activate(carol);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(EnvelopeCodec.toWire(carolBundle)), addressOf(alice)));
+    final String carolOpening = EnvelopeCodec.toWire(
+        SignalProtocolMain.encryptMessage("hello from carol", addressOf(alice)));
 
     // And only then reads Bob's second message.
     activate(alice);
@@ -191,11 +210,101 @@ public class SecondPreKeyMessageDoesNotClobberAnInviteTest {
         + "offered to the next contact", !beforeAnyone.equals(afterwards));
   }
 
+  /**
+   * An id we never held is not created, which is the half that carries the security weight.
+   *
+   * <p>A reviewer pointed out that the three tests above all leave the "did we hold this id before"
+   * half of the gate unkilled: in each of them the declared id is one the store really does hold,
+   * so the "absent afterwards" half alone gives the right answer. Dropping the first half survives
+   * the whole suite — and it is the half that closes the attack.
+   *
+   * <p>On the short-circuit path libsignal reads none of the message's outer fields except the
+   * identity and base keys, so the declared pre-key id is not covered by the inner MAC and the
+   * envelope has no integrity protection of its own. A relay can therefore rewrite it. Without the
+   * first half of the gate that turns an aimed delete into an aimed <em>write</em>: the victim mints
+   * a fresh unused record at an id of the attacker's choosing, which is worse, because the allocator
+   * hands out the lowest unused id — so the attacker picks which key the victim's next invite
+   * offers, and the pruning that bounds the used-key set stops being reached at all.
+   *
+   * <p>The rewrite is done on the serialized message rather than through a constructor because
+   * libsignal exposes none: {@code PreKeySignalMessage} can only be built from bytes. Field 1 of
+   * that protobuf is {@code pre_key_id}, a varint, so a small id is one byte after the {@code 0x08}
+   * tag and can be replaced in place without disturbing anything else.
+   */
+  @Test
+  public void anidWeNeverHeldIsNotCreatedByAmessageThatDeclaresIt() throws Exception {
+    activate(alice);
+    final String bundle = EnvelopeCodec.toWire(SignalProtocolMain.getPreKeyResponseMessage());
+    activate(bob);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(bundle), addressOf(alice)));
+    final MessageEnvelope first =
+        SignalProtocolMain.encryptMessage("one", addressOf(alice));
+    final MessageEnvelope second =
+        SignalProtocolMain.encryptMessage("two", addressOf(alice));
+
+    activate(alice);
+    SignalProtocolMain.decryptMessage(EnvelopeCodec.fromWire(EnvelopeCodec.toWire(first)),
+        addressOf(bob));
+
+    final int declared = new org.signal.libsignal.protocol.message.PreKeySignalMessage(
+        second.getCiphertextMessage()).getPreKeyId().orElse(-1);
+    assertTrue("the second message must declare a pre-key id, or there is nothing to rewrite",
+        declared >= 0);
+
+    final int strangerId = 99;
+    assertTrue("precondition: the store must NOT hold the id we are about to declare",
+        !alice.getSignalProtocolStore().containsPreKey(strangerId));
+
+    final byte[] rewritten = withDeclaredPreKeyId(second.getCiphertextMessage(), declared,
+        strangerId);
+    final MessageEnvelope forged = new MessageEnvelope(rewritten, second.getCiphertextType(),
+        second.getSignalProtocolAddressName(), second.getDeviceId());
+
+    final java.util.Map<Integer, String> before = snapshotPreKeys(alice);
+    activate(alice);
+    try {
+      SignalProtocolMain.decryptMessage(EnvelopeCodec.fromWire(EnvelopeCodec.toWire(forged)),
+          addressOf(bob));
+    } catch (final Exception ignored) {
+      // Whether the forged message decrypts is not the point - the store must be untouched either
+      // way, and on the short-circuit path it does decrypt.
+    }
+
+    assertTrue("a pre-key was created at an id this device never held, chosen by whoever relayed "
+            + "the message. That hands an attacker the id the next invite will offer.",
+        !alice.getSignalProtocolStore().containsPreKey(strangerId));
+    assertEquals("and nothing else in the store may have moved", before, snapshotPreKeys(alice));
+  }
+
+  /** Replaces the {@code pre_key_id} varint (protobuf field 1) in a serialized PreKeySignalMessage. */
+  private static byte[] withDeclaredPreKeyId(final byte[] serialized, final int from, final int to) {
+    assertTrue("this rewrite only handles single-byte varints", from < 128 && to < 128);
+    final byte[] copy = serialized.clone();
+    for (int i = 0; i + 1 < copy.length; i++) {
+      if (copy[i] == 0x08 && copy[i + 1] == (byte) from) {
+        copy[i + 1] = (byte) to;
+        return copy;
+      }
+    }
+    throw new AssertionError("could not find the pre_key_id field to rewrite");
+  }
+
   /** Every stored pre-key id mapped to its serialized record, as a comparable snapshot. */
   private static java.util.Map<Integer, String> snapshotPreKeys(final Account account)
       throws Exception {
+    // Two things worth knowing about this helper.
+    //
+    // It scans a fixed range, so it asserts that the range actually covers the store - otherwise
+    // two truncated views could compare equal and a test would pass by not looking. And loadPreKey
+    // marks a record USED, so taking a snapshot flips the whole store: nothing here reads that flag
+    // (a serialized PreKeyRecord does not carry it), but a future assertion about allocation after
+    // a snapshot would be reading a store this helper had already changed.
+    final int scanned = 200;
+    assertTrue("the snapshot range no longer covers the store, so it would compare truncated views",
+        account.getSignalProtocolStore().getPreKeyStore().getSize() <= scanned);
     final java.util.Map<Integer, String> snapshot = new java.util.TreeMap<>();
-    for (int id = 0; id < 200; id++) {
+    for (int id = 0; id < scanned; id++) {
       if (!account.getSignalProtocolStore().containsPreKey(id)) continue;
       snapshot.put(id, com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64.encodeBytes(
           account.getSignalProtocolStore().loadPreKey(id).serialize()));

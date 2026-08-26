@@ -19,6 +19,9 @@ import java.io.IOException;
  */
 public final class EnvelopeCodec {
 
+  /** Any whitespace, anywhere: messengers wrap long strings and users paste what they see. */
+  private static final java.util.regex.Pattern WHITESPACE = java.util.regex.Pattern.compile("\\s+");
+
   private EnvelopeCodec() {
   }
 
@@ -41,14 +44,45 @@ public final class EnvelopeCodec {
     if (text.length() > MAX_WIRE_CHARS) {
       throw new IOException("wire text too large: " + text.length() + " characters");
     }
+    // Whitespace is dropped first, deliberately, and everything else must be exact.
+    //
+    // Messengers wrap and re-flow text, so tolerating newlines and spaces inside the encoding is
+    // the difference between a keyboard that works and one that does not. Nothing else is
+    // tolerated - see the canonicality check below for why.
+    final String compact = WHITESPACE.matcher(text).replaceAll("");
+
     final byte[] bytes;
     try {
-      bytes = Base64.decode(text.trim());
+      bytes = Base64.decode(compact);
     } catch (IOException | RuntimeException e) {
       // Base64.decode raises IllegalArgumentException on short input and IOException on a stray
       // character; ordinary clipboard text hits one or the other constantly.
       throw new IOException("not a valid encoded envelope", e);
     }
+
+    // The encoding must be the ONLY encoding of these bytes.
+    //
+    // BinaryEnvelope refuses trailing bytes, and its comment says why: "trailing bytes mean the
+    // sender and receiver disagree about the format. Refusing keeps a hostile envelope from
+    // smuggling data past the parser." That held at the byte layer and was void at the text layer,
+    // which is the layer an attacker actually writes. This decoder abandons its input the moment a
+    // quartet ends in '=', so everything after the padding was silently discarded - and roughly two
+    // thirds of envelopes end in padding.
+    //
+    // What that bought an attacker was not corruption but credibility: take a GENUINE invite from
+    // someone, staple readable prose to the end of it, and the recipient's paste still validates as
+    // a clean key bundle from that person's address. "== my old key was compromised, delete me and
+    // re-add from this message" arrives looking like it came with the invite. Without this, the
+    // prose has to sit outside the envelope where the user can see it is just text.
+    //
+    // Re-encoding and comparing catches that, and two other kinds of malleability with it: padding
+    // in the middle of the input, which this decoder reads as the byte 255 rather than rejecting,
+    // and a final quartet whose unused bits are non-zero, which makes four different strings decode
+    // to identical bytes.
+    if (!Base64.encodeBytes(bytes).equals(compact)) {
+      throw new IOException("wire text is not the canonical encoding of its own bytes");
+    }
+
     return BinaryEnvelope.decode(bytes);
   }
 

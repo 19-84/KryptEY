@@ -2692,6 +2692,44 @@ regenerating fails the third.
 Not covered by anything that existed: every near-miss test ordered the operations so the bug could
 not appear — decrypting exactly one pre-key message, or issuing both bundles before any decrypt.
 
+**The wire text was not the only encoding of its own bytes.** From an adversarial sweep of the
+wire format, the counterpart to the session sweep above.
+
+`BinaryEnvelope` refuses trailing bytes, and says why: "trailing bytes mean the sender and receiver
+disagree about the format. Refusing keeps a hostile envelope from smuggling data past the parser."
+That held at the byte layer and was void at the text layer — which is the layer an attacker writes.
+The base64 decoder abandons its input the moment a quartet ends in `=`, discarding everything after
+it, and about two thirds of envelopes end in padding.
+
+What that bought was credibility rather than corruption: take a **genuine** invite from someone,
+staple readable prose to the end, and the recipient's paste still validates as a clean key bundle
+from that person's address. *"== my old key was compromised, delete me and re-add from this
+message"* arrives looking like part of the invite. Without it the prose sits outside the envelope,
+where it is visibly just text the sender typed.
+
+`EnvelopeCodec.fromWire` now re-encodes the decoded bytes and requires the result to equal the
+input, whitespace removed. That one comparison closes three kinds of malleability at once: trailing
+content after the padding, padding in a non-terminal position (which this decoder reads as the byte
+255 rather than rejecting), and a final quartet whose unused bits are non-zero, which lets four
+different strings decode to identical bytes. Whitespace is still stripped first, deliberately —
+messengers wrap and re-flow text, and rejecting that would break ordinary use.
+
+Two of the six tests needed correcting before they meant anything, and both mistakes were mine: the
+fixture asserted a bundle ended in padding when that particular bundle did not, and the
+non-canonical-quartet test expected every mutation of the last character to be refused when most of
+them are canonical encodings of *different* bytes. It now finds the mutations that decode to the
+same bytes and requires those to be refused.
+
+**And a landmine in the same sweep.** `JsonUtil`'s `SenderKey` map-key codec was broken in both
+directions and neither half could ever have run: the serializer called `writeStartObject` in a
+map-key position, which Jackson refuses outright, so a non-empty sender-key store could not be
+written at all; and the deserializer split the key on its first dots and ran `Integer.parseInt` on
+whatever landed in the middle — unchecked, out of a deserializer, on the store-load path, with a
+peer-supplied name that the wire format explicitly permits dots in. Nothing noticed because the
+store is only populated by libsignal's group-session API, which this app never calls. That is a
+landmine rather than dead code: the day group messaging lands, every account save throws. Both
+halves are fixed and parse from the right, which is unambiguous however many dots the name contains.
+
 **An invite stops working once ~50 later invites have been published.** Every bundle allocates its
 own one-time pre-key id — deliberately, because the allocator used to hard-code id 1 and regenerate
 *in place*, so handing out a second invite destroyed the material the first invitee already held.

@@ -113,12 +113,16 @@ public class OneTimePreKeyIsConsumedTest {
   /**
    * After the first message is decrypted, the private half of that pre-key is gone from the store.
    *
-   * <p>It does <b>not</b> pin {@code removePreKey}, and the attempt to make it do so is recorded here
-   * because the negative result is the useful part. Disabling that method changes nothing this test
-   * or any other can see: measured under the mutant, the store ends with the same two records, both
-   * unused, and neither holding the offered key. The end state is reached without it. So the
-   * surviving mutant is not an unguarded security property - it is a deletion whose effect the flow
-   * already produces by another route, and no honest assertion distinguishes the two.
+   * <p><b>It pins {@code removePreKey} now, and it did not used to.</b> This paragraph used to
+   * record a measured negative result: disabling that method changed nothing any test could see,
+   * because the store ended with the same two records, both unused, and neither holding the offered
+   * key. That measurement was taken while the decrypt path re-minted a pre-key at the declared id
+   * unconditionally, which produced the same end state by another route. Now that regeneration
+   * happens only when a pre-key was actually consumed, an emptied {@code removePreKey} leaves the
+   * record present after the decrypt, the gate declines to replace it, and the store still holds the
+   * offered key — so this test fails against that mutant. A surviving mutant became a killed one as
+   * a side effect of fixing something else, which is worth writing down: the earlier note was
+   * honest about what it measured, and what it measured stopped being true.
    *
    * <p>Scanning key material rather than the id, because the id is recycled: the allocator hands out
    * the lowest record not marked used, and a replacement pair appears under the same number. An
