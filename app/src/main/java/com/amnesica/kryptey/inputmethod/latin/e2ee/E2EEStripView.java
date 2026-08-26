@@ -1705,6 +1705,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean warnIfKeyWasRejected(final Contact sender) {
     if (sender == null) return false;
     if (!mE2EEStrip.wasKeyRejected(sender.getSignalProtocolAddress())) return false;
+    // Deliberately does NOT require a key to be pinned yet. The three arrival paths call this
+    // while a bundle is being processed, and the pin can land after the check - requiring one here
+    // suppressed the warning on exactly the paths it was written for. The selection path is
+    // different and carries that condition itself; see selectContact.
     final String warning = String.format(INFO_PINNED_AFTER_REJECT, labelFor(sender));
     Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
     setWarningMessage(warning, String.valueOf(sender.getSignalProtocolAddress()));
@@ -2539,8 +2543,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // row left "Chosen contact: Bob" over the attacker's key, which is byte-identical to a healthy
     // contact. The warning's own last sentence is "Compare the number by voice before sending
     // anything", and opening the contact list to do that is the gesture that erased it.
+    // A rejection alone is not a warning about a key, and on this path nothing is being pinned.
+    //
+    // INFO_PINNED_AFTER_REJECT states as fact that "this IS a new key for that address". After a
+    // BARE rejection there is no key there at all - rejectContactKey removes the identity, the
+    // pending change and the session - so firing on the rejection record alone made that claim
+    // false, and made it permanent: the user rejects, then taps the row (the ordinary gesture, and
+    // the one the warning's own last sentence invites) and gets a sticky warning about a key that
+    // does not exist. Following its instruction to the verify screen finds no fingerprint, so
+    // clearFingerprintViews disables Verify AND Reject - both deliberate responses physically
+    // unavailable, the flag carried across rebuilds, every routine banner suppressed from then on.
+    // The only exits were deleting the contact or the attacker delivering another key.
+    //
+    // The arrival paths must still warn without a pin, because that is where the pin is landing.
+    // This condition belongs here, not in the shared helper.
+    final boolean aKeyIsPinnedHere =
+        contact != null && mE2EEStrip.hasPinnedKey(contact.getSignalProtocolAddress());
     final boolean warnedAboutThisContact =
-        warnIfIdentityChanged(contact) || warnIfKeyWasRejected(contact);
+        warnIfIdentityChanged(contact) || (aKeyIsPinnedHere && warnIfKeyWasRejected(contact));
     if (mWarningStanding) {
       // Do not write OVER the warning - that is the same erasure whether or not the flag comes down
       // with it, because what the user reads is the banner. Repaint it with the new recipient named

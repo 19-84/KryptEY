@@ -2864,6 +2864,25 @@ original code:
   ahead of the guard: messenger-driven clipboard traffic could light Encrypt and Decrypt on a store
   that cannot be decrypted. It asks the store directly now, as well.
 
+**Round four: a bare rejection left a false warning that could never be cleared.** The first thing
+in this area that was neither a fix's regression nor already known, and it is reached by a user
+doing exactly the right thing.
+
+Rejecting a key removes the identity, the pending change and the session — so nothing is pinned at
+that address at all. Tapping the row afterwards, which is the ordinary gesture and the one the
+warning's own last sentence invites, posted `INFO_PINNED_AFTER_REJECT`: *"This **is a new key for
+that address**"*. There was no key. And the claim was unclearable: following its instruction to the
+verify screen finds no fingerprint, so `clearFingerprintViews` disables Verify **and** Reject —
+both deliberate responses physically unavailable — while the flag rides across strip rebuilds and
+suppresses every routine banner from then on. The only exits were deleting the contact or the
+attacker delivering another key. This file makes the same argument about a different warning: one
+that is provably wrong where it fires is worse than the gap it closes.
+
+The condition belongs on the selection path and not in the shared helper — the three arrival paths
+call it *while a bundle is being pinned*, so requiring a pin there suppressed the warning on exactly
+the paths it was written for. Four existing tests said so immediately, which is the useful kind of
+failure.
+
 **The verify screen never mentioned a standing rejection.** Same sweep. Pressing Verify there is
 what *clears* a rejection — `rejectedAddresses` is documented as retired only by a fresh comparison,
 and `isContactKeyTrustworthy` ranks a standing rejection above a verified badge. Yet the screen

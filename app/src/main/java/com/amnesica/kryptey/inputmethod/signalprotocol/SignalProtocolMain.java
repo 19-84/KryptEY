@@ -258,6 +258,19 @@ public class SignalProtocolMain {
    *
    * @return true if a pinned key was forgotten.
    */
+  /**
+   * Whether an identity key is currently pinned at this address.
+   *
+   * <p>Exists so a caller can tell "a key was rejected here" from "a key was rejected here and
+   * another has since been pinned". Those are different states and only the second is a warning
+   * about a key: after a bare rejection there is nothing at the address at all.
+   */
+  public static boolean hasPinnedKey(final SignalProtocolAddress address) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore()
+        .getIdentityKeyStore().getIdentity(address) != null;
+  }
+
   public static boolean rejectContactKey(final Contact contact) {
     if (sInstance.mAccount == null || contact == null) return false;
     final SignalProtocolAddress address = contact.getSignalProtocolAddress();

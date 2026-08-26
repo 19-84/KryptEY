@@ -320,6 +320,11 @@ public class E2EEStrip {
     return SignalProtocolMain.getFingerprint(contact);
   }
 
+  /** @see SignalProtocolMain#hasPinnedKey */
+  public boolean hasPinnedKey(final org.signal.libsignal.protocol.SignalProtocolAddress address) {
+    return SignalProtocolMain.hasPinnedKey(address);
+  }
+
   /** @see SignalProtocolMain#wasKeyRejected */
   public boolean wasKeyRejected(final org.signal.libsignal.protocol.SignalProtocolAddress address) {
     return SignalProtocolMain.wasKeyRejected(address);

@@ -169,6 +169,52 @@ public class VerifyScreenNamesAstandingRejectionTest {
   }
 
   /**
+   * A bare rejection must not leave a false, unclearable warning one tap away.
+   *
+   * <p>Rejecting removes the identity, the pending change and the session, so there is no key at
+   * that address at all. Tapping the row afterwards — the ordinary gesture, and the one the
+   * warning's own last sentence invites — used to post {@code INFO_PINNED_AFTER_REJECT}, which
+   * states as fact that "this IS a new key for that address".
+   *
+   * <p>Worse than being false: it was unclearable. Following its instruction to the verify screen
+   * finds no fingerprint, so {@code clearFingerprintViews} disables Verify <em>and</em> Reject —
+   * both deliberate responses physically unavailable — while the flag rides across strip rebuilds
+   * and suppresses every routine banner from then on. The only exits were deleting the contact or
+   * the attacker delivering another key.
+   */
+  @Test
+  public void abareRejectionDoesNotWarnAboutAkeyThatDoesNotExist() throws Exception {
+    assertTrue("precondition: rejection must succeed", SignalProtocolMain.rejectContactKey(bob()));
+    assertTrue("precondition: the rejection must stand",
+        SignalProtocolMain.wasKeyRejected(bob().getSignalProtocolAddress()));
+    assertFalse("precondition: and nothing may be pinned at that address",
+        SignalProtocolMain.hasPinnedKey(bob().getSignalProtocolAddress()));
+
+    strip.selectContact(bob());
+
+    final String banner =
+        ((TextView) strip.findViewById(R.id.e2ee_info_text)).getText().toString();
+    assertFalse("the strip claimed a new key had been pinned for a contact that has no key at "
+            + "all - and neither Verify nor Reject is available to put that warning down: " + banner,
+        banner.contains("new key for that address"));
+  }
+
+  /** But once a key IS pinned there again, the warning is real and must fire. */
+  @Test
+  public void arejectionFollowedByAnewKeyStillWarnsOnSelection() throws Exception {
+    rejectThenLetItBeRePinned();
+    assertTrue("precondition: a key must be pinned again",
+        SignalProtocolMain.hasPinnedKey(bob().getSignalProtocolAddress()));
+
+    strip.selectContact(bob());
+
+    final String banner =
+        ((TextView) strip.findViewById(R.id.e2ee_info_text)).getText().toString();
+    assertTrue("a key pinned at an address the user rejected is exactly what this warning is for: "
+        + banner, banner.contains("new key for that address"));
+  }
+
+  /**
    * And the buttons come down for a contact with no pinned key.
    *
    * <p>They are members that persist across selections and were only ever enabled, never disabled —
