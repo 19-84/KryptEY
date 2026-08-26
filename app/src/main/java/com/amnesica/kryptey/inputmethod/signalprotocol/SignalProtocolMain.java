@@ -1646,6 +1646,19 @@ public class SignalProtocolMain {
    */
   private boolean mLastAttachedBundleRefused = false;
 
+  /**
+   * Whether the last decrypt read a message it could not file in the chat log.
+   *
+   * <p>Distinct from a decryption failure, and that distinction is the point: the message is
+   * delivered either way, and telling the user it failed to decrypt sends them toward
+   * delete-and-re-invite, which is a key-substitution window.
+   */
+  private boolean mLastChatLogWriteFailed = false;
+
+  public static boolean lastChatLogWriteFailed() {
+    return sInstance.mLastChatLogWriteFailed;
+  }
+
   public static boolean lastAttachedBundleWasRefused() {
     // No sInstance null check: it is `private static final ... = new SignalProtocolMain()`, so the
     // guard could never be false and was a permanently surviving mutant in a repo that tracks
@@ -1699,6 +1712,7 @@ public class SignalProtocolMain {
 
     // Cleared per attempt, so the strip reads the outcome of THIS decrypt and never a stale one.
     mLastAttachedBundleRefused = false;
+    mLastChatLogWriteFailed = false;
 
     final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
 
@@ -1803,7 +1817,29 @@ public class SignalProtocolMain {
     if (plaintext != null) {
       // store unencrypted message somewhere with recipient in map
       Log.d(TAG, "Attempting to save unencrypted message...");
-      storeUnencryptedMessageInMap(mAccount, signalProtocolAddress, decryptedMessage, Instant.ofEpochMilli(messageEnvelope.getTimestamp()), false);
+      try {
+        storeUnencryptedMessageInMap(mAccount, signalProtocolAddress, decryptedMessage, Instant.ofEpochMilli(messageEnvelope.getTimestamp()), false);
+      } catch (final ChatLogUnavailableException e) {
+        // The fourth place that has to survive an unreadable chat log, and the one that was
+        // missed - ChatLogUnavailableException's own javadoc says "the three places".
+        //
+        // Letting it escape here was worse than a crash. The message DECRYPTED; the throw came
+        // from filing it. It travelled up into E2EEStrip.decryptMessage's catch-all and the user
+        // was shown "decryption failed" for a message the app had read perfectly, and the line
+        // below never ran - so the advanced ratchet, and on the PREKEY arm the replaced one-time
+        // pre-key, stayed in memory and never reached disk.
+        //
+        // Worse than a bad sentence: one flipped byte in the sealed log makes this permanent
+        // (GCM simply fails, no key needed), and this codebase's own analysis says the generic
+        // decryption-failure advice drives users to delete the contact and re-invite. That turns
+        // a corrupted log into a standing key-substitution window - an amplifier built out of
+        // advice given for the wrong reason.
+        //
+        // So: deliver the message, persist the session, and record that the log write failed so
+        // the UI can say what actually went wrong.
+        Log.e(TAG, "the chat log is unavailable; the message is delivered but not recorded");
+        mLastChatLogWriteFailed = true;
+      }
     }
     storeAllAccountInformationInSharedPreferences();
 
@@ -2204,6 +2240,7 @@ public class SignalProtocolMain {
     // leftover this method exists for. Production clears it at the top of every decrypt, so this is
     // isolation rather than a fix - a trap set for the first test that reads it.
     sInstance.mLastAttachedBundleRefused = false;
+    sInstance.mLastChatLogWriteFailed = false;
   }
 
   // needed for testing only

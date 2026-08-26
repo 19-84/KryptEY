@@ -209,6 +209,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * {@code PreKeySignalMessage} carries its own identity key, so refusing the bundle does not stop
    * it, and on this arm the contact-creation caution does not fire either.
    */
+  /**
+   * The message was read; only the record of it failed.
+   *
+   * <p>Deliberately says nothing about re-sending, re-inviting or deleting. The chat log being
+   * unreadable used to surface as {@code INFO_MESSAGE_DECRYPTION_FAILED}, and this codebase's own
+   * analysis is that the generic decryption-failure advice drives users to delete the contact and
+   * ask for a new invite - which is a key-substitution window opened by advice about the wrong
+   * problem. One flipped byte in the sealed log makes that permanent.
+   */
+  private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history, because the stored history cannot be opened. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
+
   private final String INFO_INVITE_REFUSED_BUT_KEY_PINNED = "The key update from %s could not be used - it does not verify, which means it was changed on the way here. The message it arrived with has set up a key for them anyway, and this app cannot tell whose it is - compare the security number by voice before sending anything private.";
 
   private final String INFO_INVITE_REFUSED_SESSION_KEPT = "A key update from %s could not be used - it does not verify, which means it was changed on the way here. It was ignored, and what you already had with them is unchanged. Ask them to send another, and if it keeps failing, send it a different way.";
@@ -2003,6 +2014,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean mStandingWarningIsInviteRefusal = false;
 
   /**
+   * A caution shown alongside a standing warning, kept so a repaint does not drop it.
+   *
+   * <p>It used to be written straight into the {@code TextView} and stored nowhere. Every repaint
+   * rebuilds the banner from {@code mStandingWarningText} alone, so the caution was erased by
+   * hiding the keyboard, by tapping the contact row - the very gesture its own text invites - and
+   * by any rotation. The warning survived all three, which is why the invariant sweep could not
+   * see it: that sweep watches the flag, and this is an erase of text with the flag left standing.
+   */
+  private String mStandingCaution = null;
+
+  /**
    * Posts a warning to the info banner and marks it as standing.
    *
    * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
@@ -2020,8 +2042,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private String warningWithRecipient() {
     if (mStandingWarningText == null) return null;
-    if (chosenContact == null) return mStandingWarningText;
-    return mStandingWarningText + "\n\nSending to: " + labelFor(chosenContact);
+    final String withCaution = mStandingCaution == null ? mStandingWarningText
+        : mStandingWarningText + "\n\n" + mStandingCaution;
+    if (chosenContact == null) return withCaution;
+    return withCaution + "\n\nSending to: " + labelFor(chosenContact);
   }
 
   /**
@@ -2042,8 +2066,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mStandingWarningText = message;
     mStandingWarningAddress = aboutAddress;
     // Any new warning is, by default, not the invite refusal - so a later accepted invite cannot
-    // retract something else that happens to be standing.
+    // retract something else that happens to be standing. A caution belonging to the warning being
+    // replaced goes with it: it was shown beside THAT warning, not this one.
     mStandingWarningIsInviteRefusal = false;
+    mStandingCaution = null;
     mWarningStanding = true;
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
@@ -2319,9 +2345,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       setInfoTextViewMessage(mInfoTextView, caution);
       return;
     }
-    final CharSequence standing = mStandingWarningText != null
-        ? mStandingWarningText : mInfoTextView != null ? mInfoTextView.getText() : "";
-    setInfoTextViewMessage(mInfoTextView, standing + "\n\n" + caution);
+    // Stored, then painted through the same builder every repaint uses, so the two cannot drift.
+    mStandingCaution = caution;
+    setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
 
   /** Posts the refused-invite warning, tagged so a later good invite can retract it. */
@@ -2352,6 +2378,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void clearStandingWarning() {
     mStandingWarningIsInviteRefusal = false;
+    mStandingCaution = null;
     mStandingWarningText = null;
     mStandingWarningAddress = null;
     mWarningStanding = false;
@@ -2402,6 +2429,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // messenger-supplied key was pinned with nothing else noticing.
     final boolean sessionExistedBefore = sender != null
         && mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress());
+    // The KEY, separately from the session. They come apart on a path the app's own advice
+    // produces: deleteContact removes the session and deliberately keeps the pinned identity, so
+    // after a delete-and-re-invite the peer's next message creates a session against a key that
+    // was already there. Asking only about the session, the strip then told the user a key had
+    // just been set up "and this app cannot tell whose it is" - when the message decrypted
+    // precisely BECAUSE it matched the pin the app already trusted, which the same app treats
+    // elsewhere as proof of identity.
+    final boolean keyPinnedBefore = sender != null
+        && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress());
 
     final CharSequence decryptedMessage = mE2EEStrip.decryptMessage(messageEnvelope, sender);
 
@@ -2427,10 +2463,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (!identityChanged && !mWarningStanding) {
         // Three states, and each needs its own sentence. Two of them were collapsed into one and
         // the collapse pointed the wrong way: the reassuring wording landed on the first-pin case.
-        final boolean pinnedByThisPaste = !sessionExistedBefore
-            && mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress());
-        final String outcome = sessionExistedBefore ? INFO_INVITE_REFUSED_SESSION_KEPT
-            : (pinnedByThisPaste ? INFO_INVITE_REFUSED_BUT_KEY_PINNED : INFO_INVITE_REFUSED);
+        // A key pinned by this paste is the only state INFO_INVITE_REFUSED_BUT_KEY_PINNED
+        // describes; a session built against a key that was already trusted is not.
+        final boolean keyPinnedByThisPaste = !keyPinnedBefore
+            && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress());
+        final boolean somethingSurvived = sessionExistedBefore || keyPinnedBefore;
+        final String outcome = keyPinnedByThisPaste ? INFO_INVITE_REFUSED_BUT_KEY_PINNED
+            : (somethingSurvived ? INFO_INVITE_REFUSED_SESSION_KEPT : INFO_INVITE_REFUSED);
         setInviteRefusalWarning(String.format(outcome, labelFor(sender)),
             String.valueOf(sender.getSignalProtocolAddress()));
       }
@@ -2455,6 +2494,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!isSessionCreation && decryptedMessage != null) {
       mInputEditText.setText(decryptedMessage);
       changeVisibilityInputFieldButtons(true);
+      // The message arrived; only filing it failed. Said out loud, and said as itself.
+      if (mE2EEStrip.lastChatLogWriteFailed()) {
+        Toast.makeText(getContext(), INFO_MESSAGE_NOT_SAVED, Toast.LENGTH_LONG).show();
+      }
     } else if (isSessionCreation) {
       changeVisibilityInputFieldButtons(true);
     } else if (!identityChanged) {
@@ -2546,13 +2589,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      * it describes. A configuration change is something an app can force.
      */
     private final boolean standingWarningIsInviteRefusal;
+    /** The caution shown beside that warning, so a rebuild does not drop it. */
+    private final String standingCaution;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
     private CarriedState(final CharSequence draft, final boolean wasComposing,
         final CharSequence banner, final boolean warningStanding,
         final String standingWarningText, final String standingWarningAddress,
-        final boolean standingWarningIsInviteRefusal,
+        final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -2561,6 +2606,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingWarningText = standingWarningText;
       this.standingWarningAddress = standingWarningAddress;
       this.standingWarningIsInviteRefusal = standingWarningIsInviteRefusal;
+      this.standingCaution = standingCaution;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -2636,7 +2682,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mRichInputConnection != null) mRichInputConnection.setOtherIC(null);
 
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
-        mStandingWarningAddress, mStandingWarningIsInviteRefusal, mHostFieldIsPassword, encodingMethod);
+        mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
+        mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -2702,6 +2749,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // unretractable, so the good invite that should take it down leaves it standing forever - and
       // a rebuild is something the messenger's host app can force at will.
       mStandingWarningIsInviteRefusal = carried.standingWarningIsInviteRefusal;
+      mStandingCaution = carried.standingCaution;
+      // Repainted through the shared builder so the restored banner shows the caution too, rather
+      // than the warning alone - which is the erase this carry exists to stop.
+      setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
     }
 
     // Not the view's to lose either. The password-field guard is re-armed only by

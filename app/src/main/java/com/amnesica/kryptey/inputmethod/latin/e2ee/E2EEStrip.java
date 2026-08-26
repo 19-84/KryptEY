@@ -325,6 +325,11 @@ public class E2EEStrip {
     return SignalProtocolMain.hasPinnedKey(address);
   }
 
+  /** @see SignalProtocolMain#lastChatLogWriteFailed */
+  public boolean lastChatLogWriteFailed() {
+    return SignalProtocolMain.lastChatLogWriteFailed();
+  }
+
   /** @see SignalProtocolMain#lastAttachedBundleWasRefused */
   public boolean lastAttachedBundleWasRefused() {
     return SignalProtocolMain.lastAttachedBundleWasRefused();

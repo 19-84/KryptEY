@@ -54,7 +54,11 @@ public class EveryStripFieldIsClassifiedTest {
       // otherwise promote a soft warning to a hard one, and a hard refusal warning is what lets a
       // relay suppress the contact-creation caution - the one notice that fires precisely because
       // nothing was noticed. A configuration change is something an app can force.
-      "mStandingWarningIsInviteRefusal"));
+      "mStandingWarningIsInviteRefusal",
+      // The caution shown beside a standing warning. Carried for the same reason as the warning's
+      // own text: a rotation between creating a contact and reading the caution would otherwise
+      // drop the one notice that fires because nothing was noticed.
+      "mStandingCaution"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

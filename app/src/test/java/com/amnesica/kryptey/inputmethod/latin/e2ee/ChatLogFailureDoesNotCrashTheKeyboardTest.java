@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -17,6 +18,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
@@ -57,7 +59,9 @@ import java.util.ArrayList;
 public class ChatLogFailureDoesNotCrashTheKeyboardTest {
 
   private E2EEStripView strip;
-  private Contact bob;
+private Contact bob;
+  /** Kept so the receive-path test can write as the peer. */
+  private Account peerAccount;
 
   @Before
   public void setUp() throws Exception {
@@ -71,6 +75,7 @@ public class ChatLogFailureDoesNotCrashTheKeyboardTest {
     // exists. Same two-account setup the other strip tests use.
     SignalProtocolMain.initialize(null);
     final Account peer = SignalProtocolMain.getInstance().getAccount();
+    peerAccount = peer;
     final SignalProtocolAddress peerAddress = ProtocolAddresses.of(
         peer.getSignalProtocolAddress().getName(), peer.getDeviceId());
     final String peerBundle = SignalProtocolMain.exportOwnKeyBundle();
@@ -205,5 +210,51 @@ public class ChatLogFailureDoesNotCrashTheKeyboardTest {
     } catch (final ChatLogUnavailableException expected) {
       assertTrue(expected.getMessage().contains("could not be read"));
     }
+  }
+
+  /**
+   * The fourth place, and the one the exception's own javadoc did not know about.
+   *
+   * <p>{@code ChatLogUnavailableException} says "the three places that must survive it", and this
+   * file was the guarantee for those three: the log screen, the send, and deleting a contact. The
+   * receive path is a fourth. {@code SignalProtocolMain.decrypt} files every incoming message in
+   * the log, has no catch, and the throw was absorbed two frames up by a catch-all added for an
+   * unrelated JNI reason.
+   *
+   * <p>Two things went wrong there, and the second is the serious one. The message had
+   * <em>decrypted</em>; the user was shown "decryption failed" for a message the app read
+   * perfectly. And the persist below the throw never ran, so the advanced ratchet - and on the
+   * PREKEY arm the replaced one-time pre-key - stayed in memory.
+   *
+   * <p>One flipped byte in the sealed log makes it permanent: GCM fails with no key needed, so
+   * every incoming message reads as a decryption failure forever. This codebase's own analysis is
+   * that the generic decryption-failure advice drives users to delete the contact and re-invite,
+   * which is a key-substitution window. A corrupted chat log became an amplifier for substitution,
+   * through advice given about the wrong problem.
+   */
+  @Test
+  public void areceivedMessageSurvivesAnunreadableChatLog() throws Exception {
+    // Bob writes to the victim. Built as Bob against the victim's own bundle.
+    final Account victim = SignalProtocolMain.getInstance().getAccount();
+    final SignalProtocolAddress victimAddress = ProtocolAddresses.of(
+        victim.getSignalProtocolAddress().getName(), victim.getDeviceId());
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    SignalProtocolMain.getInstance().setAccount(peerAccount);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), victimAddress));
+    final MessageEnvelope fromBob = SignalProtocolMain.encryptMessage("the meeting moved", victimAddress);
+    assertNotNull(fromBob);
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    final String plaintext = SignalProtocolMain.decryptMessage(fromBob,
+        ProtocolAddresses.of(bob.getSignalProtocolAddressName(), bob.getDeviceId()));
+
+    assertEquals("an unreadable chat log must not turn a message that decrypted into a decryption "
+        + "failure. The plaintext is right here; refusing to hand it over sends the user toward "
+        + "delete-and-re-invite, which is a key-substitution window opened by advice about a "
+        + "different problem.", "the meeting moved", plaintext);
+    assertTrue("and the app must record that the LOG write failed, not that decryption did - the "
+        + "two need opposite advice", SignalProtocolMain.lastChatLogWriteFailed());
   }
 }

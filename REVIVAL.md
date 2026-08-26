@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-five sections, written in the order things were found rather than by subject, so the
+Forty-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -101,6 +101,8 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A record that meant less than four messages claimed](#a-record-that-meant-less-than-four-messages-claimed)
 - [The warning weakened to protect a message, and the erase that bought](#the-warning-weakened-to-protect-a-message-and-the-erase-that-bought)
 - [One invariant, swept instead of exampled](#one-invariant-swept-instead-of-exampled)
+- [A corrupted chat log was an amplifier for key substitution](#a-corrupted-chat-log-was-an-amplifier-for-key-substitution)
+- [Two storage findings that make a recorded residual wrong](#two-storage-findings-that-make-a-recorded-residual-wrong)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3486,3 +3488,74 @@ it erred toward alarm; the fix had routed the state to the reassuring falsehood.
 
 Three states now, and the predicate is captured before the decrypt rather than after. The third
 says a key was set up anyway and sends the user to compare it by voice.
+
+
+## A corrupted chat log was an amplifier for key substitution
+
+**A fourth place had to survive an unreadable chat log, and `ChatLogUnavailableException`'s own
+javadoc says "the three places".** Found by the first Phase 1 sweep in many commits.
+
+`SignalProtocolMain.decrypt` files every incoming message in the log and had no catch, so the throw
+travelled up into `E2EEStrip.decryptMessage`'s catch-all — added for an unrelated JNI reason — and
+came out as `INFO_MESSAGE_DECRYPTION_FAILED`. **The message had decrypted.** The user was told
+decryption failed for a message the app had read perfectly, and the persist below the throw never
+ran, so the advanced ratchet and the replaced one-time pre-key stayed in memory.
+
+What makes it more than a wrong sentence: one flipped byte in the sealed log makes it permanent —
+GCM fails, no key needed — and this document's own analysis is that the app's generic
+decryption-failure advice drives users to delete the contact and re-invite. That is a
+key-substitution window. A corrupted chat log became an amplifier for substitution through advice
+given about the wrong problem.
+
+The message is delivered now, the session is persisted, and the failure is reported as itself:
+*"This message was read, but it could not be added to your saved history… nothing needs to be sent
+again — only the record of it is missing."* Deliberately no deletion or re-invite advice.
+
+**Round twelve, in parallel, found two more.** The refusal's predicate asked whether a *session*
+appeared while the sentence it chose asserts a *key* was pinned "and this app cannot tell whose it
+is". Those come apart on a path the app's own advice produces: `removeContactFromContactListAndProtocol`
+deletes the session and deliberately keeps the pin, so after a delete-and-re-invite the peer's next
+message builds a session against a key that was already trusted — and the message decrypted
+*because* it matched that pin, which the same app treats elsewhere as proof of identity. It asks
+about the pin now.
+
+And the contact-creation caution was painted beside a standing warning but stored nowhere, while
+every repaint rebuilds the banner from the warning's text alone. Hiding the keyboard dropped it, a
+rotation dropped it, and tapping the contact row dropped it — the row the caution asks the user to
+go and verify. **The invariant sweep could not see this**, and that is worth recording about the
+sweep rather than about the bug: it watches the flag, and this was an erase of text with the warning
+left standing.
+
+**The completeness guard added last commit was itself vacuous for three of its eight warnings.** It
+resolved constants within ±400 characters of each call site, and missed `INFO_IDENTITY_CHANGED_EXISTING`
+by *sixteen characters of comment* and the duplicate-name pair by forty-seven thousand, because those
+are chosen inside a helper. Those three entries were inert: deleting them failed nothing, and a new
+warning written the way the identity-change warning is written would have passed with no raiser and
+no excuse — the most important warning in the file being exactly that shape. Resolution is by method
+now, with one level of helper indirection and comments stripped first, and over-collection is handled
+by classifying every constant the scan touches rather than by narrowing the scan until it misses one.
+The control is the three formerly-inert names: removing them from the swept list now fails.
+
+## Two storage findings that make a recorded residual wrong
+
+**Recorded now, fixed next — and the point of writing them here is that this document currently
+states something false.**
+
+`StorageHelper` and this file both describe the account store's laundering residual as: the attacker
+"must supply cleartext for every key at once, and the user's contacts visibly vanish. A reduction in
+stealth." **That cost does not exist.** The attacker snapshots `protocol.xml` first, replaces it with
+a single cleartext row, lets the keyboard raise once (the master key is untouched — `hasEncryptedData`
+gates only *minting*), reads the now-sealed row back, and restores the snapshot with that one row
+swapped in. The AAD is the same in both states because it binds the key *name*, so it opens. The
+account comes up with the attacker's identity key beside the user's genuine contacts and display
+tags, with nothing missing and nothing to see.
+
+Second, `MARKER_MIGRATING` does not need to be raced. It is committed as its own durable write before
+anything is sealed, and nothing invalidates it except a *successful* migration — so it can be
+harvested from a deliberately interrupted run and replayed later to disarm the anti-laundering guard,
+achieving the same thing in one app run with no row ever going missing. The class javadoc's claim
+that the marker "cannot be faked" is true of forgery and silent about retention.
+
+Both are the same underlying gap: **nothing binds a sealed value to the file or the run it was sealed
+in.** Both need the file-access adversary, which is strictly stronger than the messenger — which is
+why they are deferred rather than urgent, and why the honest thing to fix first was the description.

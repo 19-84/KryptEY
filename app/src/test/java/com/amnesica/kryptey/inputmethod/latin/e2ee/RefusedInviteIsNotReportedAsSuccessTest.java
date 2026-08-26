@@ -498,4 +498,91 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     assertTrue("and it must give the one instruction that helps here: " + shown,
         shown.contains("by voice"));
   }
+
+  /**
+   * The caution must survive the gesture its own text invites.
+   *
+   * <p>It is painted beside a standing warning, and it used to be written straight into the view
+   * and stored nowhere — while every repaint rebuilds the banner from the warning's text alone. So
+   * hiding the keyboard dropped it, a rotation dropped it, and tapping the contact row dropped it:
+   * the row the caution is telling the user to go and verify.
+   *
+   * <p>The invariant sweep cannot see this. It watches {@code mWarningStanding}, and the flag
+   * survives all three — this is an erase of text with the warning left standing.
+   */
+  @Test
+  public void thecautionForAnewContactSurvivesTappingTheContactRow() throws Exception {
+    establishedContact();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertFalse("precondition: a warning must be standing", strip.mayOverwriteInfoBanner());
+
+    SignalProtocolMain.initialize(null);
+    final String carolBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Carol");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Smith");
+    strip.addContactForTest(EnvelopeCodec.fromWire(carolBundle));
+    assertTrue("precondition: the caution must be on the banner to begin with",
+        bannerText().contains("cannot tell whose it is"));
+
+    // The user does exactly what the caution asks: opens the contact to compare the number.
+    strip.selectContact(victim.getContactList().get(victim.getContactList().size() - 1));
+
+    assertTrue("the caution must survive selecting the contact - that is the gesture it asks for, "
+            + "and it is also what a rotation or hiding the keyboard does. Banner now: "
+            + bannerText(),
+        bannerText().contains("cannot tell whose it is"));
+  }
+
+  /**
+   * A key that was already pinned is not a key this paste set up.
+   *
+   * <p>The predicate asked whether a SESSION appeared, and the sentence it chose asserts a KEY was
+   * pinned "and this app cannot tell whose it is". Those come apart on a path the app's own advice
+   * produces: {@code deleteContact} removes the session and deliberately KEEPS the pinned identity,
+   * so after a delete-and-re-invite the peer's next message builds a session against a key that was
+   * already trusted. The message decrypted precisely BECAUSE it matched that pin — which the same
+   * app treats elsewhere as proof of identity, when it suppresses the duplicate-name warning at a
+   * retired name on the same address.
+   */
+  @Test
+  public void asessionRebuiltOnAnalreadyPinnedKeyIsNotCalledAnewKey() throws Exception {
+    establishedContact();
+    assertTrue("precondition: a key must be pinned", SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    // The user follows the app's delete-and-re-invite advice.
+    SignalProtocolMain.removeContactFromContactListAndProtocol(victim.getContactList().get(0));
+    assertTrue("precondition: deleting the contact keeps the pinned identity",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+    assertFalse("precondition: and removes the session",
+        SignalProtocolMain.hasSessionWith(peerAddress));
+
+    // The peer replies with a PreKey message; the relay strips the attached bundle's one-time key.
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(peer);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), addressOfVictim()));
+    final MessageEnvelope reply = SignalProtocolMain.encryptMessage("still me", addressOfVictim());
+    assertNotNull(reply);
+    activate(victim);
+
+    final MessageEnvelope both = new MessageEnvelope(reply.getCiphertextMessage(),
+        reply.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
+    both.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(both);
+
+    final String shown = bannerText();
+    assertFalse("the app must not tell the user a new key was set up that it cannot vouch for, "
+            + "when the key was already pinned and the message decrypted because it matched. "
+            + "Shown: " + shown,
+        shown.contains("set up a key for them anyway"));
+  }
 }

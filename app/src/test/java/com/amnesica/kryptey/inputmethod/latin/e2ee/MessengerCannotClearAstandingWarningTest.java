@@ -368,29 +368,40 @@ public class MessengerCannotClearAstandingWarningTest {
     final java.nio.file.Path source = mainSources()
         .resolve("com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStripView.java");
     assertTrue("expected to find " + source, java.nio.file.Files.exists(source));
-    final String text = new String(java.nio.file.Files.readAllBytes(source),
-        java.nio.charset.StandardCharsets.UTF_8);
+    // Comments stripped first. This file discusses its own constants heavily - the identity-change
+    // warning is named in prose in a method that raises a different one - and a scanner that reads
+    // commentary as code reports warnings that are not raised anywhere.
+    final String text = withoutComments(new String(java.nio.file.Files.readAllBytes(source),
+        java.nio.charset.StandardCharsets.UTF_8));
 
-    // Every INFO_ constant that reaches a warning writer. Read from the call sites rather than
-    // from the declarations, because a constant that exists but is never raised as a warning is
-    // not this test's business.
+    // Every INFO_ constant that reaches a warning writer, resolved through the METHOD rather than
+    // through a character window.
+    //
+    // The first version scanned +-400 characters around each call. That missed
+    // INFO_IDENTITY_CHANGED_EXISTING by sixteen characters of comment, and missed the duplicate-name
+    // constants by forty-seven thousand, because those are chosen inside a helper. Three of the
+    // eight names in SWEPT were therefore inert: deleting them failed nothing, and a new warning
+    // written the way the identity-change warning is written - composed into a local, then handed
+    // to the writer - would have passed with no raiser and no excuse. A guard that reports coverage
+    // it does not have is worse than no guard, and this one was guarding the most important warning
+    // in the file.
     final java.util.Set<String> raised = new java.util.TreeSet<>();
-    final java.util.regex.Matcher call = java.util.regex.Pattern.compile(
-        "(?:setWarningMessage|setInviteRefusalWarning)\\s*\\(").matcher(text);
-    while (call.find()) {
-      // The constant naming the warning appears in the argument list, or in the few lines above
-      // where the argument is composed into a local first.
-      final int from = Math.max(0, call.start() - 400);
-      final int to = Math.min(text.length(), call.start() + 400);
+    for (final String body : methodsThatRaiseWarnings(text)) {
       final java.util.regex.Matcher name =
-          java.util.regex.Pattern.compile("INFO_[A-Z0-9_]+").matcher(text.substring(from, to));
+          java.util.regex.Pattern.compile("INFO_[A-Z0-9_]+").matcher(body);
       while (name.find()) raised.add(name.group());
     }
-    assertTrue("this test reads the strip's warning call sites out of its source; finding none "
-        + "means the pattern has stopped matching and it is asserting nothing", raised.size() >= 5);
+    // Eight is what the file actually raises today. Set to the real number rather than a loose
+    // floor: a floor with slack in it is how the previous version could lose three warnings and
+    // still claim to be reading the source.
+    assertTrue("this test reads the strip's warning call sites out of its source and found only "
+        + raised.size() + " (" + raised + "). If warnings were genuinely removed, lower this; if "
+        + "not, the resolution has broken and the guard is no longer reading what it claims",
+        raised.size() >= 8);
 
     final java.util.Set<String> accounted = new java.util.TreeSet<>(SWEPT);
     accounted.addAll(EXCUSED.keySet());
+    accounted.addAll(NOT_WARNINGS.keySet());
 
     final java.util.List<String> unaccounted = new java.util.ArrayList<>();
     for (final String warning : raised) {
@@ -403,6 +414,51 @@ public class MessengerCannotClearAstandingWarningTest {
         + "the one a review round had just found a defect on. Add a raiser, or add an entry to "
         + "EXCUSED saying why sweeping it would measure nothing:\n"
         + String.join("\n", unaccounted), 0, unaccounted.size());
+  }
+
+  /**
+   * The body of every method that hands something to a warning writer, plus the bodies of the
+   * helpers those methods call to compose the message.
+   *
+   * <p>One level of indirection is enough for this file and is stated rather than assumed: the
+   * duplicate-name warning is chosen by {@code duplicateNameMessage}, and nothing else composes a
+   * warning more than one call deep. A second level would need adding if that changes - and the
+   * count assertion above is what would notice.
+   */
+  private static java.util.List<String> methodsThatRaiseWarnings(final String text) {
+    final java.util.List<String> bodies = new java.util.ArrayList<>();
+    final java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+        "(?:setWarningMessage|setInviteRefusalWarning)\\s*\\(").matcher(text);
+    final java.util.Set<String> helpers = new java.util.TreeSet<>();
+    while (call.find()) {
+      final String body = enclosingMethod(text, call.start());
+      bodies.add(body);
+      // Helper calls that compose a message, e.g. duplicateNameMessage(...).
+      final java.util.regex.Matcher helper =
+          java.util.regex.Pattern.compile("\\b([a-z][A-Za-z0-9]*Message)\\s*\\(").matcher(body);
+      while (helper.find()) helpers.add(helper.group(1));
+    }
+    for (final String helper : helpers) {
+      final int at = text.indexOf(" " + helper + "(");
+      if (at > 0) bodies.add(enclosingMethod(text, at));
+    }
+    return bodies;
+  }
+
+  /** From the signature line above {@code position} to the closing brace at method indentation. */
+  private static String enclosingMethod(final String text, final int position) {
+    int start = text.lastIndexOf("\n  private ", position);
+    start = Math.max(start, text.lastIndexOf("\n  public ", position));
+    start = Math.max(start, text.lastIndexOf("\n  void ", position));
+    start = Math.max(start, text.lastIndexOf("\n  boolean ", position));
+    start = Math.max(start, text.lastIndexOf("\n  String ", position));
+    if (start < 0) start = 0;
+    final int end = text.indexOf("\n  }", position);
+    return text.substring(start, end < 0 ? text.length() : end);
+  }
+
+  private static String withoutComments(final String source) {
+    return source.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//[^\n]*", " ");
   }
 
   private static java.nio.file.Path mainSources() {
@@ -420,6 +476,24 @@ public class MessengerCannotClearAstandingWarningTest {
       "INFO_INVITE_REFUSED_BUT_KEY_PINNED", "INFO_IDENTITY_CHANGED_EXISTING",
       "INFO_PINNED_AFTER_REJECT", "INFO_DUPLICATE_CONTACT_NAME", "INFO_RETIRED_CONTACT_NAME",
       "INFO_SAME_ADDRESS_DIFFERENT_NAME"));
+
+  /**
+   * Constants the scan reaches that are not warnings at all.
+   *
+   * <p>Resolution is by METHOD, so a notice written in the same method as a warning is collected
+   * too. That over-collection is deliberate: it is safer to name every constant the scan touches
+   * than to narrow the scan until it misses one, which is precisely how the previous version lost
+   * the identity-change warning. Each of these is written through {@code setInfoTextViewMessage} or
+   * a {@code Toast}, neither of which sets {@code mWarningStanding}.
+   */
+  private static final java.util.Map<String, String> NOT_WARNINGS = new java.util.TreeMap<>();
+
+  static {
+    NOT_WARNINGS.put("INFO_MESSAGE_DECRYPTION_FAILED", "a Toast, in the same method as the refusal warning");
+    NOT_WARNINGS.put("INFO_MESSAGE_NOT_SAVED", "a Toast, same method");
+    NOT_WARNINGS.put("INFO_SESSION_CREATION_FAILED", "a plain banner line in addContact, deliberately not a warning");
+    NOT_WARNINGS.put("INFO_NO_CONTACT_CHOSEN_TEXT", "the opening banner, in the same method as the storage warning");
+  }
 
   /** And the ones deliberately not swept, each with the reason sweeping it would prove nothing. */
   private static final java.util.Map<String, String> EXCUSED = new java.util.TreeMap<>();

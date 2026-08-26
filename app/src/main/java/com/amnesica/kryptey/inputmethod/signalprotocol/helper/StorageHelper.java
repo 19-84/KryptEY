@@ -711,9 +711,22 @@ public class StorageHelper {
    *
    * <p>So the primitive is still here, and the guard on it — refusing cleartext that sits beside
    * decryptable data — is weaker than it looks, because an attacker with the data directory can
-   * simply empty the file first. What that costs them is stealth rather than difficulty: they must
-   * now supply cleartext for every key at once, including the ones they cannot read, so the user's
-   * contact list visibly disappears instead of surviving under a substituted identity.
+   * simply empty the file first.
+   *
+   * <p><b>This paragraph used to claim that costs them stealth</b> — that emptying the file makes
+   * the user's contact list visibly disappear. A Phase 1 sweep showed the claim is wrong, and it is
+   * corrected here rather than left standing, because a residual nobody re-derives is how the size
+   * of an accepted risk drifts. The attacker <em>snapshots this file first</em>: empty it, let the
+   * keyboard raise once to seal their row, then restore the snapshot with only that row swapped in.
+   * The AAD binds the key name, which is unchanged, so it opens. Nothing goes missing and the
+   * display tags are untouched. Recorded in REVIVAL.md under "Two storage findings that make a
+   * recorded residual wrong", together with the second route — {@code MARKER_MIGRATING} is durable
+   * and is invalidated only by a SUCCESSFUL migration, so it can be harvested from an interrupted
+   * run and replayed to disarm the guard without emptying anything at all.
+   *
+   * <p>Both need write access to the app's private storage, which is strictly more than the
+   * messenger has. That is why they are deferred rather than urgent — not because they cost the
+   * attacker anything.
    */
   private EncryptedKeyValueStore secureStore() {
     if (mSecureStore != null) return mSecureStore;
