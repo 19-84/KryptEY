@@ -624,6 +624,14 @@ public final class RichInputConnection {
    * was already there. False when the arguments were invalid or the editor refused, and in that
    * case the expected-selection model is left exactly as it was, so the caller can treat a false
    * as "nothing happened".
+   * <p>One case this contract does not cover, stated rather than left to be discovered: when there
+   * is no connection at all ({@code isConnected()} false) the model is committed, the editor is
+   * never asked, and this returns true. No editor accepted anything, so a true there does not mean
+   * the caret moved. It is narrow — it needs the host to hand back a null connection rather than a
+   * dead one, and {@code onStartInput} re-seeds the model from the {@code EditorInfo} — and turning
+   * it into a refusal changes behaviour for the pointer callers that discard this result, so it
+   * belongs in its own change rather than being folded in here.
+   *
    * <p>Note it does NOT return false when {@code reloadTextCache} fails. The caret really did move,
    * so a caller deciding whether to delete backwards over a selection should proceed; the stale
    * cache is a separate problem with its own repair path. The previous wording promised a false

@@ -790,16 +790,20 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
   /**
    * A key rotation that landed must be announced even when its message does not decrypt.
    *
-   * <p>The announcement was gated on {@code decryptMessageAndShowMessageInMainInputField}'s return
-   * value, which stopped meaning "the bundle was accepted" once it gained a second reason to be
-   * false — a message that produced nothing. An honest peer attaches a full bundle whenever its
-   * signed pre-key rotates, and the accompanying message being replayed or arriving out of order is
-   * ordinary. In that state a new key was pinned, any standing refusal was retracted, and the strip
-   * said nothing at all: only a transient decryption-failure toast, and a banner still describing
-   * the state before the rotation.
+   * <p><b>This does not pin the announcement, and it is named for what it does pin.</b> The
+   * announcement was gated on a return value that had stopped meaning "the bundle was accepted";
+   * that gate is corrected, and the correction is <em>unobservable</em>, because the line it
+   * controls is repainted by {@code showChosenContactInMainInfoField} before any user sees it. A
+   * reviewer checked and the old and new implementations leave a byte-identical banner. Naming this
+   * test after the announcement would claim coverage it cannot have.
+   *
+   * <p>What it does pin is worth having on its own: a rotation whose bundle was accepted must not be
+   * reported as <em>refused</em> because the message stapled to it failed to decrypt. Replay and
+   * out-of-order delivery are ordinary and the relay chooses when they happen; refusals are standing
+   * warnings, which survive the repaint by design.
    */
   @Test
-  public void agoodRotationIsAnnouncedEvenIfItsMessageDoesNotDecrypt() throws Exception {
+  public void agoodRotationWhoseMessageFailsIsNotReportedAsRefused() throws Exception {
     establishedContact();
 
     // Adding a contact leaves the creation caution standing, and a standing item correctly holds

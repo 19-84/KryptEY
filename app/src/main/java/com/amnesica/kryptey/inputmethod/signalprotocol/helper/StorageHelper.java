@@ -452,10 +452,28 @@ public class StorageHelper {
    * itself loaded - so a failed read produced a save of JSON "null" over the whole history. The
    * account no longer reaches that state, and this is the second lock on the same door.
    */
-  private void storeMessageLog(final Account account) {
-    if (account == null || !account.messageLogIsLoaded()) return;
+  /**
+   * @return whether the log reached disk, or there was nothing to write.
+   *
+   * <p>It used to return nothing and swallow the failure, and the caller then returned true on the
+   * strength of the account batch alone. So a failed log commit produced exactly the outcome
+   * {@code mLastChatLogWriteFailed} exists to report — the message delivered and absent from the
+   * history — with the notice never firing, because the flag only ever covered the log being
+   * unREADable.
+   */
+  /** Whether the last {@code storeAllInformationInSharedPreferences} got the log to disk. */
+  private boolean mLastMessageLogWriteSucceeded = true;
+
+  public boolean lastMessageLogWriteSucceeded() {
+    return mLastMessageLogWriteSucceeded;
+  }
+
+  private boolean storeMessageLog(final Account account) {
+    // Nothing to write is not a failure: a log that was never loaded cannot have changed, and the
+    // stored value is already what would be written.
+    if (account == null || !account.messageLogIsLoaded()) return true;
     final ArrayList<StorageMessage> messages = account.getUnencryptedMessages();
-    if (messages == null) return;
+    if (messages == null) return true;
 
     final SharedPreferences messageFile = preferencesNamed(mMessageStoreName);
     final SharedPreferences accountFile = preferencesNamed(mSharedPreferenceName);
@@ -476,18 +494,20 @@ public class StorageHelper {
       //
       // An empty list IS written once something has been stored: that is a user clearing history,
       // and it must persist.
-      return;
+      return true;
     }
 
     final EncryptedKeyValueStore store = messageStore();
     if (store == null) {
       Log.e(TAG, "Error: no store for the chat log; it was not saved");
-      return;
+      return false;
     }
     try {
       store.put(String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES), JsonUtil.toJson(messages));
+      return true;
     } catch (StorageCryptoException | RuntimeException e) {
       Log.e(TAG, "Error: could not store the chat log", e);
+      return false;
     }
   }
 
@@ -572,7 +592,10 @@ public class StorageHelper {
     // again and those entries are unattributable for good. This way round the surviving state is a
     // re-keyed log with no marker, which the next load simply migrates again - re-keying is
     // idempotent.
-    storeMessageLog(account);
+    // Kept, and reported through its own accessor rather than folded into the account batch's
+    // result. They are different facts: a lost account write costs a trust decision, a lost log
+    // write costs a message from the history, and the app says different things about each.
+    mLastMessageLogWriteSucceeded = storeMessageLog(account);
 
     final Map<String, String> batch = new LinkedHashMap<>();
     put(batch, ProtocolIdentifier.METADATA_STORE, account.getMetadataStore());

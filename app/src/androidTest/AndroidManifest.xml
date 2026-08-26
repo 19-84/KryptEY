@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The test APK's own manifest, so it can host an activity of its own.
+
+  Everything the instrumentation suite has driven so far lives in the app under test: its debug
+  source set supplies the editable field, and the keyboard attaches to a window belonging to the
+  same package it is part of. That leaves one claim in every report untested - that text moves
+  through a DIFFERENT application - because there was no different application on the device.
+
+  There is one available for free: the test APK is com.amnesica.kryptey.test, a separate package
+  with its own process, installed alongside com.amnesica.kryptey. An activity declared here is as
+  foreign to the keyboard as any messenger would be.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <activity
+      android:name="com.amnesica.kryptey.inputmethod.ForeignAppActivity"
+      android:exported="true"
+      android:label="Stand-in messenger" />
+  </application>
+</manifest>

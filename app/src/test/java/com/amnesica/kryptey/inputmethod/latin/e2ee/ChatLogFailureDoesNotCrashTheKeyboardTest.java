@@ -257,4 +257,56 @@ private Contact bob;
     assertTrue("and the app must record that the LOG write failed, not that decryption did - the "
         + "two need opposite advice", SignalProtocolMain.lastChatLogWriteFailed());
   }
+
+  /**
+   * A log WRITE that does not land is the same outcome for the user as a log that cannot be read.
+   *
+   * <p>The flag exists so the app can say "this message was read, but it could not be added to your
+   * saved history" instead of "decryption failed" — because the second sends the user toward
+   * delete-and-re-invite, which is a key-substitution window. It only ever covered the READ half:
+   * {@code StorageHelper.storeMessageLog} swallowed its exception and the caller then returned true
+   * on the strength of the account batch alone, so a failed commit produced the identical outcome —
+   * message delivered, absent from the history — with the notice never firing.
+   */
+  @Test
+  public void afailedChatLogWriteIsReportedTheSameWayAnUnreadableOneIs() throws Exception {
+    // A log that reads fine, so only the write can fail.
+    final Account victim = SignalProtocolMain.getInstance().getAccount();
+    victim.setMessageLogLoader(java.util.ArrayList::new);
+
+    final SignalProtocolAddress victimAddress = ProtocolAddresses.of(
+        victim.getSignalProtocolAddress().getName(), victim.getDeviceId());
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    SignalProtocolMain.getInstance().setAccount(peerAccount);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), victimAddress));
+    final MessageEnvelope fromBob =
+        SignalProtocolMain.encryptMessage("the meeting moved", victimAddress);
+    assertNotNull(fromBob);
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    // A storage helper whose LOG write fails while everything else succeeds.
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, hasExistingData) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return true;
+          }
+
+          @Override
+          public boolean lastMessageLogWriteSucceeded() {
+            return false;
+          }
+        });
+
+    final String plaintext = SignalProtocolMain.decryptMessage(fromBob,
+        ProtocolAddresses.of(bob.getSignalProtocolAddressName(), bob.getDeviceId()));
+
+    assertEquals("the message must still be delivered", "the meeting moved", plaintext);
+    assertTrue("a log write that did not land must be reported the same way an unreadable log is - "
+            + "the user's history is missing a message either way, and the alternative is the app "
+            + "saying nothing at all about it",
+        SignalProtocolMain.lastChatLogWriteFailed());
+  }
 }

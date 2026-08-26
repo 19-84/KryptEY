@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-six sections, written in the order things were found rather than by subject, so the
+Fifty-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -112,6 +112,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Sweeping for the class instead of the bug, and what it found](#sweeping-for-the-class-instead-of-the-bug-and-what-it-found)
 - [A gate that changed the verb and nothing else](#a-gate-that-changed-the-verb-and-nothing-else)
 - [Three informational lines the user never sees](#three-informational-lines-the-user-never-sees)
+- [Text crosses into another application, and three writes that could not fail](#text-crosses-into-another-application-and-three-writes-that-could-not-fail)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3977,3 +3978,47 @@ promises a `false` for a failed cache reload that the method has never produced.
 `processUpdatedPreKeyResponse` asked the wrong question: it read a return value that had stopped
 meaning "the bundle was accepted" once that method gained a second reason to be false. It asks
 `lastAttachedBundleWasRefused()` now, which is the fact it wanted.
+
+
+## Text crosses into another application, and three writes that could not fail
+
+**The gap named in every report is half closed.** "Nothing moves text through another app" was true
+because there was no other app on the device — every instrumentation test attached the keyboard to a
+field in the app under test, so the input connection never crossed a package boundary, which is the
+boundary the whole threat model is about.
+
+There was a second application available the entire time. The test APK is
+`com.amnesica.kryptey.test`: its own package, its own process, installed beside the app. A manifest
+and an activity in the `androidTest` source set make it a stand-in messenger, and
+`TextCrossesIntoAforeignAppOnDeviceTest` launches it by component — `startActivitySync` refuses an
+activity belonging to another application, which is exactly what makes the test worth having — and
+reads back out of `dumpsys input_method` that this IME is bound to a window owned by that package.
+
+Stated rather than implied: this establishes the binding crosses the boundary. It is still not a real
+messenger — nothing relays, stores or renders the text, and no second device is involved.
+
+**Three writes that reported success they had not earned**, from the sixth Phase 2 sweep.
+
+The verify rollback restored the two *retractions* faithfully and wrote `setVerified(false)` as a
+**constant**. Right for a first verification, wrong for a contact that was already verified — and
+re-verifying is one tap on the green badge, an ordinary thing to do after any warning. So a failed
+write took away a badge the user legitimately held while disk still said verified. Fail-closed, which
+is why it would have gone unnoticed. It captures the previous value now — and the first attempt at
+that captured it *after* the flag was set, making the restore a no-op, which the existing test caught.
+
+`storeMessageLog` swallowed its exception and the caller returned true on the account batch alone.
+So a failed chat-log commit produced exactly the outcome `mLastChatLogWriteFailed` exists to report —
+the message delivered and absent from the history — with the notice never firing, because the flag
+only ever covered the log being unREADable. Both halves report now.
+
+**And a test of mine that could not fail.** The rotation test shipped last commit was written as
+"a key rotation that landed must be announced", and a reviewer showed the old and new
+implementations leave a byte-identical banner — because the line it controls is repainted before any
+user sees it, which is the finding recorded in the section above. The fix at that line is real and
+its observability is nil. The test is renamed for what it actually pins: a rotation whose bundle was
+accepted must not be reported as *refused*. Claiming otherwise would have been coverage on paper.
+
+Also documented rather than quietly left: `setSelection` returns true when there is no connection at
+all, having never asked an editor. Narrow, self-repairing, and a change to it would alter behaviour
+for the pointer callers that discard the result — so it is written into the contract instead of
+folded into an unrelated commit.

@@ -550,6 +550,12 @@ public class SignalProtocolMain {
     // re-invite" advice, which an attacker can trigger by replaying any message.
     // Update the contact row FIRST: it throws UnknownContactException, and dismissing before it
     // left the store mutated in memory and never persisted when it did.
+    // Captured before it is set, not after - which is where the first attempt put it, making the
+    // restore a no-op. The rollback below used to write setVerified(false) as a constant, wrong for
+    // a contact that was ALREADY verified: re-verifying is one tap on the green badge in the
+    // contact list and an ordinary thing to do after any warning, so a failed write dropped a badge
+    // the user legitimately held.
+    final boolean wasVerified = contact.isVerified();
     contact.setVerified(true);
     mAccount.updateContactInContactList(contact);
 
@@ -624,7 +630,7 @@ public class SignalProtocolMain {
     // check did not record and shown a green badge anyway - until the next reloadAccount silently
     // takes it away.
     Log.e(TAG, "Verification could not be persisted; rolling back everything it retracted");
-    contact.setVerified(false);
+    contact.setVerified(wasVerified);
     mAccount.updateContactInContactList(contact);
     if (hadRejection) {
       mAccount.getSignalProtocolStore().getIdentityKeyStore()
@@ -1903,6 +1909,13 @@ public class SignalProtocolMain {
       }
     }
     storeAllAccountInformationInSharedPreferences();
+    // A log write that did not land is the same outcome for the user as a log that could not be
+    // read: the message arrived and is not in their history. The flag covered only the read half,
+    // so the notice never fired for the other one.
+    if (mStorageHelper != null && !mStorageHelper.lastMessageLogWriteSucceeded()) {
+      Log.e(TAG, "the chat log could not be written; the message is delivered but not recorded");
+      mLastChatLogWriteFailed = true;
+    }
 
     return decryptedMessage;
   }

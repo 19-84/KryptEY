@@ -221,4 +221,28 @@ public class TrustDecisionsReportAfailedWriteTest {
             EnvelopeCodec.fromWire(bundle), bob.getSignalProtocolAddress()));
     return keep;
   }
+
+  /**
+   * Re-verifying an already-verified contact must not cost the badge when the write fails.
+   *
+   * <p>The rollback restored the two retractions faithfully and wrote {@code setVerified(false)} as
+   * a constant. That is right for the contact being verified for the first time and wrong for one
+   * that was already verified — and re-verifying is one tap on the green badge in the contact list,
+   * an ordinary thing to do after any warning. The direction is safe (a badge is lost, never
+   * gained), which is exactly why it would have gone unnoticed.
+   */
+  @Test
+  public void afailedReVerifyDoesNotTakeAbadgeTheUserAlreadyHad() throws Exception {
+    assertTrue("precondition: the first verify must land", SignalProtocolMain.verifyContact(bob));
+    assertTrue("precondition: the contact must be verified",
+        SignalProtocolMain.getInstance().getAccount().getContactList().get(0).isVerified());
+
+    writesFail = true;
+    assertFalse("the failed write must still be reported", SignalProtocolMain.verifyContact(bob));
+
+    assertTrue("a failed re-verify must leave the badge the user already held. Rolling back to a "
+            + "constant false takes away a verification that was recorded, and disk still says "
+            + "verified until the next reload puts it back - so the app disagrees with itself.",
+        SignalProtocolMain.getInstance().getAccount().getContactList().get(0).isVerified());
+  }
 }
