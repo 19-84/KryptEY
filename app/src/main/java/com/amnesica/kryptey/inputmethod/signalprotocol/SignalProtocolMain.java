@@ -500,9 +500,20 @@ public class SignalProtocolMain {
     return sInstance.getContactListFromAccount();
   }
 
-  public static void removeContactFromContactListAndProtocol(final Contact contact) {
+  /**
+   * @return whether the deletion reached disk.
+   *
+   * <p>It returned nothing, and {@code removeContact} discarded the write result - so a failed write
+   * left the row gone, the messages swept, the name retired and the session deleted in memory,
+   * none of it on disk, and the UI reporting success over an emptied list. The next
+   * {@code reloadAccount} brings all of it back. This is the one operation where that is a promise
+   * rather than an inconvenience: the strip refuses to delete a contact whose chat log cannot be
+   * READ, on the stated grounds that a row removed while its plaintext stayed behind is the worse
+   * outcome and the one the help text says does not happen. A failed write breaks the same promise.
+   */
+  public static boolean removeContactFromContactListAndProtocol(final Contact contact) {
     Log.d(TAG, "Removing contact from contact list and protocol...");
-    sInstance.removeContact(contact);
+    return sInstance.removeContact(contact);
   }
 
   public static Fingerprint getFingerprint(Contact contact) {
@@ -1470,9 +1481,9 @@ public class SignalProtocolMain {
     return recipient;
   }
 
-  private void removeContact(final Contact contactToRemove) {
+  private boolean removeContact(final Contact contactToRemove) {
     ArrayList<Contact> contacts = getContactListFromAccount();
-    if (contacts == null) return;
+    if (contacts == null) return false;
 
     Log.d(TAG, "Deleting contact from contact list");
     ArrayList<Contact> newContacts = new ArrayList<>();
@@ -1554,7 +1565,7 @@ public class SignalProtocolMain {
     // A comment that points a maintainer at wiring it up is pointing them at the thing the design
     // rejected.
 
-    storeAllAccountInformationInSharedPreferences();
+    return storeAllAccountInformationInSharedPreferences();
   }
 
   public static List<StorageMessage> getUnencryptedMessagesList(Contact contact) throws UnknownContactException {

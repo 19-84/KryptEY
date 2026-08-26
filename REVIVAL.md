@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-eight sections, written in the order things were found rather than by subject, so the
+Fifty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -114,6 +114,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Three informational lines the user never sees](#three-informational-lines-the-user-never-sees)
 - [Text crosses into another application, and three writes that could not fail](#text-crosses-into-another-application-and-three-writes-that-could-not-fail)
 - [Ciphertext crosses the process boundary, measured](#ciphertext-crosses-the-process-boundary-measured)
+- [A guard for the third instance of the discarded answer](#a-guard-for-the-third-instance-of-the-discarded-answer)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4065,3 +4066,40 @@ forever. And the send path never consulted the flag at all: the receive half rep
 not recorded" and the send half stayed silent, so a message could go to the messenger and vanish from
 the history with nothing said. Both closed, the second with its own wording — "this message was read"
 is not true of a message the user just sent.
+
+
+## A guard for the third instance of the discarded answer
+
+**Three defects on this branch were the same shape, and each cost a review round to find:** a method
+that answers "did this happen", called as though it answered nothing.
+
+- `processPreKeyResponseMessage`'s refusal was discarded inside `decrypt`, so a bundle the app had
+  rejected was reported to the user as an accepted invite.
+- `verifyContactInContactList` ended `storeAll…(); return true;` — the one failure that means "this
+  verification was not recorded" was the one it could not report.
+- `storeMessageLog` swallowed its exception and its caller returned true on the account batch alone,
+  so a message could be delivered and silently absent from the history.
+
+They are invisible on reading, because a discarded return looks exactly like a void call. So the
+shape has a guard now: a call, as a bare statement, to a method in the same file returning
+`boolean`. Its control is the second defect reintroduced verbatim.
+
+**Exemptions are per call SITE, not per name**, and that distinction did real work here. The same
+method is consumed where its answer matters and ignored where it does not — `warnIfKeyWasRejected`
+is a writer whose boolean is a convenience, and exempting the name would have hidden the site that
+mattered. Each entry is an argument about one call, in writing.
+
+**It found one immediately.** Deleting a contact discarded its write result and
+`removeContactFromContactListAndProtocol` returned nothing, so a failed write left the row gone, the
+messages swept and the session deleted **in memory only** — and the next raise brings the contact and
+its plaintext back after the app has said it was deleted. This is the one operation where that is a
+promise rather than an inconvenience: the strip already refuses to delete a contact whose chat log
+cannot be *read*, on the stated grounds that a row removed while its plaintext stayed behind is the
+worse outcome and the one the help text says does not happen. A failed write broke the same promise
+from the other side. It reports now.
+
+**Two false-positive shapes had to be handled before the guard was worth anything**, and both were
+mine: `if (...) {` matches the same pattern as a method declaration, so the enclosing name came back
+as "if"; and the second line of a multi-line assignment — `final boolean x = a(...) || b(...);` — is
+textually indistinguishable from a discarded call. A guard that cries wolf on those would have been
+turned off within a week.

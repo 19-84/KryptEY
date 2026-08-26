@@ -304,8 +304,9 @@ public class E2EEStrip {
     return SignalProtocolMain.getMessageType(messageEnvelope);
   }
 
-  public void removeContact(Contact contact) {
-    SignalProtocolMain.removeContactFromContactListAndProtocol(contact);
+  /** @return whether the deletion reached disk. See {@code removeContactFromContactListAndProtocol}. */
+  public boolean removeContact(Contact contact) {
+    return SignalProtocolMain.removeContactFromContactListAndProtocol(contact);
   }
 
   public List<StorageMessage> getUnencryptedMessages(Contact contact) throws UnknownContactException {

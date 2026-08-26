@@ -245,6 +245,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * must avoid the generic failure advice - deleting the contact and re-inviting is a
    * key-substitution window, and nothing about a storage failure calls for it.
    */
+  /** A deletion that did not reach disk, which the next raise will undo. */
+  private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
+
   private final String INFO_SENT_MESSAGE_NOT_SAVED = "That message was sent, but it could not be added to your saved history, because the app could not write to its own storage. The message went out normally - only the record of it is missing.";
 
   private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history, because the stored history cannot be opened. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
@@ -3198,8 +3201,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void removeContact(Contact contact) {
+    final boolean deleted;
     try {
-      mE2EEStrip.removeContact(contact);
+      deleted = mE2EEStrip.removeContact(contact);
     } catch (ChatLogUnavailableException e) {
       // Deleting a contact has to sweep that contact's messages out of the log, which needs the
       // log. If it cannot be read the deletion cannot be completed correctly, so it is refused
@@ -3208,6 +3212,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
       Log.e(TAG, "the chat log could not be read, so the contact was not deleted", e);
       return;
+    }
+
+    // And the same promise, broken the other way. The refusal above covers a log that cannot be
+    // READ; a log-and-account write that does not land leaves the row gone, the messages swept and
+    // the session deleted in memory only, with none of it on disk - so the next raise brings the
+    // contact and its plaintext back, after the app has said it was deleted. That is the outcome
+    // the comment above calls the worse one, arrived at from the other side.
+    if (!deleted) {
+      Toast.makeText(getContext(), INFO_DELETE_NOT_SAVED, Toast.LENGTH_LONG).show();
+      Log.e(TAG, "the deletion could not be written; it will not survive the next raise");
     }
 
     // Only now, once the deletion has actually happened.
