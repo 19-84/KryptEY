@@ -559,8 +559,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // labelFor, not the bare first name: this branch is reached whenever a change is pending,
       // which any messenger can arrange with one forged bundle - so it is precisely the state in
       // which the user most needs to know WHICH contact they are looking at.
-      setInfoTextViewMessage(mVerifyContactInfoTextView,
-          String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact)));
       // ...and if a rejection ALSO stands, say so in the same breath.
       //
       // An else-if here was wrong, and one extra post reaches the state that proves it: reject,
@@ -568,11 +566,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // change. Both hold. Confirming calls clearRejection AND dismissIdentityChange, so the
       // pending-change text - "confirm it to dismiss the warning" - was describing one of the two
       // things it does, which is the omission this notice was added to close.
-      if (mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())) {
-        setInfoTextViewMessage(mVerifyContactInfoTextView,
-            String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact))
-                + "\n\n" + String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact)));
-      }
+      // Composed once and written once. Writing the pending-change text and then overwriting it
+      // in the both-hold case left a dead first write, which reads as though two notices are being
+      // shown in sequence.
+      final String pending = String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact));
+      setInfoTextViewMessage(mVerifyContactInfoTextView,
+          mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())
+              ? pending + "\n\n" + String.format(INFO_VERIFY_AFTER_REJECTION,
+                  labelFor(chosenContact))
+              : pending);
     } else if (mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())) {
       // A rejection with no pending change.
       setInfoTextViewMessage(mVerifyContactInfoTextView,
@@ -1811,13 +1813,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>That was not true of {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} when this sentence was
    * written, which is the trouble with an invariant stated in prose: it goes on reading as true.
    */
-  /** The warning, with the chosen recipient named under it when there is one. */
+  /**
+   * The warning, with the chosen recipient named under it when there is one.
+   *
+   * <p>Composed rather than stored, so it follows the recipient. {@code setChosenContact} repaints
+   * through this whenever a warning is standing.
+   */
   private String warningWithRecipient() {
     if (mStandingWarningText == null) return null;
     if (chosenContact == null) return mStandingWarningText;
     return mStandingWarningText + "\n\nSending to: " + labelFor(chosenContact);
   }
 
+  /**
+   * Posts a warning to the info banner and marks it as standing.
+   *
+   * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
+   * "is a warning on screen" is a property of how it was written rather than a string comparison
+   * against a set of format strings someone has to remember to extend. This overload is for
+   * warnings that are not about one contact; anything about a contact should carry its address, or
+   * deleting that contact cannot put it down.
+   */
   private void setWarningMessage(final String message) {
     setWarningMessage(message, null);
   }
