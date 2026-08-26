@@ -446,4 +446,56 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     assertFalse("and the warning it was shown beside must not have been taken down",
         strip.mayOverwriteInfoBanner());
   }
+
+  /**
+   * The third state: nothing existed, the bundle was refused, and its ciphertext pinned a key.
+   *
+   * <p>The two-message split answered the rotation path and left this arm on the wrong sentence —
+   * and on the reassuring one. The check asked {@code hasSessionWith} <em>after</em> the decrypt,
+   * but the decrypt itself creates a session: {@code decryptMessage}'s PREKEY arm pins by
+   * trust-on-first-use whenever the address holds no key, and a refused attached bundle does not
+   * stop it, because the {@code PreKeySignalMessage} carries its own identity key.
+   *
+   * <p>So the strip said "what you already had with them is unchanged" at the precise moment a
+   * messenger-supplied key was pinned with nothing else noticing — and on this arm the
+   * contact-creation caution does not fire either, so that was the only thing on the banner.
+   */
+  @Test
+  public void arefusedBundleWhoseMessagePinsAkeySaysSo() throws Exception {
+    contactRowWithoutASession();
+    assertFalse("precondition: nothing may be pinned yet",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    // The peer can build a real PreKeySignalMessage to the victim - an attacker relaying the
+    // victim's own invite can do exactly this.
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(peer);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), addressOfVictim()));
+    final MessageEnvelope opening = SignalProtocolMain.encryptMessage("hello", addressOfVictim());
+    assertNotNull(opening);
+    activate(victim);
+
+    // Stripped bundle stapled to that opening message.
+    final MessageEnvelope both = new MessageEnvelope(opening.getCiphertextMessage(),
+        opening.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
+    both.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+
+    paste(both);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    assertTrue("precondition: the attached message must have pinned a key by trust-on-first-use, "
+        + "or this is not the state under test", SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    final String shown = bannerText();
+    assertFalse("the strip must not reassure the user that nothing changed at the moment a "
+            + "messenger-supplied key was pinned: " + shown,
+        shown.contains("unchanged"));
+    assertFalse("nor claim nothing was set up, when a key is pinned and the contact is usable: "
+            + shown, shown.contains("Nothing has been set up"));
+    assertTrue("it must say a key was set up anyway and send the user to compare it: " + shown,
+        shown.contains("set up a key for them anyway"));
+    assertTrue("and it must give the one instruction that helps here: " + shown,
+        shown.contains("by voice"));
+  }
 }

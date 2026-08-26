@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-four sections, written in the order things were found rather than by subject, so the
+Forty-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -100,6 +100,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The refusal that switched off the only substitution detector](#the-refusal-that-switched-off-the-only-substitution-detector)
 - [A record that meant less than four messages claimed](#a-record-that-meant-less-than-four-messages-claimed)
 - [The warning weakened to protect a message, and the erase that bought](#the-warning-weakened-to-protect-a-message-and-the-erase-that-bought)
+- [One invariant, swept instead of exampled](#one-invariant-swept-instead-of-exampled)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3442,3 +3443,46 @@ on the strength of the *pending change* alone, so it passed with the clearing de
 consequence lives on the other side of the dismissal: `dismissIdentityChange` is a tap and
 deliberately does not restore `Contact.verified`, so an uncleared badge comes back with no fresh
 comparison anywhere. The test dismisses first now, and its control fails.
+
+
+## One invariant, swept instead of exampled
+
+Rounds seven through ten each found a defect **in the previous round's fix**, all in the same place:
+something the messenger can cause taking down a standing warning, or a message asserting an event
+that did not happen. Ten rounds of point fixes had not converged, so this one added a guard for the
+shape rather than the instance.
+
+`MessengerCannotClearAstandingWarningTest` states the property `mWarningStanding`'s own javadoc
+already claimed — *"Nothing the messenger can cause clears it"* — and checks it against every event
+a relay can trigger: the host field being declared a password field (the round-10 route), a
+clipboard change, an unrelated invite arriving, a configuration change rebuilding the strip, moving
+between the strip's screens, and selecting a contact.
+
+**The first version of it was worth less than it looked, and its own control said so.** It raised
+one generic warning and swept the events past it. Reintroducing the round-10 defect verbatim — the
+soft-yield that let a password-field notice erase the refusal — left it **green**, because that
+defect lived on one particular warning and the test had constructed a different one. A sweep over
+events alone measures only the warnings its author happened to build.
+
+So it is a cross product: every event against every warning the app can leave standing, each raised
+through its real path — the generic one, the refused-invite warning, and the identity-change warning
+from a substituted bundle. With that, the round-10 control fails, and so does deleting the warning
+restore in `adoptState`. The cross product also caught a mistake in its own first draft: it pasted
+*Bob's* invite as "an unrelated invite", and a good invite from Bob legitimately retracts a refusal
+about Bob — the test being wrong rather than the app.
+
+What it cannot do is prove the event list complete. A genuinely new route into the strip still needs
+adding by hand. What it does is make the routes that are known impossible to reopen quietly, which
+is the failure mode ten rounds actually had.
+
+**Round eleven, found in parallel with it.** The refusal's two-message split asked "is there a
+session" *after* the decrypt — and the decrypt creates one. `decryptMessage`'s PREKEY arm pins by
+trust-on-first-use whenever the address holds no key, and a refused attached bundle does not stop
+it, because the `PreKeySignalMessage` carries its own identity key. So on the add-contact arm the
+strip printed *"what you already had with them is unchanged"* at the exact moment a
+messenger-supplied key was pinned — and that arm does not fire the contact-creation caution either,
+so the reassurance was the only thing on the banner. The previous wording was also false there, but
+it erred toward alarm; the fix had routed the state to the reassuring falsehood.
+
+Three states now, and the predicate is captured before the decrypt rather than after. The third
+says a key was set up anyway and sends the user to compare it by voice.

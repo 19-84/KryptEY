@@ -199,6 +199,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * It is false in the other direction too on the add-contact arm, where the attached ciphertext
    * pins a key by trust-on-first-use even though the bundle was refused.
    */
+  /**
+   * The third state: nothing existed before, and the refused bundle's own ciphertext pinned a key.
+   *
+   * <p>Neither other sentence is true here. "Nothing has been set up" is false — a key is pinned
+   * and the contact is usable — and "what you already had with them is unchanged" is worse, because
+   * there was nothing before and the thing that just happened is the one this app most needs to
+   * report: trust-on-first-use accepting a key the messenger supplied. The attached
+   * {@code PreKeySignalMessage} carries its own identity key, so refusing the bundle does not stop
+   * it, and on this arm the contact-creation caution does not fire either.
+   */
+  private final String INFO_INVITE_REFUSED_BUT_KEY_PINNED = "The key update from %s could not be used - it does not verify, which means it was changed on the way here. The message it arrived with has set up a key for them anyway, and this app cannot tell whose it is - compare the security number by voice before sending anything private.";
+
   private final String INFO_INVITE_REFUSED_SESSION_KEPT = "A key update from %s could not be used - it does not verify, which means it was changed on the way here. It was ignored, and what you already had with them is unchanged. Ask them to send another, and if it keeps failing, send it a different way.";
 
   private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
@@ -2382,6 +2394,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     session-creation arm, when no session exists after the attempt.
    */
   private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
+    // BEFORE the decrypt, because the decrypt itself can create one. decryptMessage's PREKEY_TYPE
+    // arm pins by trust-on-first-use whenever the address holds no key, and a refused attached
+    // bundle does not stop it - the PreKeySignalMessage carries its own identity key. Asking
+    // afterwards answers "is there a session now", which is true because of THIS paste, and the
+    // strip then reassured the user that nothing had changed at the exact moment a
+    // messenger-supplied key was pinned with nothing else noticing.
+    final boolean sessionExistedBefore = sender != null
+        && mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress());
+
     final CharSequence decryptedMessage = mE2EEStrip.decryptMessage(messageEnvelope, sender);
 
     // The fact, not an inference from it. Two inferences have already been wrong here: "no message
@@ -2404,13 +2425,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // as silent as before. Soft, because it must not be able to suppress a message that says
       // more than it does - see setInfoUnlessWarned.
       if (!identityChanged && !mWarningStanding) {
-        // Which sentence is true depends on whether anything survives the refusal, so it is
-        // asked rather than assumed - the same mistake, in the same method, as inferring the
-        // refusal itself.
-        final boolean somethingSurvives =
-            mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress());
-        setInviteRefusalWarning(String.format(somethingSurvives
-                ? INFO_INVITE_REFUSED_SESSION_KEPT : INFO_INVITE_REFUSED, labelFor(sender)),
+        // Three states, and each needs its own sentence. Two of them were collapsed into one and
+        // the collapse pointed the wrong way: the reassuring wording landed on the first-pin case.
+        final boolean pinnedByThisPaste = !sessionExistedBefore
+            && mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress());
+        final String outcome = sessionExistedBefore ? INFO_INVITE_REFUSED_SESSION_KEPT
+            : (pinnedByThisPaste ? INFO_INVITE_REFUSED_BUT_KEY_PINNED : INFO_INVITE_REFUSED);
+        setInviteRefusalWarning(String.format(outcome, labelFor(sender)),
             String.valueOf(sender.getSignalProtocolAddress()));
       }
       // The message itself, if one came with the refused bundle, is still the user's to read: the
@@ -2520,9 +2541,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     /**
      * Whether that warning yields to a message with more to say.
      *
-     * <p>Carried, because dropping it silently promotes a soft warning to a hard one on the next
-     * theme switch or rotation - and a hard refusal warning is exactly what lets a relay suppress
-     * the contact-creation caution. A configuration change is something an app can force.
+     * <p>Carried, because dropping it makes the refusal UNRETRACTABLE: the later good invite that
+     * should take it down would no longer recognise it, and the warning would outlive the problem
+     * it describes. A configuration change is something an app can force.
      */
     private final boolean standingWarningIsInviteRefusal;
     private final boolean hostFieldIsPassword;
@@ -2677,9 +2698,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       setWarningMessage(carried.standingWarningText != null
           ? carried.standingWarningText : String.valueOf(carried.banner),
           carried.standingWarningAddress);
-      // Restored after setWarningMessage, which resets it: a soft warning that came back hard
-      // would regain the power to suppress the contact-creation caution, and a rebuild is
-      // something the messenger's host app can force at will.
+      // Restored after setWarningMessage, which resets it: without this the refusal comes back
+      // unretractable, so the good invite that should take it down leaves it standing forever - and
+      // a rebuild is something the messenger's host app can force at will.
       mStandingWarningIsInviteRefusal = carried.standingWarningIsInviteRefusal;
     }
 
@@ -2817,7 +2838,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // and would clear a warning about Bob while handling an invite for Alice.
     //
     // The message that genuinely must not be suppressed - the caution for a newly created contact -
-    // is a warning in its own right now, so it replaces rather than yields.
+    // is shown BESIDE a standing warning instead, by setCautionBesideAnyWarning. Posting it as a
+    // warning of its own was tried and is forbidden by StripWarningErasureTest: that is "Contact
+    // Carol created" landing on top of a security warning.
     if (mWarningStanding) return;
     setInfoTextViewMessage(mInfoTextView, message);
   }
