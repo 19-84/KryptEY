@@ -196,6 +196,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_HELP = "Q&A";
   private final String INFO_MESSAGES_LIST_DEFAULT = "Choose a contact first to see messages here";
   private final String INFO_NO_SAVED_MESSAGES = "There are no saved messages for this contact";
+
+  /**
+   * The log exists and could not be opened, which is not the same as it being empty.
+   *
+   * <p>Both places that meet this state said "There are no saved messages for this contact" - a
+   * statement about the history, made in the one situation where the app cannot see the history at
+   * all. On the delete route it also asserts the opposite of the reason the deletion was refused:
+   * the refusal exists because the log probably still holds that contact's plaintext. And a user who
+   * believes their history is gone is exactly the user who stops trying to clean it up.
+   */
+  private final String INFO_SAVED_MESSAGES_UNREADABLE = "Your saved messages with this contact cannot be opened right now, so they cannot be shown or deleted. They are still on this device - this is not an empty history. Try again after unlocking the device; if it keeps happening, do not assume anything here has been removed.";
   private final String INFO_VERIFY_CONTACT = "To check your encryption with %s, read the numbers above out to them by voice - in person or on a call - and have them read theirs back. Do not send the numbers through the messenger you are chatting in: anything that could change your keys could change those numbers to match.";
   /**
    * A re-invite that was refused, said out loud on the arm that used to say nothing.
@@ -228,6 +239,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * {@code PreKeySignalMessage} carries its own identity key, so refusing the bundle does not stop
    * it, and on this arm the contact-creation caution does not fire either.
    */
+  /**
+   * A contact created in memory only, which the next raise will undo.
+   *
+   * <p>The last member of the write family that could not say this. The banner otherwise reads
+   * "Contact X created … compare the security number by voice before sending anything private" and
+   * sends the user to verify a contact that will not be there after the next keyboard raise — and
+   * the host app decides when that happens.
+   */
+  private final String INFO_CONTACT_NOT_SAVED = "Contact %s was set up here, but it could not be saved - the app could not write to its own storage. They will be gone the next time the keyboard opens. Do not send them anything until you have added them again successfully.";
+
   /** A deletion that did not reach disk, which the next raise will undo. */
   private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
 
@@ -898,8 +919,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         messages = mE2EEStrip.getUnencryptedMessages(chosenContact);
         accountName = mE2EEStrip.getAccountName();
       } catch (UnknownContactException e) {
-        Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
-        Log.d(TAG, INFO_NO_SAVED_MESSAGES);
+        // A lookup that failed, reported as a lookup that failed. Saying "there are no saved
+        // messages for this contact" turns not finding the contact into a fact about their history.
+        Toast.makeText(getContext(), INFO_SAVED_MESSAGES_UNREADABLE, Toast.LENGTH_LONG).show();
+        Log.d(TAG, "the contact could not be resolved; showing no history");
         e.printStackTrace();
       } catch (ChatLogUnavailableException e) {
         // The stored log exists and could not be read. Show no history rather than no keyboard:
@@ -907,7 +930,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // in whatever app the user is typing in. The condition is persistent, so it would be
         // crash-on-tap until reinstall. Nothing is written - the account stays deferred - so the
         // unreadable log is still on disk for a later version, or a later unlock, to recover.
-        Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
+        //
+        // And the message says that. This screen renders an empty list under "Message log with: X",
+        // so the sentence beside it was the only thing distinguishing "you have no history" from
+        // "your history cannot be opened" - and it said the first while this comment says the
+        // second.
+        Toast.makeText(getContext(), INFO_SAVED_MESSAGES_UNREADABLE, Toast.LENGTH_LONG).show();
         Log.e(TAG, "the chat log could not be read; showing none", e);
       }
     }
@@ -1151,6 +1179,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // on top of a security warning, which StripWarningErasureTest exists to forbid.
           //
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
+          if (!mE2EEStrip.lastContactWriteReachedDisk()) {
+            Toast.makeText(getContext(),
+                String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+                Toast.LENGTH_LONG).show();
+          }
           setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.", chosenContact);
         }
       } else {
@@ -2671,6 +2704,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (!isSessionCreation && decryptedMessage != null) {
         mInputEditText.setText(decryptedMessage);
         changeVisibilityInputFieldButtons(true);
+        // The same question the ordinary branch asks. Without it a relay suppresses this notice at
+        // will: staple a bundle to every relayed message and strip its one-time pre-key - one
+        // unsigned byte - and every message takes this branch, so a delivered message whose log
+        // write failed is filed nowhere and reported nowhere. The banner the user does get is
+        // reassuring about the key and silent about the lost record.
+        if (mE2EEStrip.lastChatLogWriteFailed()) {
+          Toast.makeText(getContext(), INFO_MESSAGE_NOT_SAVED, Toast.LENGTH_LONG).show();
+        }
       }
       mE2EEStrip.clearClipboard();
       return false;
@@ -3209,7 +3250,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // log. If it cannot be read the deletion cannot be completed correctly, so it is refused
       // rather than half-done - a contact row removed while its plaintext stayed behind is the
       // worse outcome, and it is the one the help text promises does not happen.
-      Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
+      //
+      // The message says that, rather than "there are no saved messages for this contact" - which
+      // is a claim about the history made in the one state where the app cannot see it, and which
+      // asserts the opposite of the reason for the refusal. The sibling failure on this same
+      // operation, the write not landing, has said so accurately since it was added.
+      Toast.makeText(getContext(), INFO_SAVED_MESSAGES_UNREADABLE, Toast.LENGTH_LONG).show();
       Log.e(TAG, "the chat log could not be read, so the contact was not deleted", e);
       return;
     }

@@ -326,6 +326,13 @@ public class SignalProtocolMain {
 
   private boolean mLastRejectionReachedDisk = true;
 
+  /** Whether the last contact creation reached storage. See {@code createAndAddContactToList}. */
+  private boolean mLastContactWriteReachedDisk = true;
+
+  public static boolean lastContactWriteReachedDisk() {
+    return sInstance.mLastContactWriteReachedDisk;
+  }
+
   /**
    * Discards a pending identity change, keeping the pinned key. The safe exit from the state an
    * attacker can force; see {@code IdentityKeyStoreImpl.dismissIdentityChange}.
@@ -1477,7 +1484,13 @@ public class SignalProtocolMain {
 
     final Contact recipient = new Contact(String.valueOf(firstName), String.valueOf(lastName), signalProtocolAddressName, deviceId, false);
     mAccount.addContactToContactList(recipient);
-    storeAllAccountInformationInSharedPreferences();
+    // Creation is the last member of the write family that could not report a failed write.
+    // Rejection, verification, deletion, a sent message and a received one all thread the result
+    // up; this one said "Contact X created" and sent the user off to compare a security number for
+    // a contact that exists in memory only, which the next reloadAccount reverts. The unreadable-
+    // storage case was already covered - no account, no contact - so the gap is specifically
+    // account-loaded-but-write-failed, which is the case that looks healthy.
+    sInstance.mLastContactWriteReachedDisk = accountWriteSucceeded();
     return recipient;
   }
 
@@ -2356,6 +2369,7 @@ public class SignalProtocolMain {
     sInstance.mLastChatLogWriteFailed = false;
     // The third flag of this shape, and the one that was missed when the other two were listed.
     sInstance.mLastRejectionReachedDisk = true;
+    sInstance.mLastContactWriteReachedDisk = true;
   }
 
   // needed for testing only

@@ -326,6 +326,11 @@ public class E2EEStrip {
     return SignalProtocolMain.hasPinnedKey(address);
   }
 
+  /** @see SignalProtocolMain#lastContactWriteReachedDisk */
+  public boolean lastContactWriteReachedDisk() {
+    return SignalProtocolMain.lastContactWriteReachedDisk();
+  }
+
   /** @see SignalProtocolMain#lastRejectionReachedDisk */
   public boolean lastRejectionReachedDisk() {
     return SignalProtocolMain.lastRejectionReachedDisk();

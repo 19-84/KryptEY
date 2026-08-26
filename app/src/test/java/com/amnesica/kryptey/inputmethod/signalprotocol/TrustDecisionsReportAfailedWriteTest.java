@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -244,5 +245,30 @@ public class TrustDecisionsReportAfailedWriteTest {
             + "constant false takes away a verification that was recorded, and disk still says "
             + "verified until the next reload puts it back - so the app disagrees with itself.",
         SignalProtocolMain.getInstance().getAccount().getContactList().get(0).isVerified());
+  }
+
+  /**
+   * Creating a contact must report a write that did not land.
+   *
+   * <p>The last member of the write family that could not. Rejection, verification, deletion, a sent
+   * message and a received one all thread the result up; creation said "Contact X created" and sent
+   * the user to compare a security number for a contact that exists in memory only — which the next
+   * {@code reloadAccount} reverts, and the host app decides when that happens.
+   *
+   * <p>The unreadable-storage case was already covered: with no account there is no contact and the
+   * strip aborts. The gap was account-loaded-but-write-failed, which is the case that looks healthy.
+   */
+  @Test
+  public void creatingAcontactReportsAwriteThatDidNotLand() throws Exception {
+    writesFail = true;
+
+    final Contact created = SignalProtocolMain.addContact(
+        "Carol", "Smith", "carol-address", 4);
+
+    assertNotNull("the contact is still created in memory - the strip needs it to keep going",
+        created);
+    assertFalse("a creation that did not reach disk must say so, or the user is told to verify a "
+            + "contact who will not exist after the next keyboard raise",
+        SignalProtocolMain.lastContactWriteReachedDisk());
   }
 }

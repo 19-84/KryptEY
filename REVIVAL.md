@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-one sections, written in the order things were found rather than by subject, so the
+Sixty-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -117,6 +117,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A guard for the third instance of the discarded answer](#a-guard-for-the-third-instance-of-the-discarded-answer)
 - [The cross-app tests, and what they cost to make honest](#the-cross-app-tests-and-what-they-cost-to-make-honest)
 - [A green test that could not go red](#a-green-test-that-could-not-go-red)
+- [An unreadable history is not an empty one](#an-unreadable-history-is-not-an-empty-one)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4195,3 +4196,41 @@ matching line, so an implementation that put the plaintext in the foreign field 
 would satisfy the assertion — every edit is delivered to that process, so every line is asserted now.
 And `tearDown` had a throwing call ahead of its contamination-critical work with no `finally`, which
 is the ordering that produced the `FLAG_SECURE` cascade in the first place.
+
+
+## An unreadable history is not an empty one
+
+**Round eighteen, aimed at production code rather than at the test scaffolding the previous rounds
+had drifted into, found four defects in what the strip tells the user.**
+
+**Two of them said the history was empty when the app could not see it.** Deleting a contact whose
+chat log cannot be read is refused — correctly, because the log probably still holds that contact's
+plaintext, and a row removed while its plaintext stayed behind is the outcome the help text promises
+does not happen. The message shown was *"There are no saved messages for this contact"*: a claim
+about the history, made in the one state where the app cannot read the history, asserting the
+opposite of the reason for the refusal. The history screen said the same thing while rendering an
+empty list under "Message log with: X", with a comment two lines above stating that the log is still
+on disk for a later unlock to recover. A user who believes their plaintext is gone is exactly the
+user who stops trying to remove it. Both now say the log exists and could not be opened.
+
+**A relay could suppress the "delivered but not recorded" notice at will.** The refused-bundle branch
+delivers the message and did not ask whether the log write landed, while the ordinary branch did.
+Staple a bundle to every relayed message and strip its one-time pre-key — one unsigned byte — and
+every message takes that branch: a delivered message whose record was lost is filed nowhere and
+reported nowhere, under a banner that is reassuring about the key and silent about the record.
+
+**And creation was the last write in the family that could not report a failure.** Rejection,
+verification, deletion, a sent message and a received one all thread the result up; creating a
+contact discarded it, said "Contact X created", and sent the user to compare a security number for a
+contact that exists in memory only — reverted by the next `reloadAccount`, whose timing the host app
+controls. The unreadable-storage case was already covered; the gap was account-loaded-but-write-
+failed, which is the case that looks healthy.
+
+**One thing attempted and dropped rather than left broken.** The help section added last commit makes
+a behavioural claim — the invite goes to whatever app holds the cursor — so it should be pinned. The
+claim is true: the invite path calls the same `sendEncryptedMessageToApplication` an ordinary send
+does, and the on-device cross-boundary test exercises that path into a foreign process. But a JVM
+test driving the invite button produced nothing at all, with no toast and an empty compose box, and
+the cause was not found within the time this tick had. The test was deleted rather than committed
+red or left asserting less than its name. The claim rests on reading plus the device test, and that
+is written here rather than implied by an absent test.

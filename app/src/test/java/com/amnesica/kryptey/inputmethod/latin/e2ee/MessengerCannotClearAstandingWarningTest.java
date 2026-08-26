@@ -614,6 +614,9 @@ public class MessengerCannotClearAstandingWarningTest {
     NOT_WARNINGS.put("INFO_MESSAGE_NOT_SAVED", "a Toast, same method");
     NOT_WARNINGS.put("INFO_SESSION_CREATION_FAILED", "a plain banner line in addContact, deliberately not a warning");
     NOT_WARNINGS.put("INFO_NO_CONTACT_CHOSEN_TEXT", "the opening banner, in the same method as the storage warning");
+    NOT_WARNINGS.put("INFO_CONTACT_NOT_SAVED",
+        "a Toast in addContact, which also raises warnings - it reports a failed write and does not "
+            + "set mWarningStanding");
   }
 
   /** And the ones deliberately not swept, each with the reason sweeping it would prove nothing. */
