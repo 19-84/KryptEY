@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-nine sections, written in the order things were found rather than by subject, so the
+Fifty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -105,6 +105,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two storage findings that make a recorded residual wrong](#two-storage-findings-that-make-a-recorded-residual-wrong)
 - [The laundering primitive, closed from outside the file](#the-laundering-primitive-closed-from-outside-the-file)
 - [A fix that was true of the store and false of the app](#a-fix-that-was-true-of-the-store-and-false-of-the-app)
+- [FLAG_SECURE was down on the route users actually take](#flag_secure-was-down-on-the-route-users-actually-take)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3655,3 +3656,48 @@ listener — a `sed` that matched two indentation variants. And a test seam that
 also refuses over a password field) and which had been inserted between that method and the javadoc
 saying re-implementing a body in a test proves only that the copy behaves. It reads the field
 directly now.
+
+
+## FLAG_SECURE was down on the route users actually take
+
+**Found by turning the previous entry's lesson into a sweep of its own.** Rather than review the
+code again, a reviewer was asked to find *tests that assert a property through a path production
+never takes*, with the fresh-install seal as the template. It found four, and the first is a real
+defect rather than a testing one.
+
+`setChosenContact` never told the window. `notifySensitiveVisibility` had three callers — a screen
+switch, the compose-box watcher, and `adoptState` — and `setChosenContact` has **nine** call sites,
+of which two are followed by a screen switch. So on the commonest route there is, accepting an
+invite with the Decrypt button, the strip chose a recipient with no screen change, and the
+session-creation arm writes no text so the watcher never fired either: the main view sat there with
+the banner naming the contact and `FLAG_SECURE` **down**. That is exactly the disclosure the
+chosen-contact term was added to cover.
+
+It failed closed on the way out too. Hiding the keyboard notifies *true* while the contact is still
+set, and `forgetChosenRecipient` then nulls it silently — so the last thing the window heard was
+"sensitive" and the flag stayed on for the keyboard's life, which this design explicitly rejects.
+
+**Why the existing tests could not see it.** Both tests in `SecureWindowCoversTheChosenContactTest`
+drive `selectContact`, and the file's javadoc says so — *"Driven through `selectContact`, which is
+what a contact row's click listener calls."* That sentence reads as scoping and is in fact the hole:
+`selectContact` is one of the two call sites that happen to be followed by a screen switch. The
+dismissal test that would have caught the other half never sets a recipient, so the `false` it
+observes comes entirely from the compose-box term.
+
+**And one of my own tests was hollow again, in a way worth recording.** The invariant sweep's
+"an incoming key bundle" row drove `processIncomingEnvelopeForTest`, whose javadoc says plainly that
+it drives the *plain signal-message* arm — so a bundle-only invite ran the "no contact found" path,
+a Toast and a screen switch, and never reached `processPreKeyResponse`, whose first statement is the
+banner write the row exists to check. The row could not fail for any of the seven warnings it was
+crossed with. It goes through the clipboard and the Decrypt button now.
+
+**Three more from round fifteen, all the same family**, and the fix this time is the rule rather
+than the instance. The banner writers each carried their own copy of "do not overwrite a standing
+item" as `if (mWarningStanding)`, and when the caution became a second standing item, three
+consecutive rounds each found one more copy that had not been told — the reset path, the recipient
+repaint, the session-failure line. There is one predicate now,
+`aStandingItemHoldsTheBanner()`, and the copies ask it.
+
+Two of those three are invisible to the sweep by construction, which is worth stating rather than
+leaving implied: a stale "Sending to: X" is not an erasure, and the password-field notice heals
+within the single event the sweep fires. Both have targeted tests instead, each with a control.

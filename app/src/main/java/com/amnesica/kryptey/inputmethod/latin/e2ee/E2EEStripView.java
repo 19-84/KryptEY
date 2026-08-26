@@ -153,9 +153,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Doing it in the setter means it cannot be forgotten by the next path that moves the
     // recipient, and it covers null - forgetChosenRecipient exists to stop the banner carrying a
     // name into the next app, and the recipient line would have ridden along with it.
-    if (changed && mWarningStanding) {
+    // A caution carries the same "Sending to: X" line a warning does, so it needs the same repaint.
+    // Without it the banner went on naming Carol while the chosen contact had moved to Bob - and
+    // Encrypt encrypts to the chosen contact. That is this method's own stated reason for existing:
+    // "an invisible recipient says nothing, and this said something false".
+    if (changed && aStandingItemHoldsTheBanner()) {
       setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
     }
+    // The window's FLAG_SECURE decision depends on whether a recipient is chosen, and nothing told
+    // it when that changed here. notifySensitiveVisibility had three callers - a screen switch, the
+    // compose-box watcher and adoptState - and this method has nine, of which only two are followed
+    // by a screen switch.
+    //
+    // Fails open on the route a user most often takes: accepting an invite with the Decrypt button
+    // runs setChosenContact from processPreKeyResponse with no screen change, and the session-
+    // creation arm writes no text either, so the watcher never fires. The strip then sits on the
+    // main view with the banner naming the recipient and the flag DOWN - which is the disclosure
+    // the chosen-contact term was added to cover.
+    //
+    // And fails closed on the way out: hiding the keyboard notifies true while the contact is still
+    // set, then forgetChosenRecipient nulls it silently, so the last thing the window heard was
+    // "sensitive" and the flag stays on for the rest of the keyboard's life.
+    if (changed) notifySensitiveVisibility();
   }
 
   private Encoder encodingMethod = Encoder.RAW; // raw is default
@@ -1110,7 +1129,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
           setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.", chosenContact);
         }
-      } else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
+      } else if (!aStandingItemHoldsTheBanner() && !warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
         // and this used to overwrite it with INFO_SESSION_CREATION_FAILED - the same delete-and-
         // re-invite advice - defeating its own guard. The standing check covers the same mistake
@@ -2410,6 +2429,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Scoped to that contact, the same way the warning's clear is: verifying, rejecting or
    * deleting somebody else says nothing about whether this key was ever compared.
    */
+  /**
+   * Whether something is standing on the banner that a transient message must not paint over.
+   *
+   * <p>One predicate, because the copies drifted. The rule "do not overwrite a standing item" was
+   * written out at every banner writer as {@code if (mWarningStanding)}, and when the caution became
+   * a second standing item three consecutive review rounds each found another writer that had not
+   * been told - the reset path, the recipient repaint, the session-failure line. Each fix taught one
+   * more copy. This is the thing they should all have been asking.
+   */
+  private boolean aStandingItemHoldsTheBanner() {
+    return mWarningStanding || mStandingCaution != null;
+  }
+
   private void clearCautionIfAbout(final Contact contact) {
     if (mStandingCaution == null) return;
     if (mStandingCautionAddress == null || (contact != null && mStandingCautionAddress
@@ -2973,7 +3005,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // is shown BESIDE a standing warning instead, by setCautionBesideAnyWarning. Posting it as a
     // warning of its own was tried and is forbidden by StripWarningErasureTest: that is "Contact
     // Carol created" landing on top of a security warning.
-    if (mWarningStanding) return;
+    if (aStandingItemHoldsTheBanner()) return;
     setInfoTextViewMessage(mInfoTextView, message);
   }
 

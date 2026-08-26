@@ -336,8 +336,13 @@ public class MessengerCannotClearAstandingWarningTest {
    */
   @Test
   public void aninviteForAdifferentContactDoesNotClearIt() throws Exception {
+    // Through the clipboard and the Decrypt button, NOT processIncomingEnvelopeForTest. That seam
+    // always drives processSignalMessage whatever the envelope type, so a bundle-only invite ran
+    // the "no contact found" arm - a Toast and a screen switch - instead of processPreKeyResponse,
+    // whose first statement is the banner write this row exists to check. The row could not fail
+    // for any warning it was crossed with.
     forEveryWarning("an incoming key bundle from an unrelated address",
-        () -> strip.processIncomingEnvelopeForTest(unrelatedInvite()));
+        () -> pasteAndDecrypt(unrelatedInvite()));
   }
 
   /** A genuine invite from a third party at their own address. */
@@ -390,6 +395,52 @@ public class MessengerCannotClearAstandingWarningTest {
    * {@code resetChosenContactAndInfoText} - a second unconditional writer that had to be taught the
    * same thing separately. Two writers, one rule, and the sweep only exercised one of them.
    */
+  /**
+   * Accepting an invite that then fails to build a session.
+   *
+   * <p>{@code addContactForTest} was used in this file only as a RAISER, never as an event - so the
+   * whole add-contact route was invisible to the sweep, and a review round found the session-failure
+   * line erasing a standing caution from exactly there. A path that only ever appears as a way to
+   * set up state is a path nothing is checking.
+   */
+  @Test
+  public void anotherContactWhoseInviteFailsDoesNotClearIt() throws Exception {
+    forEveryWarning("adding a contact whose invite does not verify", () -> {
+      ((android.widget.EditText) strip.findViewById(
+          R.id.e2ee_add_contact_first_name_input_field)).setText("Dave");
+      ((android.widget.EditText) strip.findViewById(
+          R.id.e2ee_add_contact_last_name_input_field)).setText("Smith");
+      strip.addContactForTest(splicedInvite());
+    });
+  }
+
+  /**
+   * Opening someone else's verify screen, which moves the chosen recipient.
+   *
+   * <p>The banner carries "Sending to: X" for a caution exactly as for a warning, and the repaint
+   * that keeps that line current fired only for warnings - so it went on naming the old recipient
+   * while Encrypt encrypted to the new one. Reached by tapping a badge in the contact list, which
+   * is an ordinary thing to do while a notice is on screen telling you to compare a number.
+   */
+  @Test
+  public void openingAnotherContactsVerifyScreenDoesNotClearIt() throws Exception {
+    forEveryWarning("opening another contact's verify screen",
+        () -> strip.showVerifyContactForTest(bob()));
+  }
+
+  /** A bundle whose signature cannot verify: one peer's identity over another's keys. */
+  private com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope splicedInvite()
+      throws Exception {
+    final com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse genuine =
+        EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse();
+    final com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope stranger =
+        unrelatedInvite();
+    return new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+            genuine.getIdentityKey(), stranger.getPreKeyResponse().getDevices()),
+        stranger.getSignalProtocolAddressName(), stranger.getDeviceId());
+  }
+
   @Test
   public void tappingTheBannerDoesNotClearIt() throws Exception {
     forEveryWarning("tapping the banner",

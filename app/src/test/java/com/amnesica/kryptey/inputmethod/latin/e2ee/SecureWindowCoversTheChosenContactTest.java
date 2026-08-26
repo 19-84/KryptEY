@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
@@ -61,7 +62,7 @@ public class SecureWindowCoversTheChosenContactTest {
     final Account peer = SignalProtocolMain.getInstance().getAccount();
     final SignalProtocolAddress peerAddress = ProtocolAddresses.of(
         peer.getSignalProtocolAddress().getName(), peer.getDeviceId());
-    final String peerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    peerBundle = SignalProtocolMain.exportOwnKeyBundle();
 
     SignalProtocolMain.initialize(null);
     victim = SignalProtocolMain.getInstance().getAccount();
@@ -88,6 +89,9 @@ public class SecureWindowCoversTheChosenContactTest {
     SignalProtocolMain.resetForTest();
     SignalProtocolMain.testIsRunning = false;
   }
+
+  /** Bob's invite, kept so a test can paste it the way the messenger delivers one. */
+  private String peerBundle;
 
   private Contact bob() {
     return victim.getContactList().get(0);
@@ -130,4 +134,55 @@ public class SecureWindowCoversTheChosenContactTest {
         lastSensitive);
   }
 
+  /**
+   * Choosing a recipient without a screen switch must still raise the flag.
+   *
+   * <p>Both existing tests here drive {@code selectContact}, and its javadoc says so — which is
+   * exactly why the hole survived. {@code setChosenContact} has nine call sites and only two are
+   * followed by a screen switch; {@code notifySensitiveVisibility} was reached only from a screen
+   * switch, the compose-box watcher, and {@code adoptState}.
+   *
+   * <p>So the ordinary route fails open: accepting an invite with the Decrypt button runs
+   * {@code setChosenContact} from {@code processPreKeyResponse} with no screen change, and the
+   * session-creation arm writes no text, so the watcher never fires either. The strip is left on
+   * the main view with the banner naming the recipient and {@code FLAG_SECURE} down.
+   */
+  @Test
+  public void acceptingAninviteRaisesTheFlagWithoutAscreenSwitch() throws Exception {
+    lastSensitive = false;
+
+    // Bob re-invites; the strip finds his row and chooses him, without changing screens. Through
+    // the clipboard and the Decrypt button, because processIncomingEnvelopeForTest always drives
+    // the plain signal-message arm and would not reach processPreKeyResponse at all.
+    final android.content.ClipboardManager clipboard =
+        (android.content.ClipboardManager) RuntimeEnvironment.getApplication()
+            .getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("",
+        com.amnesica.kryptey.inputmethod.signalprotocol.encoding.RawEncoder.encode(
+            EnvelopeCodec.toWire(EnvelopeCodec.fromWire(peerBundle)))));
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    assertTrue("the window must be told the strip is showing a recipient, even though no screen "
+        + "switch happened. Nothing else notifies on this route, and the banner names the contact.",
+        lastSensitive);
+  }
+
+  /**
+   * And the flag must come back down when the recipient is forgotten.
+   *
+   * <p>The mirror of the same gap. Hiding the keyboard notifies <em>true</em> while the contact is
+   * still set, then {@code forgetChosenRecipient} nulls it silently — so the last thing the window
+   * heard was "sensitive" and the flag stayed on for the rest of the keyboard's life, which this
+   * design explicitly rejects.
+   */
+  @Test
+  public void forgettingTheRecipientLowersTheFlagAgain() {
+    strip.selectContact(bob());
+    assertTrue("precondition: a chosen recipient must raise it", lastSensitive);
+
+    strip.onKeyboardHidden();
+
+    assertFalse("the flag must come down once the recipient is forgotten - otherwise it is on for "
+        + "the keyboard's whole life, and ordinary typing stops screenshotting", lastSensitive);
+  }
 }

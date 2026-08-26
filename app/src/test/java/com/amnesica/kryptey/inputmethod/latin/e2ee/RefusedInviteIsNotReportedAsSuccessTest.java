@@ -688,4 +688,55 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     assertTrue("tapping the banner must not erase the caution: " + bannerText(),
         bannerText().contains("cannot tell whose it is"));
   }
+
+  /**
+   * The banner must not go on naming a recipient the strip has moved away from.
+   *
+   * <p>A caution carries the same "Sending to: X" line a warning does, and the repaint that keeps
+   * it current fired only for warnings. So opening someone else's verify screen - a badge tap in
+   * the contact list, an ordinary thing to do while a notice tells you to compare a number - left
+   * the banner saying "Sending to: Carol" with the chosen contact moved to Bob, and Encrypt
+   * encrypts to the chosen contact.
+   *
+   * <p>Not visible to the invariant sweep, and that is worth saying rather than assuming otherwise:
+   * the sweep checks that a standing item's words survive, and here they do. What went stale is the
+   * line underneath them.
+   */
+  @Test
+  public void thebannerDoesNotNameArecipientTheStripHasMovedAwayFrom() throws Exception {
+    establishedContact();
+    final Contact carol = addCarol();
+    strip.selectContact(carol);
+    assertTrue("precondition: the banner must name Carol as the recipient: " + bannerText(),
+        bannerText().contains("Sending to: " + SignalProtocolMain.displayLabelFor(carol)));
+
+    // A badge tap on Bob's row opens his verify screen and moves the chosen contact.
+    strip.showVerifyContactForTest(victim.getContactList().get(0));
+
+    final String shown = bannerText();
+    assertFalse("the banner must not still name Carol once the strip has moved to Bob - Encrypt "
+            + "encrypts to the chosen contact, so this is the banner saying something false about "
+            + "where the next message goes. Shown: " + shown,
+        shown.contains("Sending to: " + SignalProtocolMain.displayLabelFor(carol)));
+  }
+
+  /**
+   * And a password field must not erase the caution even for the moment it is up.
+   *
+   * <p>The notice is transient and heals when the field stops being a password field, so the
+   * invariant sweep - which fires both transitions in one event - only ever observes the healed
+   * state. For a warning the mid-state is harmless, because the notice is suppressed outright. For
+   * the caution it was not: the messenger owns the inputType of every field it presents, so it
+   * chooses when this happens and for how long.
+   */
+  @Test
+  public void apasswordFieldDoesNotEraseTheCautionWhileItIsUp() throws Exception {
+    addCarol();
+
+    strip.setHostFieldIsPassword(true);
+
+    assertTrue("the caution must survive the password-field notice while that notice is up, not "
+            + "only after it clears: " + bannerText(),
+        bannerText().contains("cannot tell whose it is"));
+  }
 }
