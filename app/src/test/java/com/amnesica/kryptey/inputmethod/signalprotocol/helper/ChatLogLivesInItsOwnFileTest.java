@@ -187,6 +187,45 @@ public class ChatLogLivesInItsOwnFileTest {
         + "raise forever", accountFile.getString(LOG_KEY, null));
   }
 
+  /**
+   * A surviving chat log is by itself enough to say this device is not a fresh install.
+   *
+   * <p>The split created a survivor, and the fresh-install gate did not know about it. That gate
+   * exists because the "is this a first run?" boolean lives in device-protected storage while the
+   * identity lives in credential-protected storage, and the two can be lost independently — so it
+   * asks the store instead. It asked only the account's file.
+   *
+   * <p>{@code SharedPreferencesImpl.loadFromDisk} swallows a parse failure and installs an empty
+   * map, so a corrupt {@code protocol.xml} reads as "no data" while its sibling is untouched. The
+   * gate then says fresh install, a new account is generated, and its empty log — a brand-new
+   * account reports its log loaded — is written straight over the history that survived. Before the
+   * split the log lived in the file that was lost, so there was nothing left to destroy; afterwards
+   * there is.
+   */
+  @Test
+  public void asurvivingChatLogMeansThisDeviceIsNotAfreshInstall() {
+    assertNotNull("precondition: the log must be stored in its own file",
+        messageFile.getString(LOG_KEY, null));
+
+    // Exactly what a corrupt or lost protocol.xml looks like to the framework.
+    accountFile.edit().clear().commit();
+
+    assertTrue("a chat log survived while the account file did not, and the gate called this a "
+            + "fresh install. The next save writes a new account's empty log over the history that "
+            + "survived, silently.",
+        helper().hasExistingProtocolData());
+  }
+
+  /** And the user is told the store is unreadable rather than shown fresh-install text. */
+  @Test
+  public void asurvivingChatLogIsReportedAsUnreadableRatherThanAbsent() {
+    accountFile.edit().clear().commit();
+
+    assertEquals("with history on disk that cannot be loaded, the strip must say the store is "
+            + "unreadable - showing the ordinary first-run text invites the user to start again "
+            + "over their own data", StorageHelper.StorageState.UNREADABLE, helper().storageState());
+  }
+
   /** And after the move, a raise leaves the log's file untouched. */
   @Test
   public void araiseDoesNotRewriteTheLogsFile() {

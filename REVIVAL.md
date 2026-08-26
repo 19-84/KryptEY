@@ -2403,6 +2403,24 @@ strength of that row alone. A device that has never moved its log has no such fi
 it entirely is what makes the test describe a real device, and with that fixed, reducing the check
 to one file fails it.
 
+**The split created a survivor, and one gate did not know about it.** Found by review, and it is
+the most interesting thing about this change. `hasExistingProtocolData()` is what stops
+`initialize()` generating a fresh identity over an existing one — it asks the store rather than the
+"first run?" boolean, because that boolean lives in device-protected storage while the identity
+lives in credential-protected storage and the two can be lost independently. It asked only the
+account's file. `SharedPreferencesImpl.loadFromDisk` swallows a parse failure and installs an empty
+map, so a corrupt `protocol.xml` reads as *no data* while its sibling is untouched: the gate says
+fresh install, a new account is generated, and a brand-new account reports its (empty) log as
+loaded — so the very next save writes `[]` over the history that survived. Before the split the log
+was inside the file that was lost, so there was nothing left to destroy. The split is what created
+something worth protecting, and the gate now asks both files. `storageState()` follows it, so the
+strip says *unreadable* rather than showing first-run text over the user's own data.
+
+The same asymmetry existed one layer down: `secureStore()` computed its `hasExistingData` from the
+account file alone, and it is always built first — so a mint there would leave the log's store
+finding a freshly created alias and its own cross-file refusal never reached. Both now ask both
+files.
+
 **What this does not fix.** The log still grows forever and is still peer-paced; the cap-versus-keep
 question is untouched. And a rollback now has a new shape worth knowing about: restoring the account
 file alone no longer rewinds the log, so the messages stay while the contact list goes back. Entries

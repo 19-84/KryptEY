@@ -76,14 +76,25 @@ public class StorageHelper {
    *
    * <p>Deliberately does not require the data to be readable: an undecryptable store still means
    * "this user had an identity", and overwriting it must not be silent.
+   *
+   * <p><b>Both files, since the chat log moved into its own.</b> The two can be lost independently -
+   * {@code SharedPreferencesImpl.loadFromDisk} swallows a parse failure and installs an empty map,
+   * so a corrupt {@code protocol.xml} reads as "no data" while its sibling is untouched. Asking only
+   * the account's file then answers "fresh install", a new identity is generated, and that new
+   * account's empty log is written straight over the history that survived. Before the split the log
+   * lived in the file that was lost, so there was nothing left to destroy; the split created the
+   * survivor, and this is the gate learning about it.
    */
   public boolean hasExistingProtocolData() {
     if (mContext == null) return false;
-    final SharedPreferences preferences =
-        mContext.getSharedPreferences(mSharedPreferenceName, Context.MODE_PRIVATE);
-    if (preferences == null) return false;
-    return new SharedPreferencesKeyValueStore(preferences).contains(
-        String.valueOf(ProtocolIdentifier.PROTOCOL_STORE));
+    final SharedPreferences accountFile = preferencesNamed(mSharedPreferenceName);
+    if (accountFile != null && new SharedPreferencesKeyValueStore(accountFile).contains(
+        String.valueOf(ProtocolIdentifier.PROTOCOL_STORE))) {
+      return true;
+    }
+    final SharedPreferences messageFile = preferencesNamed(mMessageStoreName);
+    return messageFile != null && new SharedPreferencesKeyValueStore(messageFile).contains(
+        String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES));
   }
 
   /**
@@ -552,10 +563,6 @@ public class StorageHelper {
         com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64.encodeBytes(secret));
   }
 
-  private void storeUnencryptedMessagesMapInSharedPreferences(List<StorageMessage> unencryptedMessages) {
-    storeInSharedPreferences(ProtocolIdentifier.UNENCRYPTED_MESSAGES, unencryptedMessages);
-  }
-
   public void storeMetaDataStoreInSharedPreferences(final PreKeyMetadataStore metadataStore) {
     storeInSharedPreferences(ProtocolIdentifier.METADATA_STORE, metadataStore);
   }
@@ -638,7 +645,14 @@ public class StorageHelper {
     // completion marker as two separate durable commits, and this process is killed routinely - so
     // ciphertext with no marker above it is an ordinary state, not a corrupt one, and it is still
     // the user's identity.
-    final boolean alreadyEncrypted = EncryptedKeyValueStore.hasEncryptedData(raw);
+    // Asked of both files, for the same reason messageStore() asks of both: the two stores share
+    // one Keystore alias, and this store is always built first - so if it minted a replacement key
+    // here, the log's store would find that fresh alias and its own refusal would never be reached.
+    // The question is "does this user have an identity", and it is not per-file.
+    final SharedPreferences messageFile = preferencesNamed(mMessageStoreName);
+    final boolean alreadyEncrypted = EncryptedKeyValueStore.hasEncryptedData(raw)
+        || (messageFile != null && EncryptedKeyValueStore.hasEncryptedData(
+            new SharedPreferencesKeyValueStore(messageFile)));
     final CryptoBox cryptoBox = mCryptoBoxFactory.create(mContext, alreadyEncrypted);
     final EncryptedKeyValueStore store = new EncryptedKeyValueStore(raw, cryptoBox);
 
