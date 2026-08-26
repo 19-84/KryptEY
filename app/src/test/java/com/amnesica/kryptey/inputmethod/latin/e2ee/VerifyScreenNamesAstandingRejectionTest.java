@@ -230,6 +230,11 @@ public class VerifyScreenNamesAstandingRejectionTest {
         SignalProtocolMain.hasPinnedKey(bob().getSignalProtocolAddress()));
     final String banner =
         ((TextView) strip.findViewById(R.id.e2ee_info_text)).getText().toString();
+    // Positive control. Without it, a fixture whose envelope failed to resolve to a contact takes
+    // the sender == null arm, never writes the banner, and this test passes asserting nothing -
+    // the same vacuity the no-fingerprint test guards against explicitly.
+    assertTrue("the envelope must have reached the arm under test, or the absence below means "
+        + "nothing: " + banner, banner.contains("Detected contact"));
     assertFalse("a refused bundle was reported as a new key at an address that holds none: "
         + banner, banner.contains("new key for that address"));
   }
@@ -258,6 +263,34 @@ public class VerifyScreenNamesAstandingRejectionTest {
         verify.isEnabled());
     assertTrue("Reject must stay available, or a standing warning with no pinned key is a dead end "
         + "the user cannot leave", reject.isEnabled());
+  }
+
+  /**
+   * Reject with nothing pinned must not claim it forgot a stored key.
+   *
+   * <p>Reject is deliberately available in that state — it is the only deliberate response left
+   * when a warning stands and there is no number to compare. But its confirmation opened "Forgot
+   * the stored key for %s", and in that state nothing was stored. The action is real and worth
+   * having; only the sentence was wrong.
+   */
+  @Test
+  public void rejectingWithNothingPinnedDoesNotClaimAkeyWasForgotten() throws Exception {
+    assertTrue(SignalProtocolMain.rejectContactKey(bob()));
+    assertFalse("precondition: nothing may be pinned",
+        SignalProtocolMain.hasPinnedKey(bob().getSignalProtocolAddress()));
+    strip.setWarningMessageAboutForTest("Careful: something is wrong with Bob's key.", bob());
+
+    strip.selectContact(bob());
+    strip.loadFingerprintInVerifyContactView();
+    org.robolectric.shadows.ShadowToast.reset();
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+
+    final String toast = org.robolectric.shadows.ShadowToast.getTextOfLatestToast();
+    assertNotNull("pressing Reject must say something", toast);
+    assertFalse("it claimed to have forgotten a stored key when there was none: " + toast,
+        toast.contains("Forgot the stored key"));
+    assertTrue("and must still say what the state is: " + toast,
+        toast.contains("no stored key"));
   }
 
   /** But once a key IS pinned there again, the warning is real and must fire. */

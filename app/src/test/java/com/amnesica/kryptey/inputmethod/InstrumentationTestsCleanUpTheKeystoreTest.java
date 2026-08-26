@@ -120,8 +120,8 @@ public class InstrumentationTestsCleanUpTheKeystoreTest {
     // (AutofillDoesNotReachTheKeyboardTest), 20 (ChatLogSplitAgainstARealKeystoreTest), now 23
     // (ProtocolRoundTripOnRealHardwareTest). A floor that lags the real count is a guard that lets
     // you delete the difference for free, so it is worth the churn of raising it every time.
-    assertTrue("expected the 23 instrumentation tests this branch carries; found " + tests,
-        tests >= 23);
+    assertTrue("expected the 24 instrumentation tests this branch carries; found " + tests,
+        tests >= 24);
     assertTrue("the instrumentation tests must still assert something - they compile whether or not "
             + "they do, and nothing here runs them. Found " + assertions + " assertions across "
             + tests + " tests", assertions >= tests);

@@ -523,11 +523,53 @@ public class StripGuardsTest {
         .setText("Jones");
     strip.addContactForTest(envelope);
 
+    // This test used to assert the opposite, and its premise was the defect.
+    //
+    // It required the post-rejection warning to be "the thing on screen" in exactly this state -
+    // a bundle whose signature does not verify, so buildSession refuses it and NOTHING is pinned.
+    // That warning says "this IS a new key for that address". There is no key at that address; the
+    // invite was refused. And the standing false warning then suppressed the true message, so the
+    // user was told a new key had arrived and not told the invite had failed.
+    //
+    // What must hold is the reverse: no false claim, and the failure said out loud. The property
+    // the old assertion was protecting - that failure advice cannot paint over a REAL standing
+    // warning - is still enforced, and is now tested with the duplicate-name warning below, which
+    // is about contact rows rather than about a key and so does not depend on anything pinning.
     final String shown = infoField().getText().toString();
-    assertFalse("a standing warning must not be replaced by the generic failure advice: " + shown,
+    assertFalse("nothing was pinned, so the strip must not claim a new key arrived: " + shown,
+        shown.contains("new key for that address"));
+    assertTrue("and the failure must be said out loud, which the false warning used to suppress: "
+        + shown, shown.contains("send a fresh one"));
+  }
+
+  /**
+   * But a warning that is TRUE in this state must still not be painted over by failure advice.
+   *
+   * <p>The half of the old assertion that survives. A duplicate-name warning is about two contact
+   * rows, not about a key, so a refused bundle does not make it false — and the generic
+   * delete-and-re-invite advice must not replace it.
+   */
+  @Test
+  public void afailedSessionDoesNotOverwriteAtrueStandingWarning() throws Exception {
+    strip.setWarningMessageForTest("You already have a contact called Bob Jones.");
+
+    final PreKeyResponse spliced = new PreKeyResponse(
+        EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse().getIdentityKey(),
+        EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse().getDevices());
+    final MessageEnvelope envelope =
+        new MessageEnvelope(spliced, peerAddress.getName(), peerAddress.getDeviceId());
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(envelope);
+
+    final String shown = infoField().getText().toString();
+    assertTrue("a true standing warning must survive a failed session: " + shown,
+        shown.contains("already have a contact"));
+    assertFalse("and must not be replaced by the generic failure advice: " + shown,
         shown.contains("send a fresh one"));
-    assertTrue("the post-rejection warning must still be the thing on screen: " + shown,
-        shown.toLowerCase().contains("did not match"));
   }
 
   /**

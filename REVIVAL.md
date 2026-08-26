@@ -2910,6 +2910,27 @@ structurally unreachable, `(pin, rejected, verified)` is refused in both directi
 again on the read side, and every remaining live cell shows text that is true with both buttons
 available.
 
+**Round six: the add-contact path had its own copy of the warning, and my own commit message had
+named that path.** Round five's fix taught `warnIfKeyWasRejected` to require a pinned key and moved
+its callers after the pin attempt. The add-contact path was not a caller — it was a hand-rolled
+second copy of the same warning, posted before `createSessionWithContact` — so neither half reached
+it. A bundle whose signature fails still announced *"this **is a new key** for that address"* at an
+address holding none, and the standing false warning then suppressed `INFO_SESSION_CREATION_FAILED`,
+so the user was told a key had arrived and not told the invite had failed. Reachable by
+reject-then-delete plus one flipped byte, with no crypto capability.
+
+Two copies of a rule drift; there is one now, and the add-contact path calls it from the point that
+knows the pin landed. An existing test asserted the old behaviour — that the post-rejection warning
+must be "the thing on screen" in exactly that state — so it encoded the defect and now asserts the
+reverse. The half of it that survives, that failure advice must not paint over a *true* standing
+warning, is tested separately with the duplicate-name warning, which is about contact rows rather
+than about a key.
+
+**And the new Reject exit could say something false.** Round five left Reject enabled when a warning
+stands with no fingerprint, which is what stops that state being a dead end. Its confirmation opens
+*"Forgot the stored key for %s"* — and in that state nothing was stored. The action is real and
+worth keeping; only the sentence was wrong, and only its first line, so the other two are unchanged.
+
 **The verify screen never mentioned a standing rejection.** Same sweep. Pressing Verify there is
 what *clears* a rejection — `rejectedAddresses` is documented as retired only by a fresh comparison,
 and `isContactKeyTrustworthy` ranks a standing rejection above a verified badge. Yet the screen

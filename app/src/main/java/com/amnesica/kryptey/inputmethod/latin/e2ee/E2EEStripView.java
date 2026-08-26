@@ -220,6 +220,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
   // the only way a bundle can enter the app. Advising a route that does not exist is the same
   // defect as telling them to check a number that is never displayed.
+  /**
+   * Said when Reject is pressed and there was no stored key to forget.
+   *
+   * <p>Reject is deliberately available with no pin — it is the one deliberate response left when a
+   * warning stands and the verify screen has no number to compare, and without it that state is a
+   * dead end. But {@code INFO_KEY_REJECTED} opens "Forgot the stored key for %s", and in that state
+   * nothing was stored. Its other two sentences stay true, so only the first is replaced.
+   */
+  private final String INFO_NOTHING_TO_REJECT = "There was no stored key for %s to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
+
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
   /**
    * Shown on the verify screen when a key for this contact was rejected earlier.
@@ -339,8 +349,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // forgotten, and reading it afterwards would describe post-rejection state.
       final String label = SignalProtocolMain.displayLabelFor(chosenContact);
       clearStandingWarning();   // saying the number does not match IS the deliberate response
+      // Ask BEFORE rejecting: afterwards there is never a pin, so the answer would always be no.
+      final boolean hadAkeyToForget =
+          mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress());
       mE2EEStrip.rejectContactKey(chosenContact);
-      Toast.makeText(getContext(), String.format(INFO_KEY_REJECTED, label), Toast.LENGTH_LONG).show();
+      Toast.makeText(getContext(),
+          String.format(hadAkeyToForget ? INFO_KEY_REJECTED : INFO_NOTHING_TO_REJECT, label),
+          Toast.LENGTH_LONG).show();
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);
     });
@@ -929,14 +944,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // A key arriving where the user previously reported a mismatch is not a first sighting, even
     // though the store looks empty. Without this the forged bundle that provoked the rejection can
     // simply be re-delivered and pinned silently.
-    final boolean previouslyRejected = mE2EEStrip.wasKeyRejected(recipientProtocolAddress);
-
-    if (previouslyRejected) {
-      final String warning =
-          String.format(INFO_PINNED_AFTER_REJECT, labelFor(chosenContact));
-      Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
-      setWarningMessage(warning, String.valueOf(recipientProtocolAddress));
-    } else if (duplicateName) {
+    // The post-rejection warning is NOT posted here any more. It was a hand-rolled second copy of
+    // warnIfKeyWasRejected - not a caller of it - so when that helper learned to require an actual
+    // pinned key, and its callers moved to after the pin attempt, this path kept the old behaviour:
+    // a bundle whose signature fails pins nothing and was still announced as "a new key for that
+    // address". Worse here than elsewhere, because the standing false warning then suppressed
+    // INFO_SESSION_CREATION_FAILED below, so the refused bundle produced only the false line.
+    //
+    // It now fires from the one place that knows the pin landed, further down. The duplicate-name
+    // warning stays here: it is about two contact rows, not about a key, so it does not depend on
+    // anything having been pinned.
+    if (duplicateName) {
       final String duplicate =
           String.format(duplicateNameMessage(chosenContact), labelFor(chosenContact));
       Toast.makeText(getContext(), duplicate, Toast.LENGTH_LONG).show();
@@ -953,10 +971,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (messageEnvelope.getPreKeyResponse() != null) {
       final boolean successful = mE2EEStrip.createSessionWithContact(chosenContact, messageEnvelope, recipientProtocolAddress);
       if (successful) {
-        // Both warnings are already standing, posted above with their toasts. Re-posting them here
-        // was not belt-and-braces: it meant each copy masked the other's deletion, so removing
-        // either one on its own changed nothing any test could see.
-        if (!previouslyRejected && !duplicateName) {
+        // Here, because here is where the key actually got pinned. Through the shared helper, so
+        // there is one definition of when this warning is true rather than two that drift.
+        warnIfKeyWasRejected(chosenContact);
+        {
           // Through the guarded writer: an attacker whose substitution was just refused posts one
           // more ordinary invite under a fresh name at a fresh address, the user accepts it -
           // accepting invites is what this app is for - and neither of the two conditions above
