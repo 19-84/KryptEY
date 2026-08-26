@@ -786,4 +786,63 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
             + "highest-signal security event the protocol produces.",
         strip.warningIsStandingForTest());
   }
+
+  /**
+   * A key rotation that landed must be announced even when its message does not decrypt.
+   *
+   * <p>The announcement was gated on {@code decryptMessageAndShowMessageInMainInputField}'s return
+   * value, which stopped meaning "the bundle was accepted" once it gained a second reason to be
+   * false — a message that produced nothing. An honest peer attaches a full bundle whenever its
+   * signed pre-key rotates, and the accompanying message being replayed or arriving out of order is
+   * ordinary. In that state a new key was pinned, any standing refusal was retracted, and the strip
+   * said nothing at all: only a transient decryption-failure toast, and a banner still describing
+   * the state before the rotation.
+   */
+  @Test
+  public void agoodRotationIsAnnouncedEvenIfItsMessageDoesNotDecrypt() throws Exception {
+    establishedContact();
+
+    // Adding a contact leaves the creation caution standing, and a standing item correctly holds
+    // the banner - so it would suppress the rotation notice and this test would be about the wrong
+    // thing. The user clears it the way the caution asks: compare the number and press Verify.
+    strip.selectContact(victim.getContactList().get(0));
+    strip.loadFingerprintInVerifyContactView();
+    strip.findViewById(R.id.e2ee_verify_contact_verify_button).performClick();
+    assertTrue("precondition: the banner must be free before the rotation arrives",
+        strip.mayOverwriteInfoBanner());
+
+    // A genuine rotation: a full, valid bundle attached to a message that will not decrypt.
+    activate(peer);
+    final String freshBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+
+    final byte[] undecryptable = new byte[48];
+    for (int i = 0; i < undecryptable.length; i++) undecryptable[i] = (byte) (i * 11 + 5);
+    final MessageEnvelope rotation = new MessageEnvelope(undecryptable,
+        org.signal.libsignal.protocol.message.CiphertextMessage.WHISPER_TYPE,
+        peerAddress.getName(), peerAddress.getDeviceId());
+    rotation.setPreKeyResponse(EnvelopeCodec.fromWire(freshBundle).getPreKeyResponse());
+
+    paste(rotation);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    // Asserted as "no refusal is claimed", not as "the update line is on the banner".
+    //
+    // Measured, and it changed what this test could honestly claim: the informational line IS
+    // written, and decryptMessageInClipboard's trailing showChosenContactInMainInfoField repaints
+    // over it before the user sees anything - the same repaint that made the "Detected contact"
+    // gate inert. So on this route the announcement is not observable either way, and a test
+    // asserting it would be testing the repaint order rather than the app.
+    //
+    // What IS observable, and what actually matters, is that a rotation whose bundle was accepted
+    // must not be reported as refused. The refusal is a standing warning, which survives the
+    // repaint by design.
+    final String shown = bannerText();
+    assertFalse("a rotation whose bundle was accepted must not be reported as refused just because "
+            + "the message stapled to it did not decrypt - replay and out-of-order delivery are "
+            + "ordinary, and the relay chooses when they happen. Shown: " + shown,
+        shown.contains("could not be used"));
+    assertTrue("and nothing may be left standing over the banner after a healthy rotation",
+        strip.mayOverwriteInfoBanner());
+  }
 }

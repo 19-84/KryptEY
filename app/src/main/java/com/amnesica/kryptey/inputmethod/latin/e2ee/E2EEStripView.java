@@ -1987,10 +1987,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // that and the bundle is refused, the ciphertext still decrypts under the existing session,
       // and this line used to assert an update that never happened - unconditionally, because
       // isSessionCreation is false here so nothing else on this arm ever asked.
-      final boolean bundleAccepted =
-          decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
+      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       warnIfKeyWasRejected(sender);
-      if (bundleAccepted) {
+      // Asked of the BUNDLE, not of the message.
+      //
+      // This used to read the method's return value, which stopped meaning "the bundle was
+      // accepted" when it gained a second reason to be false: a message that did not decrypt. So a
+      // genuine signed-pre-key rotation whose accompanying message was replayed or arrived out of
+      // order - ordinary things - landed a new key, cleared any refusal warning, and said nothing
+      // at all, leaving only a transient decryption-failure toast. The variable was named for a
+      // condition it no longer computed.
+      if (!mE2EEStrip.lastAttachedBundleWasRefused()) {
         setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
       }
     }

@@ -137,4 +137,36 @@ public class FailedCursorMoveDoesNotDeleteTest {
             + hostConnection.deletes.size(),
         hostConnection.deletes.isEmpty());
   }
+
+  /**
+   * A refused move must leave the model where it was, not merely stop the delete.
+   *
+   * <p>The guard added at the call sites stopped the immediate wrong delete and left a desync
+   * behind: the expected-selection model was committed <em>before</em> the editor was asked, and the
+   * failure path returned with it already moved. Afterwards the model says "caret collapsed at the
+   * end" while the editor still holds the selection — so {@code hasSelection()} answers false, the
+   * NEXT backspace takes the single-character branch against a selection the model has forgotten,
+   * and every later commit advances from a position the editor does not share.
+   *
+   * <p>Checked through a second backspace rather than by reading the fields: what matters is that
+   * the keyboard still knows there is a selection to delete once the connection recovers.
+   */
+  @Test
+  public void arefusedCursorMoveLeavesTheSelectionIntact() {
+    ime.mInputLogic.onUpdateSelection(3, 8);
+    hostConnection.refuseSelection = true;
+    pressBackspace();
+    assertTrue("precondition: the refused move must not have deleted anything",
+        hostConnection.deletes.isEmpty());
+
+    // The connection recovers - an app switch coming back, a strip regaining its editable.
+    hostConnection.refuseSelection = false;
+    pressBackspace();
+
+    assertEquals("after a refused move the keyboard must still know a selection is there. If the "
+            + "model was left collapsed, this second press deletes one character instead of the "
+            + "five the user has selected - and every later commit is offset from the editor.",
+        1, hostConnection.deletes.size());
+    assertEquals("and it must delete the whole selection", 5, hostConnection.deletes.get(0)[0]);
+  }
 }

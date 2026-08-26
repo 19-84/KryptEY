@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-five sections, written in the order things were found rather than by subject, so the
+Fifty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -111,6 +111,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The canonicality check, the fix that was not one, and what is actually true](#the-canonicality-check-the-fix-that-was-not-one-and-what-is-actually-true)
 - [Sweeping for the class instead of the bug, and what it found](#sweeping-for-the-class-instead-of-the-bug-and-what-it-found)
 - [A gate that changed the verb and nothing else](#a-gate-that-changed-the-verb-and-nothing-else)
+- [Three informational lines the user never sees](#three-informational-lines-the-user-never-sees)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3938,3 +3939,41 @@ either. `FailedCursorMoveDoesNotDeleteTest` drives `LatinIME.mInputLogic.onCodeI
 path, not the method — with a host connection that refuses to move the caret, and carries an
 anti-vacuity guard proving the ordinary case still reaches the delete. Its control is the unguarded
 delete, which it fails.
+
+
+## Three informational lines the user never sees
+
+**Measured while writing a test, and it changed what that test could honestly claim.**
+
+`decryptMessageInClipboard` ends with `showChosenContactInMainInfoField()`, unconditionally. All
+three of the strip's "Detected contact…" lines are written by `setInfoUnlessWarned` a few statements
+earlier, into the same `TextView`. So on the production route every one of them is painted over
+before a user could read it: what remains on the banner is "Chosen contact: Bob".
+
+This is why the previous commit's gate was inert, and it is worth stating as a property of the
+surface rather than as a fact about one line. Two consequences:
+
+- Gating those lines is a correctness improvement in the code and **not** a user-visible fix. Saying
+  otherwise — as the commit that gated the first one did — overstates it.
+- A test that asserts one of them is on the banner is testing the repaint order, not the app. The
+  rotation test was written that way first, failed, and is now asserting what is observable: that a
+  rotation whose bundle was accepted is not reported as *refused*. Refusals are standing warnings,
+  which survive the repaint by design.
+
+The three lines are not security claims — a signed-pre-key rotation does not change the identity key
+the safety number is derived from — so this is a dead-informational-text finding rather than a
+missing warning. Recorded because three separate fixes have now been argued in terms of what those
+lines say, and none of them reach a user.
+
+**Two items from the previous review, closed.** `setSelection` committed the expected-selection model
+before asking the editor and returned with it already moved, so guarding the callers stopped the
+immediate wrong delete and left the desync: the model said "collapsed at the end" while the editor
+still held the selection, `hasSelection()` answered false, and the next backspace took the
+single-character branch against a selection the model had forgotten. The model is restored on
+refusal now, so a false really is "nothing happened" — checked by pressing backspace a second time
+after the connection recovers and requiring the whole selection to go. And its javadoc no longer
+promises a `false` for a failed cache reload that the method has never produced.
+
+`processUpdatedPreKeyResponse` asked the wrong question: it read a return value that had stopped
+meaning "the bundle was accepted" once that method gained a second reason to be false. It asks
+`lastAttachedBundleWasRefused()` now, which is the fact it wanted.

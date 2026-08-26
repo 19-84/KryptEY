@@ -620,9 +620,14 @@ public final class RichInputConnection {
    *
    * @param start the character index where the selection should start.
    * @param end   the character index where the selection should end.
-   * @return Returns true on success, false on failure: either the input connection is no longer
-   * valid when setting the selection or when retrieving the text cache at that point, or
-   * invalid arguments were passed.
+   * @return true when the caret is where this asked for it: the editor accepted the move, or it
+   * was already there. False when the arguments were invalid or the editor refused, and in that
+   * case the expected-selection model is left exactly as it was, so the caller can treat a false
+   * as "nothing happened".
+   * <p>Note it does NOT return false when {@code reloadTextCache} fails. The caret really did move,
+   * so a caller deciding whether to delete backwards over a selection should proceed; the stale
+   * cache is a separate problem with its own repair path. The previous wording promised a false
+   * this method has never produced.
    */
   public boolean setSelection(int start, int end) {
     if (DEBUG_BATCH_NESTING) checkBatchEdit();
@@ -635,11 +640,24 @@ public final class RichInputConnection {
       return true;
     }
 
+    // Kept, so a refused move can be made a genuine no-op.
+    //
+    // The model used to be committed before the editor was asked, and the failure path returned
+    // with it already moved - so afterwards the model said "caret collapsed at end" while the
+    // editor still held the selection. hasSelection() then answers false, so the NEXT backspace
+    // takes the single-character branch against a selection the model has forgotten, and every
+    // later commitText advances from a position the editor does not share. Guarding the callers
+    // stopped the immediate wrong delete and left that desync in place.
+    final int previousStart = mExpectedSelStart;
+    final int previousEnd = mExpectedSelEnd;
+
     mExpectedSelStart = start;
     mExpectedSelEnd = end;
     if (isConnected()) {
       final boolean isIcValid = getIC().setSelection(start, end);
       if (!isIcValid) {
+        mExpectedSelStart = previousStart;
+        mExpectedSelEnd = previousEnd;
         return false;
       }
     }
