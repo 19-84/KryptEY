@@ -116,7 +116,7 @@ public class VerifyScreenNamesAstandingRejectionTest {
     assertTrue("the verify screen must say a key for this contact was previously refused - "
             + "pressing Verify here is what clears that refusal, and the user was being asked to "
             + "do it without being told what it undoes. Shown: " + shown,
-        shown.contains("did not match") || shown.contains("refused"));
+        shown.contains("not to trust keys arriving") || shown.contains("refused"));
     assertTrue("and it must say that confirming clears the refusal, since that is the consequence: "
         + shown, shown.contains("clears"));
   }
@@ -129,7 +129,7 @@ public class VerifyScreenNamesAstandingRejectionTest {
 
     final String shown = verifyScreenText();
     assertFalse("a contact with no rejection must not be told one stands: " + shown,
-        shown.contains("did not match"));
+        shown.contains("not to trust keys arriving"));
     assertTrue("and must still get the comparison advice: " + shown,
         shown.contains("read the numbers above out to them"));
   }
@@ -166,7 +166,7 @@ public class VerifyScreenNamesAstandingRejectionTest {
     assertTrue("the pending change must still be named: " + shown,
         shown.contains("offered a different key"));
     assertTrue("and so must the standing refusal, because confirming clears that too: " + shown,
-        shown.contains("did not match") && shown.contains("clears"));
+        shown.contains("not to trust keys arriving") && shown.contains("clears"));
   }
 
   /**
@@ -295,7 +295,7 @@ public class VerifyScreenNamesAstandingRejectionTest {
     // green while telling the user the opposite of the truth. A key was stored; they are the
     // person who reported it as wrong.
     assertTrue("Reject must say the key was already forgotten by the rejection, not that none was "
-        + "ever stored: " + toast, toast.contains("already forgotten"));
+        + "ever stored: " + toast, toast.contains("had already told this app"));
     assertFalse("and must not deny that a key was ever stored for this contact: " + toast,
         toast.contains("none had been stored yet"));
   }
@@ -341,27 +341,49 @@ public class VerifyScreenNamesAstandingRejectionTest {
    * wrong screen loses it for good.
    */
   @Test
-  public void rejectingOneContactLeavesAwarningAboutAnotherStanding() throws Exception {
+  public void rejectIsNotOfferedForAcontactTheWarningIsNotAbout() throws Exception {
     final Contact stranger = new Contact("Erin", "Smith", "erin-address", 6, false);
     victim.getContactList().add(stranger);
 
     strip.setWarningMessageAboutForTest("Careful: something is wrong with Bob's key.", bob());
 
-    // Reject is live for Erin only because a warning stands - the enablement is not scoped to the
-    // contact the warning is about, which is what makes this reachable in one tap.
     strip.selectContact(stranger);
     strip.loadFingerprintInVerifyContactView();
-    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
 
-    // Asserted through mayOverwriteInfoBanner rather than through the banner's text, because
-    // clearing a standing warning does not repaint the banner - the words stay on screen either
-    // way, so reading them proves nothing. What actually changes is whether the next passive,
-    // messenger-driven event is allowed to paint over the warning, and that is the consequence
-    // that matters: the first version of this test read the text and passed against the unfixed
-    // code, which is the same hollow-control mistake this file keeps finding elsewhere.
-    assertFalse("a warning about Bob must survive a deliberate response about Erin. Once it stops "
-            + "standing, the next clipboard event overwrites it - and nothing re-asserts the "
-            + "duplicate-name warning, so it is gone for good.",
+    assertFalse("Reject must not be offered on Erin's screen for a warning about Bob. The escape "
+            + "hatch exists so a standing warning always has a response available, but offering it "
+            + "here is a false affordance with a permanent side effect: rejectContactKey marks the "
+            + "address whether or not anything was pinned, so one tap flags Erin for good while "
+            + "Bob's warning survives untouched.",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).isEnabled());
+  }
+
+  /**
+   * And a deliberate response about one contact does not put down a warning about another.
+   *
+   * <p>Driven through Verify rather than Reject, because Reject is no longer offered in the
+   * cross-contact case at all (above) - so a Reject-based test would now pass by the button being
+   * disabled rather than by the clear being scoped, which is the same hollow pass this file has
+   * caught twice.
+   */
+  @Test
+  public void verifyingOneContactLeavesAwarningAboutAnotherStanding() throws Exception {
+    final Contact stranger = new Contact("Erin", "Smith", "erin-address", 6, false);
+    victim.getContactList().add(stranger);
+
+    // The warning is about Erin; the user verifies Bob, who has a pin and a number to compare.
+    strip.setWarningMessageAboutForTest("You already have a contact called Erin Smith.", stranger);
+
+    strip.selectContact(bob());
+    strip.loadFingerprintInVerifyContactView();
+    final android.view.View verify = strip.findViewById(R.id.e2ee_verify_contact_verify_button);
+    assertTrue("precondition: Verify must be live for a pinned contact", verify.isEnabled());
+    verify.performClick();
+
+    // Through mayOverwriteInfoBanner, not the banner's text: clearing a warning does not repaint
+    // the banner, so the words stay on screen either way and reading them proves nothing.
+    assertFalse("a warning about Erin must survive the user verifying Bob. Nothing re-asserts the "
+            + "duplicate-name warning, so clearing it from the wrong screen loses it for good.",
         strip.mayOverwriteInfoBanner());
   }
 
@@ -382,7 +404,7 @@ public class VerifyScreenNamesAstandingRejectionTest {
     assertFalse("the screen must not say a number is unavailable 'yet' at an address whose key the "
         + "user already rejected: " + shown, shown.contains("available for this contact yet"));
     assertTrue("it must name the rejection instead: " + shown,
-        shown.contains("did not match"));
+        shown.contains("not to trust keys arriving"));
     // And must not borrow the pinned-key wording: the digits on this screen are blank, so telling
     // the user to compare "the number below" is a different false claim in the same cell.
     assertFalse("it must not point at a number that is not on screen: " + shown,

@@ -200,7 +200,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * "compare the number that is not on screen" — a different false statement, which is what the
    * first attempt at this fix did and what its own test caught.
    */
-  private final String INFO_NO_FINGERPRINT_AFTER_REJECTION = "You previously told the app that the numbers for %s did not match, and that key was forgotten. There is no security number to compare until they send a new invite.";
+  private final String INFO_NO_FINGERPRINT_AFTER_REJECTION = "You told this app not to trust keys arriving for %s. There is no security number to compare until they send a new invite.";
 
   // Deliberately does not tell the user to delete the contact. That advice was the app's standard
   // response to any failure here, and an attacker can induce failures at will, so it functioned as
@@ -222,7 +222,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * without inventing a security claim out of a failed load.
    */
   private final String INFO_VERIFY_UNAVAILABLE = "Could not record that check. Nothing has been marked as verified - try again from the contact list.";
-  private final String INFO_PINNED_AFTER_REJECT = "Careful: you previously told the app that %s's number did not match, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
+  private final String INFO_PINNED_AFTER_REJECT = "Careful: you told this app not to trust keys arriving for %s, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
   private final String INFO_NAME_TOO_LONG = "That name is too long to show next to the contact's address tag. Use a shorter one - the tag is what tells two contacts with similar names apart.";
   private final String INFO_NAME_LOOKS_LIKE_A_TAG = "Names cannot contain '#'. The app shows a tag starting with # beside each contact to tell similar names apart, and a name that imitates one would defeat that.";
   private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Not added: this invite is for the identity you already have saved as \"%2$s\", so \"%1$s\" would be a second name for the same person. If you meant to rename them, delete the old contact first. If someone told you this is a different person, they are using an identity you already have to introduce themselves as somebody else.";
@@ -272,7 +272,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * as wrong. Swapping one false claim for its opposite is not a fix, and the distinguishing fact
    * was three lines away the whole time: {@code wasKeyRejected}.
    */
-  private final String INFO_ALREADY_REJECTED = "The key for %s was already forgotten when you rejected it, so there was nothing left to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
+  private final String INFO_ALREADY_REJECTED = "You had already told this app not to trust keys arriving for %s, so there was nothing left to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything private.";
 
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
   /**
@@ -286,7 +286,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * attentively") applies here at least as strongly: {@code isContactKeyTrustworthy} ranks a
    * standing rejection ABOVE a verified badge.
    */
-  private final String INFO_VERIFY_AFTER_REJECTION = "You previously told the app that the numbers for %s did not match, and a key for them was refused. The number below is the key in use now. Only confirm it if they read these exact numbers back to you by voice - confirming clears that refusal.";
+  private final String INFO_VERIFY_AFTER_REJECTION = "You told this app not to trust keys arriving for %s. The number below is the key in use now. Only confirm it if they read these exact numbers back to you by voice - confirming clears that refusal.";
 
   private final String INFO_VERIFY_PENDING_CHANGE = "Someone offered a different key for %s since you last spoke - it was refused and is not in use. The number below is the key you already have. If it still matches what they read out, confirm it to dismiss the warning.";
   // Deliberately does NOT offer "they reinstalled" as an explanation. A reinstall mints a fresh
@@ -636,7 +636,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // whatever arrives at this address", which is already what the rejection record means, and
       // its listener clears the warning. Two rounds of review found dead ends in this cell by two
       // different routes; this stops the next one being a dead end as well.
-      if (mWarningStanding && mVerifyContactRejectButton != null) {
+      // Scoped the same way the clear is. The escape hatch exists so a standing warning always has
+      // a deliberate response available; offering it on a contact the warning is NOT about is a
+      // false affordance with a permanent side effect, because rejectContactKey marks the address
+      // whether or not anything was pinned. Open Alice's screen while a warning about Bob stands,
+      // press the only enabled button, and Alice is flagged for good while Bob's warning survives
+      // untouched. Address-less warnings still enable it anywhere: they have no other exit.
+      if (mWarningStanding && mVerifyContactRejectButton != null
+          && (mStandingWarningAddress == null || mStandingWarningAddress
+              .equals(String.valueOf(chosenContact.getSignalProtocolAddress())))) {
         mVerifyContactRejectButton.setEnabled(true);
       }
       // "yet ... ask them for a key bundle first" describes an address nothing has happened at.
@@ -1852,9 +1860,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       setChosenContact(sender);
       // Same reason as the sibling arm above: this envelope carries a bundle too, and the warning
       // runs after the attempt so a refused bundle cannot be reported as a new key.
-      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
+      // The rotation path, and the one that is NOT exotic: an honest peer attaches a full bundle
+      // to an ordinary message whenever its signed pre-key rotates. Strip the one-time key from
+      // that and the bundle is refused, the ciphertext still decrypts under the existing session,
+      // and this line used to assert an update that never happened - unconditionally, because
+      // isSessionCreation is false here so nothing else on this arm ever asked.
+      final boolean bundleAccepted =
+          decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       warnIfKeyWasRejected(sender);
-      setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
+      if (bundleAccepted) {
+        setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
+      }
     }
   }
 
@@ -1936,6 +1952,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private String mStandingWarningAddress = null;
 
   /**
+   * Whether the standing warning yields to a message that says more than it does.
+   *
+   * <p>True only for {@code INFO_INVITE_REFUSED}. See {@code setSoftWarningMessage} for why that
+   * one warning needs to be weaker than the rest: it is the only one a relay can raise without any
+   * user action, so a hard one would hand the messenger a way to silence the app's cautions.
+   */
+  private boolean mStandingWarningIsSoft = false;
+
+  /**
    * Posts a warning to the info banner and marks it as standing.
    *
    * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
@@ -1974,6 +1999,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setWarningMessage(final String message, final String aboutAddress) {
     mStandingWarningText = message;
     mStandingWarningAddress = aboutAddress;
+    // Every warning is hard unless the caller upgrades it immediately afterwards. Defaulting the
+    // other way would make a future warning silently suppressible.
+    mStandingWarningIsSoft = false;
     mWarningStanding = true;
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
@@ -2236,6 +2264,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} are posted without one, and a deliberate response is
    * their only exit.
    */
+  /**
+   * Posts a warning that stands, but yields to anything with more to say.
+   *
+   * <p>Only {@code INFO_INVITE_REFUSED} uses this, and the reason is a real attack rather than
+   * tidiness. A refused invite is the one standing warning a relay can raise <em>unilaterally</em>,
+   * with one deleted byte on an unrelated contact's invite and no user cooperation at all. Every
+   * other standing warning needs prior user action or is itself the thing being flagged. If it
+   * suppressed ordinary notices the way a hard warning does, a relay could raise it and then have
+   * the user add an attacker-chosen contact without ever seeing "this key reached you through the
+   * messenger and the app cannot tell whose it is" - the one caution that fires precisely because
+   * nothing was noticed.
+   */
+  private void setSoftWarningMessage(final String message, final String aboutAddress) {
+    setWarningMessage(message, aboutAddress);
+    mStandingWarningIsSoft = true;
+  }
+
+  /** Retracts a soft warning about this contact, leaving anything harder in place. */
+  private void clearSoftWarningIfAbout(final Contact contact) {
+    if (!mWarningStanding || !mStandingWarningIsSoft) return;
+    clearStandingWarningIfAbout(contact);
+  }
+
   private void clearStandingWarningIfAbout(final Contact contact) {
     if (!mWarningStanding) return;
     if (mStandingWarningAddress == null || (contact != null && mStandingWarningAddress
@@ -2245,6 +2296,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void clearStandingWarning() {
+    mStandingWarningIsSoft = false;
     mStandingWarningText = null;
     mStandingWarningAddress = null;
     mWarningStanding = false;
@@ -2289,32 +2341,51 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
     final CharSequence decryptedMessage = mE2EEStrip.decryptMessage(messageEnvelope, sender);
 
+    // The fact, not an inference from it. Two inferences have already been wrong here: "no message
+    // came out" is what a refused bundle AND a good bundle-only re-invite both look like, and "is
+    // there a session" is true for every contact the user already talks to - which is precisely the
+    // case the attack aims at, since a relay stripping a re-invite from a SUBSTITUTED contact was
+    // reported as success while the identity-change warning never fired.
+    final boolean bundleRefused = messageEnvelope.getPreKeyResponse() != null
+        && mE2EEStrip.lastAttachedBundleWasRefused();
+
     // Check before branching: a substitution recorded during this decrypt attempt must be reported
     // even on the paths that otherwise look like success (a bundle-only re-invite advances the UI
     // exactly as a good one does), and must displace the generic advice on the failure path.
     final boolean identityChanged = warnIfIdentityChanged(sender);
 
+    if (bundleRefused) {
+      // A warning rather than a plain line: the banner is repainted straight after this by
+      // showChosenContactInMainInfoField, which is guarded only by a standing warning, so an
+      // ordinary message would be overwritten with "Chosen contact: Bob" and the refusal would be
+      // as silent as before. Soft, because it must not be able to suppress a message that says
+      // more than it does - see setInfoUnlessWarned.
+      if (!identityChanged && !mWarningStanding) {
+        setSoftWarningMessage(String.format(INFO_INVITE_REFUSED, labelFor(sender)),
+            String.valueOf(sender.getSignalProtocolAddress()));
+      }
+      // The message itself, if one came with the refused bundle, is still the user's to read: the
+      // ciphertext is authenticated by the existing session and has nothing to do with the bundle
+      // that was stapled to it.
+      if (!isSessionCreation && decryptedMessage != null) {
+        mInputEditText.setText(decryptedMessage);
+        changeVisibilityInputFieldButtons(true);
+      }
+      mE2EEStrip.clearClipboard();
+      return false;
+    }
+
+    // A bundle that WAS accepted retracts a refusal standing about the same address. Without this,
+    // following the app's own advice - "ask them to send another" - leaves the warning in place
+    // over a contact that now works, and a user acting on that text may reject a good key.
+    if (messageEnvelope.getPreKeyResponse() != null) {
+      clearSoftWarningIfAbout(sender);
+    }
+
     if (!isSessionCreation && decryptedMessage != null) {
       mInputEditText.setText(decryptedMessage);
       changeVisibilityInputFieldButtons(true);
     } else if (isSessionCreation) {
-      // Asked rather than assumed. Reaching here means no message came out, which is what a good
-      // bundle-only re-invite looks like - and also exactly what a REFUSED one looks like, because
-      // the refusal is a boolean that SignalProtocolMain.decrypt discards. Enabling the buttons on
-      // that inference told the user a contact was ready whose session had just been declined.
-      if (!mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress())) {
-        // A warning rather than a plain line, for two reasons. The banner is repainted after this
-        // by showChosenContactInMainInfoField, which is guarded only by a standing warning - so an
-        // ordinary message here would be overwritten with "Chosen contact: Bob" and the refusal
-        // would be as silent as before. And it belongs there on the merits: an invite that does not
-        // verify was modified in transit, which is the messenger acting on the user, not a hiccup.
-        if (!identityChanged && !mWarningStanding) {
-          setWarningMessage(String.format(INFO_INVITE_REFUSED, labelFor(sender)),
-              String.valueOf(sender.getSignalProtocolAddress()));
-        }
-        mE2EEStrip.clearClipboard();
-        return false;
-      }
       changeVisibilityInputFieldButtons(true);
     } else if (!identityChanged) {
       Toast.makeText(getContext(), INFO_MESSAGE_DECRYPTION_FAILED, Toast.LENGTH_LONG).show();
@@ -2397,12 +2468,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final String standingWarningText;
     /** The address that warning is about, so deleting that contact still clears it after a rebuild. */
     private final String standingWarningAddress;
+    /**
+     * Whether that warning yields to a message with more to say.
+     *
+     * <p>Carried, because dropping it silently promotes a soft warning to a hard one on the next
+     * theme switch or rotation - and a hard refusal warning is exactly what lets a relay suppress
+     * the contact-creation caution. A configuration change is something an app can force.
+     */
+    private final boolean standingWarningIsSoft;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
     private CarriedState(final CharSequence draft, final boolean wasComposing,
         final CharSequence banner, final boolean warningStanding,
         final String standingWarningText, final String standingWarningAddress,
+        final boolean standingWarningIsSoft,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -2410,6 +2490,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.warningStanding = warningStanding;
       this.standingWarningText = standingWarningText;
       this.standingWarningAddress = standingWarningAddress;
+      this.standingWarningIsSoft = standingWarningIsSoft;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -2485,7 +2566,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mRichInputConnection != null) mRichInputConnection.setOtherIC(null);
 
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
-        mStandingWarningAddress, mHostFieldIsPassword, encodingMethod);
+        mStandingWarningAddress, mStandingWarningIsSoft, mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -2547,6 +2628,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       setWarningMessage(carried.standingWarningText != null
           ? carried.standingWarningText : String.valueOf(carried.banner),
           carried.standingWarningAddress);
+      // Restored after setWarningMessage, which resets it: a soft warning that came back hard
+      // would regain the power to suppress the contact-creation caution, and a rebuild is
+      // something the messenger's host app can force at will.
+      mStandingWarningIsSoft = carried.standingWarningIsSoft;
     }
 
     // Not the view's to lose either. The password-field guard is re-armed only by
@@ -2671,8 +2756,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * message erasure the standing flag exists to prevent everywhere else.
    */
   private void setInfoUnlessWarned(final String message) {
-    if (mWarningStanding) return;
+    // A soft warning yields here, and only here. showChosenContactInMainInfoField still refuses to
+    // paint over it, because that one carries no information - it would replace a warning with
+    // "Chosen contact: Bob", which is how the refusal came to be silent in the first place. What
+    // reaches this method has something to say, and the messages it carries include the caution
+    // shown when a new contact's key was pinned without anything being noticed - the one a relay
+    // was able to suppress by raising a refusal about an unrelated contact first.
+    if (mWarningStanding && !mStandingWarningIsSoft) return;
     setInfoTextViewMessage(mInfoTextView, message);
+    if (mStandingWarningIsSoft) clearStandingWarning();
   }
 
   /** Package-visible so a test can drive the real method rather than a copy of it. */

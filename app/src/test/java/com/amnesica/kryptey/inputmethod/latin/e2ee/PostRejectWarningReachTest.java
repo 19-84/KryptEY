@@ -165,6 +165,6 @@ public class PostRejectWarningReachTest {
             + "INFO_PINNED_AFTER_REJECT is written only from the add-contact screen, and rejecting "
             + "keeps the contact row, so this paste took the 'contact already known' arm and the "
             + "rejection record was consulted by nothing. What the user was shown: " + shown,
-        shown.contains("previously told the app"));
+        shown.contains("not to trust keys arriving"));
   }
 }

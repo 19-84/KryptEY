@@ -57,6 +57,10 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
   private SignalProtocolAddress peerAddress;
   private String genuineBundle;
 
+  private SignalProtocolAddress addressOfVictim() {
+    return ProtocolAddresses.of(victim.getSignalProtocolAddress().getName(), victim.getDeviceId());
+  }
+
   private void activate(final Account account) {
     SignalProtocolMain.getInstance().setAccount(account);
   }
@@ -183,5 +187,154 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     assertTrue("and nothing may be left standing over the banner after a healthy invite - without "
         + "this, 'always warn' would pass the test above while breaking every normal re-invite",
         strip.mayOverwriteInfoBanner());
+  }
+
+  /** A working session with the peer, which is the state the earlier fix could not see past. */
+  private void establishedContact() throws Exception {
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    assertTrue("precondition: a genuine invite must establish a session",
+        SignalProtocolMain.hasSessionWith(peerAddress));
+  }
+
+  /**
+   * The case the first fix could not see: a contact the user already talks to.
+   *
+   * <p>That fix asked "is there a session", which is true for every established contact regardless
+   * of what just happened to the invite — so the refusal never fired on the case the attack aims
+   * at. Worse than cosmetic: {@code createPreKeyBundle} throws before {@code buildSession}, which is
+   * the only place a bundle-borne substitution is recorded, so the same stripped byte that hides
+   * the refusal also hides an identity change. Reporting success is what makes the user stop
+   * retrying.
+   */
+  @Test
+  public void arefusedReInviteFromAnEstablishedContactIsStillReported() throws Exception {
+    establishedContact();
+
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    final String shown = bannerText();
+    assertTrue("a refused invite must be reported even when a session already exists - that is "
+            + "precisely the case a relay aims at, because the user has no reason to suspect "
+            + "anything. Shown: " + shown,
+        shown.contains("could not be used"));
+    assertFalse("and it must not be called a detected contact: " + shown,
+        shown.contains("Detected contact"));
+  }
+
+  /**
+   * The rotation path, which never asked at all.
+   *
+   * <p>An honest peer attaches a full bundle to an ordinary message whenever its signed pre-key
+   * rotates, so {@code UPDATED_PRE_KEY_RESPONSE_MESSAGE_AND_SIGNAL_MESSAGE} is routine rather than
+   * exotic. Strip the one-time key from one: the bundle is refused, the ciphertext still decrypts
+   * under the existing session, and the banner asserted an update that never happened.
+   */
+  @Test
+  public void arefusedBundleAttachedToAmessageIsReported() throws Exception {
+    establishedContact();
+
+    // Peer sends a message with a full bundle attached, as a rotation does.
+    activate(peer);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()),
+        addressOfVictim()));
+    final MessageEnvelope withMessage =
+        SignalProtocolMain.encryptMessage("hello", addressOfVictim());
+    assertNotNull(withMessage);
+    activate(victim);
+
+    // Bundle AND ciphertext in one envelope, which is what a rotation actually emits. There is no
+    // constructor for that pair, so it is assembled through the setters the codec itself uses.
+    final MessageEnvelope rotation = new MessageEnvelope(withMessage.getCiphertextMessage(),
+        withMessage.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
+    rotation.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+
+    paste(rotation);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    // Asserted as "the refusal is on screen", NOT as "the update line is absent".
+    //
+    // Measured, and it corrected the first version of this test. The line
+    // "Detected contact with updated keybundle" is written through setInfoUnlessWarned and then
+    // repainted immediately by showChosenContactInMainInfoField, so on this route it never reaches
+    // the user either way - asserting its absence passed against the unfixed code and proved
+    // nothing. The user-visible change is the other half: because the refusal now stands as a
+    // warning, the repaint is suppressed and the refusal is what remains on screen.
+    final String shown = bannerText();
+    assertTrue("a bundle refused on the rotation path must be reported. An honest peer attaches a "
+            + "full bundle whenever its signed pre-key rotates, so this is the routine case, and "
+            + "nothing on this arm asked before - isSessionCreation is false here. Shown: " + shown,
+        shown.contains("could not be used"));
+  }
+
+
+
+  /**
+   * And the warning is retracted by the very thing it asks for.
+   *
+   * <p>It says "ask them to send another". Following that advice used to leave the warning standing
+   * over a contact that now works — and because a standing warning suppresses everything passive, a
+   * user acting on that text may Reject a perfectly good key, which writes a permanent rejection
+   * record.
+   */
+  @Test
+  public void agoodInviteRetractsTheRefusalWarning() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertTrue("precondition: the refusal must be standing", bannerText().contains("could not be used"));
+
+    paste(EnvelopeCodec.fromWire(genuineBundle));
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    assertTrue("precondition: the good invite must build a session",
+        SignalProtocolMain.hasSessionWith(peerAddress));
+    assertTrue("following the app's own advice must clear the warning it gave. Otherwise a working "
+        + "contact sits under 'Nothing has been set up', every later notice is suppressed, and the "
+        + "user may reject a good key on the strength of it.", strip.mayOverwriteInfoBanner());
+    assertFalse("and the refusal text must be gone: " + bannerText(),
+        bannerText().contains("could not be used"));
+  }
+
+  /**
+   * The refusal must not be usable to silence the caution shown when a NEW contact is created.
+   *
+   * <p>It is the only standing warning a relay can raise unilaterally — one deleted byte on an
+   * unrelated contact's invite, no user cooperation. Every other one needs prior user action or is
+   * itself the attack being flagged. So if it suppressed ordinary notices the way a hard warning
+   * does, a relay could raise it and then have the user add an attacker-chosen contact without ever
+   * seeing "this key reached you through the messenger and the app cannot tell whose it is" — the
+   * one caution that fires precisely because nothing was noticed.
+   */
+  @Test
+  public void arefusalAboutOneContactDoesNotSilenceTheCautionForANewOne() throws Exception {
+    establishedContact();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertTrue("precondition: a refusal must be standing about Bob",
+        bannerText().contains("could not be used"));
+
+    // Now an unrelated new contact, from a fresh account at a fresh address.
+    SignalProtocolMain.initialize(null);
+    final Account carol = SignalProtocolMain.getInstance().getAccount();
+    final String carolBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Carol");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Smith");
+    strip.addContactForTest(EnvelopeCodec.fromWire(carolBundle));
+
+    final String shown = bannerText();
+    assertTrue("the caution for a newly created contact must not be suppressed by a refusal about "
+            + "someone else - it is the one notice that fires because nothing was noticed, which is "
+            + "what a successful substitution looks like. Shown: " + shown,
+        shown.contains("cannot tell whose it is"));
   }
 }

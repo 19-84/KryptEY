@@ -187,7 +187,7 @@ public class PostRejectBundlelessWarningTest {
     assertTrue("a key pinned at an address the user rejected must not be a silent first sighting, "
             + "whether it arrived on a bundle or on the pre-key message that carries its own "
             + "identity key. The sender chooses which. What the user was shown: " + shown,
-        shown.contains("previously told the app"));
+        shown.contains("not to trust keys arriving"));
   }
 
   /**
@@ -237,6 +237,6 @@ public class PostRejectBundlelessWarningTest {
             + "too. The attacker chooses this route by relaying a bundle-less message once the row "
             + "is gone, and the user is at the screen where they name the contact - the moment the "
             + "warning is most useful. What the user was shown: " + shown,
-        shown.contains("previously told the app"));
+        shown.contains("not to trust keys arriving"));
   }
 }

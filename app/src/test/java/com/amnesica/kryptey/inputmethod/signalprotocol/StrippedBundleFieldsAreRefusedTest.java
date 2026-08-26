@@ -1,11 +1,13 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
+import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
@@ -45,6 +47,7 @@ public class StrippedBundleFieldsAreRefusedTest {
 
   private PreKeyResponse genuine;
   private SignalProtocolAddress peerAddress;
+  private Account victim;
 
   @Before
   public void setUp() throws Exception {
@@ -59,6 +62,7 @@ public class StrippedBundleFieldsAreRefusedTest {
 
     // The recipient.
     SignalProtocolMain.initialize(null);
+    victim = SignalProtocolMain.getInstance().getAccount();
   }
 
   /**
@@ -85,13 +89,23 @@ public class StrippedBundleFieldsAreRefusedTest {
   }
 
   private PreKeyResponse without(final boolean preKey, final boolean kyber) {
+    return without(preKey, kyber, false);
+  }
+
+  private PreKeyResponse without(final boolean preKey, final boolean kyber,
+      final boolean signed) {
     final PreKeyResponseItem device = genuine.getDevices().get(0);
     final List<PreKeyResponseItem> devices = new ArrayList<>();
     devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
-        device.getSignedPreKey(),
+        signed ? null : device.getSignedPreKey(),
         preKey ? null : device.getPreKey(),
         kyber ? null : device.getKyberPreKey()));
     final PreKeyResponse rebuilt = new PreKeyResponse(genuine.getIdentityKey(), devices);
+    // The signed pre-key is mandatory on the wire, so a bundle without one cannot survive the round
+    // trip below - BinaryEnvelope wraps it in nonNull on encode. That case is therefore checked in
+    // memory, and the difference is stated rather than hidden: it is hardening against a future
+    // format change, not a live wire attack, and pretending otherwise would overclaim.
+    if (signed) return rebuilt;
     try {
       // Through the codec, so this is the object a relay's edit actually produces rather than one
       // assembled in memory that merely resembles it. It also pins the wire format's own optional
@@ -126,6 +140,72 @@ public class StrippedBundleFieldsAreRefusedTest {
       assertTrue("the refusal must say what happened: " + expected.getMessage(),
           expected.getMessage().contains("one-time pre key"));
     }
+  }
+
+  /**
+   * The third sibling, added with the other two and left without a test.
+   *
+   * <p>Deleting its check left the whole suite green, which is the same gap this file was written
+   * to close for the first two.
+   */
+  @Test
+  public void abundleStrippedOfItsSignedPreKeyIsRefused() {
+    try {
+      SignalProtocolMain.getInstance().createPreKeyBundle(without(false, false, true));
+      fail("a bundle with no signed pre-key was accepted. libsignal's PreKeyBundle rejects a null "
+          + "there with an UNCHECKED exception, out of a method declared to throw IOException - "
+          + "which processPreKeyResponse catches by type, so it would escape a click listener and "
+          + "kill the keyboard in whatever app the user is in");
+    } catch (final IOException expected) {
+      assertTrue("the refusal must say what happened: " + expected.getMessage(),
+          expected.getMessage().contains("signed pre key"));
+    }
+  }
+
+  /**
+   * A refused bundle must still leave the substitution it carried on the record.
+   *
+   * <p>The most serious thing about the refusal, and it points the other way from everything else
+   * here. {@code buildSession}'s {@code UntrustedIdentityException} arm is — by its own comment —
+   * the ONLY place a bundle-borne identity change is ever recorded, and {@code createPreKeyBundle}
+   * throws before {@code buildSession} is reached. So the refusal added to catch a relay's edit
+   * handed that same relay a way to switch off the app's only recovery from a successful
+   * substitution: strip one unsigned byte from every re-invite the real contact sends, and the
+   * identity-change warning never fires again.
+   *
+   * <p>The change is therefore recorded before any structural refusal. It grants an attacker
+   * nothing — a bundle carrying a different identity already reached this record through
+   * buildSession — it only removes their ability to suppress it.
+   */
+  @Test
+  public void arefusedBundleStillRecordsTheSubstitutionItCarried() throws Exception {
+    assertTrue("precondition: the genuine peer must be pinned first",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            new MessageEnvelope(genuine, peerAddress.getName(), peerAddress.getDeviceId()),
+            peerAddress));
+
+    // A third party's bundle, relabelled with the peer's address and stripped of its one-time key.
+    SignalProtocolMain.initialize(null);
+    final PreKeyResponse impostor =
+        EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()).getPreKeyResponse();
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    final PreKeyResponseItem device = impostor.getDevices().get(0);
+    final List<PreKeyResponseItem> devices = new ArrayList<>();
+    devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
+        device.getSignedPreKey(), null, device.getKyberPreKey()));
+    final PreKeyResponse strippedSubstitution =
+        new PreKeyResponse(impostor.getIdentityKey(), devices);
+
+    assertFalse("precondition: the stripped bundle must be refused",
+        SignalProtocolMain.processPreKeyResponseMessage(new MessageEnvelope(strippedSubstitution,
+            peerAddress.getName(), peerAddress.getDeviceId()), peerAddress));
+
+    assertTrue("a substitution must be recorded even when the bundle carrying it is refused. "
+            + "Otherwise a relay deletes one unsigned byte from every re-invite the real contact "
+            + "sends and the identity-change warning - the app's only recovery from a successful "
+            + "substitution - never fires again.",
+        SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
   }
 
   /** The sibling check, which was equally untested. */

@@ -325,6 +325,11 @@ public class E2EEStrip {
     return SignalProtocolMain.hasPinnedKey(address);
   }
 
+  /** @see SignalProtocolMain#lastAttachedBundleWasRefused */
+  public boolean lastAttachedBundleWasRefused() {
+    return SignalProtocolMain.lastAttachedBundleWasRefused();
+  }
+
   /** @see SignalProtocolMain#hasSessionWith */
   public boolean hasSessionWith(final org.signal.libsignal.protocol.SignalProtocolAddress address) {
     return SignalProtocolMain.hasSessionWith(address);

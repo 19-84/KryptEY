@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-one sections, written in the order things were found rather than by subject, so the
+Forty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -97,6 +97,8 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A field libsignal lets you omit, and this app never sends](#a-field-libsignal-lets-you-omit-and-this-app-never-sends)
 - [Two arms pin, and the fix asked only one](#two-arms-pin-and-the-fix-asked-only-one)
 - [A refused invite that looked exactly like an accepted one](#a-refused-invite-that-looked-exactly-like-an-accepted-one)
+- [The refusal that switched off the only substitution detector](#the-refusal-that-switched-off-the-only-substitution-detector)
+- [A record that meant less than four messages claimed](#a-record-that-meant-less-than-four-messages-claimed)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3312,3 +3314,78 @@ banner, so the words stay on screen either way. What actually changes is whether
 event may overwrite it, which is what `mayOverwriteInfoBanner` answers. Reading the rendered text to
 check a decision is a defect class this document already has a section for; this is the same
 mistake, made inside the test for it.
+
+
+## The refusal that switched off the only substitution detector
+
+**The fourth sweep of Phase 2 found that the fix two commits earlier had handed the attacker
+something better than what it took away.**
+
+`buildSession`'s `UntrustedIdentityException` arm is — by its own comment — the only place a
+bundle-borne identity change is ever recorded. `createPreKeyBundle` throws *before* `buildSession`
+is reached. So once the one-time pre-key check landed, a relay could strip that one unsigned byte
+from every re-invite a substituted contact sends and the identity-change warning would never fire
+again: the app's entire recovery path from a successful substitution, switched off by the same edit
+the refusal was added to catch. Dropping the invite outright would be *worse* for the relay, because
+the user would retry. Reporting success is what makes them stop.
+
+Compounding it, the strip's own check was the wrong question. `hasSessionWith` asks "can I send to
+this person", which is true for every contact the user already talks to — precisely the case the
+attack aims at. So the refusal never fired where it mattered.
+
+Two fixes, and the second is the general one:
+
+**The substitution is recorded before any structural refusal.** It grants an attacker nothing they
+did not have — a bundle carrying a different identity already reached that record through
+`buildSession` — it removes their ability to *suppress* it.
+
+**The refusal is now a fact rather than an inference.** `decrypt` kept the boolean it had been
+discarding. Two inferences had already been wrong in opposite directions: "no message came out" is
+what a refused bundle and a good bundle-only re-invite both look like, and "is there a session" is
+true for every established contact. The strip asks what actually happened.
+
+That also closed the arm nobody had asked on at all: `processUpdatedPreKeyResponse` runs with
+`isSessionCreation = false`, and an honest peer attaches a full bundle to an ordinary message
+whenever its signed pre-key rotates — so the routine rotation path announced an update for a bundle
+that had been refused.
+
+Three more from the same sweep. The warning is **retracted** by the very thing it asks for
+("ask them to send another"), which previously left a working contact sitting under "Nothing has been
+set up" with every later notice suppressed — a user acting on that text may reject a good key. It is
+**soft**: it is the only standing warning a relay can raise unilaterally, so a hard one would let a
+relay raise it about one contact and thereby silence the caution shown when the user adds another —
+the one notice that fires *because nothing was noticed*. And **Reject is no longer offered on a
+contact the warning is not about**: `rejectContactKey` marks the address whether or not anything was
+pinned, so that tap flagged an innocent contact permanently while the real warning survived
+untouched.
+
+**A test of mine was vacuous again, and the measurement is what found it.** The first version
+asserted that the refused rotation path does *not* say "updated keybundle". It passed against the
+unfixed code — because that line is repainted by `showChosenContactInMainInfoField` before the user
+ever sees it, so its absence was never observable. Writing the positive counterpart is what proved
+it: a *good* rotation does not show that line either. The test now asserts the property that is
+actually visible — the refusal stands, and standing suppresses the repaint.
+
+## A record that meant less than four messages claimed
+
+**Round nine.** `rejectContactKey` marks the address unconditionally, pin or no pin — and the
+no-fingerprint verify screen deliberately enables Reject as the escape hatch from a standing
+warning. So `wasKeyRejected` does not mean "the user compared numbers and they did not match". It
+can equally mean "the user pressed the only enabled button on a screen with no numbers on it", in a
+state a relay can produce on demand.
+
+Four messages asserted the comparison as fact, two of them added the round before. In that state
+each was false, and worse, each *replaced a message that had been true*: the no-fingerprint cell
+used to say "no security number is available for this contact yet", which is correct there.
+
+They now claim only what the record supports: *you told this app not to trust keys arriving for X*.
+A message that wants to claim a comparison needs a record only a comparison writes, and there is no
+such record today — which is a real limitation, recorded rather than papered over.
+
+**And this one has a mechanical guard now**, because the same defect had appeared in three
+consecutive rounds by the same step: a sentence written for one state, copied into a neighbouring
+one, carrying its factual claim with it. `NoClaimSentenceIsSharedBetweenMessagesTest` refuses to let
+a sentence appear in two `INFO_` constants until someone writes down that the sharing is deliberate
+— scoped to the exact pair, so a third use fails again. It cannot tell a true sentence from a false
+one; it makes the copy impossible to perform *silently*, which is the step all three defects
+skipped. Its control is the historical defect itself, reintroduced verbatim: both of its tests fail.

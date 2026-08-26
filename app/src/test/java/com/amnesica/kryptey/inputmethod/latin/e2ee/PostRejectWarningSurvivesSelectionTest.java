@@ -147,7 +147,7 @@ public class PostRejectWarningSurvivesSelectionTest {
     pasteAsIfFromThePeer(attackerBundle);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
     assertTrue("precondition: the post-rejection warning must be on screen to begin with: "
-        + infoText(), infoText().contains("previously told the app"));
+        + infoText(), infoText().contains("not to trust keys arriving"));
     assertTrue("precondition: the rejection must still be on record",
         SignalProtocolMain.wasKeyRejected(peerAddress));
   }
@@ -173,7 +173,7 @@ public class PostRejectWarningSurvivesSelectionTest {
         shown.startsWith("Chosen contact"));
     assertTrue("the post-rejection warning must be re-asserted, as a pending identity change "
             + "already is on this same route: " + shown,
-        shown.contains("previously told the app"));
+        shown.contains("not to trust keys arriving"));
   }
 
   /** Re-asserted once and then wiped by the messenger's next post is no better. */

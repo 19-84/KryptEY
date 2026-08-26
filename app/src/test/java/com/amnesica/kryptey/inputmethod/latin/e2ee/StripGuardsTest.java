@@ -455,7 +455,7 @@ public class StripGuardsTest {
 
     final String warned = infoField().getText().toString();
     assertTrue("re-pinning at an address the user rejected must say so: " + warned,
-        warned.toLowerCase().contains("reject") || warned.toLowerCase().contains("did not match"));
+        warned.toLowerCase().contains("not to trust keys arriving"));
 
     // Unreadable storage suppresses a passive overwrite on its own, and this fixture reads that way
     // once a contact has been written - so without pinning the state here, the assertion below

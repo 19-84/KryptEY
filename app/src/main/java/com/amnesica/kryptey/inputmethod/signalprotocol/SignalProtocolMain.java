@@ -1610,11 +1610,62 @@ public class SignalProtocolMain {
     }
   }
 
+  /**
+   * Records a substitution the moment a bundle names an identity other than the pinned one.
+   *
+   * <p>Idempotent with {@code buildSession}'s own recording: on a bundle that gets that far, both
+   * run and the second is a no-op. It grants an attacker nothing they did not already have — a
+   * bundle carrying a different identity key already reached the same record through buildSession.
+   * What it removes is the attacker's ability to SUPPRESS the record by making the bundle fail
+   * earlier.
+   */
+  private void recordIdentityChangeIfOffered(final PreKeyResponse preKeyResponse,
+      final SignalProtocolAddress address) {
+    if (preKeyResponse == null || address == null) return;
+    final org.signal.libsignal.protocol.IdentityKey offered = preKeyResponse.getIdentityKey();
+    if (offered == null) return;
+    final org.signal.libsignal.protocol.IdentityKey pinned =
+        mAccount.getSignalProtocolStore().getIdentityKeyStore().getIdentity(address);
+    // Nothing pinned is a first sighting, not a change. Equal keys are an ordinary re-invite.
+    if (pinned == null || pinned.equals(offered)) return;
+    mAccount.getSignalProtocolStore().getIdentityKeyStore().recordIdentityChange(address, offered);
+    clearVerificationFor(address);
+    storeAllAccountInformationInSharedPreferences();
+  }
+
+  /**
+   * Whether the last decrypt attempt carried a key bundle that was refused.
+   *
+   * <p>The refusal used to be a boolean {@code decrypt} threw away, and the strip inferred success
+   * from the absence of a decrypted message — which is what a refused bundle also looks like. The
+   * replacement inference, "is there a session", was wrong in the other direction: an existing
+   * session made every refused re-invite look accepted, which is exactly the case the attack aims
+   * at. This is the fact rather than either inference.
+   *
+   * <p>Read immediately after the decrypt call on the same thread, which is how the strip uses it.
+   */
+  private boolean mLastAttachedBundleRefused = false;
+
+  public static boolean lastAttachedBundleWasRefused() {
+    return sInstance != null && sInstance.mLastAttachedBundleRefused;
+  }
+
   private boolean processPreKeyResponse(final MessageEnvelope messageEnvelope, final SignalProtocolAddress signalProtocolAddress) {
     if (messageEnvelope == null) return false;
     try {
       // build session with recipients protocol address when preKeyResponse was send
       if (messageEnvelope.getPreKeyResponse() != null) {
+        // BEFORE any structural refusal below, because those throw and this is the only detection
+        // the app has.
+        //
+        // buildSession's UntrustedIdentityException arm is, by its own comment, the one place a
+        // bundle-borne substitution is ever recorded - and createPreKeyBundle throws before
+        // buildSession is reached. So a relay that deletes the one-time pre-key (unsigned, one
+        // byte) from every re-invite a substituted contact sends keeps the identity-change warning
+        // from ever being raised: the app's whole recovery path from a successful substitution,
+        // switched off by the same edit the refusal was added to catch. Recording it here is
+        // independent of whether the rest of the bundle survives.
+        recordIdentityChangeIfOffered(messageEnvelope.getPreKeyResponse(), signalProtocolAddress);
         final PreKeyBundle preKeyBundle = createPreKeyBundle(messageEnvelope.getPreKeyResponse());
 
         if (!buildSession(preKeyBundle, signalProtocolAddress)) {
@@ -1643,6 +1694,9 @@ public class SignalProtocolMain {
     if (messageEnvelope == null) return null;
     String decryptedMessage;
 
+    // Cleared per attempt, so the strip reads the outcome of THIS decrypt and never a stale one.
+    mLastAttachedBundleRefused = false;
+
     final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
 
     // Process an attached bundle whenever there IS one - not only when a ciphertext accompanies it.
@@ -1654,7 +1708,13 @@ public class SignalProtocolMain {
     // below and the UI showed nothing at all - so a substituted re-invite was a silent no-op.
     if (messageEnvelope.getPreKeyResponse() != null) {
       Log.d(TAG, "Message with cipherText and updated preKeyResponse received...");
-      processPreKeyResponseMessage(messageEnvelope, signalProtocolAddress);
+      // Kept, rather than discarded. This boolean is the whole difference between "your contact
+      // sent a fresh invite and it worked" and "something changed that invite in transit", and
+      // throwing it away here is what made every UI arm above have to guess.
+      if (!processPreKeyResponseMessage(messageEnvelope, signalProtocolAddress)) {
+        Log.e(TAG, "The attached key bundle was refused");
+        mLastAttachedBundleRefused = true;
+      }
     }
 
     logMessageType(messageEnvelope.getCiphertextType());

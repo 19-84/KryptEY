@@ -49,7 +49,12 @@ public class EveryStripFieldIsClassifiedTest {
       // The address that warning is about. Carried for the same reason: without it, a rotation
       // between the warning and the deletion means deleting the named contact no longer clears it,
       // and the banner is stuck again - the exact state carrying the flag alone was meant to avoid.
-      "mStandingWarningAddress"));
+      "mStandingWarningAddress",
+      // Whether that warning yields to a message with more to say. Carried because a rebuild would
+      // otherwise promote a soft warning to a hard one, and a hard refusal warning is what lets a
+      // relay suppress the contact-creation caution - the one notice that fires precisely because
+      // nothing was noticed. A configuration change is something an app can force.
+      "mStandingWarningIsSoft"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.
