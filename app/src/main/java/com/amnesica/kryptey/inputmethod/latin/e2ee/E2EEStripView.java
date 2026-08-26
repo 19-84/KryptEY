@@ -334,7 +334,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * wrong until {@code reloadAccount} runs on the next {@code setInputView} - and then the key the
    * user rejected is back, with no record that they rejected it.
    */
-  private final String INFO_REJECTION_NOT_SAVED = "The key for %s was refused, but this could not be saved - the app could not write to its own storage. It will come back the next time the keyboard opens. Do not send anything to them until you have compared the security number by voice.";
+  private final String INFO_REJECTION_NOT_SAVED = "This could not be saved - the app could not write to its own storage, so it will not be remembered the next time the keyboard opens. Do not send anything to %s until you have compared the security number with them by voice.";
 
   private final String INFO_ALREADY_REJECTED = "You had already told this app not to trust keys arriving for %s, so there was nothing left to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything private.";
 

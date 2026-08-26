@@ -105,20 +105,9 @@ public class FairyTaleEncoder {
 
     final String minifiedJson = EncodeHelper.minifyJSON(message);
 
-    // Sized by measuring, not by estimating.
-    //
-    // The decoy now travels inside the compressed blob as well as outside it, so its cost is not
-    // its own length plus a payload size computed without it: compression makes the total depend on
-    // which sentence was chosen. Two attempts to correct an estimate both overshot the cap - by 20
-    // characters, then by 12 - and FairyTaleGoldenTest caught each, which is what that sweep is for.
-    //
-    // So each candidate is compressed for real and kept only if the finished message fits. Deflate
-    // on a few kilobytes, once per sentence, at the moment a human presses a button.
-    final String decoySentence = pickDecoyThatFits(minifiedJson, maxChars);
-    final byte[] withDecoy =
-        EncodeHelper.compressString(decoySentence + CARRIER_SEPARATOR + minifiedJson);
-
-    final String binaryMessage = EncodeHelper.convertByteArrayToBinary(withDecoy);
+    final byte[] compressedMessage = EncodeHelper.compressString(minifiedJson);
+    final String decoySentence = pickDecoy(invisibleLengthOf(compressedMessage), maxChars);
+    final String binaryMessage = EncodeHelper.convertByteArrayToBinary(compressedMessage);
 
 
     final String invisibleMessage = EncodeHelper.convertBinaryToInvisibleString(binaryMessage);
@@ -138,28 +127,6 @@ public class FairyTaleEncoder {
    * the caller owns the cap and gives the user a message it can act on, and this returning its best
    * effort keeps that decision in one place.
    */
-  /**
-   * The decoy whose finished message actually fits, chosen at random among those that do.
-   *
-   * <p>Falls back to the shortest sentence when nothing fits, exactly as {@code pickDecoy} does:
-   * the caller owns the cap and gives the user something it can act on, and keeping that decision
-   * in one place is why this does not throw.
-   */
-  private static String pickDecoyThatFits(final String minifiedJson, final int maxChars)
-      throws IOException {
-    final List<String> fitting = new ArrayList<>();
-    String shortest = null;
-    for (final String sentence : mSentencesMap.values()) {
-      if (sentence == null) continue;
-      if (shortest == null || sentence.length() < shortest.length()) shortest = sentence;
-      final byte[] compressed =
-          EncodeHelper.compressString(sentence + CARRIER_SEPARATOR + minifiedJson);
-      if (sentence.length() + invisibleLengthOf(compressed) <= maxChars) fitting.add(sentence);
-    }
-    if (fitting.isEmpty()) return shortest == null ? "" : shortest;
-    return fitting.get(new Random().nextInt(fitting.size()));
-  }
-
   private static String pickDecoy(final int payloadChars, final int maxChars) {
     final int budget = maxChars - payloadChars;
 
@@ -180,44 +147,6 @@ public class FairyTaleEncoder {
     final String binary = EncodeHelper.convertInvisibleStringToBinary(encodedText);
     final byte[] compressedResult = EncodeHelper.convertBinaryToByteArray(binary);
     final String decompressedResult = EncodeHelper.decompressString(compressedResult);
-
-    final int separator = decompressedResult.indexOf(CARRIER_SEPARATOR);
-    if (separator < 0) {
-      throw new IOException("this message does not bind its visible text to its payload; it was "
-          + "not produced by this app");
-    }
-    final String written = decompressedResult.substring(0, separator);
-    final String shown = visibleTextOf(encodedText);
-    if (!normalise(written).equals(normalise(shown))) {
-      throw new IOException("the visible text is not the text the sender wrote; something rewrote "
-          + "it in transit");
-    }
-    return EncodeHelper.deSimplifyJsonKeys(
-        decompressedResult.substring(separator + CARRIER_SEPARATOR.length()));
-  }
-
-  /**
-   * Separates the sender's own visible sentence from the payload inside the compressed blob.
-   *
-   * <p>A NUL: prose does not contain one and minified JSON does not either, so it cannot occur in
-   * either half by accident.
-   */
-  private static final String CARRIER_SEPARATOR = "\u0000";
-
-  /** What the reader actually sees: everything except the invisible carrier characters. */
-  private static String visibleTextOf(final String encodedText) {
-    return encodedText.replaceAll("\\p{C}", "");
-  }
-
-  /**
-   * Compared loosely enough to survive a messenger, strictly enough to pin the words.
-   *
-   * <p>Leading and trailing space and runs of whitespace are normalised, because transports do
-   * reflow text and refusing a genuine message over a doubled space would be a denial of service
-   * the attacker gets for free. Everything else must match: added, removed or altered words are
-   * exactly what this refuses.
-   */
-  private static String normalise(final String text) {
-    return text.replaceAll("\\s+", " ").trim();
+    return EncodeHelper.deSimplifyJsonKeys(decompressedResult);
   }
 }

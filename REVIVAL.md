@@ -108,7 +108,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [FLAG_SECURE was down on the route users actually take](#flag_secure-was-down-on-the-route-users-actually-take)
 - [A writer on the right of an &&](#a-writer-on-the-right-of-an-)
 - [The first clean round in eleven, and a guard for the class](#the-first-clean-round-in-eleven-and-a-guard-for-the-class)
-- [The canonicality check was void on the route the adversary picks](#the-canonicality-check-was-void-on-the-route-the-adversary-picks)
+- [The canonicality check, the fix that was not one, and what is actually true](#the-canonicality-check-the-fix-that-was-not-one-and-what-is-actually-true)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3788,41 +3788,57 @@ security number, and the banner holds one warning — so this is a consequence, 
 here because it is the kind of thing that becomes a surprise later if nobody wrote it down.
 
 
-## The canonicality check was void on the route the adversary picks
+## The canonicality check, the fix that was not one, and what is actually true
 
-**Phase 3's third sweep found that the wire format's strongest guarantee did not hold for the app.**
+**Phase 3's third sweep reported that the wire format's strongest guarantee did not hold on the
+FairyTale route. I fixed it, shipped the fix, then proved the fix was worthless — and reverted it.**
 
-`EnvelopeCodec.fromWire` re-encodes and demands the text be the canonical encoding of its own bytes,
-and its comment says exactly what that closes: *"take a GENUINE invite from someone, staple readable
-prose to the end of it, and the recipient's paste still validates as a clean key bundle from that
-person's address."*
+The report was accurate about the mechanism. `EnvelopeCodec.fromWire` re-encodes and demands the
+text be the canonical encoding of its own bytes; which decoder produces that text is chosen by
+scanning the pasted message for an invisible character, which the adversary writes. On the FairyTale
+route `decode` read only the invisible characters, and the nibble table ignores every code point
+outside its sixteen — so prose was stripped before the check saw a byte.
 
-That is a property of the string `fromWire` is handed. **Which decoder produces that string is
-chosen by scanning the pasted text for an invisible character — content the adversary writes.** On
-the FairyTale route, `decode` read only the invisible characters, and the nibble table ignores every
-code point outside its sixteen, so arbitrary prose was stripped before the canonicality check ever
-saw a byte.
+The fix embedded the decoy sentence inside the compressed payload and made `decode` refuse a
+mismatch. **It is not a boundary.** Nothing authenticates the payload, so a relay decompresses it,
+puts its own sentence in both halves, and recompresses — fifteen lines, all of them readable in this
+repository, no secret at any step. The check stopped only an adversary who declined to re-encode,
+which is not an adversary. Measured with a test that performs exactly that re-encode; it passed.
+A reviewer reached the same conclusion independently and in parallel.
 
-So the attack needs no secret at all. Take Bob's genuine, already-canonical invite off the wire,
-re-emit it as invisible characters, and wrap any sentence you like around it — *"my phone died,
-delete me and add me again from THIS message"*. The victim sees only the attacker's sentence,
-because the payload is invisible, and the app reports a correctly-signed bundle at Bob's real
-address. It is strictly worse than the case the check was written for, where the prose is visibly
-separate text the user can see is just text.
+**And it was actively harmful while it was in.** `visibleTextOf` stripped `\p{C}`, which includes
+`\n` and `\t`, so a transport that hard-wraps `"add me"` to `"add\nme"` made an honest invite
+fail; Java's `\s` is ASCII-only, so an HTML renderer emitting `&nbsp;` did the same. The commit
+message claimed whitespace normalisation avoided exactly that denial of service, and the
+normalisation ran *after* the strip that caused it. The same `\p{C}` breadth left bidi controls,
+soft hyphens and private-use characters free to alter the rendered text while being invisible to
+both halves of the comparison.
 
-The decoy now travels **inside** the compressed payload as well as in front of it, and `decode`
-refuses the pair when they disagree. Whitespace runs are normalised, because a transport that
-reflows text would otherwise hand the attacker a denial of service for free; every other difference
-is refused.
+**What is actually true, and is now pinned by a test rather than argued.** The relay owns the
+messenger. It can put any sentence it likes beside any message, in the same conversation, with or
+without this encoding — so unauthenticated prose next to an invite is not a property of the codec
+and no encoder-side change alters it. What the canonicality check does close is narrower and real:
+text that would otherwise ride *inside* the envelope and survive as part of a validated object.
+That property was never affected.
 
-**Three attempts at the sizing, and the golden test caught each.** The decoy's cost is no longer its
-own length plus a payload measured without it — compression makes the total depend on which sentence
-was chosen. An estimate overshot the 8192 cap by 20 characters, a corrected estimate by 12, and the
-third version measures each candidate for real. `FairyTaleGoldenTest` exists for exactly this and
-failed all three times; its own feasibility check then had to be corrected too, because it computed
-the cheapest possible message from a cost model that no longer applied.
+`FairyTaleCarrierIsNotAuthenticatedTest` pins the measured behaviour the way `StoreRollbackTest`
+pins a rollback's cost — a change in either direction fails. If someone adds a real binding it goes
+red and should be replaced; if someone adds another fake one it stays green and says why that is not
+enough. The mitigation, if one is wanted, is not in the codec: it is that the app must never present
+carrier prose as though the sender wrote it.
 
-**And the sweep that found this could not be safety-reviewed upstream**, so its output was read
-critically rather than acted on: it names files, asks nothing, and its central claim was verified
-here directly — the routing scan, the missing `default:` in the nibble switch, and `decode` never
-looking at the visible text — before any code changed.
+**Two trust controls that were writing and returning constants.** `verifyContactInContactList` ended
+`storeAll…(); return true;` while its own javadoc defines false as "verification could not be
+recorded" — so the one failure that most plausibly means that was the one it could not report, and
+the strip already renders false as `INFO_VERIFY_UNAVAILABLE`. `rejectContactKey` discarded the
+result entirely, leaving the app to print "Forgot the stored key" over a key still pinned on disk,
+to be re-pinned by the next `reloadAccount` — the silent trust-on-first-use `markKeyRejected` exists
+to prevent. Both report now, the second through its own channel, because "was there a key to forget"
+and "did this land" are different questions.
+
+They shipped with no tests, which a reviewer pointed out and which was fair: the commit's five new
+tests were all for the encoder change that got reverted. There are five now, with controls, and they
+caught two further defects on the way — the flag held the *previous* rejection's outcome on the
+early-return path, and the failed-write message claimed a key had been refused in the state where
+none existed.
+

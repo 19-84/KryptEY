@@ -284,6 +284,11 @@ public class SignalProtocolMain {
   }
 
   public static boolean rejectContactKey(final Contact contact) {
+    // Cleared at entry, not only on the path that writes. The early return below leaves the flag
+    // holding the PREVIOUS rejection's outcome, so a caller asking "did this one land" would be
+    // told about a different one - the same stale-flag shape the decrypt flags are cleared at the
+    // top of decrypt to avoid.
+    sInstance.mLastRejectionReachedDisk = true;
     if (sInstance.mAccount == null || contact == null) return false;
     final SignalProtocolAddress address = contact.getSignalProtocolAddress();
 
