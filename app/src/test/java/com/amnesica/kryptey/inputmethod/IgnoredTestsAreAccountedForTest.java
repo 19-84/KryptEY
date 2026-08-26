@@ -52,7 +52,16 @@ public class IgnoredTestsAreAccountedForTest {
       // Rejected: the residue is real but sits on an object nothing can reach after a rebuild,
       // which is true of every freed object. Justified by r0 below.
       "r2TheDiscardedStripMustNotKeepWhoTheUserTalksTo",
-      "r3TheDiscardedStripMustNotKeepNamingTheChosenContact"));
+      "r3TheDiscardedStripMustNotKeepNamingTheChosenContact",
+      // Measurements, not tests. They produce the raise-cost table in REVIVAL.md's chat-log entry,
+      // and they are in the tree so those numbers can be re-derived instead of taken on trust - a
+      // review pointed out that nothing in the repo could reproduce them. Not asserted, because a
+      // timing threshold tight enough to mean something is flaky and one loose enough to be stable
+      // means nothing. The behaviour they describe is guarded structurally by
+      // ChatLogLoadsLazilyTest: the log is not read to load an account, and a raise leaves its
+      // stored bytes byte-identical.
+      "raiseCost",
+      "fileLayerCost"));
 
   /**
    * The test those two rejections rest on.

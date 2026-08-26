@@ -27,6 +27,8 @@ public class Account {
   private ArrayList<StorageMessage> mUnencryptedMessages;
   /** Non-null exactly while the chat log is deferred. See {@link #setMessageLogLoader}. */
   private MessageLogLoader mMessageLogLoader;
+  /** True only for the duration of a loader call, to refuse re-entrant loads. */
+  private transient boolean mLoadingMessageLog;
   private ArrayList<Contact> contactList;
 
   /**
@@ -155,11 +157,14 @@ public class Account {
    * measured at 20,000 messages, 72 ms to read and 194 ms to write, for data the keyboard almost
    * never touches. Nothing on the raise path reads a message; only the message-log screen does.
    *
-   * <p>Passing null loads nothing and leaves the log empty, which is what a fresh account wants.
+   * <p>Passing null loads nothing and leaves the log EMPTY, not null. An earlier version of this
+   * said "empty" and set null, which is the same erasure this class must never allow: a null log
+   * reports itself loaded, and {@code JsonUtil.toJson(null)} is the string "null", which seals and
+   * commits perfectly well over the user's entire history.
    */
   public void setMessageLogLoader(final MessageLogLoader loader) {
     this.mMessageLogLoader = loader;
-    this.mUnencryptedMessages = null;
+    this.mUnencryptedMessages = loader == null ? new ArrayList<>() : null;
   }
 
   /** Whether the log has actually been read, as opposed to merely being available. */
@@ -167,15 +172,34 @@ public class Account {
     return mMessageLogLoader == null;
   }
 
-  public ArrayList<StorageMessage> getUnencryptedMessages() {
+  public synchronized ArrayList<StorageMessage> getUnencryptedMessages() {
     if (mMessageLogLoader != null) {
+      // Re-entrancy is refused rather than tolerated.
+      //
+      // An earlier comment here claimed the migration re-enters this method through
+      // soleContactNamed. It does not: LegacyKeyMigration takes the list once and only then walks
+      // it, and soleContactNamed reads the contact list. No production path is re-entrant, so the
+      // honest thing is to say so loudly if one ever appears - during a load both fields are in
+      // flux, and a re-entrant caller would silently receive something that is not the log.
+      if (mLoadingMessageLog) {
+        throw new IllegalStateException("re-entrant chat-log load: something called "
+            + "getUnencryptedMessages() from inside the loader, which cannot return the log");
+      }
       final MessageLogLoader loader = mMessageLogLoader;
-      // Cleared BEFORE the call, not after. A loader that reaches back into this account - the
-      // migration does exactly that, through soleContactNamed - would otherwise re-enter here and
-      // run the load a second time, and the second result would win.
-      mMessageLogLoader = null;
-      final ArrayList<StorageMessage> loaded = loader.load();
-      mUnencryptedMessages = loaded != null ? loaded : new ArrayList<>();
+      mLoadingMessageLog = true;
+      try {
+        final ArrayList<StorageMessage> loaded = loader.load();
+        mUnencryptedMessages = loaded != null ? loaded : new ArrayList<>();
+        mMessageLogLoader = null;
+      } finally {
+        // The loader is cleared only on success. If the read threw - one unparseable timestamp in
+        // the log is enough, convertValue throws IllegalArgumentException - the account stays
+        // DEFERRED. That is the difference between a bad day and an unrecoverable one: an account
+        // that reports itself loaded while holding nothing gets that nothing written over the
+        // user's history by the next ordinary save, and the decrypt path swallows
+        // RuntimeException, so the process survives to do it.
+        mLoadingMessageLog = false;
+      }
     }
     return mUnencryptedMessages;
   }
@@ -284,6 +308,7 @@ public class Account {
 
   public void removeAllUnencryptedMessages(Contact contact) {
     final ArrayList<StorageMessage> messages = getUnencryptedMessages();
+    if (messages == null) return;
     List<StorageMessage> operatedList = new ArrayList<>();
     messages.stream()
         .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId()))

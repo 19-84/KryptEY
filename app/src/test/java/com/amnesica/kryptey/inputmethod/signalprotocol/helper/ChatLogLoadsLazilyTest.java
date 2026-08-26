@@ -70,6 +70,13 @@ public class ChatLogLoadsLazilyTest {
     };
   }
 
+  /** The sealed value exactly as it sits in SharedPreferences, without going through the store. */
+  private String rawStoredLog() {
+    return preferences.getString(String.valueOf(
+        com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.UNENCRYPTED_MESSAGES),
+        null);
+  }
+
   private StorageHelper helper() {
     return new StorageHelper(context, box());
   }
@@ -137,8 +144,23 @@ public class ChatLogLoadsLazilyTest {
     assertFalse("precondition: this test is about a save that never read the log",
         raised.messageLogIsLoaded());
 
+    final String storedBefore = rawStoredLog();
+    assertNotNull("precondition: there must be a stored log to compare", storedBefore);
+
     // Exactly what reloadAccount does after a raise.
     helper().storeAllInformationInSharedPreferences(raised);
+
+    // The stored bytes, not just the message count.
+    //
+    // Comparing counts only catches the log being CLEARED. It says nothing about it being
+    // rewritten, which is the half this change exists for - and a review pointed out that the
+    // unconditional save passes every count-based assertion here, because it simply re-serialises
+    // the same message. Ciphertext is the discriminator: every seal draws a fresh GCM nonce, so a
+    // value that was written again cannot be byte-identical to the one that was not.
+    assertEquals("the stored chat log was rewritten by a raise that never read it. It is still "
+            + "correct, but the whole point of deferring it is that raising the keyboard should "
+            + "not re-serialise and re-seal the user's entire history.",
+        storedBefore, rawStoredLog());
 
     final Account afterwards = helper().getAccountFromSharedPreferences();
     assertNotNull(afterwards);
@@ -167,21 +189,13 @@ public class ChatLogLoadsLazilyTest {
         2, afterwards.getUnencryptedMessages().size());
   }
 
-  /**
-   * The loader runs once, however many times the log is asked for.
-   *
-   * <p>Not a performance nicety. The loader is cleared before it is invoked precisely because the
-   * migration reaches back into the account while loading, and a re-entrant call would run the read
-   * twice and let the second result win — discarding whatever the first pass had already changed.
-   */
+  /** The loader runs once, however many times the log is asked for. */
   @Test
-  public void theloaderRunsAtMostOnceEvenUnderReEntrantAccess() {
+  public void theloaderRunsOnceHoweverOftenTheLogIsAskedFor() {
     final AtomicInteger calls = new AtomicInteger();
     final Account subject = SignalProtocolMain.getInstance().getAccount();
     subject.setMessageLogLoader(() -> {
       calls.incrementAndGet();
-      // Re-entrant on purpose: this is what the migration does through soleContactNamed.
-      subject.getUnencryptedMessages();
       final ArrayList<StorageMessage> loaded = new ArrayList<>();
       loaded.add(new StorageMessage("k", "bobAddress", "me", Instant.now(), "loaded once"));
       return loaded;
@@ -191,44 +205,103 @@ public class ChatLogLoadsLazilyTest {
     subject.getUnencryptedMessages();
     subject.getUnencryptedMessages();
 
-    assertEquals("the loader must run exactly once; a re-entrant call running it twice would let "
-        + "the second result overwrite work the first pass had already done", 1, calls.get());
+    assertEquals("the loader must run exactly once", 1, calls.get());
   }
 
   /**
-   * The one load that migrates still reads the log, and still re-keys it.
+   * A re-entrant load is refused loudly rather than handed something that is not the log.
    *
-   * <p>This is the case the deferral entry was worried about, and the reason the fix is safe: the
-   * migration is gated on a marker, so it runs on exactly one load per install. On that load the
-   * read is forced — deliberately — and the entry is re-keyed as before. If laziness ever caused
-   * the migration to run against an empty log instead, the marker would then be written and that
-   * answer sealed, and the user's pre-upgrade history would be permanently unattributable. So this
-   * asserts both halves: that the log was read, and that the re-key actually happened.
+   * <p>The first version of this file asserted that re-entrancy was <em>tolerated</em>, and
+   * justified it by claiming the migration re-enters through {@code soleContactNamed}. A review
+   * checked and it does not: {@code LegacyKeyMigration} takes the list once and only then walks it,
+   * and {@code soleContactNamed} reads the contact list. So the test was exercising a hazard that
+   * does not exist, and describing the wrong failure mode for it — mid-load both fields are in
+   * flux, so a re-entrant caller would have received null and thrown a {@code NullPointerException}
+   * somewhere else entirely, not "let the second result win".
+   *
+   * <p>What is kept is the refusal, because "no production path does this today" is a fact about
+   * today. If one ever appears it should say so at the point of the mistake.
    */
   @Test
-  public void themigratingLoadStillReadsAndReKeysTheLog() {
-    // A pre-upgrade store: the chat log keyed by a bare address name, and no schema marker.
-    final ArrayList<StorageMessage> legacy = new ArrayList<>();
-    legacy.add(new StorageMessage(bob.getSignalProtocolAddressName(), "bobAddress", "me",
-        Instant.now(), "sent before the upgrade"));
-    account.setUnencryptedMessages(legacy);
-    account.setKeysAreRendered(false);
-    helper().storeAllInformationInSharedPreferences(account);
-    preferences.edit()
-        .remove(String.valueOf(
-            com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.KEY_SCHEMA_MIGRATED))
-        .commit();
+  public void arereEntrantLoadIsRefusedRatherThanReturningSomethingElse() {
+    final Account subject = SignalProtocolMain.getInstance().getAccount();
+    subject.setMessageLogLoader(() -> {
+      subject.getUnencryptedMessages();   // re-entrant, from inside the loader
+      return new ArrayList<>();
+    });
 
-    final Account migrated = helper().getAccountFromSharedPreferences();
-    assertNotNull(migrated);
+    try {
+      subject.getUnencryptedMessages();
+      throw new AssertionError("a re-entrant load must be refused, not silently served");
+    } catch (final IllegalStateException expected) {
+      assertTrue("the refusal must say what happened",
+          expected.getMessage().contains("re-entrant"));
+    }
+  }
 
-    assertTrue("the migrating load must have read the log - if it migrated an empty list the "
-            + "marker would seal that answer and the pre-upgrade history would be lost",
-        migrated.messageLogIsLoaded());
-    assertEquals(1, migrated.getUnencryptedMessages().size());
-    assertEquals("the legacy entry must have been re-keyed onto the contact's full address",
-        StorageMessage.chatLogKey(bob.getSignalProtocolAddressName(), bob.getDeviceId()),
-        migrated.getUnencryptedMessages().get(0).getContactUUID());
+  /**
+   * A loader that throws must not leave an account that looks loaded and holds nothing.
+   *
+   * <p>This is the erasure path the first version of this change opened, and it needed no exotic
+   * conditions: {@code readMessageLog} calls {@code JsonUtil.convertUnencryptedMessagesList}, which
+   * is {@code convertValue} and throws {@code IllegalArgumentException} on any binding failure —
+   * one unparseable {@code Instant} in the whole log is enough. The loader was cleared before being
+   * invoked, so a throw left {@code mMessageLogLoader} null AND {@code mUnencryptedMessages} null:
+   * {@code messageLogIsLoaded()} then answered true, and the next ordinary save — verifying a
+   * contact, adding one, any of a dozen sites — serialised a null root as the literal string
+   * {@code "null"} and committed it over the user's entire history. The decrypt path swallows
+   * {@code RuntimeException}, so the process survived to do it.
+   *
+   * <p>The account must stay deferred instead. A store that cannot be parsed is a bad day; a store
+   * that gets overwritten because it could not be parsed is unrecoverable.
+   */
+  @Test
+  public void aloaderThatThrowsLeavesTheAccountDeferredRatherThanEmpty() {
+    final Account subject = helper().getAccountFromSharedPreferences();
+    assertNotNull(subject);
+    subject.setMessageLogLoader(() -> {
+      throw new IllegalArgumentException("one unparseable timestamp in the log");
+    });
+
+    try {
+      subject.getUnencryptedMessages();
+      throw new AssertionError("the loader's failure must not be swallowed");
+    } catch (final IllegalArgumentException expected) {
+      // The point is what the account looks like afterwards.
+    }
+
+    assertFalse("after a failed load the account must still be deferred. If it reports itself "
+            + "loaded while holding nothing, the next save writes that nothing over the stored log.",
+        subject.messageLogIsLoaded());
+  }
+
+  /**
+   * And the whole chain: an unreadable log must survive a save, not be replaced by it.
+   *
+   * <p>Asserted end to end through the store rather than on the flag, because the flag is an
+   * implementation detail and the property that matters is that the bytes on disk are still there.
+   */
+  @Test
+  public void asaveAfterAfailedLogReadLeavesTheStoredLogIntact() {
+    final Account subject = helper().getAccountFromSharedPreferences();
+    assertNotNull(subject);
+    subject.setMessageLogLoader(() -> {
+      throw new IllegalArgumentException("unreadable");
+    });
+    try {
+      subject.getUnencryptedMessages();
+    } catch (final IllegalArgumentException expected) {
+      // expected
+    }
+
+    helper().storeAllInformationInSharedPreferences(subject);
+
+    final Account afterwards = helper().getAccountFromSharedPreferences();
+    assertNotNull(afterwards);
+    assertEquals("a failed read followed by an ordinary save destroyed the user's history",
+        1, afterwards.getUnencryptedMessages().size());
+    assertEquals("the meeting is at nine",
+        afterwards.getUnencryptedMessages().get(0).getUnencryptedMessage());
   }
 
   /** And a fresh account, which has no store behind it, still starts with an empty log. */

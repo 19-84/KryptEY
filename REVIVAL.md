@@ -2341,18 +2341,34 @@ empty list when the log was not loaded, and that test fails.
 | 1,000 messages | 50 ms | 42 ms |
 | 20,000 messages | 294 ms | 199 ms |
 
-**So it is a third off at 20,000 and it does not make the cost constant, which is the honest
-result.** What the deferral removes is the JSON parse, the AES-GCM open, the re-seal and the
-re-serialisation of the log. What remains — 163 ms of the 199 ms at 20,000, against a 36 ms empty-log
-baseline — is the `SharedPreferences` file itself: the log shares one XML file with everything else,
-that file is read whole on first access, and **any** `commit()` rewrites it whole regardless of which
-keys changed. No amount of laziness at the JSON layer reaches that.
+(The 20,000-message log here serialises to 5.35 MB rather than the 7.16 MB quoted at the top of this
+entry; the original figure assumed ~358 characters per message and the harness's messages are
+shorter. Same shape, different constant.)
+
+**So it is a third off at 20,000 and it does not make the cost constant, which is the honest result.**
+What the deferral removes is the JSON parse, the AES-GCM open, the re-seal and the re-serialisation
+of the log.
+
+**Where the remaining 163 ms goes — measured, after a review pointed out that the first version of
+this paragraph reasoned it out instead.** Committing a single unrelated key to a `SharedPreferences`
+file costs **13 ms** when the file is small and **146 ms** when a 5.35 MB sibling value shares it.
+That is the residual, and it is entirely on the **write** side: `SharedPreferencesImpl` serialises
+its whole in-memory map to XML and fsyncs on every `commit()`, so the log is paid for by any write
+to the file it lives in, whatever that write actually changed. The whole-file *read* is not part of
+it — `ContextImpl` caches the instance per file name, so that happens once per process, not once per
+raise. The first version of this paragraph claimed both halves recurred, which was wrong.
 
 **What is still open, now with a specific shape rather than a vague one:** the log needs its own
-store file, so that raising the keyboard neither reads nor rewrites 5.35 MB of message history. That
-is a storage-layout change rather than a lifecycle one, and it is separable from everything above.
-The cap-versus-keep question is untouched by any of this — the log still grows forever, still
-peer-paced.
+store file, so that raising the keyboard does not rewrite megabytes of message history it never
+looked at. That is a storage-layout change rather than a lifecycle one, and it is separable from
+everything above. The cap-versus-keep question is untouched by any of this — the log still grows
+forever, still peer-paced.
+
+The numbers in this entry come from `ChatLogRaiseCostHarness`, which is in the tree so they can be
+re-derived rather than taken on trust. It is `@Ignore`d: a timing threshold tight enough to mean
+something is flaky, and one loose enough to be stable asserts nothing. What guards the behaviour is
+`ChatLogLoadsLazilyTest`, which pins the structural facts instead — the log is not read to load an
+account, and a raise leaves its stored bytes byte-identical.
 
 
 **~~The CI workflow's Lint step has never passed.~~ Fixed in `5fb0a91`** — Temurin 21 plus a lint

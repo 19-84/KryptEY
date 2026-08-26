@@ -318,7 +318,11 @@ public class StorageHelper {
     // and the stored value is already what we would write - so writing it would mean parsing the
     // whole history in order to serialise it back byte for byte. putAll writes the keys it is
     // given and clears nothing, so omitting this leaves the stored log exactly as it was.
-    if (account.messageLogIsLoaded()) {
+    // Two conditions, not one. "Loaded" alone was enough to write, and a null log reports itself
+    // loaded - so a failed read produced a save of JSON "null" over the whole history. The account
+    // no longer reaches that state, and this is the second lock on the same door: nothing may write
+    // this key unless there is an actual list to write.
+    if (account.messageLogIsLoaded() && account.getUnencryptedMessages() != null) {
       put(batch, ProtocolIdentifier.UNENCRYPTED_MESSAGES, account.getUnencryptedMessages());
     }
     put(batch, ProtocolIdentifier.CONTACTS, account.getContactList());

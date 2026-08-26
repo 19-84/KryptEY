@@ -1,0 +1,131 @@
+package com.amnesica.kryptey.inputmethod.signalprotocol.helper;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.GcmCryptoBox;
+
+import org.junit.Ignore;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+
+import java.time.Instant;
+import java.util.ArrayList;
+
+/**
+ * The harness behind the raise-cost table in REVIVAL.md. Not an assertion — a measurement.
+ *
+ * <pre>
+ *   tools/build-in-docker testDebugUnitTest --tests '*ChatLogRaiseCostHarness' -Pmeasure
+ * </pre>
+ *
+ * <p>Both methods are {@code @Ignore}d individually rather than the class, because
+ * {@code IgnoredTestsAreAccountedForTest} scans for the annotation on a method and a class-level
+ * one is invisible to it — which would leave two disabled measurements unaccounted for in exactly
+ * the way that guard exists to prevent. They are registered there. Ignored deliberately: Timings are not a property to assert: a threshold tight enough
+ * to mean anything is flaky on a loaded machine, and one loose enough to be stable asserts nothing.
+ * What guards the behaviour is {@link ChatLogLoadsLazilyTest}, which pins the structural facts —
+ * the log is not read to load an account, and a raise leaves its stored bytes untouched. This file
+ * exists so the numbers quoted in the document can be re-derived rather than taken on trust, which
+ * a reviewer correctly pointed out was not previously possible from anything in the tree.
+ *
+ * <p>Numbers recorded when this was written, on a desktop JVM under Robolectric:
+ * empty log 36 ms; 1,000 messages 50 ms eager / 42 ms lazy; 20,000 messages 294 ms eager /
+ * 199 ms lazy. The file-layer probe: committing one unrelated key costs 13 ms against a small
+ * preferences file and 146 ms when a 5.35 MB sibling value shares it.
+ */
+@RunWith(RobolectricTestRunner.class)
+public class ChatLogRaiseCostHarness {
+
+  private static final javax.crypto.SecretKey KEY =
+      new javax.crypto.spec.SecretKeySpec(new byte[32], "AES");
+
+  private static final StorageHelper.CryptoBoxFactory BOX = (ctx, has) -> new GcmCryptoBox() {
+    @Override protected javax.crypto.SecretKey key() { return KEY; }
+  };
+
+  /** One raise: load the account, then write it back. Exactly what setInputView causes. */
+  private long raise(final Context context, final boolean touchLog) {
+    long total = 0;
+    for (int run = 0; run < 5; run++) {
+      final long start = System.nanoTime();
+      final Account raised = new StorageHelper(context, BOX).getAccountFromSharedPreferences();
+      if (touchLog) raised.getUnencryptedMessages();
+      new StorageHelper(context, BOX).storeAllInformationInSharedPreferences(raised);
+      total += System.nanoTime() - start;
+    }
+    return total / 5 / 1_000_000;
+  }
+
+  private void seed(final Context context, final int count) throws Exception {
+    context.getSharedPreferences("protocol", Context.MODE_PRIVATE).edit().clear().commit();
+    SignalProtocolMain.resetForTest();
+    SignalProtocolMain.testIsRunning = true;
+    SignalProtocolMain.initialize(null);
+    final Account account = SignalProtocolMain.getInstance().getAccount();
+    final ArrayList<Contact> contacts = new ArrayList<>();
+    contacts.add(new Contact("Bob", "Jones", "bobAddress", 3, false));
+    account.setContactList(contacts);
+    final String key = StorageMessage.chatLogKey("bobAddress", 3);
+    final ArrayList<StorageMessage> messages = new ArrayList<>();
+    for (int i = 0; i < count; i++) {
+      messages.add(new StorageMessage(key, "bobAddress", "me", Instant.now(),
+          "message number " + i + " with some ordinary sentence length to it"));
+    }
+    account.setUnencryptedMessages(messages);
+    new StorageHelper(context, BOX).storeAllInformationInSharedPreferences(account);
+  }
+
+  @Ignore("measurement harness, not a test - see the class javadoc")
+  @Test
+  public void raiseCost() throws Exception {
+    final Context context = RuntimeEnvironment.getApplication();
+    for (final int size : new int[] {0, 1000, 20000}) {
+      seed(context, size);
+      final long lazy = raise(context, false);
+      final long eager = raise(context, true);
+      System.out.println("RAISE " + size + " messages: lazy " + lazy + " ms, eager " + eager
+          + " ms, stored " + context.getSharedPreferences("protocol", Context.MODE_PRIVATE)
+          .getString("UNENCRYPTED_MESSAGES", "").length() + " bytes");
+    }
+  }
+
+  /**
+   * Where the cost that laziness does NOT remove actually lives.
+   *
+   * <p>Commits one unrelated key against a preferences file with and without a large sibling value.
+   * SharedPreferences serialises its whole in-memory map on every commit, so the log is paid for by
+   * any write to the file it shares, whoever made the write and whatever it changed.
+   */
+  @Ignore("measurement harness, not a test - see the class javadoc")
+  @Test
+  public void fileLayerCost() {
+    final Context context = RuntimeEnvironment.getApplication();
+    System.out.println("COMMIT small file: " + commitOneKey(context, "probe_small", 0) + " ms");
+    System.out.println("COMMIT with 5.35 MB sibling: "
+        + commitOneKey(context, "probe_big", 5_345_228) + " ms");
+  }
+
+  private long commitOneKey(final Context context, final String name, final int siblingBytes) {
+    final SharedPreferences prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE);
+    prefs.edit().clear().commit();
+    if (siblingBytes > 0) {
+      final StringBuilder blob = new StringBuilder();
+      while (blob.length() < siblingBytes) blob.append("abcdefghij");
+      prefs.edit().putString("BIG", blob.toString()).commit();
+    }
+    long total = 0;
+    for (int i = 0; i < 5; i++) {
+      final long start = System.nanoTime();
+      prefs.edit().putString("UNRELATED", "value" + i).commit();
+      total += System.nanoTime() - start;
+    }
+    return total / 5 / 1_000_000;
+  }
+}
