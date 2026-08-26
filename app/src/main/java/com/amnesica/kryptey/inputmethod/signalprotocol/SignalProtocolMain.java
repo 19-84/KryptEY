@@ -1608,6 +1608,8 @@ public class SignalProtocolMain {
   }
 
   private MessageEnvelope encrypt(final String unencryptedMessage, final SignalProtocolAddress signalProtocolAddress) {
+    // Cleared per attempt, like decrypt does, so a reader sees the outcome of THIS send.
+    mLastChatLogWriteFailed = false;
     if (unencryptedMessage == null || signalProtocolAddress == null) return null;
     // And no account is the third way there is nothing to encrypt with. The first statement of the
     // try below dereferences mAccount, and the only catches around it are for checked protocol
@@ -1655,6 +1657,14 @@ public class SignalProtocolMain {
       storeUnencryptedMessageInMap(mAccount, signalProtocolAddress, unencryptedMessage, Instant.ofEpochMilli(messageEnvelope.getTimestamp()), true);
 
       storeAllAccountInformationInSharedPreferences();
+      // The other half of the conversation. A sent message that fails to reach the log vanishes
+      // from the user's history with the ciphertext already handed to the messenger - arguably more
+      // visible than the receive case and just as unexplained. The flag was cleared at the top of
+      // this method, so it describes this send.
+      if (mStorageHelper != null && !mStorageHelper.lastMessageLogWriteSucceeded()) {
+        Log.e(TAG, "the chat log could not be written; the sent message is not recorded");
+        mLastChatLogWriteFailed = true;
+      }
 
       return messageEnvelope;
     } catch (UntrustedIdentityException e) {

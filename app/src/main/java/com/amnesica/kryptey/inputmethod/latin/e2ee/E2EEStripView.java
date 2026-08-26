@@ -237,6 +237,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * ask for a new invite - which is a key-substitution window opened by advice about the wrong
    * problem. One flipped byte in the sealed log makes that permanent.
    */
+  /**
+   * The send-side counterpart, because the receive-side wording is not true here.
+   *
+   * <p>"This message was read" is about an incoming message; a sent one has already gone to the
+   * messenger by the time the log write fails. Both leave the history missing a message, and both
+   * must avoid the generic failure advice - deleting the contact and re-inviting is a
+   * key-substitution window, and nothing about a storage failure calls for it.
+   */
+  private final String INFO_SENT_MESSAGE_NOT_SAVED = "That message was sent, but it could not be added to your saved history, because the app could not write to its own storage. The message went out normally - only the record of it is missing.";
+
   private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history, because the stored history cannot be opened. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
 
   private final String INFO_INVITE_REFUSED_BUT_KEY_PINNED = "The key update from %s could not be used - it does not verify, which means it was changed on the way here. The message it arrived with has set up a key for them anyway, and this app cannot tell whose it is - compare the security number by voice before sending anything private.";
@@ -1544,6 +1554,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         if (encryptedMessage != null) {
           mInputEditText.setText(encryptedMessage);
           sendEncryptedMessageToApplication(encryptedMessage);
+          // The send half of "delivered but not recorded". The receive half reported this and the
+          // send half did not, so a sent message could vanish from the history with nothing said -
+          // arguably more visible to the user than the incoming case, and equally unexplained.
+          if (mE2EEStrip.lastChatLogWriteFailed()) {
+            Toast.makeText(getContext(), INFO_SENT_MESSAGE_NOT_SAVED, Toast.LENGTH_LONG).show();
+          }
         } else {
           Toast.makeText(getContext(), INFO_MESSAGE_ENCRYPTION_FAILED, Toast.LENGTH_SHORT).show();
           Log.e(TAG, "Error: Encrypted message is null!");

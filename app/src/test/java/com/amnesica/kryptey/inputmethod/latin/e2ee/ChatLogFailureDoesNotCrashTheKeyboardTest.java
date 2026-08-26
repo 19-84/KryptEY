@@ -309,4 +309,39 @@ private Contact bob;
             + "saying nothing at all about it",
         SignalProtocolMain.lastChatLogWriteFailed());
   }
+
+  /**
+   * The send half of "delivered but not recorded".
+   *
+   * <p>The receive half reported a failed log write and the send half did not, so a message could go
+   * to the messenger and be missing from the history with nothing said. Arguably more visible than
+   * the incoming case — the user watched themselves send it — and equally unexplained.
+   */
+  @Test
+  public void afailedChatLogWriteOnSendIsReported() throws Exception {
+    final Account victim = SignalProtocolMain.getInstance().getAccount();
+    victim.setMessageLogLoader(java.util.ArrayList::new);
+
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, hasExistingData) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return true;
+          }
+
+          @Override
+          public boolean lastMessageLogWriteSucceeded() {
+            return false;
+          }
+        });
+
+    final MessageEnvelope sent = SignalProtocolMain.encryptMessage("going out now",
+        ProtocolAddresses.of(bob.getSignalProtocolAddressName(), bob.getDeviceId()));
+
+    assertNotNull("the message must still be sent - the storage failure is not the send failing",
+        sent);
+    assertTrue("a sent message that did not reach the log must be reported, or it disappears from "
+            + "the history with the ciphertext already handed to the messenger and no explanation",
+        SignalProtocolMain.lastChatLogWriteFailed());
+  }
 }

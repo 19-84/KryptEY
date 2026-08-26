@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-seven sections, written in the order things were found rather than by subject, so the
+Fifty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -113,6 +113,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A gate that changed the verb and nothing else](#a-gate-that-changed-the-verb-and-nothing-else)
 - [Three informational lines the user never sees](#three-informational-lines-the-user-never-sees)
 - [Text crosses into another application, and three writes that could not fail](#text-crosses-into-another-application-and-three-writes-that-could-not-fail)
+- [Ciphertext crosses the process boundary, measured](#ciphertext-crosses-the-process-boundary-measured)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4022,3 +4023,45 @@ Also documented rather than quietly left: `setSelection` returns true when there
 all, having never asked an editor. Narrow, self-repairing, and a change to it would alter behaviour
 for the pointer callers that discard the result — so it is written into the contract instead of
 folded into an unrelated commit.
+
+
+## Ciphertext crosses the process boundary, measured
+
+**The gap named in every report is closed as far as one device allows.** The strip encrypts a message
+in the live IME and commits it into a field owned by `com.amnesica.kryptey.test` — a different
+package, a different process — and the other process reports back that what arrived is non-empty and
+does **not** contain the plaintext.
+
+The verdict carries no text. The field is in another process, so it cannot be read by reference, and
+adding a UI-automation dependency would mean new hashes in the verification metadata. The plaintext
+is passed *in* as an extra and the comparison happens over there, so neither half is ever written to
+a device-wide log — a test whose subject is "the plaintext must not cross this boundary" has no
+business publishing it.
+
+**The first version of both cross-app tests was wrong, in two ways worth recording.**
+
+The binding test asserted `dumpsys input_method` contained the foreign package name and
+`mCurMethodId=<this IME>`. Neither establishes a binding. `mCurMethodId` is the *selected* input
+method — true from the moment the harness runs `ime set`, before any test starts, which this
+document already records elsewhere in as many words — and the package name appears in the dump's
+start-input history, so it survives long after the IME has moved on. Two unanchored substrings over
+one dump, with nothing tying the served window to that package: it would have passed on residue left
+by a sibling test in the same run. The foreign process reports `isActive(field)` about its own field
+now.
+
+And the send test failed for a reason the same review predicted: nothing asked the IME to attach to
+that field, so the strip committed into a connection that did not exist. **It also broke a test that
+had nothing to do with it** — the activity was never finished, so a resumed window from another
+package sat on top of the stack with a contact chosen, leaving the IME window `FLAG_SECURE` and
+failing the test that asserts the ordinary keyboard is not secure. A test that contaminates the suite
+is worse than a missing one, because the failure lands somewhere else. The activity bounds its own
+lifetime now and the strip's state is handed back in `tearDown`.
+
+**Three more writes that could not fail.** `mLastMessageLogWriteSucceeded` is only assigned where the
+log is written, so on the path where `secureStore()` resolves to nothing — a Keystore key invalidated
+by a credential change, a migration that threw — the method returned early having written *nothing*
+and the flag kept its initialiser, `true`. A device in that state reported a healthy log write
+forever. And the send path never consulted the flag at all: the receive half reported "delivered but
+not recorded" and the send half stayed silent, so a message could go to the messenger and vanish from
+the history with nothing said. Both closed, the second with its own wording — "this message was read"
+is not true of a message the user just sent.

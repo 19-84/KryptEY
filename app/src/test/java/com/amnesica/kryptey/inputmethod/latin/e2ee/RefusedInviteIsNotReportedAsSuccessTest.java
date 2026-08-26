@@ -788,7 +788,7 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
   }
 
   /**
-   * A key rotation that landed must be announced even when its message does not decrypt.
+   * An accepted rotation must not be reported as refused when its message fails to decrypt.
    *
    * <p><b>This does not pin the announcement, and it is named for what it does pin.</b> The
    * announcement was gated on a return value that had stopped meaning "the bundle was accepted";

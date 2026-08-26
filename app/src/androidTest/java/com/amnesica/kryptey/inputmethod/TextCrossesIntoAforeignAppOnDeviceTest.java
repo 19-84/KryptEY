@@ -36,10 +36,10 @@ import java.nio.charset.StandardCharsets;
  * {@link ForeignAppActivity} lives there, so the keyboard attaching to its field is doing what it
  * does for a messenger.
  *
- * <p><b>What this establishes and what it does not.</b> It establishes that the IME binds across the
- * boundary and that what the keyboard commits arrives in the other app's field. It is still not a
- * real messenger: nothing here relays, stores or renders the text, and no second device is involved.
- * Saying so is more useful than implying the gap is closed.
+ * <p><b>What this establishes and what it does not.</b> It establishes that this IME binds to a
+ * field owned by another package. It does NOT commit any text — the sibling test does that. It is
+ * still not a real messenger: nothing here relays, stores or renders anything, and no second device
+ * is involved. Saying so is more useful than implying the gap is closed.
  */
 @RunWith(AndroidJUnit4.class)
 public class TextCrossesIntoAforeignAppOnDeviceTest {
@@ -54,10 +54,14 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
     return getInstrumentation().getTargetContext();
   }
 
-  /** {@code dumpsys input_method}, read through the shell the instrumentation owns. */
   private static String imeDump() throws Exception {
+    return shell("dumpsys input_method");
+  }
+
+  /** A shell command, read through the automation the instrumentation owns. */
+  private static String shell(final String command) throws Exception {
     final android.os.ParcelFileDescriptor fd =
-        getInstrumentation().getUiAutomation().executeShellCommand("dumpsys input_method");
+        getInstrumentation().getUiAutomation().executeShellCommand(command);
     try (InputStream in = new android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)) {
       final ByteArrayOutputStream out = new ByteArrayOutputStream();
       final byte[] buffer = new byte[8192];
@@ -69,6 +73,7 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
 
   @Test
   public void thekeyboardBindsToAfieldInAnotherApplication() throws Exception {
+    shell("logcat -c");
     assertEquals("precondition: this app must be the selected input method", IME_ID,
         Settings.Secure.getString(context().getContentResolver(),
             Settings.Secure.DEFAULT_INPUT_METHOD));
@@ -79,21 +84,26 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
     final Intent intent = new Intent()
         .setComponent(new ComponentName(FOREIGN_PACKAGE,
             "com.amnesica.kryptey.inputmethod.ForeignAppActivity"))
+        .putExtra(ForeignAppActivity.EXTRA_FINISH_AFTER_MS, 30_000L)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
     context().startActivity(intent);
 
-    // The activity is in another process, so it cannot be reached by reference. What the keyboard
-    // is attached to is read back out of the framework instead.
-    String dump = "";
+    // Asked of the foreign process about its own field, not of dumpsys.
+    //
+    // The first version of this scanned `dumpsys input_method` for the package name and for
+    // `mCurMethodId=<this IME>`. Neither establishes a binding. mCurMethodId is the SELECTED input
+    // method - true from the moment the harness runs `ime set`, before any test starts, which this
+    // repo already records elsewhere in as many words - and the package name appears in the dump's
+    // start-input history, so it survives long after the IME has moved on. Two unanchored
+    // substrings over one dump, with nothing tying the served window to that package: it would have
+    // passed on residue left by another test in the same run.
     boolean bound = false;
     final long deadline = System.currentTimeMillis() + BIND_TIMEOUT_MS;
-    while (System.currentTimeMillis() < deadline) {
-      dump = imeDump();
-      if (dump.contains(FOREIGN_PACKAGE) && dump.contains("mCurMethodId=" + IME_ID)) {
-        bound = true;
-        break;
+    while (System.currentTimeMillis() < deadline && !bound) {
+      for (final String line : shell("logcat -d -s " + ForeignAppActivity.TAG).split("\n")) {
+        if (line.contains(ForeignAppActivity.BOUND_MARKER + " active=true")) bound = true;
       }
-      Thread.sleep(POLL_MS);
+      if (!bound) Thread.sleep(POLL_MS);
     }
 
     assertTrue("the keyboard never became the input method for a window belonging to " + FOREIGN_PACKAGE
@@ -102,7 +112,8 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
         + "emulator, check whether the activity started at all before concluding anything about "
         + "the keyboard.", bound);
 
-    assertTrue("the framework must name this IME as the one serving that window",
-        dump.contains(IME_ID));
+    // And this IME is the one that would serve it, which is the other half of the claim.
+    assertTrue("this app must be the selected input method for that binding to be about it",
+        imeDump().contains(IME_ID));
   }
 }
