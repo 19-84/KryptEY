@@ -289,8 +289,104 @@ public class VerifyScreenNamesAstandingRejectionTest {
     assertNotNull("pressing Reject must say something", toast);
     assertFalse("it claimed to have forgotten a stored key when there was none: " + toast,
         toast.contains("Forgot the stored key"));
-    assertTrue("and must still say what the state is: " + toast,
-        toast.contains("no stored key"));
+    // The state here is "you already rejected the key that was stored", NOT "nothing was ever
+    // stored". This test used to assert only the words "no stored key", which both readings
+    // satisfy - so when the message was rewritten to say "none had been stored yet" it stayed
+    // green while telling the user the opposite of the truth. A key was stored; they are the
+    // person who reported it as wrong.
+    assertTrue("Reject must say the key was already forgotten by the rejection, not that none was "
+        + "ever stored: " + toast, toast.contains("already forgotten"));
+    assertFalse("and must not deny that a key was ever stored for this contact: " + toast,
+        toast.contains("none had been stored yet"));
+  }
+
+  /**
+   * The other no-pin state, which the same message used to describe with the same words.
+   *
+   * <p>"Nothing is pinned" covers two opposite situations and they need opposite sentences. Here
+   * nothing ever was pinned, so claiming the app was handed a wrong key would fabricate a security
+   * event - and that is exactly what the first version of this branch did, having inherited the
+   * sentence from the message for a real rejection.
+   */
+  @Test
+  public void rejectingAcontactThatNeverHadAkeySaysSoAndInventsNothing() throws Exception {
+    final Contact stranger = new Contact("Dave", "Smith", "dave-address", 5, false);
+    victim.getContactList().add(stranger);
+    assertFalse("precondition: nothing pinned",
+        SignalProtocolMain.hasPinnedKey(stranger.getSignalProtocolAddress()));
+    assertFalse("precondition: and no rejection on record either",
+        SignalProtocolMain.wasKeyRejected(stranger.getSignalProtocolAddress()));
+
+    strip.setWarningMessageAboutForTest("Careful: something is wrong.", stranger);
+    strip.selectContact(stranger);
+    strip.loadFingerprintInVerifyContactView();
+    org.robolectric.shadows.ShadowToast.reset();
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+
+    final String toast = org.robolectric.shadows.ShadowToast.getTextOfLatestToast();
+    assertNotNull("pressing Reject must say something", toast);
+    assertTrue("it must say no key had been stored: " + toast,
+        toast.contains("none had been stored yet"));
+    assertFalse("and must not claim the app was ever given a wrong key for them - nothing was ever "
+        + "offered at this address, so that is a security event that did not happen: " + toast,
+        toast.contains("wrong key"));
+  }
+
+  /**
+   * A deliberate response about one contact must not put down a warning about another.
+   *
+   * <p>Reject and Verify are the two controls that mean "I have dealt with this", and both cleared
+   * the banner unconditionally — while {@code removeContact} had been scoped to the address for
+   * exactly this reason. The duplicate-name warning is never re-asserted, so clearing it from the
+   * wrong screen loses it for good.
+   */
+  @Test
+  public void rejectingOneContactLeavesAwarningAboutAnotherStanding() throws Exception {
+    final Contact stranger = new Contact("Erin", "Smith", "erin-address", 6, false);
+    victim.getContactList().add(stranger);
+
+    strip.setWarningMessageAboutForTest("Careful: something is wrong with Bob's key.", bob());
+
+    // Reject is live for Erin only because a warning stands - the enablement is not scoped to the
+    // contact the warning is about, which is what makes this reachable in one tap.
+    strip.selectContact(stranger);
+    strip.loadFingerprintInVerifyContactView();
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+
+    // Asserted through mayOverwriteInfoBanner rather than through the banner's text, because
+    // clearing a standing warning does not repaint the banner - the words stay on screen either
+    // way, so reading them proves nothing. What actually changes is whether the next passive,
+    // messenger-driven event is allowed to paint over the warning, and that is the consequence
+    // that matters: the first version of this test read the text and passed against the unfixed
+    // code, which is the same hollow-control mistake this file keeps finding elsewhere.
+    assertFalse("a warning about Bob must survive a deliberate response about Erin. Once it stops "
+            + "standing, the next clipboard event overwrites it - and nothing re-asserts the "
+            + "duplicate-name warning, so it is gone for good.",
+        strip.mayOverwriteInfoBanner());
+  }
+
+  /**
+   * And the verify screen itself stops describing a rejected address as untouched.
+   *
+   * <p>In the no-pin-after-rejection cell the screen said "No security number is available for this
+   * contact yet. Ask them for a key bundle first." — which describes an address nothing has ever
+   * happened at, on the one screen where the user decides whether to reject again.
+   */
+  @Test
+  public void theverifyScreenAfterArejectionDoesNotReadAsUntouched() throws Exception {
+    assertTrue(SignalProtocolMain.rejectContactKey(bob()));
+    strip.selectContact(bob());
+    strip.loadFingerprintInVerifyContactView();
+
+    final String shown = verifyScreenText();
+    assertFalse("the screen must not say a number is unavailable 'yet' at an address whose key the "
+        + "user already rejected: " + shown, shown.contains("available for this contact yet"));
+    assertTrue("it must name the rejection instead: " + shown,
+        shown.contains("did not match"));
+    // And must not borrow the pinned-key wording: the digits on this screen are blank, so telling
+    // the user to compare "the number below" is a different false claim in the same cell.
+    assertFalse("it must not point at a number that is not on screen: " + shown,
+        shown.contains("number below"));
   }
 
   /** But once a key IS pinned there again, the warning is real and must fire. */

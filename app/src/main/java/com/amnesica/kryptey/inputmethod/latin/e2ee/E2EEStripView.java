@@ -178,7 +178,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_MESSAGES_LIST_DEFAULT = "Choose a contact first to see messages here";
   private final String INFO_NO_SAVED_MESSAGES = "There are no saved messages for this contact";
   private final String INFO_VERIFY_CONTACT = "To check your encryption with %s, read the numbers above out to them by voice - in person or on a call - and have them read theirs back. Do not send the numbers through the messenger you are chatting in: anything that could change your keys could change those numbers to match.";
+  /**
+   * A re-invite that was refused, said out loud on the arm that used to say nothing.
+   *
+   * <p>The bundle-only success path advanced the UI identically whether the invite was accepted or
+   * refused, because "no decrypted message" is what BOTH look like. A relay that strips the
+   * one-time pre-key from every invite could therefore hold a contact permanently unusable while
+   * the app said "Detected contact" each time - and the add-contact arm's own advice ("ask for a
+   * fresh one") routes the user straight onto this arm, where the next attempt is silent again.
+   */
+  private final String INFO_INVITE_REFUSED = "That invite from %s could not be used - it does not verify, which means it was changed on the way here. Nothing has been set up. Ask them to send another, and if it keeps failing, send it a different way.";
+
   private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
+
+  /**
+   * The same cell, once the user has rejected a key there.
+   *
+   * <p>Not {@code INFO_VERIFY_AFTER_REJECTION}, which was written for the screen where a key IS
+   * pinned: it says "the number below is the key in use now", and in this cell the digits are
+   * blank. Reusing it here would have replaced "nothing has ever happened at this address" with
+   * "compare the number that is not on screen" — a different false statement, which is what the
+   * first attempt at this fix did and what its own test caught.
+   */
+  private final String INFO_NO_FINGERPRINT_AFTER_REJECTION = "You previously told the app that the numbers for %s did not match, and that key was forgotten. There is no security number to compare until they send a new invite.";
 
   // Deliberately does not tell the user to delete the contact. That advice was the app's standard
   // response to any failure here, and an attacker can induce failures at will, so it functioned as
@@ -238,6 +260,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * and asserting one that did not happen is the same defect as staying silent about one that did.
    */
   private final String INFO_NOTHING_TO_REJECT = "There was no stored key for %s to forget - none had been stored yet. Nothing can be sent to them until they send an invite. When one arrives, compare the number with them by voice before sending anything private.";
+
+  /**
+   * The third state, which the previous two both described wrongly.
+   *
+   * <p>"No pin" is not one situation. It is "nothing was ever stored here" AND "you already
+   * rejected the key that was stored", and the two need opposite sentences. The first version of
+   * this branch kept {@code INFO_KEY_REJECTED}'s closing claim that the app had been given a wrong
+   * key, which is false in the never-stored state. The fix replaced it with "none had been stored
+   * yet", which is false in this one - a key WAS stored, and the user is the person who reported it
+   * as wrong. Swapping one false claim for its opposite is not a fix, and the distinguishing fact
+   * was three lines away the whole time: {@code wasKeyRejected}.
+   */
+  private final String INFO_ALREADY_REJECTED = "The key for %s was already forgotten when you rejected it, so there was nothing left to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
 
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
   /**
@@ -357,13 +392,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // Capture the label before rejecting: the message names the contact whose key was just
       // forgotten, and reading it afterwards would describe post-rejection state.
       final String label = SignalProtocolMain.displayLabelFor(chosenContact);
-      clearStandingWarning();   // saying the number does not match IS the deliberate response
+      // Scoped, for the reason removeContact is scoped: a deliberate response about THIS contact
+      // must not put down a warning about a different one. Rejecting Bob used to clear a standing
+      // warning about Alice, and the duplicate-name warning is never re-asserted, so it was gone
+      // for good. Null-addressed warnings (storage, same-address) still clear here - they have no
+      // other exit, and scoping them strictly would recreate the dead end round five removed.
+      clearStandingWarningIfAbout(chosenContact);
       // Ask BEFORE rejecting: afterwards there is never a pin, so the answer would always be no.
       final boolean hadAkeyToForget =
           mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress());
+      // Three states, not two. Without this, a second Reject on a contact the user has already
+      // rejected says no key was ever stored for them - which is exactly backwards, and reachable
+      // by opening that contact's verify screen while any warning stands.
+      final boolean alreadyRejected =
+          mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress());
       mE2EEStrip.rejectContactKey(chosenContact);
-      Toast.makeText(getContext(),
-          String.format(hadAkeyToForget ? INFO_KEY_REJECTED : INFO_NOTHING_TO_REJECT, label),
+      // The selection is written out here rather than lifted into a local so that the constants
+      // remain visible at the call site: NoToastCarriesMessageContentTest reads these arguments to
+      // check that a toast - which is drawn outside FLAG_SECURE and so is visible to a recording -
+      // can only ever interpolate a named constant. Hiding the choice behind a variable would pass
+      // that check by concealment rather than by being true.
+      Toast.makeText(getContext(), String.format(
+          hadAkeyToForget ? INFO_KEY_REJECTED
+              : (alreadyRejected ? INFO_ALREADY_REJECTED : INFO_NOTHING_TO_REJECT), label),
           Toast.LENGTH_LONG).show();
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);
@@ -385,7 +436,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         }
         // Only now: the user has compared the number and confirmed it. Not on arriving at the
         // screen, and not on a failed load, which is why this sits after the guard above.
-        clearStandingWarning();
+        clearStandingWarningIfAbout(chosenContact);
         loadContactsIntoContactsListView();
         showOnlyUIView(UIView.CONTACT_LIST_VIEW);
       } catch (UnknownContactException e) {
@@ -588,7 +639,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (mWarningStanding && mVerifyContactRejectButton != null) {
         mVerifyContactRejectButton.setEnabled(true);
       }
-      setInfoTextViewMessage(mVerifyContactInfoTextView, INFO_NO_FINGERPRINT);
+      // "yet ... ask them for a key bundle first" describes an address nothing has happened at.
+      // After a rejection something very much has, and the screen that says otherwise is the one
+      // where the user decides whether to reject again.
+      setInfoTextViewMessage(mVerifyContactInfoTextView,
+          mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())
+              ? String.format(INFO_NO_FINGERPRINT_AFTER_REJECTION, labelFor(chosenContact))
+              : INFO_NO_FINGERPRINT);
       return;
     }
     if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(true);
@@ -1745,9 +1802,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // re-delivered forged bundle is a warned pin instead of a silent one; without this it was
       // consulted by nothing on the route an attacker actually uses.
       // After the attempt, not before: a bundle whose signature fails is refused and pins nothing.
-      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
+      final boolean usable =
+          decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
       warnIfKeyWasRejected(sender);
-      setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
+      // Only if there is actually a session. Otherwise the refusal notice written above stands,
+      // instead of being painted over by a line saying the contact was detected.
+      if (usable) setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
     }
   }
 
@@ -2169,6 +2229,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /** Clears a standing warning. Only call this from a deliberate user action. */
+  /**
+   * Clears a standing warning only when this contact is who it was about.
+   *
+   * <p>A warning with no address still clears: {@code INFO_STORAGE_UNREADABLE} and
+   * {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} are posted without one, and a deliberate response is
+   * their only exit.
+   */
+  private void clearStandingWarningIfAbout(final Contact contact) {
+    if (!mWarningStanding) return;
+    if (mStandingWarningAddress == null || (contact != null && mStandingWarningAddress
+        .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
+      clearStandingWarning();
+    }
+  }
+
   private void clearStandingWarning() {
     mStandingWarningText = null;
     mStandingWarningAddress = null;
@@ -2207,7 +2282,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return true;
   }
 
-  private void decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
+  /**
+   * @return whether the strip may now claim this contact is usable. False only on the
+   *     session-creation arm, when no session exists after the attempt.
+   */
+  private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
     final CharSequence decryptedMessage = mE2EEStrip.decryptMessage(messageEnvelope, sender);
 
     // Check before branching: a substitution recorded during this decrypt attempt must be reported
@@ -2219,12 +2298,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       mInputEditText.setText(decryptedMessage);
       changeVisibilityInputFieldButtons(true);
     } else if (isSessionCreation) {
+      // Asked rather than assumed. Reaching here means no message came out, which is what a good
+      // bundle-only re-invite looks like - and also exactly what a REFUSED one looks like, because
+      // the refusal is a boolean that SignalProtocolMain.decrypt discards. Enabling the buttons on
+      // that inference told the user a contact was ready whose session had just been declined.
+      if (!mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress())) {
+        // A warning rather than a plain line, for two reasons. The banner is repainted after this
+        // by showChosenContactInMainInfoField, which is guarded only by a standing warning - so an
+        // ordinary message here would be overwritten with "Chosen contact: Bob" and the refusal
+        // would be as silent as before. And it belongs there on the merits: an invite that does not
+        // verify was modified in transit, which is the messenger acting on the user, not a hiccup.
+        if (!identityChanged && !mWarningStanding) {
+          setWarningMessage(String.format(INFO_INVITE_REFUSED, labelFor(sender)),
+              String.valueOf(sender.getSignalProtocolAddress()));
+        }
+        mE2EEStrip.clearClipboard();
+        return false;
+      }
       changeVisibilityInputFieldButtons(true);
     } else if (!identityChanged) {
       Toast.makeText(getContext(), INFO_MESSAGE_DECRYPTION_FAILED, Toast.LENGTH_LONG).show();
       Log.e(TAG, "Error: Decrypted message is null");
     }
     mE2EEStrip.clearClipboard();
+    return true;
   }
 
   /** The real send path, for tests. */

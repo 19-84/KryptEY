@@ -265,6 +265,18 @@ public class SignalProtocolMain {
    * another has since been pinned". Those are different states and only the second is a warning
    * about a key: after a bare rejection there is nothing at the address at all.
    */
+  /**
+   * Whether a session exists with this address — i.e. whether anything can actually be sent.
+   *
+   * <p>Exposed because "the invite worked" was being inferred from the absence of a decrypted
+   * message, which is also what a REFUSED invite looks like on the bundle-only path. The UI needs a
+   * fact rather than an inference.
+   */
+  public static boolean hasSessionWith(final SignalProtocolAddress address) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore().containsSession(address);
+  }
+
   public static boolean hasPinnedKey(final SignalProtocolAddress address) {
     if (sInstance == null || sInstance.mAccount == null || address == null) return false;
     return sInstance.mAccount.getSignalProtocolStore()
@@ -1769,17 +1781,33 @@ public class SignalProtocolMain {
     preKeyId = device.getPreKey().getKeyId();
     preKey = device.getPreKey().getPublicKey();
 
-    if (device.getSignedPreKey() != null) {
-      signedPreKeyId = device.getSignedPreKey().getKeyId();
-      signedPreKey = device.getSignedPreKey().getPublicKey();
-      signedPreKeySignature = device.getSignedPreKey().getSignature();
+    if (device.getSignedPreKey() == null) {
+      // The third sibling, given the same rule as the other two. Not reachable from the wire today
+      // - BinaryEnvelope writes the signed pre-key unconditionally and refuses a zero-length key -
+      // so this is hardening rather than a live defect. It is worth having anyway: tolerating null
+      // here hands libsignal a null signed pre-key, and PreKeyBundle's Kotlin null check throws an
+      // unchecked exception out of a method declared to throw IOException. processPreKeyResponse
+      // catches IOException only, so it would escape a click listener - this codebase's named worst
+      // crash mode. The reachability is a property of the current wire format, and the format
+      // carries a version byte precisely so it can change.
+      throw new IOException("peer bundle has no signed pre key");
     }
+    signedPreKeyId = device.getSignedPreKey().getKeyId();
+    signedPreKey = device.getSignedPreKey().getPublicKey();
+    signedPreKeySignature = device.getSignedPreKey().getSignature();
 
     if (device.getKyberPreKey() == null) {
-      // A bundle from a pre-PQXDH peer. This libsignal has no classical-only PreKeyBundle, and
-      // silently downgrading to X3DH is not an option, so fail loudly rather than appear to
-      // succeed. IOException to match how this method already reports a malformed bundle.
-      throw new IOException("peer bundle has no kyber pre key (pre-PQXDH sender)");
+      // No classical-only PreKeyBundle exists in this libsignal, and silently downgrading to X3DH
+      // is not an option, so fail loudly rather than appear to succeed. IOException to match how
+      // this method already reports a malformed bundle.
+      //
+      // The text used to name a "pre-PQXDH sender" as the cause. There is one decoder and no legacy
+      // path, so no peer this build can talk to sends a bundle without this field: absent means
+      // modified in transit, exactly as for its two siblings. Naming a benign cause for an event
+      // that only tampering produces is the same kind of untrue message this app keeps finding on
+      // its own screens.
+      throw new IOException("peer bundle has no kyber pre key: this app always sends one, so a "
+          + "bundle without one has been modified in transit");
     }
 
     return new PreKeyBundle(device.getRegistrationId(), device.getDeviceId(), preKeyId, preKey,

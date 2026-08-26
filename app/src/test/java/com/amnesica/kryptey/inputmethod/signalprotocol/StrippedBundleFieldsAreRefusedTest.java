@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
@@ -60,6 +61,20 @@ public class StrippedBundleFieldsAreRefusedTest {
     SignalProtocolMain.initialize(null);
   }
 
+  /**
+   * The positive control, without which "refuse every bundle" passes this entire file.
+   *
+   * <p>The precondition below asserts the exported bundle CARRIES the fields; it says nothing about
+   * whether a genuine one is still accepted. Only other files would have caught that mutant, which
+   * makes this file's green misleading on its own terms.
+   */
+  @Test
+  public void agenuineBundleIsStillAccepted() throws Exception {
+    assertNotNull("a genuine, unmodified bundle must still build - otherwise these refusals are "
+        + "indistinguishable from refusing everything",
+        SignalProtocolMain.getInstance().createPreKeyBundle(genuine));
+  }
+
   /** Precondition for everything else: this app never emits a bundle without a one-time key. */
   @Test
   public void thisappalwaysSendsAoneTimePreKey() {
@@ -76,7 +91,18 @@ public class StrippedBundleFieldsAreRefusedTest {
         device.getSignedPreKey(),
         preKey ? null : device.getPreKey(),
         kyber ? null : device.getKyberPreKey()));
-    return new PreKeyResponse(genuine.getIdentityKey(), devices);
+    final PreKeyResponse rebuilt = new PreKeyResponse(genuine.getIdentityKey(), devices);
+    try {
+      // Through the codec, so this is the object a relay's edit actually produces rather than one
+      // assembled in memory that merely resembles it. It also pins the wire format's own optional
+      // markers: if `hasPreKey` stopped being expressible, the stripped bundle would not survive
+      // the round trip and this would fail rather than quietly testing something else.
+      return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(new MessageEnvelope(rebuilt,
+          peerAddress.getName(), peerAddress.getDeviceId()))).getPreKeyResponse();
+    } catch (final Exception e) {
+      throw new AssertionError("the stripped bundle must survive a wire round trip - that is what "
+          + "makes it a relay's edit rather than a hand-built object", e);
+    }
   }
 
   /**

@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Thirty-nine sections, written in the order things were found rather than by subject, so the
+Forty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -96,6 +96,8 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The seam nobody had looked at](#the-seam-nobody-had-looked-at)
 - [A field libsignal lets you omit, and this app never sends](#a-field-libsignal-lets-you-omit-and-this-app-never-sends)
 - [Two arms pin, and the fix asked only one](#two-arms-pin-and-the-fix-asked-only-one)
+- [A refused invite that looked exactly like an accepted one](#a-refused-invite-that-looked-exactly-like-an-accepted-one)
+- [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
 **How this document, and its tests, have been wrong**
@@ -3233,3 +3235,80 @@ the strip's constructor registers.
 
 The javadoc no longer says the message is "typed": it is placed with `setText`, so the strip's own
 text-entry path is not exercised there.
+
+
+## A refused invite that looked exactly like an accepted one
+
+**The one-time pre-key check landed, and the next sweep found the refusal never reached the user.**
+`SignalProtocolMain.decrypt` processes an attached bundle and *discards the boolean*. On the
+bundle-only arm the strip decided success by inference: no decrypted message came out — which is
+what a good re-invite looks like, and equally what a refused one looks like. So the UI advanced
+identically either way, with no toast and no log line, and printed "Detected contact: Bob" over a
+contact that had no session.
+
+What makes it more than cosmetic is the compound, and the compound is the app's own doing. The
+add-contact arm creates the contact row *before* it attempts the session and does not remove it on
+failure, and it advises *"ask your contact to send a fresh one."* Following that advice moves the
+next attempt onto the arm that says nothing, because the row now exists. A relay stripping the
+one-time pre-key from every invite can hold that state open indefinitely: each attempt reports
+success, and each send afterwards dies with a generic encryption failure that names nothing.
+
+The strip now asks instead of inferring — `hasSessionWith`, a fact rather than an absence — and says
+so when there is no session. It says so as a **standing warning**, for two reasons. The banner is
+repainted immediately afterwards by `showChosenContactInMainInfoField`, which is guarded only by a
+standing warning, so an ordinary line would have been overwritten with "Chosen contact: Bob" and the
+refusal would have been exactly as silent as before — *the first version of this fix was, and its
+own test caught it*. And it belongs there on the merits: an invite that does not verify was modified
+in transit.
+
+Two tests, and the second is the one that matters: a good re-invite on the same arm must still be
+reported as healthy, without which "always warn" would pass the first test while breaking every
+normal re-invite. Controls: removing the session check fails the refusal test and leaves the good
+one green.
+
+**The third sibling got the same rule.** `getSignedPreKey() != null` still tolerated a null where
+the other two now refuse. Not reachable from the wire — `BinaryEnvelope` writes that field
+unconditionally and refuses a zero-length key — so this is hardening. It is worth having because
+tolerating null hands libsignal a null signed pre-key, and `PreKeyBundle`'s Kotlin null check throws
+an *unchecked* exception out of a method declared `throws IOException`; `processPreKeyResponse`
+catches `IOException` only, so it would escape a click listener, which is this codebase's named
+worst crash mode.
+
+And the Kyber refusal stopped blaming the wrong party. Its message named a "pre-PQXDH sender" as the
+cause; there is one decoder and no legacy path, so absent means modified in transit, exactly as for
+its siblings. Naming a benign cause for an event only tampering produces is the same untrue-message
+defect this document keeps finding on the app's screens — here in a string I wrote while fixing one.
+
+## Three states called two, and a response that cleared the wrong warning
+
+**Round eight found that round seven's fix swapped one false claim for its opposite.** Round seven
+corrected `INFO_NOTHING_TO_REJECT`, which had kept `INFO_KEY_REJECTED`'s closing claim that the app
+had already been given a wrong key — false where nothing was ever pinned. The replacement said
+"none had been stored yet", which is false in the *other* no-pin state: a completed rejection
+removes the identity and keeps the row, so the user is told no key was ever stored for a contact
+whose key they themselves reported as wrong.
+
+"Nothing is pinned" is not one situation. It is *never stored* and *you already rejected it*, and
+they need opposite sentences. The distinguishing fact — `wasKeyRejected` — was three lines away the
+whole time. There are three states now, and the existing test could not see the difference: it
+asserted only the words "no stored key", which both readings satisfy.
+
+The verify screen had the same hole one line out: in that cell it said "No security number is
+available for this contact **yet**. Ask them for a key bundle first" — describing an address nothing
+has happened at, on the screen where the user decides whether to reject again. The first attempt at
+fixing that reused `INFO_VERIFY_AFTER_REJECTION`, which says *"the number below is the key in use
+now"* while the digits are blank: one false claim for another, caught by its own test.
+
+**And a deliberate response about one contact put down a warning about a different one.** Reject and
+Verify both called `clearStandingWarning()` unscoped, while `removeContact` had been scoped to the
+address deliberately, with the reason in its comment. Verify the genuine Bob row and the
+duplicate-name warning about the impostor row is gone — and nothing re-asserts that warning, so it
+is gone for good. Now scoped: clear when the warning has no address (the storage and same-address
+warnings have no other exit) or when the address matches.
+
+The control for that one is worth recording, because the first version of the test **passed against
+the unfixed code**. It read the banner's text — but clearing a standing warning does not repaint the
+banner, so the words stay on screen either way. What actually changes is whether the next passive
+event may overwrite it, which is what `mayOverwriteInfoBanner` answers. Reading the rendered text to
+check a decision is a defect class this document already has a section for; this is the same
+mistake, made inside the test for it.
