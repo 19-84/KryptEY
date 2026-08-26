@@ -787,6 +787,14 @@ public class StorageHelper {
         || (messageFile != null && EncryptedKeyValueStore.hasEncryptedData(
             new SharedPreferencesKeyValueStore(messageFile)));
     final CryptoBox cryptoBox = mCryptoBoxFactory.create(mContext, alreadyEncrypted);
+    if (cryptoBox == null) {
+      // No box, no store. Guarding each use instead would mean a null check before every seal and
+      // open in the class, and the first one missed is an unchecked throw out of the storage path -
+      // which this codebase names as its worst crash mode. A missing box is exactly the state
+      // storageState() reports as UNREADABLE, and returning null here is how it gets there.
+      Log.e(TAG, "no crypto box; the protocol store cannot be opened");
+      return null;
+    }
     final EncryptedKeyValueStore store = new EncryptedKeyValueStore(raw, cryptoBox);
 
     try {

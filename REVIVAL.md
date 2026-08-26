@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-nine sections, written in the order things were found rather than by subject, so the
+Sixty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -115,6 +115,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Text crosses into another application, and three writes that could not fail](#text-crosses-into-another-application-and-three-writes-that-could-not-fail)
 - [Ciphertext crosses the process boundary, measured](#ciphertext-crosses-the-process-boundary-measured)
 - [A guard for the third instance of the discarded answer](#a-guard-for-the-third-instance-of-the-discarded-answer)
+- [The cross-app tests, and what they cost to make honest](#the-cross-app-tests-and-what-they-cost-to-make-honest)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4103,3 +4104,50 @@ mine: `if (...) {` matches the same pattern as a method declaration, so the encl
 as "if"; and the second line of a multi-line assignment — `final boolean x = a(...) || b(...);` — is
 textually indistinguishable from a discarded call. A guard that cries wolf on those would have been
 turned off within a week.
+
+
+## The cross-app tests, and what they cost to make honest
+
+**The two tests that cross a package boundary took four device runs to stop being wrong or
+contaminating, and the failures are worth recording because they were all mine.**
+
+**The worst was silent.** The ciphertext test omitted `resetForTest()` before `initialize(null)`,
+which is the line that nulls the storage helper — and `initializeStorageHelper` returns early on a
+null context *without clearing that field*, which `resetForTest`'s own javadoc names as the trap. The
+live IME installs a real Keystore-backed helper when `setInputView` runs, so without that line
+`initialize(null)` refuses to generate over existing data: both "accounts" are the same on-disk
+identity, the session is built with itself, and the click drives the real `encrypt` — committing a
+fabricated contact list, a self-pin, and **a chat-log entry holding the plaintext** to the device's
+real encrypted store. The test passes either way, because a self-encryption is still not the
+plaintext. A test whose thesis is "the plaintext must not leave" was writing it to disk.
+
+**Attribution was theatre.** Both tests read a verdict out of logcat, and `logcat -c` is not enough:
+the sibling's activity is designed to outlive its test and logs four times a second, so a marker in
+the buffer says nothing about which launch produced it. Worse, `Intent.filterEquals` ignores extras,
+so the two launches are filter-identical — the second could be handed the first's instance, which was
+started *without* the secret, making `containsSecret=false` unconditional and the headline assertion
+unfalsifiable. Each launch carries a nonce now, forces a fresh task, and reports `haveSecret`
+separately, because "the secret was absent" and "I was never told the secret" produced the same token.
+
+**And the lifetime was wrong in both directions, on a timer.** Too short and the subject
+self-destructs mid-test, so the send commits into a dead connection and the failure reads as
+"nothing arrived" — pointing at the app. Too long and it sits resumed on top of the stack holding
+focus: **three unrelated tests failed with "something else holds focus"**, which is ambient
+contamination this suite already had a name for. A timer was the wrong mechanism. The activity dies
+on a broadcast from its own test now, with the timer demoted to a backstop for a test that crashes
+first.
+
+**One thing found by a test rather than a review.** Writing a test for the real
+`lastMessageLogWriteSucceeded` — both existing readers override it with a constant, so neither had
+ever run the field's logic — surfaced an NPE: `secureStore()` builds an `EncryptedKeyValueStore`
+around whatever the factory returns, including null, and the seal call added a few commits ago
+dereferences it on every load. Production passes a constructor reference so the box is never null
+there; this is defence, not a live fix, and it is stated that way. `secureStore` refuses a null box
+outright rather than null-guarding each use, because the first use missed would be an unchecked throw
+out of the storage path.
+
+**Recorded rather than smoothed over:** `AutofillDoesNotReachTheKeyboardTest` failed on two
+consecutive device runs and passed on the third, with no change to it in between. It runs *before*
+the cross-app tests, so it cannot be contaminated by them within a run. The cause is not established
+and it is flaky as it stands — which is worth knowing about a test whose subject is whether decrypted
+plaintext is offered to an autofill service.

@@ -228,6 +228,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * {@code PreKeySignalMessage} carries its own identity key, so refusing the bundle does not stop
    * it, and on this arm the contact-creation caution does not fire either.
    */
+  private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
+
+  private final String INFO_SENT_MESSAGE_NOT_SAVED = "That message was sent, but it could not be added to your saved history, because the app could not write to its own storage. The message went out normally - only the record of it is missing.";
+
   /**
    * The message was read; only the record of it failed.
    *
@@ -246,10 +250,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * key-substitution window, and nothing about a storage failure calls for it.
    */
   /** A deletion that did not reach disk, which the next raise will undo. */
-  private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
-
-  private final String INFO_SENT_MESSAGE_NOT_SAVED = "That message was sent, but it could not be added to your saved history, because the app could not write to its own storage. The message went out normally - only the record of it is missing.";
-
   private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history, because the stored history cannot be opened. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
 
   private final String INFO_INVITE_REFUSED_BUT_KEY_PINNED = "The key update from %s could not be used - it does not verify, which means it was changed on the way here. The message it arrived with has set up a key for them anyway, and this app cannot tell whose it is - compare the security number by voice before sending anything private.";

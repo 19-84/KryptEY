@@ -71,8 +71,19 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
     }
   }
 
+  @org.junit.After
+  public void tearDown() throws Exception {
+    // The foreign activity must not outlive this test. See ForeignAppActivity.EXTRA_FINISH_AFTER_MS
+    // for why a timer alone was not enough.
+    shell("am broadcast -a " + ForeignAppActivity.ACTION_FINISH);
+  }
+
   @Test
   public void thekeyboardBindsToAfieldInAnotherApplication() throws Exception {
+    // A nonce per launch, because clearing logcat is not enough: the sibling test's activity lives
+    // for tens of seconds after its test ends and posts a binding marker every 250ms, so a marker
+    // in the buffer is not necessarily about the activity this test started.
+    final String nonce = "bind-" + android.os.SystemClock.elapsedRealtimeNanos();
     shell("logcat -c");
     assertEquals("precondition: this app must be the selected input method", IME_ID,
         Settings.Secure.getString(context().getContentResolver(),
@@ -84,8 +95,10 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
     final Intent intent = new Intent()
         .setComponent(new ComponentName(FOREIGN_PACKAGE,
             "com.amnesica.kryptey.inputmethod.ForeignAppActivity"))
-        .putExtra(ForeignAppActivity.EXTRA_FINISH_AFTER_MS, 30_000L)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // Longer than this test's own bind deadline, so the subject cannot outlive-fail the test.
+        .putExtra(ForeignAppActivity.EXTRA_FINISH_AFTER_MS, 120_000L)
+        .putExtra(ForeignAppActivity.EXTRA_NONCE, nonce)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
     context().startActivity(intent);
 
     // Asked of the foreign process about its own field, not of dumpsys.
@@ -101,7 +114,8 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
     final long deadline = System.currentTimeMillis() + BIND_TIMEOUT_MS;
     while (System.currentTimeMillis() < deadline && !bound) {
       for (final String line : shell("logcat -d -s " + ForeignAppActivity.TAG).split("\n")) {
-        if (line.contains(ForeignAppActivity.BOUND_MARKER + " active=true")) bound = true;
+        if (line.contains(ForeignAppActivity.BOUND_MARKER)
+            && line.contains("nonce=" + nonce) && line.contains("active=true")) bound = true;
       }
       if (!bound) Thread.sleep(POLL_MS);
     }
@@ -112,8 +126,10 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
         + "emulator, check whether the activity started at all before concluding anything about "
         + "the keyboard.", bound);
 
-    // And this IME is the one that would serve it, which is the other half of the claim.
-    assertTrue("this app must be the selected input method for that binding to be about it",
-        imeDump().contains(IME_ID));
+    // Nothing further asserted here. An earlier line checked imeDump().contains(IME_ID), which is
+    // true on any device where this APK is merely installed - dumpsys prints the InputMethodInfo of
+    // every installed IME - and the claim it was captioned with is already established soundly by
+    // the DEFAULT_INPUT_METHOD precondition above. It was the same unanchored-substring pattern this
+    // file exists to retire.
   }
 }

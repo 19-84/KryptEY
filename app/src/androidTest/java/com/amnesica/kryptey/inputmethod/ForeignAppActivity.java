@@ -2,6 +2,9 @@ package com.amnesica.kryptey.inputmethod;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
@@ -33,6 +36,16 @@ public class ForeignAppActivity extends Activity {
   /** The plaintext the test wants checked for, passed in so it never has to be logged. */
   public static final String EXTRA_SECRET = "secret";
 
+  /**
+   * A per-launch nonce, echoed in every marker.
+   *
+   * <p>Without it a test can pass on another test's activity. Both cross-app tests start one of
+   * these, each lives for tens of seconds after its test ends, and each posts a binding marker every
+   * 250ms - so clearing logcat at the start of a test is not enough: the PREVIOUS test's instance is
+   * still running and still writing. The nonce makes a marker attributable to one launch.
+   */
+  public static final String EXTRA_NONCE = "nonce";
+
   /** What a test greps logcat for. */
   public static final String MARKER = "FOREIGN_FIELD";
 
@@ -49,8 +62,19 @@ public class ForeignAppActivity extends Activity {
    */
   public static final String BOUND_MARKER = "FOREIGN_BOUND";
 
-  /** How long this activity may live. It must not outlast the test that started it. */
+  /**
+   * A backstop only. The test says when it is done; this is what catches a test that crashes first.
+   *
+   * <p>A timer alone was the wrong mechanism and cost two device runs. Too short and the subject
+   * self-destructs mid-test - the send then commits into a dead connection and the failure reads as
+   * "nothing arrived", pointing at the app. Too long and it outlives its test, sitting resumed on
+   * top of the stack holding focus: three unrelated tests failed with "something else holds focus",
+   * which is the ambient contamination this suite already had a name for.
+   */
   public static final String EXTRA_FINISH_AFTER_MS = "finishAfterMs";
+
+  /** Broadcast this to make the activity go away as soon as its test is finished with it. */
+  public static final String ACTION_FINISH = "com.amnesica.kryptey.test.FINISH_FOREIGN";
 
   @Override
   protected void onCreate(final Bundle savedInstanceState) {
@@ -77,6 +101,7 @@ public class ForeignAppActivity extends Activity {
     // The plaintext to look for arrives as an extra, so the comparison happens here and only the
     // verdict leaves.
     final String secret = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_SECRET);
+    final String nonce = getIntent() == null ? "" : String.valueOf(getIntent().getStringExtra(EXTRA_NONCE));
 
     final Handler handler = new Handler(Looper.getMainLooper());
     final InputMethodManager imm =
@@ -94,7 +119,7 @@ public class ForeignAppActivity extends Activity {
         field.requestFocus();
         if (imm != null) {
           imm.showSoftInput(field, InputMethodManager.SHOW_FORCED);
-          Log.i(TAG, BOUND_MARKER + " active=" + imm.isActive(field));
+          Log.i(TAG, BOUND_MARKER + " nonce=" + nonce + " active=" + imm.isActive(field));
         }
         handler.postDelayed(this, 250L);
       }
@@ -103,6 +128,14 @@ public class ForeignAppActivity extends Activity {
     // Never outlive the test that started it. An activity from another package left resumed on top
     // of the stack, holding FLAG_KEEP_SCREEN_ON and the input connection, is ambient contamination
     // for every test that runs afterwards - and it cost this suite a failure the first time round.
+    // The test's own signal, which is what normally ends this activity.
+    registerReceiver(new BroadcastReceiver() {
+      @Override
+      public void onReceive(final android.content.Context ignored, final Intent intent) {
+        finish();
+      }
+    }, new IntentFilter(ACTION_FINISH));
+
     final long finishAfter = getIntent() == null ? 0L
         : getIntent().getLongExtra(EXTRA_FINISH_AFTER_MS, 0L);
     if (finishAfter > 0) handler.postDelayed(this::finish, finishAfter);
@@ -116,7 +149,12 @@ public class ForeignAppActivity extends Activity {
       @Override
       public void afterTextChanged(final Editable edited) {
         final String text = edited == null ? "" : edited.toString();
-        Log.i(TAG, MARKER + " length=" + text.length()
+        // haveSecret is reported separately, because "the secret was absent" and "I was never told
+        // the secret" produce the same containsSecret=false and a test asserting on it alone would
+        // pass on either. Any cause of a missing extra - task reuse, a caller that forgets it -
+        // yields exactly the token the assertion wants.
+        Log.i(TAG, MARKER + " nonce=" + nonce + " haveSecret=" + (secret != null)
+            + " length=" + text.length()
             + " containsSecret=" + (secret != null && text.contains(secret)));
       }
     });

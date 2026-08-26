@@ -119,9 +119,12 @@ public final class EncryptedKeyValueStore {
    * fixes it.
    */
   public void ensureLegacyMigrationSealed() {
-    // Only when there is genuinely nothing to convert. Sealing while cleartext is still on disk
-    // would lock a legitimate upgrade out of its own migration.
-    if (needsMigration()) return;
+    // A store built with no box can seal nothing. Defence rather than a live fix: production passes
+    // AndroidKeystoreCryptoBox::new, a constructor reference, so the box is never null there - but
+    // secureStore hands this constructor whatever the factory returns, and this method is called on
+    // every load, so a null would be an unchecked throw out of the storage path on every raise.
+    // That is this codebase's named worst crash mode, and the guard costs one line.
+    if (cryptoBox == null || needsMigration()) return;
     cryptoBox.sealLegacyMigration();
   }
 
