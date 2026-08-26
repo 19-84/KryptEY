@@ -2734,6 +2734,30 @@ non-canonical-quartet test expected every mutation of the last character to be r
 them are canonical encodings of *different* bytes. It now finds the mutations that decode to the
 same bytes and requires those to be refused.
 
+**Tapping a contact row erased security warnings.** From the Phase 4 sweep, and the one with real
+teeth. `selectContact` cleared whatever warning was on the banner — about whichever contact — and
+then re-asserted exactly two of the app's four warning states, and only for the contact that was
+tapped. Three ways that went wrong, each one tap:
+
+- **The duplicate-name warning**, which this codebase calls the only control covering the case the
+  pin cannot: a messenger posting an invite under a name the user already has. That warning's own
+  text ends *"Both now appear in your list, tagged by address"* — so the user opens the list to
+  look, and tapping one of the two identical rows is what erased the warning about them being
+  identical. Half the time that row is the impostor, and what replaced the warning reads exactly
+  like a healthy contact. One extra post from the messenger then overwrote even that.
+- **Cross-contact erasure.** A warning naming Bob, erased by tapping Alice, because the
+  re-assertion asks about the contact chosen rather than the contact the warning names.
+- **`INFO_STORAGE_UNREADABLE`**, which is not about a contact at all — and losing the text is the
+  smaller half. `refreshActionButtons` derives button state from the banner, so Encrypt and Decrypt
+  came back on for an install whose account cannot be decrypted, while the sentence telling the user
+  not to re-invite anyone was gone. It does not come back on its own.
+
+Selection now clears nothing, and does not write over a standing warning either — what the user
+reads is the banner, so replacing the text is the same erasure whether or not the flag came down
+with it. The deliberate responses still clear it: comparing a safety number, or saying it does not
+match. An existing test asserted the old behaviour, calling a tap "a deliberate act"; it encoded the
+defect and now asserts the opposite. Control: restore the unconditional clear and four tests fail.
+
 **And a landmine in the same sweep.** `JsonUtil`'s `SenderKey` map-key codec was broken in both
 directions and neither half could ever have run: the serializer called `writeStartObject` in a
 map-key position, which Jackson refuses outright, so a non-empty sender-key store could not be
@@ -2743,6 +2767,16 @@ peer-supplied name that the wire format explicitly permits dots in. Nothing noti
 store is only populated by libsignal's group-session API, which this app never calls. That is a
 landmine rather than dead code: the day group messaging lands, every account save throws. Both
 halves are fixed and parse from the right, which is unambiguous however many dots the name contains.
+
+**That fix was incomplete, and the review of it said so.** Repairing the map *key* left the map
+*value* armed: `SenderKeyRecord` is a handle onto native memory with no no-arg constructor, no
+getters and no Jackson properties, so a map holding them serializes to an
+`InvalidDefinitionException` — which `JsonUtil.toJson` catches and turns into `null`, which
+`EncryptedKeyValueStore` refuses to seal, which `StorageHelper` logs and carries on from. The first
+sender key ever stored would have stopped the **whole** protocol store being written — sessions,
+pre-keys, identity — silently, on every save from then on. That is worse than the throw the first
+fix removed. The store now holds serialized bytes, the way `SessionStoreImpl` already does, and the
+test populates it through libsignal's real `GroupSessionBuilder` rather than a hand-made record.
 
 **An invite stops working once ~50 later invites have been published.** Every bundle allocates its
 own one-time pre-key id — deliberately, because the allocator used to hard-code id 1 and regenerate

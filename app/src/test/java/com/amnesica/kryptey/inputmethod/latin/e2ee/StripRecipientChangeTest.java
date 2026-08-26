@@ -129,15 +129,43 @@ public class StripRecipientChangeTest {
         "Someone offered a different key for Bob.", infoField().getText().toString());
   }
 
-  /** And choosing a contact - a deliberate act - does clear it. */
+  /**
+   * And choosing a contact does <b>not</b> clear it, which is the opposite of what this test used
+   * to assert.
+   *
+   * <p>The old version called tapping a row "a deliberate act" and let it dismiss any warning about
+   * anything. Tapping a row is not a response to a warning. For the duplicate-name warning it is
+   * the ambiguous act the warning exists to flag — its own text ends "Both now appear in your list,
+   * tagged by address", so the user opens the list to look, and looking is what erased it. For a
+   * warning naming another contact, or naming storage rather than a contact, selection has nothing
+   * to do with it at all.
+   *
+   * <p>The deliberate responses still clear it: comparing a safety number, or saying it does not
+   * match. Those are what the flag's javadoc rests on.
+   */
   @Test
-  public void choosingAcontactClearsTheWarning() {
+  public void choosingAcontactDoesNotClearTheWarning() {
     strip.setWarningMessageForTest("Someone offered a different key for Bob.");
     strip.selectContact(contact("Bob", "bob-uuid"));
 
+    assertEquals("selecting a contact must not erase a standing warning",
+        "Someone offered a different key for Bob.", infoField().getText().toString());
+
     strip.onClipboardChangedForTest();
 
-    assertNotEquals("once the user has acted on it, ordinary banners may appear again",
+    assertEquals("and the warning must still hold off ordinary clipboard traffic afterwards",
+        "Someone offered a different key for Bob.", infoField().getText().toString());
+  }
+
+  /** A warning naming one contact is not erased by choosing a different one. */
+  @Test
+  public void awarningAboutOneContactIsNotErasedByChoosingAnother() {
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+
+    strip.selectContact(contact("Alice", "alice-uuid"));
+
+    assertEquals("a warning about Bob was erased by tapping Alice - the re-assertion asks about "
+            + "the contact chosen, not the contact the warning names",
         "Someone offered a different key for Bob.", infoField().getText().toString());
   }
 

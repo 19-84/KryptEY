@@ -170,15 +170,32 @@ public class WireTextIsCanonicalTest {
         + "- finding none means this test is checking nothing", duplicates > 0);
   }
 
-  /** And padding in the middle, which this decoder reads as the byte 255 rather than rejecting. */
+  /**
+   * And padding in a non-terminal position, which this decoder reads as the byte 255.
+   *
+   * <p>Spliced late rather than at the front, and that is the whole difference between this test
+   * and the one it replaces. The first version put the {@code =} over index 0, which encodes the
+   * top bits of the version byte — so {@code BinaryEnvelope} rejected it with "unsupported envelope
+   * version" whether or not the canonicality check existed, and the test passed against an
+   * implementation with the check deleted. Splicing near the end leaves the header intact, so the
+   * only thing that can refuse it is the property under test. The message is asserted for the same
+   * reason: it says which layer did the refusing.
+   */
   @Test
   public void paddingInAnonTerminalPositionIsRefused() {
-    final String spliced = "=" + genuineWire.substring(1);
+    final int at = genuineWire.indexOf('=') - 8;
+    assertTrue("the fixture must be long enough to splice into", at > 4);
+    final String spliced =
+        genuineWire.substring(0, at) + "=" + genuineWire.substring(at + 1);
+
     try {
       EnvelopeCodec.fromWire(spliced);
       fail("a '=' in a non-terminal position was decoded as data rather than refused");
     } catch (final IOException expected) {
-      // expected
+      assertTrue("the refusal must come from the canonicality check rather than from a header the "
+              + "splice happened to corrupt - otherwise this test passes with the check removed: "
+              + expected.getMessage(),
+          expected.getMessage() != null && expected.getMessage().contains("canonical"));
     }
   }
 }

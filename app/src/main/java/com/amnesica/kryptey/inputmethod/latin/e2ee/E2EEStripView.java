@@ -1665,10 +1665,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * and nothing is left: an unverified contact after a refused substitution is byte-identical to
    * one the user simply never compared.
    *
-   * <p>So this is cleared by two deliberate user actions and nothing else: going to compare a
-   * safety number, and - for warnings other than a pending identity change - choosing the contact
-   * the warning is about. Opening the contact list does not clear it; an earlier version of this
-   * sentence said it did. Nothing the messenger can cause clears it.
+   * <p>So this is cleared by deliberate responses to the warning and nothing else: comparing a
+   * safety number, or saying that it does not match. Opening the contact list does not clear it,
+   * and neither does choosing a contact from it - an earlier version of this sentence allowed that
+   * second case, and it was the hole. Tapping a row is not a response to a warning; for the
+   * duplicate-name warning it is the ambiguous act the warning exists to flag, and for a warning
+   * about another contact, or about storage, it is unrelated to it. Nothing the messenger can cause
+   * clears it.
    */
   private boolean mWarningStanding = false;
 
@@ -2300,7 +2303,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void selectContact(Contact contact) {
-    clearStandingWarning();   // the user chose this contact; they have seen whatever was on screen
+    // Choosing a contact does NOT clear a standing warning, and this line used to.
+    //
+    // It cleared whatever was on the banner, about whichever contact, and then re-asserted exactly
+    // two of the app's warning states and only for the contact that was tapped. Three ways that
+    // went wrong, all of them one tap:
+    //
+    //   - the duplicate-name warning, which this file elsewhere calls the only control covering the
+    //     case the pin cannot. Its own text ends "Both now appear in your list, tagged by address",
+    //     so the user opens the list to look - and the act of tapping one of the two identical rows
+    //     is what erased the warning about them being identical. Half the time that is the
+    //     impostor, and what replaced the warning is byte-identical to a healthy contact;
+    //   - a warning about Bob, erased by tapping Alice, because the re-assertion asks about the
+    //     contact chosen rather than the contact the warning names;
+    //   - INFO_STORAGE_UNREADABLE, which is not about a contact at all. Worse than losing the text:
+    //     refreshActionButtons derives button state from the banner, so Encrypt and Decrypt came
+    //     back on for an install whose account cannot be decrypted, while the sentence telling the
+    //     user not to re-invite anyone was gone.
+    //
+    // So selection now clears nothing. The deliberate responses still do - comparing a number, or
+    // saying it does not match - and those are the two the field's javadoc actually rests on.
     setChosenContact(contact);
     // ...but a pending identity change is a state, not a notice that has been read. Choosing the
     // contact from the list is not the user having dealt with it, and clearing the flag here meant
@@ -2316,7 +2338,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // row left "Chosen contact: Bob" over the attacker's key, which is byte-identical to a healthy
     // contact. The warning's own last sentence is "Compare the number by voice before sending
     // anything", and opening the contact list to do that is the gesture that erased it.
-    if (!warnIfIdentityChanged(contact) && !warnIfKeyWasRejected(contact)) {
+    final boolean warnedAboutThisContact =
+        warnIfIdentityChanged(contact) || warnIfKeyWasRejected(contact);
+    // And do not write over one either. "Chosen contact: Bob" replacing a warning is the same
+    // erasure whether or not the flag came down with it, because what the user reads is the banner.
+    if (!warnedAboutThisContact && !mWarningStanding) {
       showChosenContactInMainInfoField();
     }
     showOnlyUIView(UIView.MAIN_VIEW);

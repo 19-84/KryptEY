@@ -17,8 +17,24 @@ import java.util.UUID;
 public class SenderKeyStoreImpl implements SenderKeyStore {
   static final String TAG = SenderKeyStoreImpl.class.getSimpleName();
 
+  /**
+   * Serialized records, not {@code SenderKeyRecord} objects, for the same reason
+   * {@code SessionStoreImpl} keeps bytes.
+   *
+   * <p>{@code SenderKeyRecord} is a handle onto native memory: no no-arg constructor, no getters,
+   * no Jackson properties at all. A map holding them serializes to an
+   * {@code InvalidDefinitionException}, which {@code JsonUtil.toJson} catches and turns into
+   * {@code null}, which {@code EncryptedKeyValueStore} then refuses to seal - and
+   * {@code StorageHelper} logs that and carries on. So the first sender key ever stored would have
+   * stopped the WHOLE protocol store being written: sessions, pre-keys, identity, silently, with
+   * one log line. Reading it back was equally impossible.
+   *
+   * <p>Nothing has ever hit it because the group-session API that populates this store is never
+   * called. That makes it a landmine rather than dead code, and the fix is cheap enough now that
+   * waiting for group messaging to arrive is not worth it.
+   */
   @JsonProperty
-  private final Map<SenderKey, SenderKeyRecord> store = new HashMap<>(); //private final Map<Pair<SignalProtocolAddress, UUID>, SenderKeyRecord> store = new HashMap<>();
+  private final Map<SenderKey, byte[]> store = new HashMap<>();
 
   public SenderKeyStoreImpl() {
   }
@@ -26,7 +42,8 @@ public class SenderKeyStoreImpl implements SenderKeyStore {
   @Override
   public void storeSenderKey(SignalProtocolAddress sender, UUID distributionId, SenderKeyRecord record) {
     Log.d(TAG, "Storing SenderKeyRecord with address: " + sender + " and distributionId: " + distributionId + " and record: " + record);
-    store.put(new SenderKey(sender.getName(), sender.getDeviceId(), distributionId.toString()), record);
+    store.put(new SenderKey(sender.getName(), sender.getDeviceId(), distributionId.toString()),
+        record.serialize());
   }
 
   @Override
@@ -34,12 +51,13 @@ public class SenderKeyStoreImpl implements SenderKeyStore {
     Log.d(TAG, "Loading SenderKeyRecord with address: " + sender + " and distributionId: " + distributionId);
 
     try {
-      SenderKeyRecord record = store.get(new SenderKey(sender.getName(), sender.getDeviceId(), distributionId.toString()));
+      final byte[] serialized = store.get(
+          new SenderKey(sender.getName(), sender.getDeviceId(), distributionId.toString()));
 
-      if (record == null) {
+      if (serialized == null) {
         return null;
       } else {
-        return new SenderKeyRecord(record.serialize());
+        return new SenderKeyRecord(serialized);
       }
     } catch (InvalidMessageException e) {
       throw new AssertionError(e);
