@@ -2656,6 +2656,42 @@ a confident wrong answer**, each recorded above. The programme is worth its cost
 guards which exist are pinned; it is not evidence that the right guards exist.
 
 
+**An incoming message could destroy the pre-key an invite was offering.** Found by an adversarial
+sweep of the session layer — the first review of Phase 2 in a while, and it turned up the most
+serious defect on this branch.
+
+The decrypt path regenerated a one-time pre-key at the id an incoming message declared, on *every*
+pre-key message. That is right when libsignal actually consumed one, and libsignal consumes nothing
+when it short-circuits because the session record already holds a state for that base key — which is
+what happens for every message a peer sends before hearing back. For a copy-paste keyboard, writing
+twice before a reply is ordinary.
+
+The regenerated record is fresh material marked **unused**, and the allocator hands out the lowest
+unused id. So the id the next invite offers is exactly the id the peer's next message overwrites —
+not a race, the default ordering. Read a peer's second opening message after inviting someone new,
+and that new contact can never establish a session: the material they hold is simply gone, with
+nothing to recover from. This is verbatim the failure `KeyUtil.getUnusedOneTimePreKeyId`'s javadoc
+says was fixed. The allocator closed the front door; the decrypt path had reopened it.
+
+**And an attacker can aim it.** On the short-circuit path libsignal reads none of the message's
+outer fields except the identity and base keys, so the declared pre-key id is not covered by the
+inner MAC and the envelope has no integrity protection of its own. A hostile relay can therefore
+take a genuine second-or-later message, rewrite the declared id, and have the victim destroy a
+pre-key of the attacker's choosing. Aimed at the id the victim's outstanding invite offers, it stops
+every new contact connecting while the conversation being relayed looks perfectly healthy.
+
+Fixed by replacing a pre-key only when one was actually consumed, which is "present before, absent
+after". Anything else leaves the store untouched — including an id that was never held, which is
+what the attacker's chosen id looks like. Three tests: the user-visible scenario (a second message
+from one peer must not stop another peer connecting), the rule underneath it (a message that
+consumed nothing changes nothing), and the other half (a message that *did* consume still replaces
+it — without which "never regenerate" would pass, and the pre-key supply would drain until the user
+could issue no invites at all). Controls: unconditional regeneration fails the first two, never
+regenerating fails the third.
+
+Not covered by anything that existed: every near-miss test ordered the operations so the bug could
+not appear — decrypting exactly one pre-key message, or issuing both bundles before any decrypt.
+
 **An invite stops working once ~50 later invites have been published.** Every bundle allocates its
 own one-time pre-key id — deliberately, because the allocator used to hard-code id 1 and regenerate
 *in place*, so handing out a second invite destroyed the material the first invitee already held.

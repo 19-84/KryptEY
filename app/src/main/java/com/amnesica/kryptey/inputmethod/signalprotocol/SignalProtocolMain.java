@@ -1641,7 +1641,21 @@ public class SignalProtocolMain {
 
       Log.d(TAG, "PreKeySignalMessage: Used signed prekey id: " + preKeySignalMessage.getSignedPreKeyId());
 
+      final Integer declaredPreKeyId = preKeySignalMessage.getPreKeyId().isPresent()
+          ? preKeySignalMessage.getPreKeyId().get() : null;
+      boolean heldTheDeclaredPreKey = false;
+
       try {
+        // Whether the declared pre-key is one we actually hold, asked BEFORE the decrypt.
+        //
+        // This is the only way to tell the two cases apart afterwards, and they need telling apart:
+        // libsignal consumes a one-time pre-key when it builds a session from this message, and
+        // consumes nothing when it short-circuits because the session record already holds a state
+        // for this base key. Every message a peer sends before hearing back carries the same base
+        // key and the same declared id, so the second case is ordinary rather than exotic.
+        heldTheDeclaredPreKey = declaredPreKeyId != null
+            && mAccount.getSignalProtocolStore().containsPreKey(declaredPreKeyId);
+
         plaintext = sessionCipher.decrypt(preKeySignalMessage);
       } catch (UntrustedIdentityException e) {
         // The other substitution path, and the one an attacker would choose: a PreKeySignalMessage
@@ -1657,8 +1671,30 @@ public class SignalProtocolMain {
       }
       decryptedMessage = new String(plaintext);
 
-      if (preKeySignalMessage.getPreKeyId().isPresent())
-        KeyUtil.generateAndStoreOneTimePreKey(mAccount.getSignalProtocolStore(), preKeySignalMessage.getPreKeyId().get());
+      // Replace the one-time pre-key ONLY if this message actually consumed one.
+      //
+      // Unconditionally re-minting at the declared id was a defect with two faces. The mild one
+      // needs no attacker: the regenerated record is fresh material marked UNUSED, and the
+      // allocator hands out the lowest unused id - so the id the next invite offers is exactly the
+      // id the peer's next message overwrites. Read a peer's second opening message after inviting
+      // someone new and that new contact can never establish a session, with nothing to recover
+      // from, because the material they hold is simply gone. That is the failure
+      // KeyUtil.getUnusedOneTimePreKeyId's javadoc says was fixed; the allocator closed the front
+      // door and this reopened it.
+      //
+      // The sharp one: on the short-circuit path libsignal reads none of this message's outer
+      // fields except the identity and base keys, so the declared id is not covered by the inner
+      // MAC. A hostile relay could pick which of our pre-keys to destroy, aim it at the id our
+      // outstanding invite offers, and stop every new contact connecting while the conversation it
+      // is relaying looks perfectly healthy.
+      //
+      // "Was it consumed" is present-then-absent. Anything else - absent all along, which is what
+      // an attacker-chosen id looks like, or still present, which is the short-circuit - leaves the
+      // store untouched.
+      if (declaredPreKeyId != null && heldTheDeclaredPreKey
+          && !mAccount.getSignalProtocolStore().containsPreKey(declaredPreKeyId)) {
+        KeyUtil.generateAndStoreOneTimePreKey(mAccount.getSignalProtocolStore(), declaredPreKeyId);
+      }
 
       Log.d(TAG, "Session with PreKeySignalMessage created (after decryption): " + sessionExists(signalProtocolAddress));
       Log.d(TAG, "Amount of pre key ids: " + mAccount.getSignalProtocolStore().getPreKeyStore().getSize());
