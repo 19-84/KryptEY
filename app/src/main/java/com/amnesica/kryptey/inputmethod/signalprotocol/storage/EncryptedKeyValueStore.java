@@ -141,6 +141,45 @@ public final class EncryptedKeyValueStore {
     }
   }
 
+  /**
+   * Prepares a store that has never legitimately held cleartext, refusing anything that has.
+   *
+   * <p>For a store created after encryption existed, the cleartext migration is not a no-op that
+   * happens to be harmless — it is an oracle. It seals whatever key names it finds under the real
+   * master key, and the AAD binds the format version and the key NAME, not which file the value
+   * came from. So an attacker with write access to the app's data directory could put a
+   * cleartext {@code PROTOCOL_STORE} of their own authorship into such a file, let this method seal
+   * it, then copy the sealed value into the account's file, where it opens correctly and loads as
+   * the user's identity. The anti-laundering check in {@code migrateToEncryptedInternal} does not
+   * stop it: that fires only when the SAME file also holds a decryptable envelope, and a file
+   * holding one payload key is one the attacker can simply empty first.
+   *
+   * <p>So a store like that never runs the migration. It only ever has to survive the one gap a
+   * legitimate write can leave — {@code put} writes the value and then the marker as two commits,
+   * so a kill between them leaves an envelope with no marker, which {@code get} already reads
+   * correctly. Everything else is refused.
+   *
+   * @param permittedKeys the only payload keys this store is allowed to contain.
+   */
+  public void requireEncryptedOnly(final Set<String> permittedKeys) throws StorageCryptoException {
+    for (final String key : payloadKeys()) {
+      if (!permittedKeys.contains(key)) {
+        throw new StorageCryptoException("unexpected key '" + key + "' in a store that may hold "
+            + "only " + permittedKeys + "; refusing to touch it");
+      }
+      final String raw = delegate.get(key);
+      if (raw == null) continue;
+      if (!looksLikeEnvelope(raw)) {
+        throw new StorageCryptoException("'" + key + "' is cleartext in a store that has never "
+            + "legitimately held any; refusing to seal it");
+      }
+      if (!canDecrypt(key, raw)) {
+        throw new StorageCryptoException("'" + key + "' cannot be decrypted with the current "
+            + "master key; refusing to migrate around it");
+      }
+    }
+  }
+
   private void migrateToEncryptedInternal() throws StorageCryptoException {
     final String marker = readMarker();
     if (delegate.get(SCHEMA_KEY) != null && marker == null) {

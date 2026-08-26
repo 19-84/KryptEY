@@ -431,9 +431,14 @@ public class StorageHelper {
     final CryptoBox cryptoBox = mCryptoBoxFactory.create(mContext, alreadyEncrypted);
     final EncryptedKeyValueStore store = new EncryptedKeyValueStore(rawMessages, cryptoBox);
     try {
-      if (store.needsMigration()) store.migrateToEncrypted();
+      // NOT migrateToEncrypted. This file was created by this branch, after encryption existed, and
+      // every write to it goes through EncryptedKeyValueStore.put - so cleartext here is never
+      // legitimate, and running the cleartext migration on it turns it into a laundering oracle for
+      // the account's file. See requireEncryptedOnly for the chain.
+      store.requireEncryptedOnly(
+          java.util.Collections.singleton(String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES)));
     } catch (StorageCryptoException e) {
-      Log.e(TAG, "Error: could not prepare the chat log's store", e);
+      Log.e(TAG, "Error: the chat log's store is not in a state this app wrote", e);
       return null;
     }
     mMessageStore = store;

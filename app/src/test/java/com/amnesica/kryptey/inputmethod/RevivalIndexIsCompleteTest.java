@@ -18,7 +18,12 @@ import java.util.Set;
 /**
  * REVIVAL.md's index must name every section, and only sections that exist.
  *
- * <p>The document is ~2550 lines in 36 sections, written in the order things were found rather than
+ * <p>The document is written in the order things were found rather than by subject. A line count
+ * used to sit in this sentence and it has now been wrong three times - 1800, then ~2550, against
+ * 2926 today - because prose grows and nobody updates a number in a javadoc. The section count is
+ * left to the document's own header, where {@code RevivalIndexIsCompleteTest} at least checks the
+ * index against the headings; a line count is checked by nothing and so is worth nothing. Written
+ * rather than
  * by subject, so its sweeps are scattered and its deferred list sits between two of them. An index
  * is the fix for that — and a hand-maintained index of a document that drifts is itself a thing that
  * drifts. This branch has now corrected a stale count in that file's header twice, a coverage claim

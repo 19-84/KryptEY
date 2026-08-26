@@ -2417,6 +2417,35 @@ strength of that row alone. A device that has never moved its log has no such fi
 it entirely is what makes the test describe a real device, and with that fixed, reducing the check
 to one file fails it.
 
+**The split turned the log's file into a laundering oracle.** Found by re-sweeping Phase 1 after
+the store was split, and it is the most serious defect this branch has produced. Two halves that
+only combine because of the split:
+
+- `messageStore()` ran the 0.1.5 cleartext migration on `protocol_messages` unconditionally. That
+  file was created by *this branch*, after encryption existed, and every write to it goes through
+  `EncryptedKeyValueStore.put` — so cleartext in it is never legitimate, yet the cleartext branch
+  was fully live on it. The migration seals whatever key names it finds.
+- The AAD binds the format version and the storage **key name**, not which file the value came from.
+  Both files resolve one Keystore alias, so a value sealed in one opens in the other.
+
+The anti-laundering check does not fire: it refuses only when the *same* file also holds a
+decryptable envelope, and the log's file legitimately holds exactly one payload key — which an
+attacker with the data directory replaces with cleartext, leaving nothing decryptable behind.
+
+So: plant a cleartext `PROTOCOL_STORE` of your own authorship in `protocol_messages` alongside a
+cleartext `[]` log, let the app seal it under the real master key, copy the sealed value into
+`protocol`, and the user's identity key, sessions and pinned peers are replaced by yours — opening
+correctly, with nothing in the app able to tell. That is exactly the threat model
+`EncryptedKeyValueStore` is written against: an attacker with the files but not the key.
+
+Fixed by never running that migration on the log's file. `requireEncryptedOnly` instead refuses any
+key that does not belong there and any payload that is not a decryptable envelope. The one gap a
+legitimate write can leave — `put` commits the value and the marker separately, so a kill between
+them leaves an envelope with no marker — still reads back, and a test pins that.
+
+The stronger fix the review also offered, binding the file name into the AAD, was not taken: it
+breaks every existing envelope and the move path itself, and closing the oracle is sufficient.
+
 **The split created a survivor, and one gate did not know about it.** Found by review, and it is
 the most interesting thing about this change. `hasExistingProtocolData()` is what stops
 `initialize()` generating a fresh identity over an existing one — it asks the store rather than the
