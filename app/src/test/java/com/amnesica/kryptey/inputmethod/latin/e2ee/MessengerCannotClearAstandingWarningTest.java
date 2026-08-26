@@ -373,6 +373,34 @@ public class MessengerCannotClearAstandingWarningTest {
   }
 
   /** Navigating the strip's own screens is not a deliberate response to anything. */
+  /**
+   * Hiding the keyboard, which any app may do whenever it likes.
+   *
+   * <p>Named by a review round as missing from this list two rounds ago, and it is the event behind
+   * one of the erasures found since: {@code LatinIME.onWindowHidden} reaches
+   * {@code forgetChosenRecipient} and from there the banner writer that did not know about the
+   * caution. Listed now rather than left as something someone noticed once.
+   */
+  /**
+   * Tapping the banner, which is what a notice invites the reader to do.
+   *
+   * <p>Added because the round-14 defect lived on this path and no event in this list reached it:
+   * hiding the keyboard and selecting a contact both go through
+   * {@code showChosenContactInMainInfoField}, while the banner tap goes through
+   * {@code resetChosenContactAndInfoText} - a second unconditional writer that had to be taught the
+   * same thing separately. Two writers, one rule, and the sweep only exercised one of them.
+   */
+  @Test
+  public void tappingTheBannerDoesNotClearIt() throws Exception {
+    forEveryWarning("tapping the banner",
+        () -> strip.findViewById(R.id.e2ee_info_text).performClick());
+  }
+
+  @Test
+  public void hidingTheKeyboardDoesNotClearIt() throws Exception {
+    forEveryWarning("the host app hiding the keyboard", () -> strip.onKeyboardHidden());
+  }
+
   @Test
   public void movingBetweenScreensDoesNotClearIt() throws Exception {
     forEveryWarning("moving between the strip's screens", () -> {
