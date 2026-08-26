@@ -66,7 +66,11 @@ public class SenderKeyMapKeyTest {
   /** And a malformed key is refused as a checked failure, not an unchecked one. */
   @Test
   public void amalformedKeyIsRefusedRatherThanThrowingUnchecked() {
-    for (final String malformed : new String[] {"nodots", "one.two", "name.notanumber.dist", ""}) {
+    // "name.5." is the one that reaches the empty-distribution-id check; without it that branch
+    // is untested and could be deleted for free. The others are refused earlier - by the dot count,
+    // or by parseInt - which a review pointed out meant the guard as a whole was unkilled.
+    for (final String malformed :
+        new String[] {"nodots", "one.two", "name.notanumber.dist", "", "name.5.", "name..dist"}) {
       try {
         JsonUtil.fromJson("{\"" + malformed + "\":\"state\"}",
             new TypeReference<LinkedHashMap<SenderKey, String>>() { });

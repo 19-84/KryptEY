@@ -46,9 +46,12 @@ public final class EnvelopeCodec {
     }
     // Whitespace is dropped first, deliberately, and everything else must be exact.
     //
-    // Messengers wrap and re-flow text, so tolerating newlines and spaces inside the encoding is
-    // the difference between a keyboard that works and one that does not. Nothing else is
-    // tolerated - see the canonicality check below for why.
+    // In practice that means SPACES. An earlier version of this comment said newlines too, and
+    // that was wrong about the layer above: E2EEStrip.decodeMessage routes any text containing a
+    // \p{C} character - which includes \n and \t - to the FairyTale decoder, so a line-wrapped
+    // paste never arrives here at all. It fails earlier, and that is a pre-existing limitation of
+    // the routing rather than anything this check introduced. Stripping them here anyway costs
+    // nothing and keeps this method's contract independent of that routing.
     final String compact = WHITESPACE.matcher(text).replaceAll("");
 
     final byte[] bytes;

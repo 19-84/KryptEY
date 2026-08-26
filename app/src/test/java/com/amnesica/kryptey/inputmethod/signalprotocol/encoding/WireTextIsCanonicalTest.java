@@ -107,17 +107,22 @@ public class WireTextIsCanonicalTest {
   }
 
   /**
-   * But whitespace inside is still fine, because messengers wrap text and users paste what they see.
+   * But spaces inside are still fine, which is the property the fix had to avoid breaking.
    *
-   * <p>This is the property the fix had to avoid breaking, and it is the reason the check strips
-   * whitespace before comparing rather than demanding an exact match against the original string.
+   * <p>Spaces specifically, and the first version of this test used {@code "\n  \t"} instead —
+   * characters that cannot reach this method. {@code E2EEStrip.decodeMessage} routes any text
+   * containing a {@code \p{C}} character, newlines and tabs among them, to the FairyTale decoder,
+   * so a line-wrapped paste fails before {@code fromWire} is called. Testing with them asserted
+   * something about an input the app cannot deliver here.
    */
   @Test
-  public void whitespaceInsideTheEncodingIsStillAccepted() throws Exception {
+  public void spacesInsideTheEncodingAreStillAccepted() throws Exception {
     final int middle = genuineWire.length() / 2;
-    final String wrapped =
-        genuineWire.substring(0, middle) + "\n  \t" + genuineWire.substring(middle);
-    assertNotNull("a wrapped or re-flowed invite must still decode", EnvelopeCodec.fromWire(wrapped));
+    final String spaced =
+        genuineWire.substring(0, middle) + "   " + genuineWire.substring(middle);
+    assertNotNull("an invite with spaces in it must still decode - the check strips whitespace "
+        + "before comparing rather than demanding an exact match against what was pasted",
+        EnvelopeCodec.fromWire(spaced));
   }
 
   /**

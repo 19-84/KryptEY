@@ -205,7 +205,13 @@ public class JsonUtil {
       final String name = key.substring(0, secondLastDot);
       final String deviceId = key.substring(secondLastDot + 1, lastDot);
       final String distributionId = key.substring(lastDot + 1);
-      if (name.isEmpty() || deviceId.isEmpty() || distributionId.isEmpty()) {
+      // Only the distribution id needs checking here, and the other two came out of a first draft
+      // that guarded everything by reflex. The name cannot be empty: the check above throws unless
+      // secondLastDot >= 1, so the substring has at least one character. An empty device id cannot
+      // get past parseInt below, which throws NumberFormatException and is converted to the same
+      // IOException - so guarding it changed nothing observable. An empty distribution id is the
+      // one that would otherwise be accepted, from a key ending in a dot.
+      if (distributionId.isEmpty()) {
         throw new IOException("malformed sender key: " + key);
       }
       try {
