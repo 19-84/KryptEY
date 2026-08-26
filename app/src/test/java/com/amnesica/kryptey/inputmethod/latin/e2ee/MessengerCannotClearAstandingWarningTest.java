@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -150,6 +151,49 @@ public class MessengerCannotClearAstandingWarningTest {
         pasteAndDecrypt(substituted);
       }
     });
+    warnings.add(new Warning() {
+      @Override public String name() { return "the post-rejection re-pin warning"; }
+      @Override public void raise() throws Exception {
+        assertTrue(SignalProtocolMain.rejectContactKey(bob()));
+        // A fresh bundle at the rejected address re-pins, which is what the warning is about.
+        SignalProtocolMain.initialize(null);
+        final String fresh = SignalProtocolMain.exportOwnKeyBundle();
+        SignalProtocolMain.getInstance().setAccount(victim);
+        final com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope rePin =
+            new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+                EnvelopeCodec.fromWire(fresh).getPreKeyResponse(),
+                peerAddress.getName(), peerAddress.getDeviceId());
+        pasteAndDecrypt(rePin);
+      }
+    });
+    warnings.add(new Warning() {
+      @Override public String name() { return "the duplicate-name warning"; }
+      @Override public void raise() throws Exception {
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+        strip.addContactForTest(unrelatedInvite());
+      }
+    });
+    warnings.add(new Warning() {
+      @Override public String name() { return "the same-address-different-name warning"; }
+      @Override public void raise() throws Exception {
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_first_name_input_field)).setText("Robert");
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+        strip.addContactForTest(EnvelopeCodec.fromWire(peerBundle));
+      }
+    });
+    // INFO_STORAGE_UNREADABLE is deliberately NOT in this list, and the reason is worth writing
+    // down rather than leaving as an omission. This sweep observes the invariant through
+    // mayOverwriteInfoBanner, which returns false when EITHER a warning stands OR storage is
+    // unreadable - and the storage warning is only ever raised while storage is unreadable. So both
+    // the precondition and the assertion would hold whether or not the warning survived: a row that
+    // can never fail, reported as coverage. The property it would test is enforced by a different
+    // mechanism anyway (storageIsUnreadable() is asked directly at every decision point, not
+    // through the flag), and StripWarningErasureTest covers that path.
     return warnings;
   }
 
@@ -306,5 +350,84 @@ public class MessengerCannotClearAstandingWarningTest {
   @Test
   public void choosingAcontactDoesNotClearIt() throws Exception {
     forEveryWarning("selecting a contact", () -> strip.selectContact(bob()));
+  }
+
+  /**
+   * Every warning the strip can raise is either swept above or excused here, by name.
+   *
+   * <p>Without this, the sweep covers the warnings its author happened to think of — which is
+   * precisely how its first draft came to miss the one the round-10 defect lived on. The list of
+   * events is a judgement that cannot be mechanised; the list of WARNINGS can be, because each one
+   * is a constant handed to a warning writer in this file.
+   *
+   * <p>So a new warning fails this test until somebody either builds a raiser for it or writes down
+   * why sweeping it would measure nothing. Both answers are fine. Neither being given is not.
+   */
+  @Test
+  public void everywarningTheStripCanRaiseIsSweptOrExcused() throws java.io.IOException {
+    final java.nio.file.Path source = mainSources()
+        .resolve("com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStripView.java");
+    assertTrue("expected to find " + source, java.nio.file.Files.exists(source));
+    final String text = new String(java.nio.file.Files.readAllBytes(source),
+        java.nio.charset.StandardCharsets.UTF_8);
+
+    // Every INFO_ constant that reaches a warning writer. Read from the call sites rather than
+    // from the declarations, because a constant that exists but is never raised as a warning is
+    // not this test's business.
+    final java.util.Set<String> raised = new java.util.TreeSet<>();
+    final java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+        "(?:setWarningMessage|setInviteRefusalWarning)\\s*\\(").matcher(text);
+    while (call.find()) {
+      // The constant naming the warning appears in the argument list, or in the few lines above
+      // where the argument is composed into a local first.
+      final int from = Math.max(0, call.start() - 400);
+      final int to = Math.min(text.length(), call.start() + 400);
+      final java.util.regex.Matcher name =
+          java.util.regex.Pattern.compile("INFO_[A-Z0-9_]+").matcher(text.substring(from, to));
+      while (name.find()) raised.add(name.group());
+    }
+    assertTrue("this test reads the strip's warning call sites out of its source; finding none "
+        + "means the pattern has stopped matching and it is asserting nothing", raised.size() >= 5);
+
+    final java.util.Set<String> accounted = new java.util.TreeSet<>(SWEPT);
+    accounted.addAll(EXCUSED.keySet());
+
+    final java.util.List<String> unaccounted = new java.util.ArrayList<>();
+    for (final String warning : raised) {
+      if (!accounted.contains(warning)) unaccounted.add(warning);
+    }
+
+    assertEquals("these warnings can be raised by the strip but are neither swept by this file nor "
+        + "excused in EXCUSED. A warning nobody constructs is a warning nobody tests: the sweep "
+        + "then measures the warnings its author thought of, which is how its first draft missed "
+        + "the one a review round had just found a defect on. Add a raiser, or add an entry to "
+        + "EXCUSED saying why sweeping it would measure nothing:\n"
+        + String.join("\n", unaccounted), 0, unaccounted.size());
+  }
+
+  private static java.nio.file.Path mainSources() {
+    for (final String candidate : new String[] {"src/main/java", "app/src/main/java"}) {
+      final java.nio.file.Path path = java.nio.file.Paths.get(candidate);
+      if (java.nio.file.Files.isDirectory(path)) return path;
+    }
+    throw new IllegalStateException("could not locate the main source tree from "
+        + java.nio.file.Paths.get("").toAbsolutePath());
+  }
+
+  /** Warnings this file raises through their real paths and sweeps every event against. */
+  private static final java.util.Set<String> SWEPT = new java.util.TreeSet<>(java.util.Arrays.asList(
+      "INFO_INVITE_REFUSED", "INFO_INVITE_REFUSED_SESSION_KEPT",
+      "INFO_INVITE_REFUSED_BUT_KEY_PINNED", "INFO_IDENTITY_CHANGED_EXISTING",
+      "INFO_PINNED_AFTER_REJECT", "INFO_DUPLICATE_CONTACT_NAME", "INFO_RETIRED_CONTACT_NAME",
+      "INFO_SAME_ADDRESS_DIFFERENT_NAME"));
+
+  /** And the ones deliberately not swept, each with the reason sweeping it would prove nothing. */
+  private static final java.util.Map<String, String> EXCUSED = new java.util.TreeMap<>();
+
+  static {
+    EXCUSED.put("INFO_STORAGE_UNREADABLE",
+        "observed through mayOverwriteInfoBanner, which returns false from storageIsUnreadable() "
+            + "alone - so both the precondition and the assertion hold regardless of the warning, "
+            + "and the row could never fail");
   }
 }
