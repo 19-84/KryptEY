@@ -173,7 +173,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_CHOOSE_CONTACT_FIRST = "Please choose a contact first";
   private final String INFO_NO_MESSAGE_TO_ENCRYPT = "No message to encrypt";
   private final String INFO_NO_MESSAGE_TO_DECRYPT = "No message to decrypt";
-  private final String INFO_VERIFY_UNAVAILABLE = "Could not verify: no contact is loaded.";
+  /**
+   * What a false return from {@code verifyContact} means now.
+   *
+   * <p>It used to mean only "no contact or no account is loaded", and this string said so.
+   * Verification also refuses when there is no pinned key to verify - {@code verifyContact}'s own
+   * javadoc says a caller rendering false as "nothing is loaded" is now sometimes wrong - and this
+   * is its only caller. Saying "could not be recorded" covers both without claiming which, and
+   * without inventing a security claim out of a failed load.
+   */
+  private final String INFO_VERIFY_UNAVAILABLE = "Could not record that check. Nothing has been marked as verified - try again from the contact list.";
   private final String INFO_PINNED_AFTER_REJECT = "Careful: you previously told the app that %s's number did not match, at this same address. This is a new key for that address - it is NOT automatically the right one. Compare the number by voice before sending anything.";
   private final String INFO_NAME_TOO_LONG = "That name is too long to show next to the contact's address tag. Use a shorter one - the tag is what tells two contacts with similar names apart.";
   private final String INFO_NAME_LOOKS_LIKE_A_TAG = "Names cannot contain '#'. The app shows a tag starting with # beside each contact to tell similar names apart, and a name that imitates one would defeat that.";
@@ -195,6 +204,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   // the only way a bundle can enter the app. Advising a route that does not exist is the same
   // defect as telling them to check a number that is never displayed.
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
+  /**
+   * Shown on the verify screen when a key for this contact was rejected earlier.
+   *
+   * <p>The verify screen said nothing about a standing rejection, and pressing Verify there is what
+   * clears one - {@code rejectedAddresses} is documented as retired only by a fresh comparison. So
+   * the one screen where that irreversible decision is made was the one screen that did not mention
+   * the app had already been handed a wrong key for this contact. The reason the pending-change
+   * notice exists ("tell the user a key was offered BEFORE they compare, so they compare
+   * attentively") applies here at least as strongly: {@code isContactKeyTrustworthy} ranks a
+   * standing rejection ABOVE a verified badge.
+   */
+  private final String INFO_VERIFY_AFTER_REJECTION = "You previously told the app that the numbers for %s did not match, and a key for them was refused. The number below is the key in use now. Only confirm it if they read these exact numbers back to you by voice - confirming clears that refusal.";
+
   private final String INFO_VERIFY_PENDING_CHANGE = "Someone offered a different key for %s since you last spoke - it was refused and is not in use. The number below is the key you already have. If it still matches what they read out, confirm it to dismiss the warning.";
   // Deliberately does NOT offer "they reinstalled" as an explanation. A reinstall mints a fresh
   // address (AddressingPremiseTest), so it cannot collide with an existing pin - a changed key at a
@@ -311,9 +333,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mVerifyContactVerifyButton == null) return;
     mVerifyContactVerifyButton.setOnClickListener(v -> {
       try {
-        // false now means only "no contact or no account loaded" - verification itself no longer
-        // refuses. Saying "a different security number was offered" here would fabricate a
-        // security claim out of a failed load.
+        // false means "this could not be recorded" - no contact, no account, or nothing pinned to
+        // verify. The comment here used to say verification itself never refuses, which stopped
+        // being true when verifyContact gained its no-pin refusal. Saying "a different security
+        // number was offered" would fabricate a security claim out of a failed load, which is why
+        // the message names neither cause.
         if (!mE2EEStrip.verifyContact(chosenContact)) {
           Toast.makeText(getContext(), INFO_VERIFY_UNAVAILABLE, Toast.LENGTH_LONG).show();
           return;
@@ -500,6 +524,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // clearing them left the PREVIOUS contact's twelve numbers on screen under text naming this
       // one - so a user could "compare" and confirm a number belonging to somebody else, for a
       // contact with no key at all.
+      // Takes the buttons down with the digits: clearFingerprintViews disables both. A review
+      // reported them as staying live here and that turned out to be wrong - checked by removing
+      // the disabling from clearFingerprintViews, which fails
+      // VerifyScreenNamesAstandingRejectionTest. Left as one call rather than repeated here.
       clearFingerprintViews();
       setInfoTextViewMessage(mVerifyContactInfoTextView, INFO_NO_FINGERPRINT);
       return;
@@ -516,6 +544,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // which the user most needs to know WHICH contact they are looking at.
       setInfoTextViewMessage(mVerifyContactInfoTextView,
           String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact)));
+    } else if (mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())) {
+      // Checked second, not instead: a pending change is the more urgent of the two, because the
+      // offered key is on the table right now. But a standing rejection was not mentioned here at
+      // all, and pressing Verify on this screen is what clears it - so the user was being asked to
+      // make that decision without being told what it undoes.
+      setInfoTextViewMessage(mVerifyContactInfoTextView,
+          String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact)));
     }
     setFingerprintViews(fingerprint, true);
   }

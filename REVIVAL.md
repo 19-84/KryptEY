@@ -2758,6 +2758,28 @@ with it. The deliberate responses still clear it: comparing a safety number, or 
 match. An existing test asserted the old behaviour, calling a tap "a deliberate act"; it encoded the
 defect and now asserts the opposite. Control: restore the unconditional clear and four tests fail.
 
+**The verify screen never mentioned a standing rejection.** Same sweep. Pressing Verify there is
+what *clears* a rejection — `rejectedAddresses` is documented as retired only by a fresh comparison,
+and `isContactKeyTrustworthy` ranks a standing rejection above a verified badge. Yet the screen
+carried a notice for a pending identity change and nothing for a rejection, so the user reached the
+one screen that undoes their earlier "these numbers do not match" and read only the ordinary
+comparison advice. It now names it, and says that confirming clears it. The reason the
+pending-change notice exists — tell the user before they compare, so they compare attentively —
+applies here at least as strongly.
+
+Its sibling finding was **checked and found wrong**, which is worth recording because not every
+reported defect is one. The review said the verify and reject buttons stay live for a contact with
+no pinned key; they do not — `clearFingerprintViews` disables both, and that arm calls it. I had
+already written the redundant disabling before testing the claim, and a control caught it: removing
+my lines changed nothing, removing them from `clearFingerprintViews` fails the test. The duplicate
+is gone and the test now guards the line that actually does the work.
+
+What *was* wrong there is the message: `verifyContact` returning false meant "no contact or no
+account loaded" when this string was written, and it also refuses when nothing is pinned. Its own
+javadoc says a caller rendering false as "nothing is loaded" is now sometimes wrong, and this is its
+only caller. It now says the check could not be recorded, which covers both without inventing a
+security claim out of a failed load.
+
 **And a landmine in the same sweep.** `JsonUtil`'s `SenderKey` map-key codec was broken in both
 directions and neither half could ever have run: the serializer called `writeStartObject` in a
 map-key position, which Jackson refuses outright, so a non-empty sender-key store could not be
