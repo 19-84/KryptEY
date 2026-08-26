@@ -166,6 +166,14 @@
 				<li>If they match, click the \"done\" button and your contact will be marked as verified.</li>
 			</ul>
 
+			<h3>Can I swap invites without going through the messenger?</h3>
+			<ul>
+				<li>Yes, and nothing extra is needed. The invite button puts the invite into whatever app has the cursor, so you choose the route by choosing the app - a notes app, an email draft, a device-to-device transfer, or the text read out and typed in by hand. An invite pasted from any of those is accepted exactly like one that arrived in the messenger.</li>
+				<li>Doing it this way matters most for the FIRST invite. That is the one moment the app cannot check anything for you: it has no earlier key to compare against, so whatever arrives is what gets saved. A messenger that swapped it would not be detected then, only later.</li>
+				<li>This app cannot tell which route an invite took. The text is identical either way, so nothing on screen will say \"this one came to you safely\" - that is your knowledge, not the app\'s. Handing it over in person is worth doing because of what it avoids, not because the app rewards it.</li>
+				<li>If the invite did come through the messenger, comparing the security number by voice afterwards is what closes the same gap.</li>
+			</ul>
+
 			<h3>What are the text modes and how do I switch between them?</h3>
 			<ul>
 				<li>There are two different modes in which you can send your encrypted messages. </li>

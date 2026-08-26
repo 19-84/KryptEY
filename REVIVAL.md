@@ -655,8 +655,17 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
    So wiring that method up is not the task, and would add a stamp that means nothing. What would
    genuinely help is wording — telling the user that handing this text over in person avoids the
    messenger entirely — and that has to be written without implying the app can tell the difference,
-   which is the false assurance the design deliberately removed. QR would be a dependency decision
-   (ZXing); string transfer needs none, and needs no new mechanism either. *Not* on this list any more: UI for accepting an identity change. That is
+   which is the false assurance the design deliberately removed.
+
+   **The wording is written.** The help now has a section saying the capability exists, that it
+   matters most for the FIRST invite — the one moment the app cannot check anything, because there
+   is no earlier key to compare against — and, in as many words, that **this app cannot tell which
+   route an invite took**. That last sentence is the one under test:
+   `OutOfBandHelpClaimsNothingUnsupportedTest` requires it to be present and refuses a list of
+   phrasings an author reaching for encouragement would write ("trusted automatically", "no need to
+   compare"). It also requires the text to keep pointing at the voice comparison, because avoiding
+   one exposure is not a replacement for the check. QR would still be a dependency decision (ZXing);
+   string transfer needs none, and needed no new mechanism either. *Not* on this list any more: UI for accepting an identity change. That is
    now a decision rather than a gap — the exit is discard via deletion, and adopt-in-place stays
    unavailable on purpose.
 2. ~~**A screen showing the offered safety number beside the pinned one.**~~ **Blocked, and on
