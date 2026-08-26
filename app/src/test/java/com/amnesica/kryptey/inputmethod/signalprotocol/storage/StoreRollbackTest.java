@@ -92,22 +92,44 @@ public class StoreRollbackTest {
     victim.setContactList(contacts);
   }
 
+  /**
+   * The chat log's own file.
+   *
+   * <p>The store is two files now: the account in {@code protocol}, the message log in
+   * {@code protocol_messages}, so that raising the keyboard does not rewrite megabytes of history.
+   * An attacker copying "the store" copies both, so this test does too - restoring only one of them
+   * is a different attack, pinned separately below.
+   */
+  private SharedPreferences messagePreferences() {
+    return context.getSharedPreferences("protocol_messages", Context.MODE_PRIVATE);
+  }
+
   /** Everything the store holds, as an attacker with file access would copy it. */
   private Map<String, String> snapshot() {
     final Map<String, String> copy = new HashMap<>();
     for (final Map.Entry<String, ?> entry : preferences.getAll().entrySet()) {
-      copy.put(entry.getKey(), String.valueOf(entry.getValue()));
+      copy.put("protocol/" + entry.getKey(), String.valueOf(entry.getValue()));
+    }
+    for (final Map.Entry<String, ?> entry : messagePreferences().getAll().entrySet()) {
+      copy.put("messages/" + entry.getKey(), String.valueOf(entry.getValue()));
     }
     return copy;
   }
 
   private void restore(final Map<String, String> snapshot) {
-    final SharedPreferences.Editor editor = preferences.edit();
-    editor.clear();
+    final SharedPreferences.Editor account = preferences.edit();
+    final SharedPreferences.Editor messages = messagePreferences().edit();
+    account.clear();
+    messages.clear();
     for (final Map.Entry<String, String> entry : snapshot.entrySet()) {
-      editor.putString(entry.getKey(), entry.getValue());
+      if (entry.getKey().startsWith("protocol/")) {
+        account.putString(entry.getKey().substring("protocol/".length()), entry.getValue());
+      } else {
+        messages.putString(entry.getKey().substring("messages/".length()), entry.getValue());
+      }
     }
-    editor.commit();
+    account.commit();
+    messages.commit();
   }
 
   private Account reload() {
@@ -169,6 +191,46 @@ public class StoreRollbackTest {
     assertEquals("the pinned key must come back with the rolled-back store, or file access becomes "
             + "a silent substitution: the next bundle would be a clean first sighting", pinned,
         rolledBack.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+  }
+
+  /**
+   * Rolling back only the account file leaves the log alone, and the orphans it makes are inert.
+   *
+   * <p>A new option for the attacker, created by splitting the store into two files, so it is
+   * pinned rather than assumed away. Restoring an old {@code protocol} while leaving
+   * {@code protocol_messages} current keeps every message the user has received since the snapshot
+   * — the history is <em>not</em> rewound — while the contact list goes back. Entries belonging to
+   * a contact the rolled-back list no longer holds are then unreachable: {@code belongsTo} compares
+   * the full rendered address, so they match nobody, including the attacker. Inert, not
+   * misattributed, which is the same disposition the legacy migration settled on for the same
+   * reason.
+   */
+  @Test
+  public void arollbackOfTheAccountFileAloneLeavesTheChatLogWhereItIs() throws Exception {
+    new StorageHelper(context, box()).storeAllInformationInSharedPreferences(victim);
+    final Map<String, String> before = snapshot();
+
+    final MessageEnvelope sent = SignalProtocolMain.encryptMessage("after the snapshot",
+        peerAddress);
+    assertNotNull(sent);
+    new StorageHelper(context, box()).storeAllInformationInSharedPreferences(victim);
+    final int afterSending = victim.getUnencryptedMessages().size();
+    assertTrue("precondition: the send must be logged", afterSending > 0);
+
+    // Only the account's own file goes back.
+    final SharedPreferences.Editor account = preferences.edit();
+    account.clear();
+    for (final Map.Entry<String, String> entry : before.entrySet()) {
+      if (entry.getKey().startsWith("protocol/")) {
+        account.putString(entry.getKey().substring("protocol/".length()), entry.getValue());
+      }
+    }
+    account.commit();
+
+    final Account rolledBack = reload();
+    assertEquals("the log lives in its own file, so rolling back the account file does not rewind "
+            + "it - the messages are still there", afterSending,
+        rolledBack.getUnencryptedMessages().size());
   }
 
   /**

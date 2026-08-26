@@ -2358,11 +2358,20 @@ to the file it lives in, whatever that write actually changed. The whole-file *r
 it — `ContextImpl` caches the instance per file name, so that happens once per process, not once per
 raise. The first version of this paragraph claimed both halves recurred, which was wrong.
 
-**What is still open, now with a specific shape rather than a vague one:** the log needs its own
-store file, so that raising the keyboard does not rewrite megabytes of message history it never
-looked at. That is a storage-layout change rather than a lifecycle one, and it is separable from
-everything above. It was started and set aside once the safety work above took priority; the design
-survived the attempt and is written down here so the next attempt does not have to rediscover it.
+**Done — the log now lives in its own file, and the raise no longer scales with it.**
+
+| stored log | before any of this | after deferring the parse | after the split |
+|---|---|---|---|
+| empty | 36 ms | 36 ms | 31 ms |
+| 1,000 messages | 50 ms | 42 ms | 42 ms |
+| 20,000 messages | 294 ms | 199 ms | **25 ms** |
+
+That is the whole defect closed on the performance side: a keyboard raise costs the same whether the
+user has no history or twenty thousand messages. Reading the log still costs what it costs — the
+"force the read" measurement is 366 ms at 20,000 and should be, since that is the message-log screen
+actually doing its job — but nothing on the raise path forces it.
+
+The design, which the implementation followed:
 
 - **The log moves to its own preferences file** (`protocol_messages`), holding only
   `UNENCRYPTED_MESSAGES`. The account batch stops carrying it.
@@ -2382,8 +2391,25 @@ survived the attempt and is written down here so the next attempt does not have 
   is a rendered address. Batch-first, a kill seals that marker over a log still holding pre-upgrade
   keys and those entries are unattributable for good. Log-first, the surviving state is a re-keyed
   log with no marker, which the next load simply migrates again — re-keying is idempotent.
-- **What it should buy**, from the numbers above: the account's file shrinks to the small one, so a
-  raise pays 13 ms rather than 146 ms, and the log's file is written only when the log changes. The cap-versus-keep question is untouched by any of this — the log still grows
+- **What it bought**, measured rather than predicted: the numbers in the table above. A raise leaves
+  the log's file byte-identical, which is asserted rather than timed — every seal draws a fresh
+  nonce, so an unchanged sealed value is proof it was not written.
+
+**The one test worth reading in `ChatLogLivesInItsOwnFileTest`** is the identity one, and it took a
+control to make it real. Its first version put the log back in the account file by removing one key
+from the log's file, and passed even with the two-file check reduced to one — because
+`EncryptedKeyValueStore` leaves a schema row behind and `hasEncryptedData` returns true on the
+strength of that row alone. A device that has never moved its log has no such file at all. Clearing
+it entirely is what makes the test describe a real device, and with that fixed, reducing the check
+to one file fails it.
+
+**What this does not fix.** The log still grows forever and is still peer-paced; the cap-versus-keep
+question is untouched. And a rollback now has a new shape worth knowing about: restoring the account
+file alone no longer rewinds the log, so the messages stay while the contact list goes back. Entries
+belonging to a contact the rolled-back list no longer holds match nobody — `belongsTo` compares the
+full rendered address — so they are inert rather than misattributed, which is the same disposition
+the legacy migration settled on. `StoreRollbackTest` pins both the full rollback and that partial
+one. The cap-versus-keep question is untouched by any of this — the log still grows
 forever, still peer-paced.
 
 **One pre-existing gap closed on the way past.** `migrateLegacyKeys` refused to run against a

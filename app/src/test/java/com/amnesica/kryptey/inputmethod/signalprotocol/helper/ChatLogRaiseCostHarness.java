@@ -35,10 +35,13 @@ import java.util.ArrayList;
  * exists so the numbers quoted in the document can be re-derived rather than taken on trust, which
  * a reviewer correctly pointed out was not previously possible from anything in the tree.
  *
- * <p>Numbers recorded when this was written, on a desktop JVM under Robolectric:
- * empty log 36 ms; 1,000 messages 50 ms eager / 42 ms lazy; 20,000 messages 294 ms eager /
- * 199 ms lazy. The file-layer probe: committing one unrelated key costs 13 ms against a small
- * preferences file and 146 ms when a 5.35 MB sibling value shares it.
+ * <p>Numbers recorded on a desktop JVM under Robolectric, after the log moved to its own file:
+ * empty 31 ms, 1,000 messages 42 ms, 20,000 messages 25 ms - a raise no longer scales with the log
+ * at all, which is the point of the split. Before the split the same measurements were 36 ms,
+ * 42 ms and 199 ms. The "eager" column, which forces the log to be read, still scales and should:
+ * 366 ms at 20,000. The file-layer probe explains why the split was needed at all - committing one
+ * unrelated key costs ~13-40 ms against a small preferences file and ~146-166 ms when a 5.35 MB
+ * sibling value shares it.
  */
 @RunWith(RobolectricTestRunner.class)
 public class ChatLogRaiseCostHarness {
@@ -90,8 +93,11 @@ public class ChatLogRaiseCostHarness {
       seed(context, size);
       final long lazy = raise(context, false);
       final long eager = raise(context, true);
+      // The log's own file, not the account's - it moved, and reading the old location here
+      // reported "0 bytes" for a 5 MB log, which is the kind of number that quietly makes a table
+      // look wrong.
       System.out.println("RAISE " + size + " messages: lazy " + lazy + " ms, eager " + eager
-          + " ms, stored " + context.getSharedPreferences("protocol", Context.MODE_PRIVATE)
+          + " ms, stored " + context.getSharedPreferences("protocol_messages", Context.MODE_PRIVATE)
           .getString("UNENCRYPTED_MESSAGES", "").length() + " bytes");
     }
   }

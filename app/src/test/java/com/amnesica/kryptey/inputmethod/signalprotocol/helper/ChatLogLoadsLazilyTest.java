@@ -70,11 +70,22 @@ public class ChatLogLoadsLazilyTest {
     };
   }
 
-  /** The sealed value exactly as it sits in SharedPreferences, without going through the store. */
+  private static final String LOG_KEY = String.valueOf(
+      com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.UNENCRYPTED_MESSAGES);
+
+  /** The log's own file. This is where it lives now. */
+  private SharedPreferences messageFile() {
+    return context.getSharedPreferences("protocol_messages", Context.MODE_PRIVATE);
+  }
+
+  /** The sealed value exactly as it sits on disk, without going through the store. */
   private String rawStoredLog() {
-    return preferences.getString(String.valueOf(
-        com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.UNENCRYPTED_MESSAGES),
-        null);
+    return messageFile().getString(LOG_KEY, null);
+  }
+
+  /** The log's old location, inside the account's file. Should be empty after a move. */
+  private String rawStoredLogInAccountFile() {
+    return preferences.getString(LOG_KEY, null);
   }
 
   private StorageHelper helper() {
@@ -316,9 +327,7 @@ public class ChatLogLoadsLazilyTest {
    */
   @Test
   public void anunreadableStoredLogIsRefusedRatherThanPresentedAsEmpty() {
-    preferences.edit().putString(String.valueOf(
-        com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.UNENCRYPTED_MESSAGES),
-        "not a sealed envelope").commit();
+    messageFile().edit().putString(LOG_KEY, "not a sealed envelope").commit();
 
     final Account subject = helper().getAccountFromSharedPreferences();
     assertNotNull(subject);
@@ -350,11 +359,8 @@ public class ChatLogLoadsLazilyTest {
   public void amigrationDoesNotSealAnAnswerComputedFromAnUnreadableLog() {
     final String marker = String.valueOf(
         com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.KEY_SCHEMA_MIGRATED);
-    preferences.edit()
-        .remove(marker)
-        .putString(String.valueOf(com.amnesica.kryptey.inputmethod.signalprotocol
-            .ProtocolIdentifier.UNENCRYPTED_MESSAGES), "not a sealed envelope")
-        .commit();
+    preferences.edit().remove(marker).commit();
+    messageFile().edit().putString(LOG_KEY, "not a sealed envelope").commit();
 
     final Account subject = helper().getAccountFromSharedPreferences();
     assertNotNull("a bad chat log must not stop the account loading", subject);
