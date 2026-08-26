@@ -277,6 +277,82 @@ public class SecondPreKeyMessageDoesNotClobberAnInviteTest {
     assertEquals("and nothing else in the store may have moved", before, snapshotPreKeys(alice));
   }
 
+  /**
+   * The same rewrite on a FIRST message, where libsignal really does consume a key.
+   *
+   * <p>The test above covers a short-circuited message — the peer's second, where libsignal reads
+   * almost nothing and consumes nothing. A sweep of this layer raised the case it does not cover and
+   * could not settle by reading: on a FIRST message libsignal genuinely removes the declared
+   * pre-key, so if that removal happens BEFORE the MAC is verified, a relay rewriting the declared
+   * id would be an aimed <em>delete</em> — no replacement, no error the user sees, and the id it
+   * aims at is the one the victim's outstanding invite is offering. The consumption gate cannot
+   * help: it only declines to re-create, and a delete needs no creation.
+   *
+   * <p>Whether libsignal orders it that way is not something the reading settles, and guessing about
+   * the internals of a dependency is how this branch has been wrong before. So it is measured. The
+   * message is genuine and unmodified except for the declared id, which makes the derived key
+   * disagree and the MAC fail.
+   *
+   * <p>Note what is NOT asserted: that decryption fails. That is libsignal's business. What must
+   * hold is that a message which fails to authenticate leaves the store exactly as it was — because
+   * the id it names is chosen by the adversary.
+   */
+  @Test
+  public void arewrittenIdOnAfirstMessageDoesNotDeleteTheKeyItNames() throws Exception {
+    activate(alice);
+    final String bundle = EnvelopeCodec.toWire(SignalProtocolMain.getPreKeyResponseMessage());
+    activate(bob);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(bundle), addressOf(alice)));
+    final MessageEnvelope first = SignalProtocolMain.encryptMessage("one", addressOf(alice));
+    assertNotNull(first);
+
+    final int declared = new org.signal.libsignal.protocol.message.PreKeySignalMessage(
+        first.getCiphertextMessage()).getPreKeyId().orElse(-1);
+    assertTrue("the first message must declare a pre-key id", declared >= 0);
+
+    // Aim at a DIFFERENT id the victim really holds - which is what makes this an aimed delete
+    // rather than a request to touch something absent. The id an outstanding invite is offering is
+    // exactly this shape.
+    int target = -1;
+    for (int id = 1; id < 200 && target < 0; id++) {
+      if (id != declared && alice.getSignalProtocolStore().containsPreKey(id)) target = id;
+    }
+    assertTrue("this test needs a second held pre-key to aim at", target > 0);
+    assertTrue("precondition: the victim holds the id the relay will name",
+        alice.getSignalProtocolStore().containsPreKey(target));
+
+    final byte[] rewritten = withDeclaredPreKeyId(first.getCiphertextMessage(), declared, target);
+    final MessageEnvelope forged = new MessageEnvelope(rewritten, first.getCiphertextType(),
+        first.getSignalProtocolAddressName(), first.getDeviceId());
+
+    final java.util.Map<Integer, String> before = snapshotPreKeys(alice);
+    activate(alice);
+    // Recorded rather than swallowed. If the forged message failed for some trivial reason before
+    // libsignal ever looked at the pre-key - a parse error, say - then "the key survived" would be
+    // true for a reason that has nothing to do with the ordering this test exists to measure, and
+    // the pass would be vacuous. Naming the failure in the assertion below is what makes a green
+    // run readable as evidence instead of as an absence.
+    Exception failure = null;
+    try {
+      SignalProtocolMain.decryptMessage(EnvelopeCodec.fromWire(EnvelopeCodec.toWire(forged)),
+          addressOf(bob));
+    } catch (final Exception expected) {
+      failure = expected;
+    }
+    assertNotNull("rewriting the declared id must break authentication - the id feeds the key "
+        + "derivation. If this ever decrypts cleanly, the id is NOT covered on the first-message "
+        + "path either, and libsignal has just consumed a pre-key of the relay's choosing.",
+        failure);
+
+    assertTrue("a message that failed to authenticate deleted the pre-key it named (decrypt failed "
+            + "with " + failure.getClass().getSimpleName() + "). The relay picks that id, so it can "
+            + "aim at the one the victim's outstanding invite is offering and stop a new contact "
+            + "ever connecting - with nothing shown and nothing to recover from.",
+        alice.getSignalProtocolStore().containsPreKey(target));
+    assertEquals("and nothing else in the store may have moved", before, snapshotPreKeys(alice));
+  }
+
   /** Replaces the {@code pre_key_id} varint (protobuf field 1) in a serialized PreKeySignalMessage. */
   private static byte[] withDeclaredPreKeyId(final byte[] serialized, final int from, final int to) {
     assertTrue("this rewrite only handles single-byte varints", from < 128 && to < 128);
