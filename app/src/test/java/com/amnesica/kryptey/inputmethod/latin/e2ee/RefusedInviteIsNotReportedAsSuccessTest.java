@@ -739,4 +739,51 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
             + "only after it clears: " + bannerText(),
         bannerText().contains("cannot tell whose it is"));
   }
+
+  /**
+   * A substitution detected while a caution stands must still be warned about.
+   *
+   * <p>`warnIfIdentityChanged` is the thing that RAISES the identity-change warning on the
+   * add-contact arm — `createSessionWithContact` only shows a Toast, and the ciphertext path that
+   * would otherwise post it is not taken by a bundle-only invite. It sat on the right of an `&amp;&amp;`
+   * whose left term was widened to cover the caution, so a standing caution stopped it being called
+   * at all: the app detected a key substitution at a pinned address and put nothing on the only
+   * surface that persists.
+   *
+   * <p>The state is ordinary. Adding any contact leaves a caution standing; deleting a contact is
+   * the app's own advice after a decryption failure, which the messenger can induce; and deleting
+   * one deliberately KEEPS the pinned identity, which is what makes the next invite at that address
+   * a detectable substitution rather than a first sighting.
+   */
+  @Test
+  public void asubstitutionIsWarnedAboutEvenWhileAcautionStands() throws Exception {
+    establishedContact();
+    assertTrue("precondition: Bob's key must be pinned", SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    // The user follows the app's advice and deletes Bob. The pin outlives the row.
+    SignalProtocolMain.removeContactFromContactListAndProtocol(victim.getContactList().get(0));
+    assertTrue("precondition: the pin must survive the deletion",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    addCarol();
+    assertFalse("precondition: only a caution stands, no warning",
+        strip.warningIsStandingForTest());
+
+    // A forged bundle at Bob's address: different identity, so the change is recorded and refused.
+    SignalProtocolMain.initialize(null);
+    final String impostorBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(new MessageEnvelope(
+        EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
+        peerAddress.getName(), peerAddress.getDeviceId()));
+
+    assertTrue("a detected key substitution must reach the banner even when a caution is already "
+            + "standing. The banner holds both; a caution is not a reason to stay silent about the "
+            + "highest-signal security event the protocol produces.",
+        strip.warningIsStandingForTest());
+  }
 }

@@ -1129,14 +1129,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
           setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.", chosenContact);
         }
-      } else if (!aStandingItemHoldsTheBanner() && !warnIfIdentityChanged(chosenContact)) {
+      } else {
+        // warnIfIdentityChanged is a WRITER, not a predicate, and it was sitting on the right of an
+        // && - so widening the left term to cover the caution stopped it being CALLED at all.
+        //
+        // That mattered at the worst possible moment. On this arm it is the only thing that raises
+        // the identity-change warning: createSessionWithContact shows a Toast and nothing more, and
+        // the ciphertext path that would otherwise post it is not taken by a bundle-only invite. So
+        // with a caution standing - the common case, straight after adding any contact - the app
+        // could detect a key substitution at a pinned address and put nothing on the one surface
+        // that persists. The banner is built to hold a warning and a caution together; suppressing
+        // the generic advice over a standing item is right, suppressing the warning is not.
+        final boolean warned = warnIfIdentityChanged(chosenContact);
+        if (!warned && !aStandingItemHoldsTheBanner()) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
         // and this used to overwrite it with INFO_SESSION_CREATION_FAILED - the same delete-and-
         // re-invite advice - defeating its own guard. The standing check covers the same mistake
         // from the other direction: a failed session must not paint generic advice over the
         // post-rejection or duplicate-name warning, which would leave the flag set over text that
         // is not a warning at all - and nothing passive could then correct it.
-        setInfoTextViewMessage(mInfoTextView, INFO_SESSION_CREATION_FAILED);
+          setInfoTextViewMessage(mInfoTextView, INFO_SESSION_CREATION_FAILED);
+        }
       }
     }
 
@@ -2306,14 +2319,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /** The contact an envelope claims to come from, or null. */
+  /**
+   * The contact an envelope claims to come from, asked of production rather than re-derived.
+   *
+   * <p>This used to compare the contact's device id - already folded into libsignal's range by
+   * {@code Contact} - against the envelope's raw, attacker-chosen one. Production folds both through
+   * {@code ProtocolAddresses.of} and compares full addresses. A legacy id (the committed 0.1.5
+   * fixture carries 7296) therefore resolved to null here and to the real contact in the app: the
+   * seam and the code it stands in for would take opposite arms, and a test written through it would
+   * be pinning the wrong one.
+   *
+   * <p>The javadoc two methods up already says this: a seam that re-creates the thing under test
+   * pins only its own copy, and "that mistake has already been made once in this file". This was the
+   * second time.
+   */
   private Contact contactFor(final MessageEnvelope envelope) {
-    for (final Contact candidate : mE2EEStrip.getContacts()) {
-      if (candidate.getSignalProtocolAddressName().equals(envelope.getSignalProtocolAddressName())
-          && candidate.getDeviceId() == envelope.getDeviceId()) {
-        return candidate;
-      }
-    }
-    return null;
+    final Object found = SignalProtocolMain.extractContactFromMessageEnvelope(envelope);
+    return found instanceof Contact ? (Contact) found : null;
   }
 
   /** Posts a warning about a particular contact, for tests that drive the strip. */

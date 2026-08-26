@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -142,5 +143,62 @@ public class SentMessageSurvivesTheNextRaiseTest {
             + "it back", "and bring the file",
         SignalProtocolMain.decryptMessage(second, ProtocolAddresses.of(
             alice.getSignalProtocolAddress().getName(), alice.getDeviceId())));
+  }
+
+  /**
+   * And a rolled-back send must be gone from disk before the next raise, not only from memory.
+   *
+   * <p>{@code discardRecordedMessage} removes the entry <em>and persists</em>. Nothing tested the
+   * second half: {@code RemoveOneMessageTest} calls {@code Account.removeUnencryptedMessage}
+   * directly on an account whose storage helper is null, so it asserts the in-memory removal on a
+   * fixture that has never touched disk. By the time the rollback runs, {@code encryptMessage} has
+   * already appended the plaintext AND flushed it, so the phantom entry is on the file — and
+   * {@code reloadAccount} runs on every {@code setInputView}, which is the next thing that happens
+   * after a send fails.
+   *
+   * <p>Delete the persist and the discarded message comes back on the next raise, which is the exact
+   * defect the method exists to fix.
+   */
+  @Test
+  public void adiscardedSendIsGoneFromDiskBeforeTheNextRaise() throws Exception {
+    final Account alice = SignalProtocolMain.getInstance().getAccount();
+    SignalProtocolMain.getInstance().setStorageHelperForTest(null);
+    SignalProtocolMain.initialize(null);
+    final Account bobAccount = SignalProtocolMain.getInstance().getAccount();
+    bobAddress = ProtocolAddresses.of(bobAccount.getSignalProtocolAddress().getName(),
+        bobAccount.getDeviceId());
+    final String bobInvite = SignalProtocolMain.exportOwnKeyBundle();
+
+    SignalProtocolMain.getInstance().setAccount(alice);
+    SignalProtocolMain.reloadAccount(context);
+    SignalProtocolMain.addContact("Bob", "Jones", bobAddress.getName(), bobAddress.getDeviceId());
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(bobInvite), bobAddress));
+
+    final MessageEnvelope sent = SignalProtocolMain.encryptMessage("never actually sent", bobAddress);
+    assertNotNull(sent);
+    final java.time.Instant stamp = java.time.Instant.ofEpochMilli(sent.getTimestamp());
+    assertTrue("precondition: the send must be in the log before the rollback",
+        loggedBodies().contains("never actually sent"));
+
+    assertTrue("the rollback must report that it removed something",
+        SignalProtocolMain.discardRecordedMessage(bobAddress, stamp));
+
+    // The next raise, which is what leaving the keyboard causes.
+    SignalProtocolMain.reloadAccount(context);
+
+    assertFalse("a discarded send must not come back on the next raise. encryptMessage flushes the "
+            + "log before the send is attempted, so the phantom entry is already on disk; removing "
+            + "it only in memory leaves the user with a message in their history that was never "
+            + "sent.", loggedBodies().contains("never actually sent"));
+  }
+
+  private java.util.List<String> loggedBodies() {
+    final java.util.List<String> out = new java.util.ArrayList<>();
+    for (final com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage message
+        : SignalProtocolMain.getInstance().getAccount().getUnencryptedMessages()) {
+      out.add(message.getUnencryptedMessage());
+    }
+    return out;
   }
 }

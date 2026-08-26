@@ -1962,7 +1962,7 @@ public class SignalProtocolMain {
       return false;
     }
     final boolean removed = sInstance.mAccount.removeUnencryptedMessage(
-        signalProtocolAddress.getName(), timestamp);
+        signalProtocolAddress.getName(), signalProtocolAddress.getDeviceId(), timestamp);
     if (removed) sInstance.storeAllAccountInformationInSharedPreferences();
     return removed;
   }

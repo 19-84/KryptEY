@@ -32,14 +32,25 @@ public class RemoveOneMessageTest {
   private Account account;
   private static final String ME = "my-uuid";
   private static final String BOB = "bob-uuid";
+  /**
+   * The device id the log is keyed by.
+   *
+   * <p>Added because removal is address-scoped now, not name-scoped. Every other log operation
+   * identifies an entry through {@code belongsTo}, i.e. by the rendered address; this one matched
+   * on the bare name alone, so a rollback of a failed send could erase a delivered message
+   * belonging to a different contact that happened to share the name.
+   */
+  private static final int DEVICE = 1;
   private static final String CAROL = "carol-uuid";
 
   private static StorageMessage sent(final String to, final long at, final String body) {
-    return new StorageMessage(to, ME, to, Instant.ofEpochMilli(at), body);
+    return new StorageMessage(StorageMessage.chatLogKey(to, DEVICE), ME, to,
+        Instant.ofEpochMilli(at), body);
   }
 
   private static StorageMessage received(final String from, final long at, final String body) {
-    return new StorageMessage(from, from, ME, Instant.ofEpochMilli(at), body);
+    return new StorageMessage(StorageMessage.chatLogKey(from, DEVICE), from, ME,
+        Instant.ofEpochMilli(at), body);
   }
 
   @Before
@@ -67,7 +78,7 @@ public class RemoveOneMessageTest {
 
   @Test
   public void itRemovesExactlyTheMatchingEntry() {
-    assertTrue(account.removeUnencryptedMessage(BOB, Instant.ofEpochMilli(4000)));
+    assertTrue(account.removeUnencryptedMessage(BOB, DEVICE, Instant.ofEpochMilli(4000)));
 
     assertEquals("exactly one entry must go", 4, account.getUnencryptedMessages().size());
     assertFalse("the matching entry must be gone", bodies().contains("the refused one"));
@@ -82,7 +93,7 @@ public class RemoveOneMessageTest {
   @Test
   public void itNeverRemovesAmessageTheUserReceived() {
     assertFalse("a received message must not match on the peer's uuid",
-        account.removeUnencryptedMessage(BOB, Instant.ofEpochMilli(5000)));
+        account.removeUnencryptedMessage(BOB, DEVICE, Instant.ofEpochMilli(5000)));
     assertEquals(5, account.getUnencryptedMessages().size());
     assertTrue(bodies().contains("arrived after"));
   }
@@ -90,14 +101,14 @@ public class RemoveOneMessageTest {
   @Test
   public void itRefusesTheWrongRecipient() {
     assertFalse("the timestamp alone must not be enough",
-        account.removeUnencryptedMessage(CAROL, Instant.ofEpochMilli(4000)));
+        account.removeUnencryptedMessage(CAROL, DEVICE, Instant.ofEpochMilli(4000)));
     assertEquals(5, account.getUnencryptedMessages().size());
   }
 
   @Test
   public void itRefusesTheWrongTimestamp() {
     assertFalse("the recipient alone must not be enough",
-        account.removeUnencryptedMessage(BOB, Instant.ofEpochMilli(9999)));
+        account.removeUnencryptedMessage(BOB, DEVICE, Instant.ofEpochMilli(9999)));
     assertEquals(5, account.getUnencryptedMessages().size());
   }
 
@@ -118,7 +129,7 @@ public class RemoveOneMessageTest {
     account.getUnencryptedMessages().add(sent(BOB, 4000, "the one just refused"));
     final int before = account.getUnencryptedMessages().size();
 
-    assertTrue(account.removeUnencryptedMessage(BOB, Instant.ofEpochMilli(4000)));
+    assertTrue(account.removeUnencryptedMessage(BOB, DEVICE, Instant.ofEpochMilli(4000)));
 
     assertEquals("exactly one entry may be removed", before - 1,
         account.getUnencryptedMessages().size());
@@ -130,8 +141,33 @@ public class RemoveOneMessageTest {
 
   @Test
   public void nullArgumentsAreRefusedRatherThanThrowing() {
-    assertFalse(account.removeUnencryptedMessage(null, Instant.ofEpochMilli(4000)));
-    assertFalse(account.removeUnencryptedMessage(BOB, null));
+    assertFalse(account.removeUnencryptedMessage(null, DEVICE, Instant.ofEpochMilli(4000)));
+    assertFalse(account.removeUnencryptedMessage(BOB, DEVICE, null));
     assertEquals(5, account.getUnencryptedMessages().size());
+  }
+
+  /**
+   * A rollback must not erase a message belonging to a different contact with the same name.
+   *
+   * <p>The removal matched on the address NAME and the timestamp, while every other log operation
+   * identifies an entry by the rendered address. Two contacts can share a display-facing name and
+   * differ by device id — that is the whole reason the log is keyed by the full address — so a
+   * failed send to one could take a delivered message from the other out of the history, silently.
+   */
+  @Test
+  public void arollbackDoesNotReachAnotherDeviceIdAtTheSameName() {
+    final int otherDevice = DEVICE + 1;
+    account.getUnencryptedMessages().add(new StorageMessage(
+        StorageMessage.chatLogKey(BOB, otherDevice), ME, BOB, Instant.ofEpochMilli(4000),
+        "delivered to the other Bob"));
+    final int before = account.getUnencryptedMessages().size();
+
+    // The failed send was to BOB at otherDevice; rolling back the one at DEVICE must not take it.
+    assertTrue(account.removeUnencryptedMessage(BOB, DEVICE, Instant.ofEpochMilli(4000)));
+
+    assertEquals("exactly one entry may go", before - 1, account.getUnencryptedMessages().size());
+    assertTrue("the entry for the other device id must survive: it belongs to a different contact, "
+            + "and nothing about a failed send to one says anything about the other",
+        bodies().contains("delivered to the other Bob"));
   }
 }

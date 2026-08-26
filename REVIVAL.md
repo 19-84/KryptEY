@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty sections, written in the order things were found rather than by subject, so the
+Fifty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -106,6 +106,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The laundering primitive, closed from outside the file](#the-laundering-primitive-closed-from-outside-the-file)
 - [A fix that was true of the store and false of the app](#a-fix-that-was-true-of-the-store-and-false-of-the-app)
 - [FLAG_SECURE was down on the route users actually take](#flag_secure-was-down-on-the-route-users-actually-take)
+- [A writer on the right of an &&](#a-writer-on-the-right-of-an-)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3701,3 +3702,52 @@ repaint, the session-failure line. There is one predicate now,
 Two of those three are invisible to the sweep by construction, which is worth stating rather than
 leaving implied: a stale "Sending to: X" is not an erasure, and the password-field notice heals
 within the single event the sweep fires. Both have targeted tests instead, each with a control.
+
+
+## A writer on the right of an &&
+
+**Round sixteen found the previous commit's refactor silenced the warning that matters most, and
+the mechanism is worth more than the instance.**
+
+`warnIfIdentityChanged` reads like a predicate and is a **writer**: it posts the Toast and calls
+`setWarningMessage`, which is the only thing that raises `mWarningStanding`. It sat on the right of
+
+```java
+} else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
+```
+
+and the fix that unified the banner guards widened the left term to `!aStandingItemHoldsTheBanner()`.
+That is correct for what the guard was *for* — not painting generic advice over a standing item —
+and it short-circuited the call. So with a caution standing, which is the ordinary state straight
+after adding any contact, the identity-change warning was never raised at all.
+
+On this arm nothing else raises it: `createSessionWithContact` shows a Toast and no more, and the
+ciphertext path that would otherwise post it is not taken by a bundle-only invite. So the app could
+detect a key substitution at a pinned address — by its own javadoc *"the highest-signal security
+event the protocol produces"* — and put nothing on the only surface that persists, plus lose the
+Reject escape hatch, which needs the warning's address.
+
+The path is ordinary at every step: adding a contact leaves a caution standing; deleting a contact
+is the app's own advice after a decryption failure, which the messenger can induce at will; and
+deleting one deliberately **keeps** the pinned identity, which is exactly what makes the next invite
+at that address a detectable substitution rather than a first sighting.
+
+The two things behind that `else if` were never the same thing. The writer is called
+unconditionally into a local now, and only the generic advice is guarded — the shape `selectContact`
+already used.
+
+**Two findings from the faithfulness sweep, closed.** `discardRecordedMessage` removes a phantom log
+entry *and persists*; nothing tested the second half, because the only test called
+`Account.removeUnencryptedMessage` directly on an account whose storage helper was null — an
+in-memory assertion on a fixture that had never touched disk, while production has already flushed
+the entry before the rollback runs. And that removal matched on the address **name** while every
+other log operation identifies an entry by the rendered address, so a rollback of a failed send
+could take a delivered message belonging to a different contact sharing the name. Both fixed, both
+with controls.
+
+Also: `contactFor`, the seam behind `processIncomingEnvelopeForTest`, compared a folded contact
+device id against the envelope's raw one, where production folds both. A legacy id — the committed
+0.1.5 fixture carries 7296 — resolved to null in the seam and to the real contact in the app: the
+seam and the code it stands in for would take opposite arms. It asks production now. The javadoc two
+methods above it already said a seam that re-creates the thing under test pins only its own copy,
+and that the mistake had been made once in this file. This was the second time.

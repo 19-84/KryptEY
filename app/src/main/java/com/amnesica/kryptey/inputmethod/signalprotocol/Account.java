@@ -224,13 +224,24 @@ public class Account {
    * the contact can arrive between the two, and removing that instead would delete something the
    * user actually received.
    */
-  public boolean removeUnencryptedMessage(final String recipientUUID, final Instant timestamp) {
+  /**
+   * Removes one logged message, identified by the full address rather than the bare name.
+   *
+   * <p>The device id is load-bearing here, and its absence was the odd one out: every other log
+   * operation identifies an entry by the rendered address through {@code belongsTo}, and only this
+   * one matched on the address NAME. Two contacts can share a name and differ by device id - that is
+   * the whole reason the chat log is keyed the way it is - so a rollback of a failed send could
+   * erase a delivered message belonging to the other one.
+   */
+  public boolean removeUnencryptedMessage(final String recipientUUID, final int deviceId,
+      final Instant timestamp) {
     if (recipientUUID == null || timestamp == null) return false;
     final ArrayList<StorageMessage> messages = getUnencryptedMessages();
     if (messages == null) return false;
     for (int i = messages.size() - 1; i >= 0; i--) {
       final StorageMessage candidate = messages.get(i);
       if (recipientUUID.equals(candidate.getRecipientUUID())
+          && candidate.belongsTo(recipientUUID, deviceId)
           && timestamp.equals(candidate.getTimestamp())) {
         messages.remove(i);
         return true;
