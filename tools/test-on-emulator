@@ -22,7 +22,14 @@ if ! docker image inspect "$IMAGE" > /dev/null 2>&1; then
   docker build -t "$IMAGE" tools/emulator
 fi
 
-cleanup() { docker rm -f "$NAME" > /dev/null 2>&1 || true; }
+cleanup() {
+  # Point the device back at no autofill provider before letting go of it. The container is torn
+  # down immediately after, so this is belt-and-braces here - but this script is the documented way
+  # to run these tests, and against a persistent device (KRYPTEY_EMU_CONTAINER pointing at one you
+  # keep) it would otherwise leave a recorder installed as the active provider.
+  docker exec "$NAME" $ADB shell settings put secure autofill_service null > /dev/null 2>&1 || true
+  docker rm -f "$NAME" > /dev/null 2>&1 || true
+}
 trap cleanup EXIT
 cleanup
 

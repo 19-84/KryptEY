@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -56,8 +57,19 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
    * ship it with every test still green. Deriving the list means a new file under {@code src/debug}
    * is covered the moment it exists, without anyone remembering anything.
    */
+  /**
+   * Names that must be checked whether or not they are still in {@code src/debug/java}.
+   *
+   * <p>The floor exists because derivation alone has a hole that an adversarial review found: a
+   * class that moves OUT of the directory removes itself from the list it is checked against. With
+   * one file there, moving it emptied the directory and the non-empty guard fired; with two, moving
+   * either one is silent, and the remaining file keeps the guard looking healthy. So derivation
+   * covers files nobody remembered to list, and the floor covers files somebody moved.
+   */
+  private static final String[] PINNED = {"EditableFieldActivity", "RecordingAutofillService"};
+
   private static Set<String> scaffolding() throws IOException {
-    final Set<String> names = new LinkedHashSet<>();
+    final Set<String> names = new LinkedHashSet<>(Arrays.asList(PINNED));
     for (final Path file : filesUnder(at(DEBUG_SOURCES))) {
       final String name = file.getFileName().toString();
       if (name.endsWith(".java")) names.add(name.substring(0, name.length() - ".java".length()));
@@ -75,14 +87,33 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
    */
   private static final String MAIN_SOURCES = "src/main/java";
   private static final String MAIN_MANIFEST = "src/main/AndroidManifest.xml";
+  private static final String MAIN_RESOURCES = "src/main/res";
+  private static final String RELEASE_SOURCES = "src/release";
   private static final String DEBUG_SOURCES = "src/debug/java";
   private static final String DEBUG_MANIFEST = "src/debug/AndroidManifest.xml";
 
-  /** Resolves a module-relative path whether the run starts in the module or the repo root. */
+  /**
+   * Resolves a module-relative path whether the run starts in the module or the repo root.
+   *
+   * <p>Anchored on a marker that only the module has, rather than on "does this path exist here".
+   * The naive version resolved {@code "build.gradle"} against the repo root, where a seven-line
+   * root script exists — so the two assertions about the build script were reading the wrong file
+   * and, being negative assertions, could not notice. Gradle happens to run tests with the module
+   * as the working directory, so it passed there and would have failed to protect anything from an
+   * IDE run rooted at the repo.
+   */
+  private static Path moduleRoot() {
+    for (final String candidate : new String[] {".", "app"}) {
+      if (Files.exists(Paths.get(candidate, "src", "main", "AndroidManifest.xml"))) {
+        return Paths.get(candidate);
+      }
+    }
+    throw new IllegalStateException("could not locate the app module from "
+        + Paths.get("").toAbsolutePath());
+  }
+
   private static Path at(final String modulePath) {
-    final Path direct = Paths.get(modulePath);
-    if (Files.exists(direct)) return direct;
-    return Paths.get("app").resolve(modulePath);
+    return moduleRoot().resolve(modulePath);
   }
 
   private static List<Path> filesUnder(final Path root) throws IOException {
@@ -119,6 +150,10 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
     assertTrue(MAIN_MANIFEST + " must exist and be scanned; a manifest is where a component would "
         + "actually be declared", Files.exists(mainManifest));
     candidates.add(mainManifest);
+    // Resources ship as surely as code, and a class can be named from one - an <intent
+    // android:targetClass> in a preference screen, or a custom view in a layout. ~350 files here,
+    // none of which the first version of this scan ever opened.
+    candidates.addAll(filesUnder(at(MAIN_RESOURCES)));
 
     for (final Path file : candidates) {
       if (!Files.exists(file)) continue;
@@ -161,6 +196,13 @@ public class ReleaseManifestHasNoTestScaffoldingTest {
           + ". Either it moved - in which case the other test in this file is now checking "
           + "nothing - or it was deleted and should be removed from SCAFFOLDING.", found);
     }
+
+    // There is no src/release today, which is why the scan above does not look there. That is an
+    // assumption with a shelf life: a src/release/java copy of either class would compile into the
+    // shipped variant and be invisible to every other assertion in this file.
+    assertFalse(RELEASE_SOURCES + " now exists. Everything in this file assumes the release variant "
+        + "is fed only by src/main, so either add it to the scan or delete it.",
+        Files.exists(at(RELEASE_SOURCES)));
 
     // The mechanism itself. Everything above checks WHERE the scaffolding sits; none of it would
     // notice the build script being told to compile that directory into the shipped variant, which

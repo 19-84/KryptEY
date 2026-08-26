@@ -27,8 +27,15 @@
           that ships its own autofill service is a different app. Guarded by
           ReleaseManifestHasNoTestScaffoldingTest, which derives its list from src/debug/java.
         -->
+        <!--
+          Labelled explicitly. The debug APK carries the same applicationId as release, so without
+          this the service inherits the application label and a tester's autofill picker offers
+          "KryptEY" as a password manager. Selecting it would silently disable their real one and
+          route every app's form structures through this process, which fills nothing.
+        -->
         <service
             android:name="com.amnesica.kryptey.inputmethod.RecordingAutofillService"
+            android:label="KryptEY test recorder - DO NOT ENABLE"
             android:exported="false"
             android:permission="android.permission.BIND_AUTOFILL_SERVICE">
             <intent-filter>

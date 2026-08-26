@@ -9,4 +9,11 @@
       absence of one id from a structure it never established was populated at all.
     -->
     <item name="autofill_probe_field" type="id" />
+    <!--
+      A second field, so focus can move BETWEEN two host fields while the keyboard is already up.
+      That is what forces a fresh fill request at a moment when the IME window exists - without it
+      the only structure a test can capture is the one built when the first field took focus, which
+      is necessarily before any keyboard window was created.
+    -->
+    <item name="autofill_probe_field_two" type="id" />
 </resources>

@@ -19,6 +19,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -50,8 +51,25 @@ public class AutofillDoesNotReachTheKeyboardTest {
 
   /** The compose box that holds decrypted plaintext. */
   private static final String COMPOSE_BOX_ID = "e2ee_input_field";
-  /** The scaffolding field in the host activity, which autofill SHOULD see. */
-  private static final String HOST_FIELD_ID = "autofill_probe_field";
+  /** The scaffolding field focused while the keyboard is up, which autofill SHOULD see. */
+  private static final String SECOND_FIELD_ID = "autofill_probe_field_two";
+
+  /**
+   * Every id in the keyboard's own layout, not just the compose box.
+   *
+   * <p>The commit that introduced this test claimed "nothing from the keyboard's window" while
+   * asserting the absence of a single string. Checking the whole layout costs nothing and makes the
+   * sentence true — and if the platform ever does start including IME windows, the compose box is
+   * not the only thing in there worth knowing about.
+   */
+  private static final String[] IME_VIEW_IDS = {
+      "e2ee_input_field", "e2ee_strip_view", "e2ee_strip_wrapper", "e2ee_main_wrapper",
+      "e2ee_main_button_strip", "e2ee_edit_text_layout", "e2ee_info_text",
+      "e2ee_button_encrypt", "e2ee_button_decrypt", "e2ee_button_clear_text",
+      "e2ee_button_select_recipient", "e2ee_button_add_recipient", "e2ee_button_chat_logs",
+      "e2ee_button_show_help", "e2ee_button_select_encoding_raw",
+      "e2ee_button_select_encoding_fairytale", "keyboard_view",
+  };
 
   private static final String AUTOFILL_SERVICE =
       "com.amnesica.kryptey/com.amnesica.kryptey.inputmethod.RecordingAutofillService";
@@ -121,7 +139,20 @@ public class AutofillDoesNotReachTheKeyboardTest {
   }
 
   /**
-   * With the keyboard up over a real text field, autofill never sees the compose box.
+   * With the keyboard up, a fresh fill request still carries nothing belonging to it.
+   *
+   * <p><b>The ordering is the whole test.</b> An earlier version of this asserted the same absence
+   * and established nothing, for a reason worth writing down: autofill builds a structure when a
+   * view takes focus, the activity focuses its first field in {@code onCreate}, and the test then
+   * waited for window focus — the very event that triggers the request. So the only structure it
+   * could capture was built before the IME window existed, and the compose box could not have been
+   * in it whether or not the platform would ever include such a thing. It was green in both
+   * worlds.
+   *
+   * <p>So this waits until the keyboard is demonstrably bound and connected, and only then moves
+   * focus to a <em>second</em> field, which forces a new request at a moment when the keyboard's
+   * window is up. The assertion is made against that request specifically, identified by sequence
+   * number, rather than against a merged pile of everything the service has ever seen.
    */
   @Test
   public void thecomposeBoxIsNeverOfferedToTheAutofillService() throws Exception {
@@ -144,49 +175,70 @@ public class AutofillDoesNotReachTheKeyboardTest {
       assertTrue("the host field never gained window focus; this is a harness failure, not a "
           + "finding about autofill", activity.hasWindowFocus());
 
-      // Drive the keyboard up and keep asking, for the same reason the binding test does: binding
-      // is asynchronous and the first request can land before the framework is ready.
-      final long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-      boolean keyboardConnected = false;
-      while (System.currentTimeMillis() < deadline) {
+      // Step 1: get the keyboard genuinely up. isActive alone says a client has an input
+      // connection; it does not say the IME's own window was ever created. Waiting for the service
+      // as well is what makes "the keyboard window exists" more than an assumption.
+      final long bindDeadline = System.currentTimeMillis() + TIMEOUT_MS;
+      boolean keyboardUp = false;
+      while (System.currentTimeMillis() < bindDeadline) {
         instrumentation.runOnMainSync(() -> {
           typed.field.requestFocus();
           imm.showSoftInput(typed.field, InputMethodManager.SHOW_FORCED);
         });
-        if (imm.isActive(typed.field) && RecordingAutofillService.requestCount() > 0) {
-          keyboardConnected = true;
+        if (imm.isActive(typed.field) && imeServiceIsRunning()) {
+          keyboardUp = true;
           break;
         }
         Thread.sleep(POLL_MS);
       }
+      assertTrue("the keyboard never bound and connected, so there was never a keyboard window to "
+          + "look for in any structure. Harness failure, not a finding.", keyboardUp);
 
-      // --- Control 1: autofill actually ran. Without this the absence below is meaningless. ---
-      assertTrue("the autofill service was never asked to fill anything, so this test measured "
-              + "nothing. Absence of the compose box from zero structures is not evidence. Check "
-              + "that the service is enabled and that the host field is autofill-eligible.",
-          RecordingAutofillService.requestCount() > 0);
+      // Step 2: with the keyboard up, move focus. THIS is the request that matters.
+      final int before = RecordingAutofillService.requestCount();
+      instrumentation.runOnMainSync(() -> typed.secondField.requestFocus());
 
-      // --- Control 2: the structure is populated and names fields by id. ---
-      final List<String> seen = RecordingAutofillService.seenViewIds();
-      assertTrue("autofill ran but never reported the host activity's own field (" + HOST_FIELD_ID
-              + "). Either the structure was empty or ids are not being reported, and in both "
-              + "cases the assertion below would pass without looking. Saw: " + seen,
-          seen.contains(HOST_FIELD_ID));
+      final long requestDeadline = System.currentTimeMillis() + TIMEOUT_MS;
+      while (RecordingAutofillService.requestCount() <= before
+          && System.currentTimeMillis() < requestDeadline) {
+        Thread.sleep(POLL_MS);
+      }
 
-      // --- Control 3: the keyboard was actually up and connected while this happened. ---
-      assertTrue("the keyboard never established an input connection, so its compose box was "
-              + "never on screen and could not have appeared in any structure regardless",
-          keyboardConnected);
-      assertTrue("the keyboard's own service was not running during the measurement",
+      // --- Control 1: a NEW request arrived, after the keyboard was up. ---
+      assertTrue("no fill request was produced after the keyboard was already showing. Without one "
+              + "there is nothing to inspect that could possibly have contained a keyboard view, "
+              + "and any absence below would be an artefact of when the structure was built - "
+              + "which is exactly how the previous version of this test managed to prove nothing.",
+          RecordingAutofillService.requestCount() > before);
+
+      final RecordingAutofillService.Recorded measured = RecordingAutofillService.latest();
+      assertTrue("no recorded request to inspect", measured != null);
+      assertTrue("the inspected request must be the one produced after the keyboard came up",
+          measured.sequence > before);
+
+      // --- Control 2: that structure is populated and names fields by id. ---
+      assertTrue("the post-keyboard request did not contain the field that was just focused ("
+              + SECOND_FIELD_ID + "), so either the structure was empty or ids are not reported, "
+              + "and the assertion below would pass without looking. Saw: " + measured.viewIds,
+          measured.viewIds.contains(SECOND_FIELD_ID));
+      assertTrue("the structure reported no windows at all", measured.windowCount >= 1);
+
+      // --- Control 3: the keyboard was still up when that structure was built. ---
+      assertTrue("the keyboard's service stopped running before the measurement completed",
           imeServiceIsRunning());
 
-      // --- The measurement. ---
-      assertFalse("the decrypted-message compose box (" + COMPOSE_BOX_ID + ") was handed to an "
-              + "autofill service. Everything the user has decrypted is offered to whatever "
-              + "autofill provider is installed, and FLAG_SECURE does not cover autofill. "
-              + "android:importantForAutofill=\"no\" on that view is the one-line mitigation, and "
-              + "this failing test is the demonstrated need the branch was waiting for. Saw: "
-              + seen, seen.contains(COMPOSE_BOX_ID));
+      // --- The measurement: nothing from the keyboard's own layout is in it. ---
+      final List<String> leaked = new ArrayList<>();
+      for (final String id : IME_VIEW_IDS) {
+        if (measured.viewIds.contains(id)) leaked.add(id);
+      }
+      assertEquals("views from the keyboard's own window were handed to an autofill service. If "
+              + COMPOSE_BOX_ID + " is among them, every decrypted message the user has read is "
+              + "offered to whatever autofill provider is installed, and FLAG_SECURE does not "
+              + "cover autofill. android:importantForAutofill=\"no\" on that view is the one-line "
+              + "mitigation, and this failure is the demonstrated need the branch was waiting for. "
+              + "Leaked: " + leaked + "; whole structure: " + measured.viewIds,
+          0, leaked.size());
     } finally {
       activity.finish();
     }

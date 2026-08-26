@@ -1869,18 +1869,37 @@ autofill provider and the KryptEY keyboard bound and connected over a real text 
 **`e2ee_input_field` never appears.** The structure carries the host activity's own field and
 nothing belonging to the keyboard's window.
 
-That is an absence, which is the weakest kind of evidence and the easiest to fake, so it stands on
-five controls rather than on its own:
+**The first version of this experiment proved nothing, and the reason is worth more than the
+result.** It asserted the same absence and was green — but an adversarial review traced the
+ordering: autofill builds a structure when a view takes focus, the activity focused its field in
+`onCreate`, and the test then *waited for window focus*, which is the very event that fires the
+request. So the only structure it could capture was built before any keyboard window existed. It
+would have been equally green on a platform that did include IME windows. The conclusion was
+unfalsifiable, which is worse than wrong.
 
-1. Autofill actually ran — the service recorded at least one fill request. Absence from zero
-   structures would be worth nothing.
-2. The structure was populated and identifies fields by resource id: the host activity's own field
-   (`autofill_probe_field`, an id that exists only so this control can be written) is in it.
-3. The keyboard was bound and holding a live input connection at the time, so its window existed.
-4. The string being searched for names a real view. A renamed id would otherwise make this test
-   pass, with growing confidence, forever.
-5. The detector discriminates: pointed at `autofill_probe_field` — a field that *is* in the
-   structure — the assertion fails. Verified by running it that way.
+What the test does now is force a request at a moment when the keyboard is demonstrably up: it
+waits until the IME is bound and connected, then moves focus to a *second* host field, and inspects
+that request specifically, identified by sequence number. The recorded structure is
+
+```
+[autofill_probe_field, autofill_probe_field_two]
+```
+
+— the host activity's two fields, and nothing else, with the keyboard on screen.
+
+It stands on four controls, not on the absence:
+
+1. A request arrived *after* the keyboard was up (`sequence > before`). Without that there is
+   nothing to inspect that could have contained a keyboard view.
+2. That structure is populated and names fields by resource id — the field just focused is in it,
+   via an id that exists only so this control can be written.
+3. The keyboard was bound, connected, and its service running across the measurement.
+4. The detector discriminates: add a field that *is* in the structure to the list of ids it
+   searches for, and the assertion fails. Verified by running it that way.
+
+The absence is also checked across the keyboard's whole layout — all seventeen ids in
+`ee2e_main_view` and `main_keyboard_frame` — rather than the compose box alone, so the sentence
+"nothing from the keyboard's window" is the sentence being tested.
 
 **What this does and does not settle.** It settles the pathway that mattered: a fill request for
 some other app's field does not carry the keyboard's views along with it, so the decrypted message

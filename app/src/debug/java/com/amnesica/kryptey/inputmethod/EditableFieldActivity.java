@@ -19,6 +19,16 @@ public class EditableFieldActivity extends Activity {
   /** The field the keyboard attaches to. Held so a test can address it without findViewById ids. */
   public EditText field;
 
+  /**
+   * A second field, so a test can move focus while the keyboard is already showing.
+   *
+   * <p>Autofill builds a structure when a view takes focus. With one field the only structure
+   * obtainable is the one from the very first focus - which happens before the IME window exists,
+   * so it could never contain keyboard views whether or not the platform would include them. A
+   * second field is what makes the interesting request possible at all.
+   */
+  public EditText secondField;
+
   @Override
   protected void onCreate(final Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -38,6 +48,14 @@ public class EditableFieldActivity extends Activity {
     field.setFocusable(true);
     field.setFocusableInTouchMode(true);
     root.addView(field);
+
+    secondField = new EditText(this);
+    secondField.setId(R.id.autofill_probe_field_two);
+    secondField.setFocusable(true);
+    secondField.setFocusableInTouchMode(true);
+    root.addView(secondField);
+
+    root.setOrientation(LinearLayout.VERTICAL);
     setContentView(root);
 
     field.requestFocus();
