@@ -624,14 +624,15 @@ public final class RichInputConnection {
    * valid when setting the selection or when retrieving the text cache at that point, or
    * invalid arguments were passed.
    */
-  public void setSelection(int start, int end) {
+  public boolean setSelection(int start, int end) {
     if (DEBUG_BATCH_NESTING) checkBatchEdit();
     if (DEBUG_PREVIOUS_TEXT) checkConsistencyForDebug();
     if (start < 0 || end < 0) {
-      return;
+      return false;
     }
     if (mExpectedSelStart == start && mExpectedSelEnd == end) {
-      return;
+      // Already there. Nothing moved, and nothing needed to.
+      return true;
     }
 
     mExpectedSelStart = start;
@@ -639,10 +640,11 @@ public final class RichInputConnection {
     if (isConnected()) {
       final boolean isIcValid = getIC().setSelection(start, end);
       if (!isIcValid) {
-        return;
+        return false;
       }
     }
     reloadTextCache();
+    return true;
   }
 
   public int getExpectedSelectionStart() {

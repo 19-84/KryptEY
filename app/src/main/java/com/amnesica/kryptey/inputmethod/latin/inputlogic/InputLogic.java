@@ -354,9 +354,19 @@ public final class InputLogic {
       // We also need to unlearn the selected text.
       final int numCharsDeleted = mConnection.getExpectedSelectionEnd()
           - mConnection.getExpectedSelectionStart();
-      mConnection.setSelection(mConnection.getExpectedSelectionEnd(),
-          mConnection.getExpectedSelectionEnd());
-      mConnection.deleteTextBeforeCursor(numCharsDeleted);
+      // Only delete if the caret actually collapsed. This pair is "move to the end of the
+      // selection, then delete backwards over it" - and when the move fails the editor still holds
+      // the selection while our own model says the caret is collapsed, so the delete removes that
+      // many characters BEFORE the real cursor: text the user never selected.
+      //
+      // setSelection used to be void, so the call site could not tell. The failure is ordinary
+      // rather than exotic: getIC() returns the host's connection, which is the adversary here and
+      // goes dead on any app switch, or the strip's own connection, which returns false when its
+      // editable is gone.
+      if (mConnection.setSelection(mConnection.getExpectedSelectionEnd(),
+          mConnection.getExpectedSelectionEnd())) {
+        mConnection.deleteTextBeforeCursor(numCharsDeleted);
+      }
     } else {
       // There is no selection, just delete one character.
       if (inputTransaction.mSettingsValues.mInputAttributes.isTypeNull()
@@ -447,7 +457,12 @@ public final class InputLogic {
     }
     mConnection.finishComposingText();
     mRecapitalizeStatus.rotate();
-    mConnection.setSelection(selectionEnd, selectionEnd);
+    // Same pair as the backspace path, with a commit after it: if the caret did not collapse, the
+    // delete eats text before the real cursor and the recapitalised string then lands at the wrong
+    // offset. Worse here than there, because the buffer being rewritten can hold up to
+    // MAX_CHARACTERS_FOR_RECAPITALIZATION characters of whatever the user had selected - including
+    // decrypted plaintext.
+    if (!mConnection.setSelection(selectionEnd, selectionEnd)) return;
     mConnection.deleteTextBeforeCursor(numCharsSelected);
     mConnection.commitText(mRecapitalizeStatus.getRecapitalizedString(), 0);
     mConnection.setSelection(mRecapitalizeStatus.getNewCursorStart(),

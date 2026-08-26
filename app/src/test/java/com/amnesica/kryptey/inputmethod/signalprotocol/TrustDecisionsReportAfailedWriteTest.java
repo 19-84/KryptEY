@@ -119,6 +119,19 @@ public class TrustDecisionsReportAfailedWriteTest {
     assertFalse("a verification that did not reach disk must say so: the badge would appear and "
         + "then be taken away by the next reload, with the user believing they had compared the "
         + "number", SignalProtocolMain.verifyContact(bob));
+
+    // And the badge must go back, which the boolean alone does not check.
+    //
+    // setVerified(true) has already been written into the LIVE contact list by the time the write
+    // is attempted, so reporting failure without undoing it leaves the app saying two contradictory
+    // things: the toast reads "Nothing has been marked as verified" and the contact row renders the
+    // verified badge, because isContactKeyTrustworthy agrees with the in-memory flag. That errs
+    // open - told it did not record, shown a green badge - until the next reload takes it away.
+    final Contact reloaded = SignalProtocolMain.getInstance().getAccount().getContactList().get(0);
+    assertFalse("a failed write must not leave the contact marked verified in the live list",
+        reloaded.isVerified());
+    assertFalse("nor leave the app's own trust predicate agreeing that it is",
+        SignalProtocolMain.isContactKeyTrustworthy(reloaded));
   }
 
   /** Rejecting reports that its record landed. */

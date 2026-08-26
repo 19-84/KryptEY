@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -233,8 +234,15 @@ public class VerifyScreenNamesAstandingRejectionTest {
     // Positive control. Without it, a fixture whose envelope failed to resolve to a contact takes
     // the sender == null arm, never writes the banner, and this test passes asserting nothing -
     // the same vacuity the no-fingerprint test guards against explicitly.
-    assertTrue("the envelope must have reached the arm under test, or the absence below means "
-        + "nothing: " + banner, banner.contains("Detected contact"));
+    // Reach checked through the chosen contact, not through the banner.
+    //
+    // This used to assert the banner was not "No contact chosen", using the arm's "Detected
+    // contact" line as evidence it had been reached. That line is gated now - a message that does
+    // not decrypt must not have the strip assert a contact - so the old check would fail here for
+    // the right reason and hide the property under test. setChosenContact runs on this arm before
+    // the decrypt either way, so it is the indicator that survives the gate.
+    assertEquals("the envelope must have reached the arm under test, or the absence below means "
+        + "nothing", bob(), strip.chosenContactForTest());
     assertFalse("a refused bundle was reported as a new key at an address that holds none: "
         + banner, banner.contains("new key for that address"));
   }
@@ -458,5 +466,39 @@ public class VerifyScreenNamesAstandingRejectionTest {
     assertFalse("Verify stayed live for a contact with no pinned key, over blanked digits",
         verify.isEnabled());
     assertFalse("and so did Reject", reject.isEnabled());
+  }
+
+  /**
+   * An envelope that decrypts to nothing must not have the strip assert who sent it.
+   *
+   * <p>The address name and device id are an unsigned header. A relay copies them out of any
+   * envelope that contact has ever sent — it carries all of them — pairs them with arbitrary
+   * ciphertext bytes, and encodes. It does not have to forge anything: the canonicality check is
+   * satisfied by construction, because the adversary ENCODES rather than edits.
+   *
+   * <p>The decrypt then fails, and the only thing that ties a message to the key pinned at that
+   * address is a successful decrypt. This arm discarded that fact and painted "Detected contact:
+   * Bob" on the persistent banner anyway, leaving a transient toast to say the decryption failed —
+   * a toast whose own text blames the user. Both sibling arms gate the same line.
+   */
+  @Test
+  public void anenvelopeThatDecryptsToNothingDoesNotAssertWhoSentIt() throws Exception {
+    final byte[] noise = new byte[64];
+    for (int i = 0; i < noise.length; i++) noise[i] = (byte) (i * 7 + 3);
+    final MessageEnvelope forged = new MessageEnvelope(noise,
+        org.signal.libsignal.protocol.message.CiphertextMessage.WHISPER_TYPE,
+        bob().getSignalProtocolAddressName(), bob().getDeviceId());
+
+    strip.processIncomingEnvelopeForTest(forged);
+
+    assertEquals("precondition: the envelope must have reached the arm under test", bob(),
+        strip.chosenContactForTest());
+    final String shown =
+        ((TextView) strip.findViewById(R.id.e2ee_info_text)).getText().toString();
+    assertFalse("nothing decrypted, so the strip must not name a sender on the banner that stays "
+            + "on screen. The address is an unsigned header the relay copies; a successful decrypt "
+            + "is the only thing on this route that binds a message to the key pinned there. "
+            + "Shown: " + shown,
+        shown.contains("Detected contact"));
   }
 }

@@ -291,7 +291,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * documented failure mode of this control, so a warning that is provably wrong where it fires is
    * worse than the gap it closes.
    */
-  static final String INFO_RETIRED_CONTACT_NAME = "You deleted a contact called %s, and this new one has a different address - so it is not the same person coming back. If they told you they reinstalled, check the security number with them by voice before sending anything.";
+  static final String INFO_RETIRED_CONTACT_NAME = "You deleted a contact called %s, and this app cannot confirm that this is the same person coming back. If they told you they reinstalled, check the security number with them by voice before sending anything.";
   // Does not tell the user to obtain the invite "out of band": there is no import path for one -
   // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
   // the only way a bundle can enter the app. Advising a route that does not exist is the same
@@ -1879,12 +1879,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // that then fails to decrypt, and the comment here called that "the safe direction". It is
       // not: nothing pins, so the warning claims a key that does not exist and the verify screen it
       // points at has no fingerprint to compare. Asked after the attempt instead.
-      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
+      // Gated, like both sibling arms. This one discarded the result and asserted the contact
+      // unconditionally, which is the odd one out of three.
+      final boolean delivered =
+          decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       if (messageEnvelope.getCiphertextType()
           == org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE) {
         warnIfKeyWasRejected(sender);
       }
-      setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
+      if (delivered) setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
     }
   }
 
@@ -2550,8 +2553,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /**
-   * @return whether the strip may now claim this contact is usable. False only on the
-   *     session-creation arm, when no session exists after the attempt.
+   * @return whether the strip may now claim anything about this contact: false when an attached
+   *     bundle was refused, and false when a message was expected and none came out. The second
+   *     half was missing, in the code as well as in this sentence - it said "false only on the
+   *     session-creation arm, when no session exists", and the method never asked whether a session
+   *     existed. It returned false exactly when a bundle was refused, so "usable" at the call sites
+   *     meant "the bundle was not refused".
    */
   private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
     // BEFORE the decrypt, because the decrypt itself can create one. decryptMessage's PREKEY_TYPE
@@ -2638,7 +2645,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Log.e(TAG, "Error: Decrypted message is null");
     }
     mE2EEStrip.clearClipboard();
-    return true;
+    // Nothing came out, so the caller may not say a contact was detected. A successful decrypt is
+    // the only thing on this route that ties the message to the key pinned at that address; the
+    // address itself is an unsigned header the relay copies out of any envelope that contact ever
+    // sent. Without this, an envelope with a genuine address and arbitrary ciphertext bytes left
+    // the persistent banner naming the contact, with only a transient toast saying the decrypt
+    // failed - and no forgery is needed to build one, because the adversary ENCODES rather than
+    // edits, so the canonicality check is satisfied by construction.
+    return isSessionCreation || decryptedMessage != null;
   }
 
   /** The real send path, for tests. */

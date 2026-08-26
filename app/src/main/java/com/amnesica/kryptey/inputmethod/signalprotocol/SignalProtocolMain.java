@@ -598,9 +598,20 @@ public class SignalProtocolMain {
     // not be recorded", and the strip already renders that as INFO_VERIFY_UNAVAILABLE - so the one
     // failure mode that most plausibly means exactly that was the one it could not report. A write
     // can fail while the process looks healthy: SharedPreferences restores the previous file from
-    // its .bak while the in-memory map keeps the new value, so the badge appears and the next
-    // reloadAccount takes it away again, with the user believing they have compared the number.
-    return accountWriteSucceeded();
+    // its .bak while the in-memory map keeps the new value, so reads keep succeeding.
+    if (accountWriteSucceeded()) return true;
+
+    // Rolled back, the same way the no-pin refusal above rolls back, and for a sharper reason.
+    // setVerified(true) has already gone into the LIVE contact list, so returning false without
+    // undoing it leaves the app saying two contradictory things at once: the toast says "Nothing
+    // has been marked as verified", and the contact list renders the verified badge, because
+    // isContactKeyTrustworthy agrees with the in-memory flag. That errs open - the user is told the
+    // check did not record and shown a green badge anyway - until the next reloadAccount silently
+    // takes it away.
+    Log.e(TAG, "Verification could not be persisted; rolling the badge back");
+    contact.setVerified(false);
+    mAccount.updateContactInContactList(contact);
+    return false;
   }
 
   /**
@@ -2200,7 +2211,6 @@ public class SignalProtocolMain {
     mAccount = loaded;
   }
 
-  /** @return whether the account actually reached storage. */
   /**
    * Whether the account write SUCCEEDED, as distinct from whether there was anywhere to write.
    *
@@ -2287,6 +2297,8 @@ public class SignalProtocolMain {
     // isolation rather than a fix - a trap set for the first test that reads it.
     sInstance.mLastAttachedBundleRefused = false;
     sInstance.mLastChatLogWriteFailed = false;
+    // The third flag of this shape, and the one that was missed when the other two were listed.
+    sInstance.mLastRejectionReachedDisk = true;
   }
 
   // needed for testing only

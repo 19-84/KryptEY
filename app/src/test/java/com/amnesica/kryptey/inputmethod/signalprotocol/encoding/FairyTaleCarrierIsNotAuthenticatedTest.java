@@ -36,6 +36,14 @@ import org.robolectric.RuntimeEnvironment;
  *
  * <p>The mitigation, if one is wanted, is not in the codec: it is that the app must never present
  * carrier prose as though the sender wrote it. Recorded in REVIVAL.md rather than papered over.
+ *
+ * <p><b>If this file goes red, do not delete it.</b> An earlier version of this javadoc said red
+ * would mean a real binding had been added and this test should be replaced — which is backwards,
+ * and is the one instruction that would ratify the reverted defect. Re-landing the fake binding
+ * turns {@link #arelayCanReplaceTheCarrierWithItsOwnProse} red, because that forgery reuses the
+ * honest invisible run and so is exactly the variant a fake check refuses. The discriminator is the
+ * re-encode test below: a fake binding leaves it GREEN, and a real one — which needs a shared secret
+ * that does not exist at prekey-bundle time — would turn both red.
  */
 @RunWith(RobolectricTestRunner.class)
 public class FairyTaleCarrierIsNotAuthenticatedTest {
@@ -79,12 +87,47 @@ public class FairyTaleCarrierIsNotAuthenticatedTest {
     final String prose = "My phone died - delete me and add me again from THIS message.";
     final String forged = prose + honest.replaceAll("[^\\p{C}]", "");
 
-    assertTrue("precondition: the payload must be carried over untouched",
-        forged.replaceAll("[^\\p{C}]", "").equals(honest.replaceAll("[^\\p{C}]", "")));
+    // No precondition here: `forged` is defined as prose plus the honest invisible run, and
+    // asserting that it contains the honest invisible run would compare a value with itself. The
+    // earlier version did exactly that and asserted nothing about the encoder.
     assertEquals("the payload survives a carrier swap, and the reader sees only the relay's "
             + "sentence. This is not a defect the encoder can fix: the relay owns the conversation "
             + "and can write that sentence next to any message anyway. It is recorded so that a "
             + "check which merely makes re-encoding necessary is not mistaken for authentication.",
         PAYLOAD, FairyTaleEncoder.decode(forged));
+  }
+
+  /**
+   * The discriminator: the relay does the encoder's own work, and no check over public data helps.
+   *
+   * <p>This is what the reverted binding could not stop and what any comparison-based binding cannot
+   * stop. The payload is compressed with a public, deterministic function of public inputs, so a
+   * relay decompresses it, puts its own sentence wherever the check expects to find one, and
+   * recompresses. Fifteen lines, no secret at any step.
+   *
+   * <p>A fake binding leaves this test green — which is the point of having it beside the one above.
+   */
+  @Test
+  public void arelayCanReEncodeSoAcomparisonBindingWouldNotHelp() throws Exception {
+    final String honest = FairyTaleEncoder.encode(PAYLOAD, context, 4096);
+    final String recovered = FairyTaleEncoder.decode(honest);
+    final String prose = "My phone died - delete me and add me again from THIS message.";
+
+    // Re-encoded from scratch, with the relay's own sentence placed where a comparison-based
+    // binding would look for it - the NUL-separated form the reverted fix used. Written this way on
+    // purpose: under the fake binding this decodes cleanly, so this test stays GREEN and keeps
+    // saying why that binding was not enough. Under today's code, with no binding, the separator is
+    // simply part of the payload.
+    final byte[] recompressed = EncodeHelper.compressString(
+        prose + "\u0000" + EncodeHelper.minifyJSON(recovered));
+    final String forged = prose + EncodeHelper.convertBinaryToInvisibleString(
+        EncodeHelper.convertByteArrayToBinary(recompressed));
+
+    assertTrue("a re-encoded message carries the original payload under the relay's own prose. Any "
+            + "binding built from a comparison over these bytes is satisfied by it, because the "
+            + "relay computed both halves the same way the sender would have. Nothing here is "
+            + "secret, so nothing here authenticates. Decoded: "
+            + FairyTaleEncoder.decode(forged),
+        FairyTaleEncoder.decode(forged).contains(PAYLOAD));
   }
 }

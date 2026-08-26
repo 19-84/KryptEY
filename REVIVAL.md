@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-three sections, written in the order things were found rather than by subject, so the
+Fifty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -109,6 +109,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A writer on the right of an &&](#a-writer-on-the-right-of-an-)
 - [The first clean round in eleven, and a guard for the class](#the-first-clean-round-in-eleven-and-a-guard-for-the-class)
 - [The canonicality check, the fix that was not one, and what is actually true](#the-canonicality-check-the-fix-that-was-not-one-and-what-is-actually-true)
+- [Sweeping for the class instead of the bug, and what it found](#sweeping-for-the-class-instead-of-the-bug-and-what-it-found)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3842,3 +3843,56 @@ caught two further defects on the way — the flag held the *previous* rejection
 early-return path, and the failed-write message claimed a key had been refused in the state where
 none existed.
 
+
+## Sweeping for the class instead of the bug, and what it found
+
+**The last defect's lesson generalised into a question nobody had asked: which checks on this branch
+does an adversary defeat by redoing the work the honest code does?**
+
+The answer for the class itself is clean — no other checksum-over-attacker-data, no other embedded
+copy compared with itself, no forgeable marker. `EnvelopeCodec.fromWire`'s re-encode-and-compare was
+examined specifically and is *not* an instance: the adversary cannot choose the two sides
+independently, because `encode(bytes)` is a function of the bytes the parser produced. It establishes
+canonicality, which re-encoding genuinely gives, and never claims authenticity.
+
+But the sweep found the adjacent, weaker half of the class — **claims that outrun their mechanism**
+— and one of them was a live defect.
+
+**"Detected contact: Bob" was asserted from an unsigned header.** `processSignalMessage` called the
+decrypt, discarded the result, and painted the contact's name on the persistent banner
+unconditionally. Both sibling arms gate that line, with comments arguing the gate is required; this
+one was the odd one out. A relay copies the address name and device id out of any envelope that
+contact ever sent — it carries all of them — pairs them with arbitrary bytes, and *encodes*. No
+forgery is involved, so the canonicality check is satisfied by construction. The decrypt then fails,
+a transient toast blames the user, and the banner that stays on screen names the contact. The one
+thing that ties a message to the key pinned at that address is a **successful decrypt**, and it was
+one frame away and unused.
+
+Fixing it also corrected the method's `@return`, which claimed "false only on the session-creation
+arm, when no session exists after the attempt". It never asked whether a session existed; it
+returned false exactly when a bundle was refused. So `usable` and `bundleAccepted` at the call sites
+meant "the bundle was not refused" — the javadoc described a check the code did not perform.
+
+**And a warning asserted a fact with no adversary in sight.** `INFO_RETIRED_CONTACT_NAME` said
+"...and this new one has a different address", but its predicate suppresses only when a pin survives
+at the recorded address — and `LegacyKeyMigration` deliberately blanks that address for every
+pre-upgrade retirement. So on any upgrading install, a deleted contact re-inviting *from the same
+address* got a warning whose central clause was false. It now says what the predicate supports: the
+app cannot confirm this is the same person coming back.
+
+**Two defects in the previous commit's retained half**, both found by review. A failed verify write
+returned false *without rolling back* `setVerified(true)`, which had already gone into the live
+contact list — so the toast said "Nothing has been marked as verified" while the row rendered the
+verified badge and `isContactKeyTrustworthy` agreed. That errs open, and it was a path this branch
+created. And the new pinning test's stated discriminator was backwards: re-landing the reverted fake
+binding turns it *red*, and its javadoc then told the reader to replace the test — the one
+instruction that would ratify the defect. The re-encode attack is a second test now, which stays
+green under a fake binding and red under nothing at all.
+
+**Also closed, from the earlier faithfulness sweep:** `RichInputConnection.setSelection` was `void`
+with three silent exits, one of them after committing to the new cursor model, while its own javadoc
+still documented a boolean return. Two call sites follow it with "delete backwards over what was
+selected". When the move fails the editor still holds the selection and our model says the caret is
+collapsed, so the delete eats that many characters *before the real cursor* — text the user never
+selected, and in the recapitalise path a buffer that can hold decrypted plaintext. The signal is
+restored and both call sites bail.
