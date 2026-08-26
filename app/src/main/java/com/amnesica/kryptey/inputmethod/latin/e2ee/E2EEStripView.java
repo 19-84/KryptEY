@@ -34,6 +34,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageType;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
+import com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.Encoder;
@@ -650,6 +651,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
         Log.d(TAG, INFO_NO_SAVED_MESSAGES);
         e.printStackTrace();
+      } catch (ChatLogUnavailableException e) {
+        // The stored log exists and could not be read. Show no history rather than no keyboard:
+        // this runs from a click listener, and an uncaught exception here kills the input method
+        // in whatever app the user is typing in. The condition is persistent, so it would be
+        // crash-on-tap until reinstall. Nothing is written - the account stays deferred - so the
+        // unreadable log is still on disk for a later version, or a later unlock, to recover.
+        Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
+        Log.e(TAG, "the chat log could not be read; showing none", e);
       }
     }
 
@@ -1232,6 +1241,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         Toast.makeText(getContext(), INFO_MESSAGE_ENCRYPTION_FAILED, Toast.LENGTH_SHORT).show();
         Log.e(TAG, "Error: Encrypted message is null!");
         e.printStackTrace();
+      } catch (ChatLogUnavailableException e) {
+        // Recording the plaintext is part of sending, and it could not be done - the log exists
+        // and will not read. Refusing the send is the honest outcome: completing it would put a
+        // message in the peer's hands that this device has no record of, and the user would have
+        // no way to tell. Crashing is not an option here for the reason in the catch above.
+        Toast.makeText(getContext(), INFO_MESSAGE_ENCRYPTION_FAILED, Toast.LENGTH_SHORT).show();
+        Log.e(TAG, "the chat log could not be read, so the send was not recorded; refusing", e);
       }
     } else {
       Toast.makeText(getContext(), INFO_NO_MESSAGE_TO_ENCRYPT, Toast.LENGTH_SHORT).show();
@@ -2308,7 +2324,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   @Override
   public void removeContact(Contact contact) {
-    mE2EEStrip.removeContact(contact);
+    try {
+      mE2EEStrip.removeContact(contact);
+    } catch (ChatLogUnavailableException e) {
+      // Deleting a contact has to sweep that contact's messages out of the log, which needs the
+      // log. If it cannot be read the deletion cannot be completed correctly, so it is refused
+      // rather than half-done - a contact row removed while its plaintext stayed behind is the
+      // worse outcome, and it is the one the help text promises does not happen.
+      Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
+      Log.e(TAG, "the chat log could not be read, so the contact was not deleted", e);
+      return;
+    }
     loadContactsIntoContactsListView();
     resetChosenContactAndInfoText();
   }

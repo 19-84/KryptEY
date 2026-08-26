@@ -227,13 +227,18 @@ public class StorageHelper {
   }
 
   /**
-   * Reads the chat log, with the same fallback the eager read had.
+   * Reads the chat log, refusing to turn a failed read into an empty history.
    *
-   * <p>convertValue(null, ...) returns null, so a single failed read would otherwise produce a null
-   * list - which the write-back would persist as the string "null", erasing the user's entire
-   * message history. Falling back to empty is deliberate and predates this being lazy; what is new
-   * is that an empty result here is NOT written back unless something has since touched the log,
-   * because a log that was never loaded is not saved at all.
+   * <p>This javadoc used to say the opposite - that it "falls back to empty, deliberately" - and a
+   * reviewer caught it still saying so after the body had changed. That is the description a
+   * maintainer reads before deciding whether a caller needs a catch, so it saying "nothing to
+   * catch" was worse than saying nothing.
+   *
+   * <p>An absent key still yields an empty list: a new account, or a log never written. A key that
+   * is present but unreadable throws {@link
+   * com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException}, which leaves the
+   * account deferred so no save can write over what could not be read. Callers must survive it -
+   * see that class for why an input method may not let it escape.
    */
   private ArrayList<StorageMessage> readMessageLog() {
     final ArrayList<StorageMessage> messages = JsonUtil.convertUnencryptedMessagesList(
@@ -255,7 +260,7 @@ public class StorageHelper {
     // Something is stored and we could not read it. Refusing is the whole point: returning an empty
     // list here would leave an account that believes the user has no history, and the next save
     // would make that true. Throwing leaves the account deferred, and the save skips the key.
-    throw new IllegalStateException(
+    throw new com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException(
         "the stored chat log exists but could not be read; refusing to present it as empty");
   }
 

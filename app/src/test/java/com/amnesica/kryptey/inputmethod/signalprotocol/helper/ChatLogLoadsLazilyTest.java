@@ -325,7 +325,8 @@ public class ChatLogLoadsLazilyTest {
     try {
       subject.getUnencryptedMessages();
       throw new AssertionError("an unreadable log must not come back as an empty one");
-    } catch (final IllegalStateException expected) {
+    } catch (final com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException
+        expected) {
       // The account must also still be deferred, so a save cannot write over the stored value.
     }
     assertFalse("after refusing the read the account must stay deferred",
@@ -362,6 +363,35 @@ public class ChatLogLoadsLazilyTest {
     assertFalse("the migration marker was written after a failed read. The next load would then "
             + "treat the unreadable log as already migrated and never try again.",
         preferences.contains(marker));
+  }
+
+  /**
+   * Clearing the loader leaves an empty log, not a null one.
+   *
+   * <p>Its javadoc said "empty" while the code set null, and a review pointed out that nothing
+   * tested it: every call site passes a non-null lambda, so the branch was reachable only in
+   * principle. It is worth pinning anyway, because a null log is the erasure state - it reports
+   * itself loaded and serialises to the string "null" - and "no caller does that today" is a fact
+   * about today.
+   */
+  @Test
+  public void clearingTheLoaderLeavesAnEmptyLogRatherThanANullOne() {
+    final Account subject = helper().getAccountFromSharedPreferences();
+    assertNotNull(subject);
+
+    subject.setMessageLogLoader(null);
+
+    assertNotNull("a cleared loader must leave an empty log, never null",
+        subject.getUnencryptedMessages());
+    assertEquals(0, subject.getUnencryptedMessages().size());
+
+    // And the erasure that a null here would cause must not happen.
+    final String before = rawStoredLog();
+    helper().storeAllInformationInSharedPreferences(subject);
+    assertEquals("an account with a deliberately emptied log must write that empty log, not the "
+        + "string \"null\"", 0, helper().getAccountFromSharedPreferences()
+        .getUnencryptedMessages().size());
+    assertNotNull("precondition: there was a stored log to begin with", before);
   }
 
   /** And a fresh account, which has no store behind it, still starts with an empty log. */
