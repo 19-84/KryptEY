@@ -2364,6 +2364,15 @@ looked at. That is a storage-layout change rather than a lifecycle one, and it i
 everything above. The cap-versus-keep question is untouched by any of this — the log still grows
 forever, still peer-paced.
 
+**One pre-existing gap closed on the way past.** `migrateLegacyKeys` refused to run against a
+contact list that failed to load — the answer is one-shot and irreversible — but had no equivalent
+guard for the chat log, so an unreadable log yielded an empty one, the migration ran against that,
+and the marker was sealed beside the result. The read now distinguishes "nothing is stored" from "we
+could not read what is stored": only the key's presence separates them, and keys are stored in the
+clear. An unreadable log is refused rather than presented as an empty history, and the migration
+returns without sealing. Controls: fall back to empty as before, two tests fail; seal the marker
+anyway, one fails.
+
 The numbers in this entry come from `ChatLogRaiseCostHarness`, which is in the tree so they can be
 re-derived rather than taken on trust. It is `@Ignore`d: a timing threshold tight enough to mean
 something is flaky, and one loose enough to be stable asserts nothing. What guards the behaviour is

@@ -239,11 +239,24 @@ public class StorageHelper {
     final ArrayList<StorageMessage> messages = JsonUtil.convertUnencryptedMessagesList(
         (ArrayList<StorageMessage>) getClassFromSharedPreferences(
             ProtocolIdentifier.UNENCRYPTED_MESSAGES));
-    if (messages == null) {
-      Log.e(TAG, "Error: stored messages could not be read; continuing with an empty list");
-      return new ArrayList<>();
+    if (messages != null) return messages;
+
+    // Null means one of two very different things, and treating them the same is how history gets
+    // destroyed. getClassFromSharedPreferences returns null both when there is nothing stored and
+    // when what is stored could not be decrypted or parsed - it catches RuntimeException precisely
+    // so a corrupt value cannot crash the keyboard on every raise. Only the key's presence tells
+    // the two apart, and keys are stored in the clear; only values are sealed.
+    final SharedPreferences preferences =
+        mContext.getSharedPreferences(mSharedPreferenceName, Context.MODE_PRIVATE);
+    if (!preferences.contains(String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES))) {
+      return new ArrayList<>();   // genuinely nothing stored: a new account, or a log never written
     }
-    return messages;
+
+    // Something is stored and we could not read it. Refusing is the whole point: returning an empty
+    // list here would leave an account that believes the user has no history, and the next save
+    // would make that true. Throwing leaves the account deferred, and the save skips the key.
+    throw new IllegalStateException(
+        "the stored chat log exists but could not be read; refusing to present it as empty");
   }
 
   /**
@@ -283,7 +296,19 @@ public class StorageHelper {
     // returns at that check without touching the log. Deferring the migration itself was the other
     // option and it is not worth it: LegacyKeyMigration is the component on this branch with the
     // worst record for being changed, and one parse once is not a cost worth that risk.
-    LegacyKeyMigration.apply(account);
+    try {
+      LegacyKeyMigration.apply(account);
+    } catch (final RuntimeException e) {
+      // Not sealing an answer we could not compute.
+      //
+      // The symmetric case to contactsWereReadable above, and it was missing: this pass is one-shot
+      // and irreversible, so running it against a log we failed to read - and then writing the
+      // marker beside that result - would classify the user's entire pre-upgrade history as
+      // unattributable, permanently. Returning without the marker means the next raise tries again.
+      Log.w(TAG, "Not migrating legacy keys: the chat log could not be read, and the answer this "
+          + "migration gives is not reversible", e);
+      return;
+    }
     account.setKeysAreRendered(true);
 
     // The marker is NOT written here - it travels in the same batch as the data it describes, in

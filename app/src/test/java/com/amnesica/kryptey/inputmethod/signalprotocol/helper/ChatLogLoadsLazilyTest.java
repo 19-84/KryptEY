@@ -304,6 +304,66 @@ public class ChatLogLoadsLazilyTest {
         afterwards.getUnencryptedMessages().get(0).getUnencryptedMessage());
   }
 
+  /**
+   * A stored log that cannot be read is refused, not presented as an empty history.
+   *
+   * <p>{@code getClassFromSharedPreferences} returns null both when nothing is stored and when what
+   * is stored could not be decrypted or parsed — it catches {@code RuntimeException} deliberately,
+   * so a corrupt value cannot crash the keyboard on every raise. Collapsing those two into "empty"
+   * is how a transient read failure turns into permanent deletion: the account believes there is no
+   * history, and the next save makes that true. Only the key's presence separates them, and keys
+   * are stored in the clear.
+   */
+  @Test
+  public void anunreadableStoredLogIsRefusedRatherThanPresentedAsEmpty() {
+    preferences.edit().putString(String.valueOf(
+        com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.UNENCRYPTED_MESSAGES),
+        "not a sealed envelope").commit();
+
+    final Account subject = helper().getAccountFromSharedPreferences();
+    assertNotNull(subject);
+    try {
+      subject.getUnencryptedMessages();
+      throw new AssertionError("an unreadable log must not come back as an empty one");
+    } catch (final IllegalStateException expected) {
+      // The account must also still be deferred, so a save cannot write over the stored value.
+    }
+    assertFalse("after refusing the read the account must stay deferred",
+        subject.messageLogIsLoaded());
+
+    helper().storeAllInformationInSharedPreferences(subject);
+    assertEquals("the unreadable value must still be there - overwriting what we could not read is "
+            + "the destruction this refusal exists to prevent",
+        "not a sealed envelope", rawStoredLog());
+  }
+
+  /**
+   * And the migration will not seal an answer it computed from a log it could not read.
+   *
+   * <p>The symmetric case to the existing {@code contactsWereReadable} guard, which was missing.
+   * This pass is one-shot and irreversible: running it against an unreadable log and then writing
+   * {@code KEY_SCHEMA_MIGRATED} beside the result would classify the user's entire pre-upgrade
+   * history as unattributable, permanently, on the strength of one bad read.
+   */
+  @Test
+  public void amigrationDoesNotSealAnAnswerComputedFromAnUnreadableLog() {
+    final String marker = String.valueOf(
+        com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.KEY_SCHEMA_MIGRATED);
+    preferences.edit()
+        .remove(marker)
+        .putString(String.valueOf(com.amnesica.kryptey.inputmethod.signalprotocol
+            .ProtocolIdentifier.UNENCRYPTED_MESSAGES), "not a sealed envelope")
+        .commit();
+
+    final Account subject = helper().getAccountFromSharedPreferences();
+    assertNotNull("a bad chat log must not stop the account loading", subject);
+    helper().storeAllInformationInSharedPreferences(subject);
+
+    assertFalse("the migration marker was written after a failed read. The next load would then "
+            + "treat the unreadable log as already migrated and never try again.",
+        preferences.contains(marker));
+  }
+
   /** And a fresh account, which has no store behind it, still starts with an empty log. */
   @Test
   public void afreshAccountHasAnEmptyLogRatherThanANullOne() {
