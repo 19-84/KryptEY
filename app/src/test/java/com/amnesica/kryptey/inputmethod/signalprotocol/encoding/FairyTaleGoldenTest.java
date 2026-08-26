@@ -118,9 +118,15 @@ public class FairyTaleGoldenTest {
     for (int payloadBytes = 16; payloadBytes <= 6200;
          payloadBytes += payloadBytes < 4800 ? 149 : 7) {
       final String message = incompressible(payloadBytes);
-      // What the payload alone will cost, so we know whether ANY decoy can fit.
-      final int payloadChars =
-          EncodeHelper.compressString(EncodeHelper.minifyJSON(message)).length * 2;
+      // What the CHEAPEST finished message costs, so we know whether any decoy can fit.
+      //
+      // The decoy travels inside the compressed payload now as well as in front of it - that is
+      // what binds the visible text to what it carries - so a cost computed from the payload alone
+      // understates it, and this sweep would then demand the encoder fit a size that cannot fit.
+      // Measured with the shortest sentence, which is the best case by construction.
+      final String shortestSentence = shortestSentence();
+      final int payloadChars = EncodeHelper.compressString(
+          shortestSentence + "\u0000" + EncodeHelper.minifyJSON(message)).length * 2;
       if (payloadChars + shortest > CAP) continue;   // nothing can fit; the caller refuses
 
       // The band where the choice actually decides anything: some sentences fit and some do not.
@@ -139,6 +145,15 @@ public class FairyTaleGoldenTest {
     assertTrue("the sweep never reached a size where some decoys fit and others do not, so it "
             + "could not tell a budgeted choice from a random one - widen the range rather than "
             + "trusting this", sizesInTheBandThatMatters > 0);
+  }
+
+  private static String shortestSentence() {
+    String shortest = null;
+    for (final String sentence : FairyTaleEncoder.mSentencesMap.values()) {
+      if (sentence == null) continue;
+      if (shortest == null || sentence.length() < shortest.length()) shortest = sentence;
+    }
+    return shortest == null ? "" : shortest;
   }
 
   private static int longestSentenceLength() {

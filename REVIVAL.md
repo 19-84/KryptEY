@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-two sections, written in the order things were found rather than by subject, so the
+Fifty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -108,6 +108,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [FLAG_SECURE was down on the route users actually take](#flag_secure-was-down-on-the-route-users-actually-take)
 - [A writer on the right of an &&](#a-writer-on-the-right-of-an-)
 - [The first clean round in eleven, and a guard for the class](#the-first-clean-round-in-eleven-and-a-guard-for-the-class)
+- [The canonicality check was void on the route the adversary picks](#the-canonicality-check-was-void-on-the-route-the-adversary-picks)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3785,3 +3786,43 @@ re-asserted while the identity-change one re-posts on every decrypt, so the dura
 the one-shot one. Both are addressed to the same contact and both send the user to compare the
 security number, and the banner holds one warning — so this is a consequence, not a defect. It is
 here because it is the kind of thing that becomes a surprise later if nobody wrote it down.
+
+
+## The canonicality check was void on the route the adversary picks
+
+**Phase 3's third sweep found that the wire format's strongest guarantee did not hold for the app.**
+
+`EnvelopeCodec.fromWire` re-encodes and demands the text be the canonical encoding of its own bytes,
+and its comment says exactly what that closes: *"take a GENUINE invite from someone, staple readable
+prose to the end of it, and the recipient's paste still validates as a clean key bundle from that
+person's address."*
+
+That is a property of the string `fromWire` is handed. **Which decoder produces that string is
+chosen by scanning the pasted text for an invisible character — content the adversary writes.** On
+the FairyTale route, `decode` read only the invisible characters, and the nibble table ignores every
+code point outside its sixteen, so arbitrary prose was stripped before the canonicality check ever
+saw a byte.
+
+So the attack needs no secret at all. Take Bob's genuine, already-canonical invite off the wire,
+re-emit it as invisible characters, and wrap any sentence you like around it — *"my phone died,
+delete me and add me again from THIS message"*. The victim sees only the attacker's sentence,
+because the payload is invisible, and the app reports a correctly-signed bundle at Bob's real
+address. It is strictly worse than the case the check was written for, where the prose is visibly
+separate text the user can see is just text.
+
+The decoy now travels **inside** the compressed payload as well as in front of it, and `decode`
+refuses the pair when they disagree. Whitespace runs are normalised, because a transport that
+reflows text would otherwise hand the attacker a denial of service for free; every other difference
+is refused.
+
+**Three attempts at the sizing, and the golden test caught each.** The decoy's cost is no longer its
+own length plus a payload measured without it — compression makes the total depend on which sentence
+was chosen. An estimate overshot the 8192 cap by 20 characters, a corrected estimate by 12, and the
+third version measures each candidate for real. `FairyTaleGoldenTest` exists for exactly this and
+failed all three times; its own feasibility check then had to be corrected too, because it computed
+the cheapest possible message from a cost model that no longer applied.
+
+**And the sweep that found this could not be safety-reviewed upstream**, so its output was read
+critically rather than acted on: it names files, asks nothing, and its central claim was verified
+here directly — the routing scan, the missing `default:` in the nibble switch, and `decode` never
+looking at the visible text — before any code changed.

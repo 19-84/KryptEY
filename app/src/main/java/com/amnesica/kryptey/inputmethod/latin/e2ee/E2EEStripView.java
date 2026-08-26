@@ -326,6 +326,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * as wrong. Swapping one false claim for its opposite is not a fix, and the distinguishing fact
    * was three lines away the whole time: {@code wasKeyRejected}.
    */
+  /**
+   * The rejection did not reach storage, so it will not survive the next raise.
+   *
+   * <p>Its own message because the alternative is printing "Forgot the stored key for %s" over a
+   * key that is still pinned on disk. Reads keep succeeding from the in-memory map, so nothing looks
+   * wrong until {@code reloadAccount} runs on the next {@code setInputView} - and then the key the
+   * user rejected is back, with no record that they rejected it.
+   */
+  private final String INFO_REJECTION_NOT_SAVED = "The key for %s was refused, but this could not be saved - the app could not write to its own storage. It will come back the next time the keyboard opens. Do not send anything to them until you have compared the security number by voice.";
+
   private final String INFO_ALREADY_REJECTED = "You had already told this app not to trust keys arriving for %s, so there was nothing left to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything private.";
 
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
@@ -468,8 +478,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // can only ever interpolate a named constant. Hiding the choice behind a variable would pass
       // that check by concealment rather than by being true.
       Toast.makeText(getContext(), String.format(
-          hadAkeyToForget ? INFO_KEY_REJECTED
-              : (alreadyRejected ? INFO_ALREADY_REJECTED : INFO_NOTHING_TO_REJECT), label),
+          !mE2EEStrip.lastRejectionReachedDisk() ? INFO_REJECTION_NOT_SAVED
+              : hadAkeyToForget ? INFO_KEY_REJECTED
+                  : (alreadyRejected ? INFO_ALREADY_REJECTED : INFO_NOTHING_TO_REJECT), label),
           Toast.LENGTH_LONG).show();
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);

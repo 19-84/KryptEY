@@ -80,7 +80,12 @@ public class NoWriterSitsInAshortCircuitTest {
       "setWarningMessage\\s*\\(|setInfoTextViewMessage\\s*\\(|Toast\\.makeText\\s*\\(|"
           + "setInviteRefusalWarning\\s*\\(|setCautionBesideAnyWarning\\s*\\(|"
           + "clearStandingWarning\\s*\\(|storeAllAccountInformationInSharedPreferences\\s*\\(|"
-          + "setInfoUnlessWarned\\s*\\(");
+          + "setInfoUnlessWarned\\s*\\(|"
+          // Raw field assignment. The first version listed eight helper names and nothing else, so
+          // a method that wrote a field directly was invisible - and a hand-listed set of writers
+          // needs exactly the attention that missed the defect this guard exists for.
+          + "(?m)^\\s*m[A-Z]\\w*\\s*(?:=[^=]|\\+=)|"
+          + "(?m)^\\s*(?:chosenContact|encodingMethod)\\s*=[^=]");
 
   private static Path mainSources() {
     for (final String candidate : new String[] {"src/main/java", "app/src/main/java"}) {
@@ -135,7 +140,10 @@ public class NoWriterSitsInAshortCircuitTest {
 
       // Anything invoked after a && or || - the positions Java is free not to evaluate.
       final Matcher shortCircuit =
-          Pattern.compile("(?:&&|\\|\\|)\\s*!?\\s*(\\w+)\\s*\\(").matcher(text);
+          // Qualified calls too. The first version matched only bare names, so every
+          // `mE2EEStrip.foo()` and `SignalProtocolMain.bar()` on the right of a short circuit was
+          // invisible - which is most of the calls this file makes.
+          Pattern.compile("(?:&&|\\|\\|)\\s*!?\\s*(?:[\\w]+\\.)*(\\w+)\\s*\\(").matcher(text);
       while (shortCircuit.find()) {
         scanned++;
         final String called = shortCircuit.group(1);

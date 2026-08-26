@@ -300,9 +300,26 @@ public class SignalProtocolMain {
     sInstance.clearVerificationFor(address);
     Log.w(TAG, "Forgot the pinned key for a contact: the user reported the safety number did "
         + "not match");
-    sInstance.storeAllAccountInformationInSharedPreferences();
+    // A rejection that does not reach disk is worse than one that fails loudly. Reads still
+    // succeed from the in-memory map, so nothing looks wrong until the next setInputView calls
+    // reloadAccount - and then the rejected key is pinned again and rejectedAddresses is empty,
+    // which is the silent trust-on-first-use markKeyRejected exists to prevent. The caller needs
+    // to be able to say so rather than print "Forgot the stored key".
+    sInstance.mLastRejectionReachedDisk = sInstance.accountWriteSucceeded();
     return hadPin;
   }
+
+  /**
+   * Whether the last {@code rejectContactKey} actually reached storage.
+   *
+   * <p>Separate from the return value, which answers "was there a key to forget" and is what
+   * chooses the message. Both facts are needed and they are different questions.
+   */
+  public static boolean lastRejectionReachedDisk() {
+    return sInstance.mLastRejectionReachedDisk;
+  }
+
+  private boolean mLastRejectionReachedDisk = true;
 
   /**
    * Discards a pending identity change, keeping the pinned key. The safe exit from the state an
@@ -572,8 +589,13 @@ public class SignalProtocolMain {
           + " because the user confirmed the number of the key already pinned");
     }
 
-    storeAllAccountInformationInSharedPreferences();
-    return true;
+    // The result, not a constant. This method's own javadoc defines false as "verification could
+    // not be recorded", and the strip already renders that as INFO_VERIFY_UNAVAILABLE - so the one
+    // failure mode that most plausibly means exactly that was the one it could not report. A write
+    // can fail while the process looks healthy: SharedPreferences restores the previous file from
+    // its .bak while the in-memory map keeps the new value, so the badge appears and the next
+    // reloadAccount takes it away again, with the user believing they have compared the number.
+    return accountWriteSucceeded();
   }
 
   /**
@@ -2174,6 +2196,25 @@ public class SignalProtocolMain {
   }
 
   /** @return whether the account actually reached storage. */
+  /**
+   * Whether the account write SUCCEEDED, as distinct from whether there was anywhere to write.
+   *
+   * <p>The distinction matters because the two are reported through different channels and mean
+   * different things to a caller. A missing storage helper is a configuration state: {@code
+   * initialize} already returned false for it, and the strip already refuses to act on it through
+   * {@code storageState()}. A failed WRITE is the dangerous one, because nothing looks wrong -
+   * SharedPreferences restores the previous file from its .bak while the in-memory map keeps the new
+   * value, so reads keep succeeding until the next reloadAccount quietly replaces the account with
+   * the on-disk copy.
+   *
+   * <p>Callers that report "this could not be recorded" to the user want this question, not the
+   * other one.
+   */
+  private boolean accountWriteSucceeded() {
+    if (mStorageHelper == null) return true;
+    return storeAllAccountInformationInSharedPreferences();
+  }
+
   private boolean storeAllAccountInformationInSharedPreferences() {
     if (mAccount == null) {
       Log.e(TAG, "Error: No protocol resources were stored (mAccount is null)");
