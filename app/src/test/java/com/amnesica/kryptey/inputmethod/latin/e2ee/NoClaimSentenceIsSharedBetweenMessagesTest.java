@@ -97,6 +97,11 @@ public class NoClaimSentenceIsSharedBetweenMessagesTest {
     // is that the user told the app not to trust keys at that address. Any message keyed off
     // wasKeyRejected may say that and no more; a message that wants to claim a comparison needs a
     // record that only a comparison writes, and there is no such record today.
+    // Advice, and identical in both refusal states: what to do about an invite that did not
+    // verify does not depend on whether an older session survived it.
+    DELIBERATELY_SHARED.put(
+        "Ask them to send another, and if it keeps failing, send it a different way.",
+        new HashSet<>(Arrays.asList("INFO_INVITE_REFUSED", "INFO_INVITE_REFUSED_SESSION_KEPT")));
     DELIBERATELY_SHARED.put("You told this app not to trust keys arriving for %s.",
         new HashSet<>(Arrays.asList("INFO_NO_FINGERPRINT_AFTER_REJECTION",
             "INFO_VERIFY_AFTER_REJECTION")));

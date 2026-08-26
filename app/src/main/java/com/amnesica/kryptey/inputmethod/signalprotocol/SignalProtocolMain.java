@@ -1647,7 +1647,10 @@ public class SignalProtocolMain {
   private boolean mLastAttachedBundleRefused = false;
 
   public static boolean lastAttachedBundleWasRefused() {
-    return sInstance != null && sInstance.mLastAttachedBundleRefused;
+    // No sInstance null check: it is `private static final ... = new SignalProtocolMain()`, so the
+    // guard could never be false and was a permanently surviving mutant in a repo that tracks
+    // those deliberately.
+    return sInstance.mLastAttachedBundleRefused;
   }
 
   private boolean processPreKeyResponse(final MessageEnvelope messageEnvelope, final SignalProtocolAddress signalProtocolAddress) {
@@ -2197,6 +2200,10 @@ public class SignalProtocolMain {
     sInstance.mStorageHelper = null;
     sInstance.mAccount = null;
     storageHelperFactory = null;
+    // The singleton outlives a test class in a shared JVM, and this flag is exactly the kind of
+    // leftover this method exists for. Production clears it at the top of every decrypt, so this is
+    // isolation rather than a fix - a trap set for the first test that reads it.
+    sInstance.mLastAttachedBundleRefused = false;
   }
 
   // needed for testing only

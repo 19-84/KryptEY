@@ -161,7 +161,10 @@ public class UserFacingTextTest {
 
   /** The literal shown when an invite is accepted and nothing else fired. */
   private static String createdContactMessage(final String source) {
-    final int at = source.indexOf("setInfoUnlessWarned(\"Contact \"");
+    // Anchored on the call that posts it, which is no longer setInfoUnlessWarned: the caution is
+    // now shown BESIDE any standing warning rather than suppressed by one, because a relay can
+    // raise a standing warning unilaterally and was thereby able to silence this message entirely.
+    final int at = source.indexOf("setCautionBesideAnyWarning(\"Contact \"");
     assertTrue("the created-contact message must still exist", at > 0);
     return source.substring(at, source.indexOf(");", at));
   }

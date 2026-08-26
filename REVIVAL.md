@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-three sections, written in the order things were found rather than by subject, so the
+Forty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -99,6 +99,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A refused invite that looked exactly like an accepted one](#a-refused-invite-that-looked-exactly-like-an-accepted-one)
 - [The refusal that switched off the only substitution detector](#the-refusal-that-switched-off-the-only-substitution-detector)
 - [A record that meant less than four messages claimed](#a-record-that-meant-less-than-four-messages-claimed)
+- [The warning weakened to protect a message, and the erase that bought](#the-warning-weakened-to-protect-a-message-and-the-erase-that-bought)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3389,3 +3390,55 @@ a sentence appear in two `INFO_` constants until someone writes down that the sh
 — scoped to the exact pair, so a third use fails again. It cannot tell a true sentence from a false
 one; it makes the copy impossible to perform *silently*, which is the step all three defects
 skipped. Its control is the historical defect itself, reintroduced verbatim: both of its tests fail.
+
+
+## The warning weakened to protect a message, and the erase that bought
+
+**Rounds ten and five arrived at the same conclusion from opposite sides: the "soft warning" was the
+wrong axis, and it handed the messenger an erase.**
+
+The problem it was solving is real. The caution shown when a new contact is created —
+*"this key reached you through the messenger and the app cannot tell whose it is"* — is the one
+notice that fires *because nothing was noticed*, and it was suppressible by any standing warning. A
+relay can raise a standing warning unilaterally, so it could raise one about Bob and then have the
+user add an attacker-chosen "Carol" in silence.
+
+Making the refusal warning yield to ordinary notices was the wrong fix, in a way worth recording.
+`setInfoUnlessWarned` has six callers, and one of them is the **password-field notice** — which
+`LatinIME` raises on every input session from the host field's `inputType`, and the messenger owns
+the inputType of every field it presents. So the erase needed no user action at all: focus a
+password field, the notice lands and takes the warning with it, focus an ordinary field again, and
+the strip reads "Chosen contact: Bob". Nothing re-raises it. That contradicted `mWarningStanding`'s
+own javadoc — *"Nothing the messenger can cause clears it"* — and the fixed-defect comment sitting
+twenty lines above the notice itself.
+
+And the premise was false anyway. The javadoc I wrote claimed the refusal was *"the one standing
+warning a relay can raise unilaterally"*; this file says elsewhere that the identity-change warning
+is something *"any messenger can arrange with one forged bundle"*. The special case did not cover
+the warning that mattered most.
+
+**Both requirements are real, so the banner shows both.** The caution now appears *beside* a
+standing warning rather than instead of it: the warning keeps its flag, its text and its address, so
+every deliberate response still clears it, and `warningWithRecipient` still rebuilds from the warning
+rather than from what is painted. Promoting the caution to a warning of its own was tried first and
+is wrong for a reason already on file — that is "Contact Carol created" landing on top of a security
+warning, which `StripWarningErasureTest` exists to forbid. The flag survives only to retract the
+refusal when a later invite from the same contact is accepted, which is the remedy its own text asks
+for.
+
+**And the refusal said something false wherever a session survived it.** "Nothing has been set up" is
+right for a first invite and wrong on the rotation path — where an honest peer attaches a bundle to
+an ordinary message, the message decrypts under the existing session, and the user reads that
+sentence with the reply in front of them. Two messages now, chosen by asking whether anything
+survived rather than assuming: the same mistake, in the same method, as inferring the refusal itself.
+
+Smaller, from the same sweep: `resetForTest` now clears the refusal flag (the singleton outlives a
+test class, and that method exists for exactly this), and a `sInstance != null` guard that could
+never be false is gone.
+
+**One more vacuous test of mine, caught by its control.** The new test that a refused substitution
+also clears the verified badge asserted `isContactKeyTrustworthy` immediately — which answers false
+on the strength of the *pending change* alone, so it passed with the clearing deleted. The
+consequence lives on the other side of the dismissal: `dismissIdentityChange` is a tap and
+deliberately does not restore `Contact.verified`, so an uncleared badge comes back with no fresh
+comparison anywhere. The test dismisses first now, and its control fails.

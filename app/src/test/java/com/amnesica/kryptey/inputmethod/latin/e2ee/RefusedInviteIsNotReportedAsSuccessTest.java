@@ -337,4 +337,113 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
             + "what a successful substitution looks like. Shown: " + shown,
         shown.contains("cannot tell whose it is"));
   }
+
+  /**
+   * The messenger must not be able to erase the refusal by focusing a password field.
+   *
+   * <p>An earlier version of this warning was "soft": it yielded to any ordinary notice, so that a
+   * caution about a different contact could still be shown. Six callers reach that writer, and one
+   * of them is the password-field notice — which {@code LatinIME} raises on EVERY input session
+   * from the host field's {@code inputType}, and the messenger owns the inputType of every field it
+   * presents. So the erase needed no user action at all: focus a password field, the notice lands
+   * and takes the warning with it; focus an ordinary field again and the strip reads "Chosen
+   * contact: Bob". Nothing re-raises it — the refusal is per-decrypt and in memory.
+   *
+   * <p>That contradicted {@code mWarningStanding}'s own javadoc, "Nothing the messenger can cause
+   * clears it", which is the property this test pins.
+   */
+  @Test
+  public void thepasswordFieldNoticeDoesNotEraseTheRefusalWarning() throws Exception {
+    establishedContact();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertFalse("precondition: a refusal must be standing", strip.mayOverwriteInfoBanner());
+
+    // Exactly what the messenger can arrange: a field it declares as a password, then an ordinary
+    // one. No user action, no paste, nothing the user could refuse.
+    strip.setHostFieldIsPassword(true);
+    strip.setHostFieldIsPassword(false);
+
+    assertFalse("the refusal must survive a notice the messenger can raise at will - it owns the "
+            + "inputType of every field it shows, and LatinIME re-raises this on every input "
+            + "session. Nothing re-posts the refusal, so erasing it here loses the only surface "
+            + "that security event has.",
+        strip.mayOverwriteInfoBanner());
+  }
+
+  /**
+   * And what it says is true where a session survives the refusal.
+   *
+   * <p>"Nothing has been set up" is right for a first invite and false on the rotation path, where
+   * the peer's message decrypts under the existing session and the contact keeps working — the user
+   * reads that sentence with the reply in the compose box in front of them.
+   */
+  @Test
+  public void therefusalDoesNotClaimNothingWasSetUpWhenAsessionSurvives() throws Exception {
+    establishedContact();
+
+    activate(peer);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()), addressOfVictim()));
+    final MessageEnvelope withMessage =
+        SignalProtocolMain.encryptMessage("hello", addressOfVictim());
+    assertNotNull(withMessage);
+    activate(victim);
+
+    final MessageEnvelope rotation = new MessageEnvelope(withMessage.getCiphertextMessage(),
+        withMessage.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
+    rotation.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+
+    paste(rotation);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    final String shown = bannerText();
+    assertTrue("precondition: the session must have survived",
+        SignalProtocolMain.hasSessionWith(peerAddress));
+    assertFalse("the strip must not say nothing was set up while the contact still works and their "
+            + "message is on screen: " + shown, shown.contains("Nothing has been set up"));
+    assertTrue("it must say what actually happened instead: " + shown,
+        shown.contains("what you already had with them is unchanged"));
+  }
+
+  /**
+   * The caution for a new contact survives a HARD warning too, not just the refusal.
+   *
+   * <p>The sibling test above uses the refused-invite warning. A sweep pointed out that the premise
+   * behind treating that one specially was false: the identity-change warning is hard, and this
+   * file says elsewhere that one is something "any messenger can arrange with one forged bundle".
+   * So the suppression was still reachable, by a warning the special case did not cover.
+   */
+  @Test
+  public void anidentityChangeWarningAlsoDoesNotSilenceTheCautionForAnewContact() throws Exception {
+    establishedContact();
+
+    // A third party's bundle relabelled with Bob's address: a substitution, recorded and refused.
+    SignalProtocolMain.initialize(null);
+    final String impostorBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+    final MessageEnvelope substituted = new MessageEnvelope(
+        EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
+        peerAddress.getName(), peerAddress.getDeviceId());
+
+    paste(substituted);
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertFalse("precondition: a hard warning must be standing", strip.mayOverwriteInfoBanner());
+
+    SignalProtocolMain.initialize(null);
+    final String carolBundle = SignalProtocolMain.exportOwnKeyBundle();
+    activate(victim);
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Carol");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Smith");
+    strip.addContactForTest(EnvelopeCodec.fromWire(carolBundle));
+
+    final String shown = bannerText();
+    assertTrue("the caution must be shown even under a hard warning a relay raised: " + shown,
+        shown.contains("cannot tell whose it is"));
+    assertFalse("and the warning it was shown beside must not have been taken down",
+        strip.mayOverwriteInfoBanner());
+  }
 }

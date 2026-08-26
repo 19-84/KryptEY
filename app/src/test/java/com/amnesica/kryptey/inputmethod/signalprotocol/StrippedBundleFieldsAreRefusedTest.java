@@ -8,6 +8,7 @@ import static org.junit.Assert.fail;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
 import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
@@ -206,6 +207,61 @@ public class StrippedBundleFieldsAreRefusedTest {
             + "sends and the identity-change warning - the app's only recovery from a successful "
             + "substitution - never fires again.",
         SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+  }
+
+  /**
+   * And it takes the verified badge with it.
+   *
+   * <p>Named by a sweep as a coverage gap rather than a defect: deleting {@code clearVerificationFor}
+   * from the new recording left the whole suite green, because no test combined a VERIFIED contact
+   * with a stripped substituted bundle. The consequence of losing it is second-order but real —
+   * {@code dismissIdentityChange} deliberately does not restore {@code Contact.verified}, so a
+   * stale verified badge would come back on dismissal without any fresh comparison.
+   */
+  @Test
+  public void arefusedSubstitutionAlsoTakesTheVerifiedBadge() throws Exception {
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        new MessageEnvelope(genuine, peerAddress.getName(), peerAddress.getDeviceId()),
+        peerAddress));
+    final Contact bob = new Contact("Bob", "Jones", peerAddress.getName(),
+        peerAddress.getDeviceId(), false);
+    final ArrayList<Contact> contacts = new ArrayList<>();
+    contacts.add(bob);
+    victim.setContactList(contacts);
+    SignalProtocolMain.verifyContact(bob);
+    assertTrue("precondition: the contact must be verified by comparison first",
+        SignalProtocolMain.isContactKeyTrustworthy(victim.getContactList().get(0)));
+
+    SignalProtocolMain.initialize(null);
+    final PreKeyResponse impostor =
+        EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()).getPreKeyResponse();
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    final PreKeyResponseItem device = impostor.getDevices().get(0);
+    final List<PreKeyResponseItem> devices = new ArrayList<>();
+    devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
+        device.getSignedPreKey(), null, device.getKyberPreKey()));
+
+    assertFalse("precondition: the stripped substitution must be refused",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            new MessageEnvelope(new PreKeyResponse(impostor.getIdentityKey(), devices),
+                peerAddress.getName(), peerAddress.getDeviceId()), peerAddress));
+
+    // Asserted AFTER dismissing the change, which is what makes this test discriminate at all.
+    // While the change is pending, isContactKeyTrustworthy answers false on the strength of the
+    // pending record alone - so the obvious version of this assertion passes whether or not the
+    // verification was cleared, and a control proved exactly that. The consequence lives on the
+    // other side of the dismissal: dismissIdentityChange deliberately does not restore
+    // Contact.verified, so if the badge was never cleared it comes back here, with no fresh
+    // comparison anywhere in the story.
+    assertTrue("precondition: the change must be dismissable",
+        SignalProtocolMain.dismissIdentityChange(peerAddress));
+
+    assertFalse("a refused substitution must take the verified badge away, not merely mask it "
+            + "while the change is pending. Dismissing is a tap; it does not re-compare anything, "
+            + "and a badge that returns after it tells the user a number was checked when the last "
+            + "thing that happened at this address was an impostor's key being refused.",
+        SignalProtocolMain.isContactKeyTrustworthy(victim.getContactList().get(0)));
   }
 
   /** The sibling check, which was equally untested. */

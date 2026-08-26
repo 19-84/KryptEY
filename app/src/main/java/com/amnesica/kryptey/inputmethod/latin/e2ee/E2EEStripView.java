@@ -189,6 +189,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private final String INFO_INVITE_REFUSED = "That invite from %s could not be used - it does not verify, which means it was changed on the way here. Nothing has been set up. Ask them to send another, and if it keeps failing, send it a different way.";
 
+  /**
+   * The same event where a session already exists, which the sentence above describes wrongly.
+   *
+   * <p>The refusal now fires on paths where {@code isSessionCreation} is false — the routine one
+   * being a signed-pre-key rotation, where an honest peer attaches a full bundle to an ordinary
+   * message. There the message decrypts under the existing session and the contact keeps working,
+   * so "Nothing has been set up" is false while the user is reading their reply in the compose box.
+   * It is false in the other direction too on the add-contact arm, where the attached ciphertext
+   * pins a key by trust-on-first-use even though the bundle was refused.
+   */
+  private final String INFO_INVITE_REFUSED_SESSION_KEPT = "A key update from %s could not be used - it does not verify, which means it was changed on the way here. It was ignored, and what you already had with them is unchanged. Ask them to send another, and if it keeps failing, send it a different way.";
+
   private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
 
   /**
@@ -1058,7 +1070,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // is protecting them: the other three fire BECAUSE the app noticed something. This
           // one fires because it noticed nothing, which is exactly what pinning a key the
           // messenger chose looks like when the substitution succeeded.
-          setInfoUnlessWarned("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.");
+          // Shown BESIDE any standing warning rather than instead of it, because both of the
+          // obvious options are defects this file already records.
+          //
+          // Suppressed (the plain guarded line it used to be): a relay raises a standing warning
+          // about Bob - it can do that unilaterally, with the refused-invite warning or with the
+          // identity-change one, which this file elsewhere says "any messenger can arrange with one
+          // forged bundle" - then offers an invite as "Carol". The user pins an attacker-chosen key
+          // and never sees the one caution that fires BECAUSE nothing was noticed.
+          //
+          // Replacing (posting it as a warning of its own): that is "Contact Carol created" landing
+          // on top of a security warning, which StripWarningErasureTest exists to forbid.
+          //
+          // So: both. The warning keeps standing and keeps its text; the caution appears under it.
+          setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.");
         }
       } else if (!mWarningStanding && !warnIfIdentityChanged(chosenContact)) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
@@ -1952,13 +1977,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private String mStandingWarningAddress = null;
 
   /**
-   * Whether the standing warning yields to a message that says more than it does.
+   * Whether the standing warning is the refused-invite one.
    *
-   * <p>True only for {@code INFO_INVITE_REFUSED}. See {@code setSoftWarningMessage} for why that
-   * one warning needs to be weaker than the rest: it is the only one a relay can raise without any
-   * user action, so a hard one would hand the messenger a way to silence the app's cautions.
+   * <p>Used for exactly one thing: retracting that warning when a later invite from the same
+   * contact is accepted, which is the remedy its own text asks the user to perform. It does NOT
+   * make the warning weaker — an earlier version used it to let ordinary notices through, and that
+   * handed the messenger an erase it could trigger by focusing a password field.
+   *
+   * <p>Carried across a rebuild so the retraction still works afterwards; without it the warning
+   * would become permanent at the first theme change, and the messenger's host app chooses when
+   * those happen.
    */
-  private boolean mStandingWarningIsSoft = false;
+  private boolean mStandingWarningIsInviteRefusal = false;
 
   /**
    * Posts a warning to the info banner and marks it as standing.
@@ -1999,9 +2029,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setWarningMessage(final String message, final String aboutAddress) {
     mStandingWarningText = message;
     mStandingWarningAddress = aboutAddress;
-    // Every warning is hard unless the caller upgrades it immediately afterwards. Defaulting the
-    // other way would make a future warning silently suppressible.
-    mStandingWarningIsSoft = false;
+    // Any new warning is, by default, not the invite refusal - so a later accepted invite cannot
+    // retract something else that happens to be standing.
+    mStandingWarningIsInviteRefusal = false;
     mWarningStanding = true;
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
@@ -2265,25 +2295,38 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * their only exit.
    */
   /**
-   * Posts a warning that stands, but yields to anything with more to say.
+   * Shows a caution that must not be dropped, without taking down a warning that must not be lost.
    *
-   * <p>Only {@code INFO_INVITE_REFUSED} uses this, and the reason is a real attack rather than
-   * tidiness. A refused invite is the one standing warning a relay can raise <em>unilaterally</em>,
-   * with one deleted byte on an unrelated contact's invite and no user cooperation at all. Every
-   * other standing warning needs prior user action or is itself the thing being flagged. If it
-   * suppressed ordinary notices the way a hard warning does, a relay could raise it and then have
-   * the user add an attacker-chosen contact without ever seeing "this key reached you through the
-   * messenger and the app cannot tell whose it is" - the one caution that fires precisely because
-   * nothing was noticed.
+   * <p>The banner is the only surface either has, so when both exist they share it. The standing
+   * warning's flag, text and address are untouched — only what is painted changes — so every
+   * deliberate response that clears it still works, and {@code warningWithRecipient} still rebuilds
+   * from the warning alone rather than from what is on screen.
    */
-  private void setSoftWarningMessage(final String message, final String aboutAddress) {
-    setWarningMessage(message, aboutAddress);
-    mStandingWarningIsSoft = true;
+  private void setCautionBesideAnyWarning(final String caution) {
+    if (!mWarningStanding) {
+      setInfoTextViewMessage(mInfoTextView, caution);
+      return;
+    }
+    final CharSequence standing = mStandingWarningText != null
+        ? mStandingWarningText : mInfoTextView != null ? mInfoTextView.getText() : "";
+    setInfoTextViewMessage(mInfoTextView, standing + "\n\n" + caution);
   }
 
-  /** Retracts a soft warning about this contact, leaving anything harder in place. */
-  private void clearSoftWarningIfAbout(final Contact contact) {
-    if (!mWarningStanding || !mStandingWarningIsSoft) return;
+  /** Posts the refused-invite warning, tagged so a later good invite can retract it. */
+  private void setInviteRefusalWarning(final String message, final String aboutAddress) {
+    setWarningMessage(message, aboutAddress);
+    mStandingWarningIsInviteRefusal = true;
+  }
+
+  /**
+   * Retracts a standing refused-invite warning about this contact.
+   *
+   * <p>Scoped twice over: only the refusal warning, and only for the contact it names. An accepted
+   * invite says nothing about an identity change or a rejection recorded for the same address, so
+   * those must survive it.
+   */
+  private void clearInviteRefusalIfAbout(final Contact contact) {
+    if (!mWarningStanding || !mStandingWarningIsInviteRefusal) return;
     clearStandingWarningIfAbout(contact);
   }
 
@@ -2296,7 +2339,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void clearStandingWarning() {
-    mStandingWarningIsSoft = false;
+    mStandingWarningIsInviteRefusal = false;
     mStandingWarningText = null;
     mStandingWarningAddress = null;
     mWarningStanding = false;
@@ -2361,7 +2404,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // as silent as before. Soft, because it must not be able to suppress a message that says
       // more than it does - see setInfoUnlessWarned.
       if (!identityChanged && !mWarningStanding) {
-        setSoftWarningMessage(String.format(INFO_INVITE_REFUSED, labelFor(sender)),
+        // Which sentence is true depends on whether anything survives the refusal, so it is
+        // asked rather than assumed - the same mistake, in the same method, as inferring the
+        // refusal itself.
+        final boolean somethingSurvives =
+            mE2EEStrip.hasSessionWith(sender.getSignalProtocolAddress());
+        setInviteRefusalWarning(String.format(somethingSurvives
+                ? INFO_INVITE_REFUSED_SESSION_KEPT : INFO_INVITE_REFUSED, labelFor(sender)),
             String.valueOf(sender.getSignalProtocolAddress()));
       }
       // The message itself, if one came with the refused bundle, is still the user's to read: the
@@ -2379,7 +2428,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // following the app's own advice - "ask them to send another" - leaves the warning in place
     // over a contact that now works, and a user acting on that text may reject a good key.
     if (messageEnvelope.getPreKeyResponse() != null) {
-      clearSoftWarningIfAbout(sender);
+      clearInviteRefusalIfAbout(sender);
     }
 
     if (!isSessionCreation && decryptedMessage != null) {
@@ -2475,14 +2524,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      * theme switch or rotation - and a hard refusal warning is exactly what lets a relay suppress
      * the contact-creation caution. A configuration change is something an app can force.
      */
-    private final boolean standingWarningIsSoft;
+    private final boolean standingWarningIsInviteRefusal;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
     private CarriedState(final CharSequence draft, final boolean wasComposing,
         final CharSequence banner, final boolean warningStanding,
         final String standingWarningText, final String standingWarningAddress,
-        final boolean standingWarningIsSoft,
+        final boolean standingWarningIsInviteRefusal,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -2490,7 +2539,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.warningStanding = warningStanding;
       this.standingWarningText = standingWarningText;
       this.standingWarningAddress = standingWarningAddress;
-      this.standingWarningIsSoft = standingWarningIsSoft;
+      this.standingWarningIsInviteRefusal = standingWarningIsInviteRefusal;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -2566,7 +2615,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mRichInputConnection != null) mRichInputConnection.setOtherIC(null);
 
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
-        mStandingWarningAddress, mStandingWarningIsSoft, mHostFieldIsPassword, encodingMethod);
+        mStandingWarningAddress, mStandingWarningIsInviteRefusal, mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -2631,7 +2680,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // Restored after setWarningMessage, which resets it: a soft warning that came back hard
       // would regain the power to suppress the contact-creation caution, and a rebuild is
       // something the messenger's host app can force at will.
-      mStandingWarningIsSoft = carried.standingWarningIsSoft;
+      mStandingWarningIsInviteRefusal = carried.standingWarningIsInviteRefusal;
     }
 
     // Not the view's to lose either. The password-field guard is re-armed only by
@@ -2756,15 +2805,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * message erasure the standing flag exists to prevent everywhere else.
    */
   private void setInfoUnlessWarned(final String message) {
-    // A soft warning yields here, and only here. showChosenContactInMainInfoField still refuses to
-    // paint over it, because that one carries no information - it would replace a warning with
-    // "Chosen contact: Bob", which is how the refusal came to be silent in the first place. What
-    // reaches this method has something to say, and the messages it carries include the caution
-    // shown when a new contact's key was pinned without anything being noticed - the one a relay
-    // was able to suppress by raising a refusal about an unrelated contact first.
-    if (mWarningStanding && !mStandingWarningIsSoft) return;
+    // Back to refusing over ANY standing warning, because the "soft" exception was worse than the
+    // problem it solved. Six callers reach this method, and one of them is the password-field
+    // notice - which LatinIME raises on EVERY input session from the host field's inputType, and
+    // the messenger owns the inputType of every field it presents. So a soft warning could be
+    // erased with no user action at all: focus a password field, the notice lands, the warning is
+    // cleared, focus an ordinary field again and the strip reads "Chosen contact: Bob". That is
+    // the exact path this file already records as a fixed defect twenty lines above the notice,
+    // and it contradicts mWarningStanding's own javadoc: "Nothing the messenger can cause clears
+    // it." INFO_PRE_KEY_DETECTED had the same shape - it fires at the head of processPreKeyResponse
+    // and would clear a warning about Bob while handling an invite for Alice.
+    //
+    // The message that genuinely must not be suppressed - the caution for a newly created contact -
+    // is a warning in its own right now, so it replaces rather than yields.
+    if (mWarningStanding) return;
     setInfoTextViewMessage(mInfoTextView, message);
-    if (mStandingWarningIsSoft) clearStandingWarning();
   }
 
   /** Package-visible so a test can drive the real method rather than a copy of it. */

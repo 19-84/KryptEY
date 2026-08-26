@@ -56,6 +56,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class StripRoundTripOnDeviceTest {
 
   private static final String MESSAGE = "the meeting moved to nine";
+  private static final String REPLY = "understood, see you at nine";
 
   private Context context;
   private E2EEStripView strip;
@@ -201,5 +202,64 @@ public class StripRoundTripOnDeviceTest {
     assertEquals("Bob must be able to read what Alice's strip produced, on this device",
         MESSAGE, SignalProtocolMain.decryptMessage(
             EnvelopeCodec.fromWire(wire.trim()), addressOf(alice)));
+  }
+
+  /**
+   * And the other direction, which had no device coverage at all: paste, press Decrypt, read it.
+   *
+   * <p>The test above drives the send path. Receiving is the half a user does more often, and every
+   * test of it ran under Robolectric — shadow clipboard, shadow views, desktop libsignal. Here the
+   * real {@link android.content.ClipboardManager} carries the wire text, the real button is pressed,
+   * and the plaintext has to appear in the real compose box.
+   *
+   * <p>The message is Bob's, encrypted with the Android build of libsignal, so this also exercises
+   * the receiving half of the session established in {@code setUp} rather than a fixture string.
+   */
+  @Test
+  public void amessageFromBobIsDecryptedIntoTheComposeBoxOnDevice() throws Exception {
+    // setUp only builds Alice's side of the session: she accepted Bob's invite, so she can send to
+    // him, but he has nothing for her yet. Bob accepts hers first, which is what a real second
+    // party does before replying.
+    final String aliceBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    // Bob writes to Alice. Done as Bob, then the account is switched back, which is the same shape
+    // the send test uses for its round trip.
+    SignalProtocolMain.getInstance().setAccount(bob);
+    assertTrue("Bob must be able to accept Alice's invite on this device",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(aliceBundle), addressOf(alice)));
+    final ArrayList<Contact> bobsContacts = new ArrayList<>();
+    bobsContacts.add(new Contact("Alice", "Adams", addressOf(alice).getName(),
+        addressOf(alice).getDeviceId(), false));
+    bob.setContactList(bobsContacts);
+    final com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope fromBob =
+        SignalProtocolMain.encryptMessage(REPLY, addressOf(alice));
+    assertNotNull("Bob must be able to encrypt to Alice on this device", fromBob);
+    SignalProtocolMain.getInstance().setAccount(alice);
+
+    final String wire = com.amnesica.kryptey.inputmethod.signalprotocol.encoding.RawEncoder
+        .encode(EnvelopeCodec.toWire(fromBob));
+
+    final AtomicReference<EditText> composeRef = new AtomicReference<>();
+    InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+      // The real system clipboard, not a shadow. This is the object the messenger hands over.
+      final android.content.ClipboardManager clipboard =
+          (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+      clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", wire));
+      strip.selectContact(alice.getContactList().get(0));
+      strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+      composeRef.set(strip.findViewById(R.id.e2ee_input_field));
+    });
+    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+
+    final EditText compose = composeRef.get();
+    assertNotNull("the compose field must inflate on a real device", compose);
+    final AtomicReference<String> shown = new AtomicReference<>();
+    InstrumentationRegistry.getInstrumentation().runOnMainSync(
+        () -> shown.set(compose.getText().toString()));
+
+    assertEquals("pressing Decrypt on a real device must put Bob's plaintext into the compose box. "
+        + "Everything that tested this ran on shadow views with the desktop build of libsignal.",
+        REPLY, shown.get());
   }
 }
