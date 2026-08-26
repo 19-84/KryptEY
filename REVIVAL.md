@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Thirty-six sections, written in the order things were found rather than by subject, so the
+Thirty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -94,6 +94,8 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The help offered a choice the app does not](#the-help-offered-a-choice-the-app-does-not)
 - [One record keyed three ways, and what each fix cost](#one-record-keyed-three-ways-and-what-each-fix-cost)
 - [The seam nobody had looked at](#the-seam-nobody-had-looked-at)
+- [A field libsignal lets you omit, and this app never sends](#a-field-libsignal-lets-you-omit-and-this-app-never-sends)
+- [Two arms pin, and the fix asked only one](#two-arms-pin-and-the-fix-asked-only-one)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
 **How this document, and its tests, have been wrong**
@@ -102,6 +104,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The way the harness lied six times, and how it stopped](#the-way-the-harness-lied-six-times-and-how-it-stopped)
 - [A mutant was committed and pushed](#a-mutant-was-committed-and-pushed)
 - [Checked this round and clean](#checked-this-round-and-clean)
+- [A test that could not reach its own branch, and a device test in the wrong state](#a-test-that-could-not-reach-its-own-branch-and-a-device-test-in-the-wrong-state)
 
 ---
 ## What was done, by phase
@@ -3125,3 +3128,108 @@ fail.*
   both buttons for any info text other than `INFO_NO_CONTACT_CHOSEN`, so all three sibling
   `changeImageButtonState` calls are dead. Corrected rather than deleted, so the branch reads as
   what it means.
+
+
+## A field libsignal lets you omit, and this app never sends
+
+**A relay can delete the one-time pre-key from any invite it carries, and the session builds
+anyway.** Found by the second adversarial sweep of Phase 2 — the first sweep of that layer found the
+pre-key clobbering defect, and nothing had swept it since, which is exactly the wrong phase to
+assume clean.
+
+`createPreKeyBundle` accepted an absent one-time pre-key: `if (device.getPreKey() != null)`, and if
+it was null the bundle was simply built without one. libsignal permits this — `PreKeyBundle` marks
+that parameter `@Nullable` and `NULL_PRE_KEY_ID` is `-1` — because on Signal a server's pre-key pool
+can legitimately run dry.
+
+**This app has no server.** `getPreKeyBundle` allocates a one-time pre-key or throws, so a bundle
+arriving without one is not a depleted pool; it is a modified invite. The permission was inherited
+from a system with a component this app does not have.
+
+The field is covered by neither the signed-pre-key signature nor the Kyber signature, so stripping
+it costs a relay one byte: flip the `hasPreKey` marker, drop the following bytes, re-encode. Both
+signatures still verify, and the base64 is canonical, so the wire-format guards — which are about
+structure — see a structurally perfect bundle.
+
+What acceptance costs is forward secrecy against later device seizure. The PQXDH secret loses its DH
+against the one-time key, and everything remaining derives from long-lived material that stays on
+the device for up to 32 days. Record the ciphertext, seize the device inside that window, and the
+conversation is readable from its first message — which is the entire property the one-time key
+provides, and which `OneTimePreKeyIsConsumedTest` already argues for on the sending side. And it is
+silent: the session builds, the UI advances exactly as for a good invite, nothing is logged.
+
+The right rule was already written four lines below, for the sibling field: *"silently downgrading
+to X3DH is not an option, so fail loudly rather than appear to succeed."* It had not been applied to
+the field beside it. Now both refuse.
+
+Four tests, and the controls discriminate: reverting the one-time check fails the strip test and the
+"no session results" test while leaving the Kyber test and the precondition green. **The Kyber check
+had no test either** — deleting it left the suite green — so it has one now.
+
+## Two arms pin, and the fix asked only one
+
+**The seventh round on the trust surface found that the sixth round's fix was a regression.** The
+sixth round moved the post-rejection warning out of a hand-rolled copy and into the shared helper,
+placing the call "where the key actually got pinned". There are two places that pin, and it went
+into one.
+
+`addContact` warns inside `if (messageEnvelope.getPreKeyResponse() != null)`. Below it sits a second
+arm: `if (messageEnvelope.getCiphertextMessage() != null)`, which decrypts — and `decrypt` takes its
+pre-key arm on the ciphertext *type* alone, while `isTrustedIdentity` returns true whenever nothing
+is pinned. A rejection record does not block trust-on-first-use; it only unpins. So a bundle-less
+pre-key message at a rejected address pins a new key through that arm, with no bundle and therefore
+none of the warnings above it.
+
+The route in is ordinary: reject a key, then delete the row. `removeContact` deliberately does not
+clear `rejectedAddresses`, so the rejection outlives the row while the address stops resolving to a
+contact — and the same forged message now opens the add-contact screen instead of the decrypt path.
+The user names the contact, and a key lands at an address they explicitly rejected, silently. The
+warning the previous unconditional check gave them was lost by a fix whose commit message said it
+was consolidating one.
+
+The duplicate-name check is not a backstop: it fires only if the user types a matching name, and the
+attacker writes the invite text that suggests the name.
+
+**And the message added in the same round asserted a security event that never happened.**
+`INFO_NOTHING_TO_REJECT` replaced "Forgot the stored key for %s" — correct, since nothing was
+stored — but kept the closing sentence *"this app has already been given a wrong key for them
+once."* That branch is reachable only with no pin and a standing warning, which post-round-five
+means the duplicate-name, same-address or storage warnings: in none of them was a key ever offered
+at that address, let alone a wrong one. The commit said "its other two sentences stay true". One of
+them is false in the branch's own primary state. Telling a user the app was handed a wrong key is a
+factual claim about a security event, and asserting one that did not happen is the same defect as
+staying silent about one that did.
+
+## A test that could not reach its own branch, and a device test in the wrong state
+
+Two ways this round's tests were measuring nothing, both found by review rather than by running.
+
+**`afailedSessionDoesNotOverwriteAtrueStandingWarning` never reached the branch it names.** Its
+sibling clears the contact list; it did not, so setUp's Bob Jones was still present and re-adding
+the identical contact threw `DuplicateContactException` inside `createAndAddContactToContacts`.
+`addContact` took `abortContactAdding` and returned before `createSessionWithContact` was ever
+called. The test passed because "send a fresh one" was never a candidate string.
+
+This was demonstrated rather than argued: with the `!mWarningStanding` guard *deleted* — the exact
+defect the test exists to catch — the old test still passed. One line of fixture restored it, and
+with the fixture in place the same control fails it.
+
+**The on-device strip test drove the send path with the redirect down, which is the opposite of
+production.** The strip redirects typing into its own compose box; the send path's
+`setShouldUseOtherIC(false)` is what aims the connection back at the host before committing. The
+test placed its message with `setText`, which fires the `TextWatcher` but not the focus listener
+that raises the redirect — and an unattached view cannot take focus anyway. So the flag was never
+up, the reset was a no-op, and deleting it would have left the test green while, in production, the
+ciphertext returns to the compose box, is erased by `clearUserInputString()`, and the user's message
+is silently never sent.
+
+The test now raises the redirect before pressing Encrypt, and its listener commits through the
+`RichInputConnection` the way `LatinIME` does, so it can assert *where* the ciphertext landed rather
+than only what it was. Two smaller findings from the same review are fixed: assertions no longer run
+inside `runOnMainSync` — `SyncRunnable` has no `try/finally`, so a failed assertion there reaches
+the `Looper` as an uncaught exception and kills the instrumentation process, turning one red test
+into a lost run — and `tearDown` now calls `clear()`, releasing the process-wide clipboard listener
+the strip's constructor registers.
+
+The javadoc no longer says the message is "typed": it is placed with `setText`, so the strip's own
+text-entry path is not exercised there.

@@ -1746,10 +1746,28 @@ public class SignalProtocolMain {
     int preKeyId = -1;
     int signedPreKeyId = -1;
 
-    if (device.getPreKey() != null) {
-      preKeyId = device.getPreKey().getKeyId();
-      preKey = device.getPreKey().getPublicKey();
+    if (device.getPreKey() == null) {
+      // The same rule as the Kyber check below, which this had not been given.
+      //
+      // libsignal treats an absent one-time pre-key as legitimate - PreKeyBundle marks it
+      // @Nullable and NULL_PRE_KEY_ID is -1 - because on Signal the server's pool can run dry.
+      // THIS app has no server: getPreKeyBundle always allocates one or throws, so a bundle
+      // arriving without one is not a depleted pool, it is a modified invite. Accepting it was
+      // silent: the session builds, the UI advances exactly as for a good invite, and nothing is
+      // ever logged.
+      //
+      // What it costs is the DH against the one-time key. Everything left in the PQXDH secret is
+      // derivable from long-lived material that stays on the device for up to 32 days, so an
+      // adversary who records the ciphertext and later seizes the device reads the conversation
+      // from its first message - which is the exact property the one-time key exists to deny, and
+      // which OneTimePreKeyIsConsumedTest already argues for on the sending side. The field is
+      // covered by neither signature, so stripping it costs a relay one byte and leaves both
+      // signatures verifying.
+      throw new IOException("peer bundle has no one-time pre key: this app always sends one, so "
+          + "a bundle without one has been modified in transit");
     }
+    preKeyId = device.getPreKey().getKeyId();
+    preKey = device.getPreKey().getPublicKey();
 
     if (device.getSignedPreKey() != null) {
       signedPreKeyId = device.getSignedPreKey().getKeyId();

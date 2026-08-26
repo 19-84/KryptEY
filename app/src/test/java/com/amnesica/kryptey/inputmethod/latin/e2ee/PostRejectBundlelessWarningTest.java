@@ -189,4 +189,54 @@ public class PostRejectBundlelessWarningTest {
             + "identity key. The sender chooses which. What the user was shown: " + shown,
         shown.contains("previously told the app"));
   }
+
+  /**
+   * And the same key, arriving on the route where the contact row is gone.
+   *
+   * <p>The test above covers the decrypt button, which is reached only while a row for that address
+   * still exists. Rejecting a key keeps the row, but deleting it afterwards is an ordinary thing to
+   * do — and {@code removeContact} does not clear {@code rejectedAddresses}, so the rejection is
+   * still on record while {@code extractContactFromEnvelope} now returns null. The same forged
+   * message then opens the ADD-CONTACT screen instead, and the user names the contact.
+   *
+   * <p>That path pins through a second arm: {@code addContact} decrypts when the envelope carries a
+   * ciphertext, with no bundle involved. A fix one round earlier moved the rejection warning to
+   * "where the key actually got pinned" and put it in only one of the two arms that pin, so this
+   * route lost the warning it used to have from an unconditional check. Two places pin; both must
+   * ask.
+   */
+  @Test
+  public void abundlelessPreKeyMessageAtArejectedAddressIsWarnedAboutWhenTheRowWasDeleted()
+      throws Exception {
+    final MessageEnvelope forged = forgedBundlelessMessage();
+    assertNull("precondition: no bundle, so the add-contact path takes its ciphertext arm",
+        forged.getPreKeyResponse());
+
+    assertTrue("precondition: a pinned key must have been forgotten",
+        SignalProtocolMain.rejectContactKey(bob()));
+
+    // The user then deletes the row. The rejection record outlives it, which is the point.
+    SignalProtocolMain.getInstance().getAccount().setContactList(new java.util.ArrayList<>());
+    assertTrue("precondition: the rejection must survive deleting the row",
+        SignalProtocolMain.wasKeyRejected(peerAddress));
+
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+    strip.addContactForTest(forged);
+
+    assertNotNull("precondition: this route really does pin - trust-on-first-use accepts the key "
+            + "because a rejection record does not make an address untrusted, only unpinned",
+        SignalProtocolMain.getInstance().getAccount().getSignalProtocolStore()
+            .getIdentityKeyStore().getIdentity(peerAddress));
+
+    final String toast = ShadowToast.getTextOfLatestToast();
+    final String shown = infoText() + " | " + (toast == null ? "" : toast);
+    assertTrue("a key pinned at a rejected address must be warned about on the add-contact route "
+            + "too. The attacker chooses this route by relaying a bundle-less message once the row "
+            + "is gone, and the user is at the screen where they name the contact - the moment the "
+            + "warning is most useful. What the user was shown: " + shown,
+        shown.contains("previously told the app"));
+  }
 }

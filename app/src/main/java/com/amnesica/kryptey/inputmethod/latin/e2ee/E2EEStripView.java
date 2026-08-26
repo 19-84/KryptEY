@@ -226,9 +226,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Reject is deliberately available with no pin — it is the one deliberate response left when a
    * warning stands and the verify screen has no number to compare, and without it that state is a
    * dead end. But {@code INFO_KEY_REJECTED} opens "Forgot the stored key for %s", and in that state
-   * nothing was stored. Its other two sentences stay true, so only the first is replaced.
+   * nothing was stored.
+   *
+   * <p>Its closing sentence had to go too, which the commit that added this string got wrong by
+   * assuming only the opening one was about the pin. "This app has already been given a wrong key
+   * for them once" is true where a key was pinned and the user reported a mismatch; it is not
+   * implied by anything in this branch. The branch is reachable only with no pin and a standing
+   * warning, and post-round-five those are the duplicate-name, same-address and storage warnings —
+   * in none of which was a key ever offered at that address, let alone a wrong one. Telling the
+   * user the app was handed a wrong key for a contact is a factual claim about a security event,
+   * and asserting one that did not happen is the same defect as staying silent about one that did.
    */
-  private final String INFO_NOTHING_TO_REJECT = "There was no stored key for %s to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
+  private final String INFO_NOTHING_TO_REJECT = "There was no stored key for %s to forget - none had been stored yet. Nothing can be sent to them until they send an invite. When one arrives, compare the number with them by voice before sending anything private.";
 
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
   /**
@@ -1000,6 +1009,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (messageEnvelope.getCiphertextMessage() != null) {
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
+      // This arm pins too, and that is not obvious: SignalProtocolMain.decrypt takes its PREKEY
+      // arm on the ciphertext TYPE alone, and isTrustedIdentity returns true whenever nothing is
+      // pinned - a rejection record does not block trust-on-first-use. So a bundle-less PreKey
+      // message relayed at an address the user explicitly rejected lands a new key here, with no
+      // getPreKeyResponse() and therefore none of the warnings above.
+      //
+      // Before the previous commit an unconditional check at the top of this method covered this
+      // arm. Moving it to "where the key actually got pinned" moved it to only ONE of the two
+      // places that pin, which is the same mistake in the opposite direction. Both arms call the
+      // shared helper now; it is a no-op unless a key is really pinned at a rejected address.
+      warnIfKeyWasRejected(chosenContact);
     }
   }
 

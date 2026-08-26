@@ -551,6 +551,14 @@ public class StripGuardsTest {
    */
   @Test
   public void afailedSessionDoesNotOverwriteAtrueStandingWarning() throws Exception {
+    // Load-bearing, and its absence made this test vacuous for a round. setUp leaves a Bob Jones
+    // at peerAddress; re-adding the identical contact throws DuplicateContactException inside
+    // createAndAddContactToContacts, so addContact took abortContactAdding and returned long
+    // before createSessionWithContact was called. The failure branch this test exists to pin was
+    // never reached, and deleting the !mWarningStanding guard it protects would not have failed
+    // it - the test passed only because "send a fresh one" was never a candidate string.
+    victim.setContactList(new ArrayList<>());
+
     strip.setWarningMessageForTest("You already have a contact called Bob Jones.");
 
     final PreKeyResponse spliced = new PreKeyResponse(
