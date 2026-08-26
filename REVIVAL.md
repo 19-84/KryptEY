@@ -2883,6 +2883,33 @@ call it *while a bundle is being pinned*, so requiring a pin there suppressed th
 the paths it was written for. Four existing tests said so immediately, which is the useful kind of
 failure.
 
+**Round five: the same wedge, through the door a messenger can open.** Round four scoped its fix to
+the selection path and left a comment claiming the arrival paths must warn without a pin, "because
+the pin can land after the check". That is true only when the bundle is good. `buildSession` catches
+`InvalidKeyException` when a signed pre-key's signature does not verify, returns false **without
+saving an identity**, and `decrypt` discards that return value — so one flipped byte in a relayed
+invite produced *"this **is a new key** for that address"* at an address holding none, with the
+verify screen it points at showing no fingerprint and both buttons down. Reachable by the messenger
+alone, on three arrival paths and the add-contact path.
+
+Two changes, because one of them is a rule rather than a repair:
+
+- **The warning asks whether a key is actually there**, and every caller now runs *after* the pin
+  attempt rather than before it. The ordering is load-bearing in both directions: check too early
+  and a good bundle's legitimate warning is suppressed, which three existing tests said immediately
+  when the reorder was reverted.
+- **A standing warning must always leave one deliberate response available.** Verify and Reject both
+  live on the verify screen and both went down when there was no fingerprint — which is exactly when
+  no key is pinned, so any warning that can stand in that state was a dead end. Reject now stays
+  available there. Verify does not: confirming a number that is not on screen would be a lie. Two
+  rounds found dead ends in this one cell by two different routes, so the third defence is the
+  invariant rather than another special case.
+
+Round five also reported the rest of the state table as converged: `(no pin, change pending)` is
+structurally unreachable, `(pin, rejected, verified)` is refused in both directions and defended
+again on the read side, and every remaining live cell shows text that is true with both buttons
+available.
+
 **The verify screen never mentioned a standing rejection.** Same sweep. Pressing Verify there is
 what *clears* a rejection — `rejectedAddresses` is documented as retired only by a fresh comparison,
 and `isContactKeyTrustworthy` ranks a standing rejection above a verified badge. Yet the screen

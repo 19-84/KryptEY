@@ -10,6 +10,7 @@ import android.widget.TextView;
 
 import com.amnesica.kryptey.inputmethod.R;
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
@@ -197,6 +198,66 @@ public class VerifyScreenNamesAstandingRejectionTest {
     assertFalse("the strip claimed a new key had been pinned for a contact that has no key at "
             + "all - and neither Verify nor Reject is available to put that warning down: " + banner,
         banner.contains("new key for that address"));
+  }
+
+  /**
+   * A bundle that is REFUSED must not be reported as a new key either.
+   *
+   * <p>The same wedge as the bare rejection, entered from a different door, and the door a messenger
+   * can open. {@code buildSession} catches {@code InvalidKeyException} when a signed pre-key's
+   * signature does not verify, logs, and returns false without saving an identity — and
+   * {@code decrypt} discards that return value. So an envelope that pins nothing used to raise
+   * "this IS a new key for that address" anyway, at an address holding none, with the verify screen
+   * it points at showing no fingerprint.
+   *
+   * <p>Staged here the cheap way: an ordinary message relabelled as a pre-key envelope. It cannot
+   * parse as one, so nothing pins — which is exactly the state the signature failure produces, and
+   * is one of the entry points the review named.
+   */
+  @Test
+  public void arefusedBundleAtArejectedAddressIsNotReportedAsAnewKey() throws Exception {
+    assertTrue(SignalProtocolMain.rejectContactKey(bob()));
+    assertFalse("precondition: nothing may be pinned after a rejection",
+        SignalProtocolMain.hasPinnedKey(bob().getSignalProtocolAddress()));
+
+    // Something that declares itself a pre-key envelope and is not one.
+    final MessageEnvelope refused = new MessageEnvelope(
+        new byte[] {9, 9, 9, 9}, org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE,
+        peerAddress.getName(), peerAddress.getDeviceId());
+    strip.processIncomingEnvelopeForTest(refused);
+
+    assertFalse("nothing was pinned, so the strip must not claim a new key arrived",
+        SignalProtocolMain.hasPinnedKey(bob().getSignalProtocolAddress()));
+    final String banner =
+        ((TextView) strip.findViewById(R.id.e2ee_info_text)).getText().toString();
+    assertFalse("a refused bundle was reported as a new key at an address that holds none: "
+        + banner, banner.contains("new key for that address"));
+  }
+
+  /**
+   * And whatever warning does stand, the user always has one deliberate response.
+   *
+   * <p>The invariant behind both wedges. Verify and Reject both live on the verify screen and both
+   * go down when there is no fingerprint — which is exactly when no key is pinned. Any warning that
+   * can stand in that state was a dead end: told something is wrong, sent here by the warning's own
+   * text, nothing to press, and the banner suppressing every routine message from then on.
+   */
+  @Test
+  public void awarningWithNoFingerprintStillLeavesRejectAvailable() throws Exception {
+    assertTrue(SignalProtocolMain.rejectContactKey(bob()));
+    strip.setWarningMessageAboutForTest("Careful: something is wrong with Bob's key.", bob());
+
+    strip.selectContact(bob());
+    strip.loadFingerprintInVerifyContactView();
+
+    final View verify = strip.findViewById(R.id.e2ee_verify_contact_verify_button);
+    final View reject = strip.findViewById(R.id.e2ee_verify_contact_reject_button);
+    assertNotNull(verify);
+    assertNotNull(reject);
+    assertFalse("Verify must stay down - there is no number on screen to confirm",
+        verify.isEnabled());
+    assertTrue("Reject must stay available, or a standing warning with no pinned key is a dead end "
+        + "the user cannot leave", reject.isEnabled());
   }
 
   /** But once a key IS pinned there again, the warning is real and must fire. */

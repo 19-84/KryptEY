@@ -546,6 +546,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // the disabling from clearFingerprintViews, which fails
       // VerifyScreenNamesAstandingRejectionTest. Left as one call rather than repeated here.
       clearFingerprintViews();
+
+      // ...except Reject, when a warning is standing.
+      //
+      // The invariant this restores: a standing warning must always leave the user one deliberate
+      // response. Both buttons live on this screen, both are disabled when there is no fingerprint,
+      // and there is no fingerprint precisely when no key is pinned - so any warning that can stand
+      // in that state is a dead end. The user is told something is wrong, sent here by the
+      // warning's own text, and finds nothing to press; the banner then suppresses every routine
+      // message for the life of the install.
+      //
+      // Verify stays down because there is nothing to compare: confirming a number that is not on
+      // screen would be a lie. Reject is meaningful without a pin - it says "I do not trust
+      // whatever arrives at this address", which is already what the rejection record means, and
+      // its listener clears the warning. Two rounds of review found dead ends in this cell by two
+      // different routes; this stops the next one being a dead end as well.
+      if (mWarningStanding && mVerifyContactRejectButton != null) {
+        mVerifyContactRejectButton.setEnabled(true);
+      }
       setInfoTextViewMessage(mVerifyContactInfoTextView, INFO_NO_FINGERPRINT);
       return;
     }
@@ -1661,14 +1679,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       //
       // Asked of the ciphertext type rather than unconditionally: a WHISPER_TYPE message pins
       // nothing, and after a rejection it cannot decrypt either, because the session went with the
-      // key. A sender who declares PREKEY_TYPE over other bytes gets a warning on a message that
-      // then fails to decrypt, which is the safe direction.
+      // key. A sender who declares PREKEY_TYPE over other bytes used to get a warning on a message
+      // that then fails to decrypt, and the comment here called that "the safe direction". It is
+      // not: nothing pins, so the warning claims a key that does not exist and the verify screen it
+      // points at has no fingerprint to compare. Asked after the attempt instead.
+      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       if (messageEnvelope.getCiphertextType()
           == org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE) {
         warnIfKeyWasRejected(sender);
       }
       setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
-      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
 
@@ -1686,9 +1706,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // which is the only other place this warning is written. The record exists precisely so the
       // re-delivered forged bundle is a warned pin instead of a silent one; without this it was
       // consulted by nothing on the route an attacker actually uses.
+      // After the attempt, not before: a bundle whose signature fails is refused and pins nothing.
+      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
       warnIfKeyWasRejected(sender);
       setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
-      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
     }
   }
 
@@ -1705,10 +1726,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean warnIfKeyWasRejected(final Contact sender) {
     if (sender == null) return false;
     if (!mE2EEStrip.wasKeyRejected(sender.getSignalProtocolAddress())) return false;
-    // Deliberately does NOT require a key to be pinned yet. The three arrival paths call this
-    // while a bundle is being processed, and the pin can land after the check - requiring one here
-    // suppressed the warning on exactly the paths it was written for. The selection path is
-    // different and carries that condition itself; see selectContact.
+    // A key must actually be there. INFO_PINNED_AFTER_REJECT states as fact that "this IS a new
+    // key for that address", and there are two ways for that to be false: nothing arrived at all
+    // (the selection path), or something arrived and was REFUSED.
+    //
+    // The refusal case is the one a previous round missed. buildSession catches
+    // InvalidKeyException when the signed pre-key's signature does not verify, logs, and returns
+    // false without saving an identity - and decrypt discards that return value. So one flipped
+    // byte in a relayed invite produces a warning claiming a new key arrived, at an address that
+    // holds none, and the verify screen it sends the user to has no fingerprint. An earlier comment
+    // here said the pin "can land after the check", which is true only when the bundle is good;
+    // every caller now runs after the attempt, so this can simply ask.
+    if (!mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress())) return false;
     final String warning = String.format(INFO_PINNED_AFTER_REJECT, labelFor(sender));
     Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
     setWarningMessage(warning, String.valueOf(sender.getSignalProtocolAddress()));
@@ -1723,10 +1752,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     } else {
       // update contact with preKey information
       setChosenContact(sender);
-      // Same reason as the sibling arm above: this envelope carries a bundle too.
+      // Same reason as the sibling arm above: this envelope carries a bundle too, and the warning
+      // runs after the attempt so a refused bundle cannot be reported as a new key.
+      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       warnIfKeyWasRejected(sender);
       setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
-      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
     }
   }
 
@@ -2015,6 +2045,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** Posts a warning, for tests that drive the strip. */
   void setWarningMessageForTest(final String message) {
     setWarningMessage(message);
+  }
+
+  /**
+   * Drives the plain signal-message arm, for tests.
+   *
+   * <p>Calls the production method rather than re-implementing it: the ordering inside that arm -
+   * the pin attempt before the post-rejection warning - is the property under test, and a seam that
+   * re-created it would pin only its own copy. That mistake has already been made once in this file.
+   */
+  void processIncomingEnvelopeForTest(final MessageEnvelope envelope) {
+    processSignalMessage(envelope, contactFor(envelope));
+  }
+
+  /** The contact an envelope claims to come from, or null. */
+  private Contact contactFor(final MessageEnvelope envelope) {
+    for (final Contact candidate : mE2EEStrip.getContacts()) {
+      if (candidate.getSignalProtocolAddressName().equals(envelope.getSignalProtocolAddressName())
+          && candidate.getDeviceId() == envelope.getDeviceId()) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   /** Posts a warning about a particular contact, for tests that drive the strip. */
@@ -2555,12 +2607,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // unavailable, the flag carried across rebuilds, every routine banner suppressed from then on.
     // The only exits were deleting the contact or the attacker delivering another key.
     //
-    // The arrival paths must still warn without a pin, because that is where the pin is landing.
-    // This condition belongs here, not in the shared helper.
-    final boolean aKeyIsPinnedHere =
-        contact != null && mE2EEStrip.hasPinnedKey(contact.getSignalProtocolAddress());
+    // The condition now lives in warnIfKeyWasRejected itself, because the arrival paths turned out
+    // to need it too: a bundle whose signature fails is refused and pins nothing, so "the pin lands
+    // after the check" was only true for good bundles. Keeping a copy of it here as well would be a
+    // guard no mutation could kill.
     final boolean warnedAboutThisContact =
-        warnIfIdentityChanged(contact) || (aKeyIsPinnedHere && warnIfKeyWasRejected(contact));
+        warnIfIdentityChanged(contact) || warnIfKeyWasRejected(contact);
     if (mWarningStanding) {
       // Do not write OVER the warning - that is the same erasure whether or not the flag comes down
       // with it, because what the user reads is the banner. Repaint it with the new recipient named
