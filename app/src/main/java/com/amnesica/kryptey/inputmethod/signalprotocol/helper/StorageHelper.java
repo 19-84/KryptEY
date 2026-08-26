@@ -154,15 +154,6 @@ public class StorageHelper {
       return null;
     }
 
-    // convertValue(null, ...) returns null, so a single failed read here would produce a non-null
-    // account carrying null lists - which the write-back would then persist as the string "null",
-    // erasing the user's entire contact list and message history. Fall back to empty instead.
-    ArrayList<StorageMessage> unencryptedMessages = JsonUtil.convertUnencryptedMessagesList(
-        (ArrayList<StorageMessage>) getClassFromSharedPreferences(ProtocolIdentifier.UNENCRYPTED_MESSAGES));
-    if (unencryptedMessages == null) {
-      Log.e(TAG, "Error: stored messages could not be read; continuing with an empty list");
-      unencryptedMessages = new ArrayList<>();
-    }
     ArrayList<Contact> contactList = JsonUtil.convertContactsList(
         (ArrayList<Contact>) getClassFromSharedPreferences(ProtocolIdentifier.CONTACTS));
     final boolean contactsWereReadable = contactList != null;
@@ -172,7 +163,14 @@ public class StorageHelper {
     }
 
     Account account = new Account(name, signalProtocolAddress.getDeviceId(), identityKeyPair, metadataStore, signalProtocolStore, signalProtocolAddress); // deviceId is static
-    account.setUnencryptedMessages(unencryptedMessages);
+    // The chat log is handed over as a way to read it, not as its contents.
+    //
+    // This is the whole point of the change: loading an account happens on setInputView, which runs
+    // every time the keyboard is raised in any app, and the log is the one part of the store that
+    // grows without bound. Parsing it here meant every raise paid for the user's entire history -
+    // and the write-back that follows a reload re-serialised it too. Nothing on the raise path
+    // reads a message; only the message-log screen does, and it can afford the read.
+    account.setMessageLogLoader(this::readMessageLog);
     account.setContactList(contactList);
 
     // Restore the display-tag secret, or every contact tag changes on this load.
@@ -229,6 +227,26 @@ public class StorageHelper {
   }
 
   /**
+   * Reads the chat log, with the same fallback the eager read had.
+   *
+   * <p>convertValue(null, ...) returns null, so a single failed read would otherwise produce a null
+   * list - which the write-back would persist as the string "null", erasing the user's entire
+   * message history. Falling back to empty is deliberate and predates this being lazy; what is new
+   * is that an empty result here is NOT written back unless something has since touched the log,
+   * because a log that was never loaded is not saved at all.
+   */
+  private ArrayList<StorageMessage> readMessageLog() {
+    final ArrayList<StorageMessage> messages = JsonUtil.convertUnencryptedMessagesList(
+        (ArrayList<StorageMessage>) getClassFromSharedPreferences(
+            ProtocolIdentifier.UNENCRYPTED_MESSAGES));
+    if (messages == null) {
+      Log.e(TAG, "Error: stored messages could not be read; continuing with an empty list");
+      return new ArrayList<>();
+    }
+    return messages;
+  }
+
+  /**
    * Runs the one-time key migration, once, at the first load after the upgrade.
    *
    * <p>The transformation itself lives in {@link LegacyKeyMigration}; this decides whether it has
@@ -259,6 +277,12 @@ public class StorageHelper {
       return;
     }
 
+    // This forces the chat log to be read, and that is correct rather than a regression of the
+    // laziness above. The marker check at the top of this method means we only get here on the ONE
+    // load that actually performs the migration - once per install, ever. Every subsequent raise
+    // returns at that check without touching the log. Deferring the migration itself was the other
+    // option and it is not worth it: LegacyKeyMigration is the component on this branch with the
+    // worst record for being changed, and one parse once is not a cost worth that risk.
     LegacyKeyMigration.apply(account);
     account.setKeysAreRendered(true);
 
@@ -290,7 +314,13 @@ public class StorageHelper {
     put(batch, ProtocolIdentifier.PROTOCOL_STORE, account.getSignalProtocolStore());
     put(batch, ProtocolIdentifier.PROTOCOL_ADDRESS, account.getSignalProtocolAddress());
     put(batch, ProtocolIdentifier.DEVICE_ID, account.getDeviceId());
-    put(batch, ProtocolIdentifier.UNENCRYPTED_MESSAGES, account.getUnencryptedMessages());
+    // Written only if something actually read it. A log that was never loaded cannot have changed,
+    // and the stored value is already what we would write - so writing it would mean parsing the
+    // whole history in order to serialise it back byte for byte. putAll writes the keys it is
+    // given and clears nothing, so omitting this leaves the stored log exactly as it was.
+    if (account.messageLogIsLoaded()) {
+      put(batch, ProtocolIdentifier.UNENCRYPTED_MESSAGES, account.getUnencryptedMessages());
+    }
     put(batch, ProtocolIdentifier.CONTACTS, account.getContactList());
 
     put(batch, ProtocolIdentifier.RETIRED_DISPLAY_NAMES, account.getRetiredDisplayNames());

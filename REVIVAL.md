@@ -2291,7 +2291,10 @@ different thing to have on a deferred list.
 
 ## Known-deferred defects
 
-**The plaintext chat log has no cap, and it is read on every keyboard raise.** No size limit, no age
+**~~The plaintext chat log has no cap, and it is read on every keyboard raise.~~ Partly fixed —
+the log is no longer parsed to raise the keyboard, and the remaining cost is now measured and
+attributed.** The original entry is kept below because its reasoning was right and its numbers are
+still the basis for what follows; what changed is written after it. No size limit, no age
 limit; entries go only when a contact is deleted or a send is discarded. Measured at ~358 characters
 per message in SharedPreferences: **20,000 messages is 7.16 MB, 194 ms to save and 72 ms to load** on
 a desktop JVM — and the load is on the `setInputView` path, so it runs every time the keyboard is
@@ -2314,6 +2317,42 @@ documented three sections above.
 
 Left as a decision with its numbers rather than taken: capping loses history, and the lazy load is a
 larger change to the one component on this branch with the worst track record for being changed.
+
+**Taken, and the complication was smaller than it looked.** `Account` now holds the log as a loader
+rather than as contents, and `StorageHelper` hands it one instead of reading it. The migration
+worry was real but narrow: `migrateLegacyKeys` returns at its marker check without touching the log,
+so `LegacyKeyMigration` only runs on the *one* load per install that actually migrates. On that load
+the read is forced deliberately and the migration is unchanged — which is the point, since it is the
+component with the worst record for being changed. Everywhere else, the log is never read.
+
+The write matters as much as the read and the original entry did not say so: a reload is followed by
+a write-back, so a raise was paying for a full parse *and* a full re-serialisation. The log is now
+omitted from the save batch entirely when nothing has loaded it. That is the dangerous half of the
+change — if omitting a key cleared it, one raise would erase the user's history silently — so it
+rests on `EncryptedKeyValueStore.putAll` writing the keys it is given and clearing nothing, and on a
+test that reloads afterwards and checks the messages are still there. Control: make the save write an
+empty list when the log was not loaded, and that test fails.
+
+**Measured, on the same desktop JVM as the original numbers, as load-then-write-back:**
+
+| stored log | before | after |
+|---|---|---|
+| empty | 36 ms | 36 ms |
+| 1,000 messages | 50 ms | 42 ms |
+| 20,000 messages | 294 ms | 199 ms |
+
+**So it is a third off at 20,000 and it does not make the cost constant, which is the honest
+result.** What the deferral removes is the JSON parse, the AES-GCM open, the re-seal and the
+re-serialisation of the log. What remains — 163 ms of the 199 ms at 20,000, against a 36 ms empty-log
+baseline — is the `SharedPreferences` file itself: the log shares one XML file with everything else,
+that file is read whole on first access, and **any** `commit()` rewrites it whole regardless of which
+keys changed. No amount of laziness at the JSON layer reaches that.
+
+**What is still open, now with a specific shape rather than a vague one:** the log needs its own
+store file, so that raising the keyboard neither reads nor rewrites 5.35 MB of message history. That
+is a storage-layout change rather than a lifecycle one, and it is separable from everything above.
+The cap-versus-keep question is untouched by any of this — the log still grows forever, still
+peer-paced.
 
 
 **~~The CI workflow's Lint step has never passed.~~ Fixed in `5fb0a91`** — Temurin 21 plus a lint
