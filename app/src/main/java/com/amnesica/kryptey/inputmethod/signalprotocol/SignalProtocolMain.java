@@ -105,18 +105,26 @@ public class SignalProtocolMain {
       return sInstance.mAccount != null;
     }
 
-    sInstance.initializeProtocol();
+    final boolean stored = sInstance.initializeProtocol();
     if (sInstance.mAccount == null) return false;
 
     // Only report success if the identity actually reached disk. Storage now depends on the
     // Keystore and can fail; a caller that recorded "setup done" after a failed write would come
     // back on the next raise, find nothing stored, and generate a different identity.
     //
-    // identityReachedDisk, NOT hasExistingProtocolData: the latter is also satisfied by the chat
-    // log's file, which is written before the account batch. An install whose log commit landed and
-    // whose account batch failed would otherwise report success, and the caller would record "setup
-    // done" forever over a device with no identity.
-    return sInstance.mStorageHelper != null && sInstance.mStorageHelper.identityReachedDisk();
+    // The WRITE's own answer, not a question asked of storage afterwards.
+    //
+    // Asking afterwards is what the previous version did, and it cannot see the case that matters:
+    // SharedPreferences commits to its in-memory map before touching the disk, so on a full disk
+    // the value is present in memory, contains() says yes, and the process looks healthy while
+    // nothing was persisted. The caller then records "setup done" permanently and the keyboard is
+    // left with no identity and no way back.
+    //
+    // identityReachedDisk() is kept as the second half rather than the whole test: it catches the
+    // case where the write claimed success but the account file holds no identity, which is the
+    // half a returned boolean cannot see.
+    return stored && sInstance.mStorageHelper != null
+        && sInstance.mStorageHelper.identityReachedDisk();
   }
 
   /**
@@ -1922,7 +1930,8 @@ public class SignalProtocolMain {
   /**
    * Initializes the protocol by generating and storing all necessary keys and stores
    */
-  private void initializeProtocol() {
+  /** @return whether the freshly generated identity actually reached storage. */
+  private boolean initializeProtocol() {
     final String uniqueUserId = UUID.randomUUID().toString();
     final int deviceId = ProtocolAddresses.generateDeviceId();
     final SignalProtocolAddress signalProtocolAddress = new SignalProtocolAddress(uniqueUserId, deviceId);
@@ -1951,7 +1960,7 @@ public class SignalProtocolMain {
     // one, and its next load treated the retirements it had written itself as pre-upgrade.
     mAccount.setKeysAreRendered(true);
 
-    storeAllAccountInformationInSharedPreferences();
+    return storeAllAccountInformationInSharedPreferences();
   }
 
   private void reloadAccountFromSharedPreferences() {
@@ -1970,16 +1979,17 @@ public class SignalProtocolMain {
     mAccount = loaded;
   }
 
-  private void storeAllAccountInformationInSharedPreferences() {
+  /** @return whether the account actually reached storage. */
+  private boolean storeAllAccountInformationInSharedPreferences() {
     if (mAccount == null) {
       Log.e(TAG, "Error: No protocol resources were stored (mAccount is null)");
-      return;
+      return false;
     }
-    if (mStorageHelper != null) {
-      mStorageHelper.storeAllInformationInSharedPreferences(mAccount);
-    } else {
+    if (mStorageHelper == null) {
       Log.e(TAG, "Error: No protocol resources were stored (mStorageHelper is null)");
+      return false;
     }
+    return mStorageHelper.storeAllInformationInSharedPreferences(mAccount);
   }
 
   private void initializeStorageHelper(Context context) {

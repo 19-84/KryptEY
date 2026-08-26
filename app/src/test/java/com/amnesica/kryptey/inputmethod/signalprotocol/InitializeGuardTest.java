@@ -188,4 +188,60 @@ public class InitializeGuardTest {
     assertArrayEquals("a reload must not change the identity", before,
         SignalProtocolMain.getInstance().getAccount().getIdentityKeyPair().serialize());
   }
+
+  /**
+   * A write that failed makes {@code initialize()} report failure, even though storage looks fine.
+   *
+   * <p>The case a reviewer found still broken after the previous fix, and the one that bricks a
+   * device. {@code SharedPreferences} commits to its in-memory map <em>before</em> writing; on a
+   * full disk it deletes the partial file, restores the previous contents on next load, and returns
+   * false — while the running process keeps the new values and looks perfectly healthy. So asking
+   * storage afterwards whether the identity is there answers <em>yes</em>. The caller records "setup
+   * done" permanently, and that flag lives in device-protected storage — a different directory,
+   * which did not fail — so the keyboard never initialises again and has no in-app way out.
+   *
+   * <p>The fixture reproduces exactly that shape rather than an easier one: the account really is
+   * stored, so {@code identityReachedDisk()} is true, and only the write's own return value says
+   * otherwise. An earlier version of this test failed the seal instead, which is the variant that
+   * already worked — nothing reaches memory, so both signals agree and the test could not tell the
+   * fixed code from the broken code.
+   */
+  @Test
+  public void initializeReportsFailureWhenTheWriteSaidSoEvenThoughStorageLooksFine() {
+    SignalProtocolMain.resetForTest();
+    SignalProtocolMain.testIsRunning = true;
+
+    final SecretKey key;
+    try {
+      final KeyGenerator generator = KeyGenerator.getInstance("AES");
+      generator.init(256);
+      key = generator.generateKey();
+    } catch (final Exception e) {
+      throw new AssertionError(e);
+    }
+
+    SignalProtocolMain.setStorageHelperFactoryForTest(context -> new StorageHelper(context,
+        (ctx, hasExistingData) -> new GcmCryptoBox() {
+          @Override
+          protected SecretKey key() {
+            return key;
+          }
+        }) {
+      @Override
+      public boolean storeAllInformationInSharedPreferences(final Account account) {
+        // Stores for real - so the preferences DO hold the identity, exactly as a full disk leaves
+        // them in memory - and then reports the failure the delegate reported.
+        super.storeAllInformationInSharedPreferences(account);
+        return false;
+      }
+    });
+
+    final boolean reported = SignalProtocolMain.initialize(RuntimeEnvironment.getApplication());
+
+    assertTrue("precondition: the fixture must leave storage looking healthy, or this test is "
+            + "checking the easy case", SignalProtocolMain.getInstance() != null);
+    assertFalse("the write reported failure, so initialize() must not report success - the caller "
+        + "records 'setup done' permanently on the strength of this, and the flag it writes lives "
+        + "in a different directory that did not fail", reported);
+  }
 }

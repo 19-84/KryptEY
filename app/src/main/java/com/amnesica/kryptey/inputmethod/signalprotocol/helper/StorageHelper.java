@@ -278,6 +278,7 @@ public class StorageHelper {
    * account deferred so no save can write over what could not be read. Callers must survive it -
    * see that class for why an input method may not let it escape.
    */
+  @android.annotation.SuppressLint("ApplySharedPref")   // durable by design; see the call site
   private ArrayList<StorageMessage> readMessageLog() {
     final String key = String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES);
     final SharedPreferences accountFile = preferencesNamed(mSharedPreferenceName);
@@ -296,6 +297,12 @@ public class StorageHelper {
         // A move that was interrupted after the copy. Finishing it here rather than at the point of
         // the move is what makes the move idempotent instead of one-shot: whatever killed the
         // process last time, the next load lands in a consistent place.
+        //
+        // commit(), not apply(), and lint is told so below: apply() is asynchronous, so the removal
+        // could still be in flight when the process dies. That is survivable here - the log would
+        // simply be found in both files again next time - but every other durable write in this
+        // class is a commit for the same reason, and a storage layer that is sometimes eventual is
+        // harder to reason about than one that is never eventual.
         accountFile.edit().remove(key).commit();
         Log.i(TAG, "Finished moving the chat log out of the account file");
       }
@@ -362,16 +369,34 @@ public class StorageHelper {
    * appeared to succeed and did not survive: a store that cannot read back what it just wrote is
    * not one to delete the original on the strength of.
    */
+  @android.annotation.SuppressLint("ApplySharedPref")   // durable by design; see the call site
   private void moveMessageLogToItsOwnFile(final ArrayList<StorageMessage> messages,
       final SharedPreferences accountFile, final String key) {
+    if (messages == null) return;
+
+    if (messages.isEmpty()) {
+      // Every install that predates this branch has an UNENCRYPTED_MESSAGES value even with no
+      // messages - the old batch wrote it whenever the log was loaded, and a fresh account reports
+      // its empty log loaded - so on upgrade this path runs with "[]" for the entire existing user
+      // base. Copying that would create the log's file on every one of those devices, and that
+      // file's existence is what says "this device holds data": lose the account file afterwards
+      // and the keyboard refuses to re-initialise, permanently, to preserve an empty list. Drop it
+      // instead; there is nothing to carry forward.
+      accountFile.edit().remove(key).commit();
+      Log.i(TAG, "Dropped an empty chat log from the account file rather than moving it");
+      return;
+    }
+
     final EncryptedKeyValueStore store = messageStore();
-    if (store == null || messages == null) return;
+    if (store == null) return;
     try {
       store.put(key, JsonUtil.toJson(messages));
       if (store.get(key) == null) {
         Log.e(TAG, "Not removing the old chat log: the new copy could not be read back");
         return;
       }
+      // commit(), not apply(): this is the delete half of copy-verify-delete, and it must be
+      // durable before anything reports the move done.
       accountFile.edit().remove(key).commit();
       Log.i(TAG, "Moved the chat log into its own file; a keyboard raise no longer rewrites it");
     } catch (StorageCryptoException | RuntimeException e) {
@@ -428,8 +453,16 @@ public class StorageHelper {
     if (messages == null) return;
 
     final SharedPreferences messageFile = preferencesNamed(mMessageStoreName);
+    final SharedPreferences accountFile = preferencesNamed(mSharedPreferenceName);
     final String logKey = String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES);
-    if (messages.isEmpty() && (messageFile == null || !messageFile.contains(logKey))) {
+    // BOTH files. The log is still in the account file whenever a move failed - no message store,
+    // a failed write, a failed read-back - and readMessageLog happily serves it from there. Asking
+    // only the message file then means a user who deletes their last contact gets the empty list
+    // skipped while their full plaintext history sits in the account file and comes back on the
+    // next raise. They asked for it to be gone.
+    final boolean storedAnywhere = (messageFile != null && messageFile.contains(logKey))
+        || (accountFile != null && accountFile.contains(logKey));
+    if (messages.isEmpty() && !storedAnywhere) {
       // Nothing to say and nothing already said. Writing an empty list here would create the log's
       // file on every install that has never sent a message, and that file's existence is now one
       // of the things that says "this device holds data" - so an install with no history at all
@@ -522,9 +555,9 @@ public class StorageHelper {
    * <p>Sealing happens for the whole batch before anything is handed to the delegate, so a failure
    * to encrypt any one value writes none of them.
    */
-  public void storeAllInformationInSharedPreferences(final Account account) {
+  public boolean storeAllInformationInSharedPreferences(final Account account) {
     final EncryptedKeyValueStore store = secureStore();
-    if (store == null) return;
+    if (store == null) return false;
 
     // The log first, then the account batch, and the order is load-bearing.
     //
@@ -574,10 +607,19 @@ public class StorageHelper {
 
     try {
       store.putAll(batch);
+      return true;
     } catch (StorageCryptoException e) {
       // Same rule as the single-value path: never fall back to cleartext. Losing a write is
       // recoverable; writing the identity private key to disk unencrypted is not.
+      //
+      // The return value matters as much as the log line. Asking the preferences afterwards whether
+      // the identity is there does NOT answer this: SharedPreferences commits to its in-memory map
+      // before writing, and on a full disk it deletes the partial file, restores the previous
+      // contents on next load, and returns false - while the running process keeps the new value
+      // and looks perfectly healthy. That is written up in SharedPreferencesKeyValueStore's javadoc
+      // and it is exactly the case initialize() has to be able to see.
       Log.e(TAG, "Error: could not store account information", e);
+      return false;
     }
   }
 

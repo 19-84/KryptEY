@@ -269,9 +269,15 @@ public class ChatLogLivesInItsOwnFileTest {
 
     assertNull("a device that has never stored a message must not have a chat-log entry",
         messageFile.getString(LOG_KEY, null));
-    assertFalse("and so must not look like a device with history to preserve",
-        new StorageHelper(context, box()).hasExistingProtocolData()
-            && !new StorageHelper(context, box()).identityReachedDisk());
+
+    // The previous assertion here was dead: it ANDed "has data" with "identity did not reach disk"
+    // just after a successful store, so the conjunction was false for any implementation and could
+    // not fail. What is worth asserting is the thing that would actually brick the device - that
+    // losing the account file afterwards does not leave something claiming history to preserve.
+    accountFile.edit().clear().commit();
+    assertFalse("with no messages ever stored and the account file gone, nothing should claim this "
+            + "device holds data worth refusing to re-initialise over",
+        new StorageHelper(context, box()).hasExistingProtocolData());
   }
 
   /**
@@ -293,6 +299,78 @@ public class ChatLogLivesInItsOwnFileTest {
     final Account afterwards = helper().getAccountFromSharedPreferences();
     assertNotNull(afterwards);
     assertEquals("clearing a stored history must persist, not be skipped as 'nothing to say'",
+        0, afterwards.getUnencryptedMessages().size());
+  }
+
+  /**
+   * An upgrade whose log is empty does not create the log's file just to say so.
+   *
+   * <p>This is the whole existing user base, not an edge case: every install predating this branch
+   * has an {@code UNENCRYPTED_MESSAGES} value even with no messages, because the old batch wrote it
+   * whenever the log was loaded and a fresh account reports its empty log loaded. So the first
+   * keyboard raise after upgrading runs the move with {@code "[]"}. Copying that would create the
+   * log's file on every one of those devices — and that file's existence is what says "this device
+   * holds data", so losing the account file afterwards would leave the keyboard refusing to
+   * re-initialise, permanently, to preserve an empty list.
+   */
+  @Test
+  public void anupgradeWithAnEmptyLogDoesNotCreateTheLogsFile() {
+    // A pre-split install that never sent a message: "[]" sitting in the account file.
+    final Account emptied = helper().getAccountFromSharedPreferences();
+    assertNotNull(emptied);
+    emptied.getUnencryptedMessages().clear();
+    helper().storeAllInformationInSharedPreferences(emptied);
+    final String sealedEmpty = messageFile.getString(LOG_KEY, null);
+    assertNotNull("precondition: an empty log must have been stored", sealedEmpty);
+    accountFile.edit().putString(LOG_KEY, sealedEmpty).commit();
+    messageFile.edit().clear().commit();
+
+    final Account loaded = new StorageHelper(context, box()).getAccountFromSharedPreferences();
+    assertNotNull(loaded);
+    assertEquals("the empty log must read back as empty", 0, loaded.getUnencryptedMessages().size());
+
+    assertNull("moving an empty log must not create the log's file - that file's existence is what "
+        + "makes a device look like it has history worth refusing to re-initialise over",
+        messageFile.getString(LOG_KEY, null));
+    assertNull("and the empty value must be dropped from the account file, not left to be "
+        + "rewritten on every raise", accountFile.getString(LOG_KEY, null));
+  }
+
+  /**
+   * Deleting history persists even while the log still lives in the account file.
+   *
+   * <p>Reachable whenever a move did not complete — no message store, a failed write, a failed
+   * read-back — and {@code readMessageLog} serves the log from the account file in exactly that
+   * state. The "nothing to say and nothing already said" skip has to consider both files, or a user
+   * who deletes their last contact gets the empty list skipped while their full plaintext history
+   * sits in the account file and returns on the next raise.
+   */
+  @Test
+  public void clearingHistoryPersistsEvenWhileTheLogIsStillInTheAccountFile() {
+    // Load FIRST, then put the files into the failed-move state.
+    //
+    // Doing it the other way round does not work and a control run proved it: any load of a log
+    // sitting in the account file moves it, so by the time the save happens the log is in its own
+    // file and the single-file check answers correctly. The state this test is about is one where
+    // the move did NOT complete while the account is already loaded in memory, so it has to be
+    // built after the load and before the save.
+    final Account loaded = new StorageHelper(context, box()).getAccountFromSharedPreferences();
+    assertNotNull(loaded);
+    assertEquals("precondition: the history must be readable", 1,
+        loaded.getUnencryptedMessages().size());
+
+    final String sealed = messageFile.getString(LOG_KEY, null);
+    assertNotNull(sealed);
+    accountFile.edit().putString(LOG_KEY, sealed).commit();
+    messageFile.edit().clear().commit();
+
+    loaded.getUnencryptedMessages().clear();
+    new StorageHelper(context, box()).storeAllInformationInSharedPreferences(loaded);
+
+    final Account afterwards = new StorageHelper(context, box()).getAccountFromSharedPreferences();
+    assertNotNull(afterwards);
+    assertEquals("the user deleted their history and it came back - the skip looked only at the "
+        + "log's own file while the history was in the account file",
         0, afterwards.getUnencryptedMessages().size());
   }
 
