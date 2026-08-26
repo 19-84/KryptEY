@@ -2361,7 +2361,29 @@ raise. The first version of this paragraph claimed both halves recurred, which w
 **What is still open, now with a specific shape rather than a vague one:** the log needs its own
 store file, so that raising the keyboard does not rewrite megabytes of message history it never
 looked at. That is a storage-layout change rather than a lifecycle one, and it is separable from
-everything above. The cap-versus-keep question is untouched by any of this — the log still grows
+everything above. It was started and set aside once the safety work above took priority; the design
+survived the attempt and is written down here so the next attempt does not have to rediscover it.
+
+- **The log moves to its own preferences file** (`protocol_messages`), holding only
+  `UNENCRYPTED_MESSAGES`. The account batch stops carrying it.
+- **The hazard that makes this more than a rename.** `hasEncryptedData` on the protocol file is the
+  sole input to the Keystore box's refusal to mint a replacement master key, and both stores would
+  share one Keystore alias. A second store built on a file that is empty on every device that has
+  not yet moved its log would answer "no existing data" and *authorise minting a fresh key over the
+  user's identity* — every session, on every device with history. The answer has to be computed
+  across both files, because the question is "does this user have an identity", and that is not a
+  per-file question.
+- **The move is a copy, a verify, and only then a delete**, in that order. A kill after the write
+  leaves the log in both files, which costs disk and nothing else: the next load prefers the new
+  copy and clears the old, so the move is idempotent rather than one-shot. The other order loses the
+  history. Verifying before deleting covers a write that appeared to succeed and did not survive.
+- **The log is written before the account batch, not after.** Two files means two commits and a kill
+  can land between them. The batch carries `KEY_SCHEMA_MIGRATED`, which asserts every key in the log
+  is a rendered address. Batch-first, a kill seals that marker over a log still holding pre-upgrade
+  keys and those entries are unattributable for good. Log-first, the surviving state is a re-keyed
+  log with no marker, which the next load simply migrates again — re-keying is idempotent.
+- **What it should buy**, from the numbers above: the account's file shrinks to the small one, so a
+  raise pays 13 ms rather than 146 ms, and the log's file is written only when the log changes. The cap-versus-keep question is untouched by any of this — the log still grows
 forever, still peer-paced.
 
 **One pre-existing gap closed on the way past.** `migrateLegacyKeys` refused to run against a
