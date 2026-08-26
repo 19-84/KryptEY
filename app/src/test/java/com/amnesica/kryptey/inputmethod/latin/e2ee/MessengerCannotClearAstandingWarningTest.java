@@ -104,6 +104,11 @@ public class MessengerCannotClearAstandingWarningTest {
     return created;
   }
 
+  private String bannerText() {
+    final android.widget.TextView view = strip.findViewById(R.id.e2ee_info_text);
+    return view == null ? "" : view.getText().toString();
+  }
+
   private Contact bob() {
     return victim.getContactList().get(0);
   }
@@ -120,18 +125,31 @@ public class MessengerCannotClearAstandingWarningTest {
     String name();
 
     void raise() throws Exception;
+
+    /**
+     * A distinctive phrase from what this warning puts on screen.
+     *
+     * <p>Because watching the flag is not enough, and two review rounds proved it. A warning can be
+     * left standing while the words are repainted away - the caution was erased that way by a
+     * clipboard post, and by a warning about an unrelated contact being re-posted - and in both
+     * cases {@code mayOverwriteInfoBanner} kept answering "something is standing" while the user
+     * looked at a banner that no longer said it.
+     */
+    String fragment();
   }
 
   private java.util.List<Warning> everyWarning() {
     final java.util.List<Warning> warnings = new java.util.ArrayList<>();
     warnings.add(new Warning() {
       @Override public String name() { return "a generic warning about a contact"; }
+      @Override public String fragment() { return "something is wrong with Bob"; }
       @Override public void raise() {
         strip.setWarningMessageAboutForTest("Careful: something is wrong with Bob's key.", bob());
       }
     });
     warnings.add(new Warning() {
       @Override public String name() { return "the refused-invite warning"; }
+      @Override public String fragment() { return "could not be used"; }
       @Override public void raise() throws Exception {
         // Through the real path: a relay strips the one-time pre-key from a re-invite.
         pasteAndDecrypt(strippedInvite());
@@ -139,6 +157,7 @@ public class MessengerCannotClearAstandingWarningTest {
     });
     warnings.add(new Warning() {
       @Override public String name() { return "the identity-change warning"; }
+      @Override public String fragment() { return "different key"; }
       @Override public void raise() throws Exception {
         // A third party's bundle relabelled with Bob's address: a substitution.
         SignalProtocolMain.initialize(null);
@@ -153,6 +172,7 @@ public class MessengerCannotClearAstandingWarningTest {
     });
     warnings.add(new Warning() {
       @Override public String name() { return "the post-rejection re-pin warning"; }
+      @Override public String fragment() { return "not to trust keys arriving"; }
       @Override public void raise() throws Exception {
         assertTrue(SignalProtocolMain.rejectContactKey(bob()));
         // A fresh bundle at the rejected address re-pins, which is what the warning is about.
@@ -168,6 +188,7 @@ public class MessengerCannotClearAstandingWarningTest {
     });
     warnings.add(new Warning() {
       @Override public String name() { return "the duplicate-name warning"; }
+      @Override public String fragment() { return "already have a contact"; }
       @Override public void raise() throws Exception {
         ((android.widget.EditText) strip.findViewById(
             R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
@@ -178,12 +199,26 @@ public class MessengerCannotClearAstandingWarningTest {
     });
     warnings.add(new Warning() {
       @Override public String name() { return "the same-address-different-name warning"; }
+      @Override public String fragment() { return "would be a second name for the same person"; }
       @Override public void raise() throws Exception {
         ((android.widget.EditText) strip.findViewById(
             R.id.e2ee_add_contact_first_name_input_field)).setText("Robert");
         ((android.widget.EditText) strip.findViewById(
             R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
         strip.addContactForTest(EnvelopeCodec.fromWire(peerBundle));
+      }
+    });
+    warnings.add(new Warning() {
+      @Override public String name() { return "the new-contact caution"; }
+      @Override public String fragment() { return "cannot tell whose it is"; }
+      @Override public void raise() throws Exception {
+        // Not a warning, but a standing item with the same requirement - and the one a review round
+        // found erased twice, by events this sweep already lists.
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_first_name_input_field)).setText("Carol");
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_last_name_input_field)).setText("Smith");
+        strip.addContactForTest(unrelatedInvite());
       }
     });
     // INFO_STORAGE_UNREADABLE is deliberately NOT in this list, and the reason is worth writing
@@ -252,6 +287,13 @@ public class MessengerCannotClearAstandingWarningTest {
           + "can cause, so this makes the warning worthless: the security event it described has "
           + "no other surface and nothing re-raises it. mWarningStanding's own javadoc says "
           + "nothing the messenger can cause may clear it.", strip.mayOverwriteInfoBanner());
+
+      // And the WORDS, which is the half the flag cannot speak for. Two rounds found erasures that
+      // left the flag up and repainted the banner, and what the user reads is the banner.
+      assertTrue(warning.name() + " still counts as standing after " + event + ", but its text is "
+              + "gone from the banner - which is the whole of it, as far as the user is concerned. "
+              + "Banner now: " + bannerText(),
+          bannerText().contains(warning.fragment()));
     }
   }
 

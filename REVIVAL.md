@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Forty-eight sections, written in the order things were found rather than by subject, so the
+Forty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -104,6 +104,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A corrupted chat log was an amplifier for key substitution](#a-corrupted-chat-log-was-an-amplifier-for-key-substitution)
 - [Two storage findings that make a recorded residual wrong](#two-storage-findings-that-make-a-recorded-residual-wrong)
 - [The laundering primitive, closed from outside the file](#the-laundering-primitive-closed-from-outside-the-file)
+- [A fix that was true of the store and false of the app](#a-fix-that-was-true-of-the-store-and-false-of-the-app)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3609,3 +3610,48 @@ erased it.
 The caution is a standing item of its own now, with its own address, cleared only by a deliberate
 response about *that* contact, holding the banner against passive repaints the way a warning does,
 and carried across a rebuild whether or not a warning accompanies it.
+
+
+## A fix that was true of the store and false of the app
+
+**The seal landed, its tests passed, and on a fresh install it was never written.**
+
+`StorageHelper` calls `migrateToEncrypted()` only when `needsMigration()` says so, and a fresh
+install never needs a migration — so the one place that sealed was the one place those devices never
+reached. Every install that had no 0.1.5 store to convert kept exactly one free laundering, which is
+the population the previous entry singled out as protected. That claim was false as wired.
+
+**The test asserted the property and passed anyway**, because it called `migrateToEncrypted()`
+directly on a store holding `MARKER_COMPLETE` — a call `StorageHelper` cannot make in that state. It
+was a true statement about the store and a false one about the app, and nothing in the suite drove
+the seal through the real wiring. The replacement drives `StorageHelper` end to end; its control is
+the old gating, under which both new tests fail and the old one still passes.
+
+Sealing now happens on **every load** rather than only inside a migration, which also supplies the
+retry the seal never had: a process death between the marker and the seal, or one transient Keystore
+failure, used to leave a device permanently unsealed because nothing ever tried again.
+
+A caveat on the guarantee, from the same sweep and worth stating rather than leaving implied: the
+seal holds against the `run-as`/file-access adversary, and a **root** adversary with direct
+keystore-DB access can delete the seal alias while leaving the master key intact. The claim is not
+"unforgeable", it is "not reachable by rewriting the app's files".
+
+**Round fourteen found the caution had one repaint path left.** `resetChosenContactAndInfoText`
+guarded on `mWarningStanding` alone, and it is the other unconditional banner writer: it runs when
+the user taps the banner — a natural response to a notice — and when *any* contact is deleted, so
+deleting Alice painted "No contact chosen" over a caution about Carol. That is the cross-contact
+erase `clearCautionIfAbout` is scoped to prevent, arriving one line after it.
+
+**The sweep now watches the words, not only the flag.** Both round-13 defects and this one were
+erasures of text with the warning still standing, and the sweep asserted only that *something* was
+standing — which stayed true throughout. Each raiser supplies a distinctive fragment of what it puts
+on screen, and every event must leave that fragment on the banner. The caution is swept as an item
+in its own right. The control is the round-13 defect reintroduced: six rows fail where the old sweep
+caught none.
+
+Two smaller things from the same round, both mine. A duplicated statement committed at the Verify
+listener — a `sed` that matched two indentation variants. And a test seam that re-implemented
+`mayOverwriteInfoBanner` minus one term, which had already drifted when written (the real predicate
+also refuses over a password field) and which had been inserted between that method and the javadoc
+saying re-implementing a body in a test proves only that the copy behaves. It reads the field
+directly now.

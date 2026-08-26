@@ -651,8 +651,8 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
   @Test
   public void thecautionSurvivesOrdinaryEventsWhenNoWarningStands() throws Exception {
     final Contact carol = addCarol();
-    assertTrue("precondition: no warning may be standing in this case",
-        strip.mayOverwriteInfoBannerIgnoringCautionForTest());
+    assertFalse("precondition: no warning may be standing in this case - the caution must be the "
+        + "only thing holding the banner", strip.warningIsStandingForTest());
 
     strip.onClipboardChangedForTest();
     assertTrue("a clipboard post must not erase it - the messenger owns the clipboard: "
@@ -660,6 +660,32 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
 
     strip.selectContact(carol);
     assertTrue("nor tapping the contact row, which is the gesture it asks for: " + bannerText(),
+        bannerText().contains("cannot tell whose it is"));
+  }
+
+  /**
+   * Tapping the banner is not a deliberate response to the caution.
+   *
+   * <p>{@code resetChosenContactAndInfoText} is the other unconditional banner writer, and the
+   * caution work did not reach it: it guarded on {@code mWarningStanding} alone. It runs when the
+   * user taps the banner - a natural thing to do with a notice you have just read - and when any
+   * contact is deleted, so deleting Alice painted "No contact chosen" over a caution about Carol.
+   * That is the cross-contact erase {@code clearCautionIfAbout} is scoped to prevent, arriving one
+   * line after it.
+   *
+   * <p>The flag stays up throughout, so this is again an erase of text with the warning standing -
+   * which is why the invariant sweep now asserts the words survive and not only that something is
+   * on the banner.
+   */
+  @Test
+  public void thecautionSurvivesTappingTheBanner() throws Exception {
+    addCarol();
+    assertFalse("precondition: the caution must be the only thing holding the banner",
+        strip.warningIsStandingForTest());
+
+    strip.findViewById(R.id.e2ee_info_text).performClick();
+
+    assertTrue("tapping the banner must not erase the caution: " + bannerText(),
         bannerText().contains("cannot tell whose it is"));
   }
 }

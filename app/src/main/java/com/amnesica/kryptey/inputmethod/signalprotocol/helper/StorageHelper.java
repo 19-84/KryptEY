@@ -765,6 +765,11 @@ public class StorageHelper {
         store.migrateToEncrypted();
         Log.i(TAG, "Migration complete");
       }
+      // Unconditionally, and outside the branch above. A fresh install never needs a migration, so
+      // gating the seal on one meant it was never written on exactly the devices that had no legacy
+      // store - leaving each of them one free laundering. This also retries a seal that was
+      // interrupted or failed on an earlier run.
+      store.ensureLegacyMigrationSealed();
     } catch (StorageCryptoException e) {
       Log.e(TAG, "Error: Could not migrate protocol storage to encrypted form", e);
       return null;

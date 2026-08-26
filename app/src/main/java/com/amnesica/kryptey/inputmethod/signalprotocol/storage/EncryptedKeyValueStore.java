@@ -102,6 +102,29 @@ public final class EncryptedKeyValueStore {
   }
 
   /** True when the store still holds unencrypted 0.1.5-era values. */
+  /**
+   * Records that this device has no cleartext left to convert, if that is true right now.
+   *
+   * <p>Called on every load, not only when a migration runs, and that is the whole point. The seal
+   * used to be written from exactly one place — the end of {@code migrateToEncryptedInternal} — and
+   * {@code StorageHelper} calls that only when {@code needsMigration()} is true. A fresh install
+   * never needs a migration, so it never sealed: every device that had no 0.1.5 store to convert
+   * stayed open to the laundering the seal exists to stop, for the life of the install. The commit
+   * that added it claimed the opposite, and its test passed only by calling a method production
+   * cannot call in that state.
+   *
+   * <p>Also the retry the seal never had. Sealing is one Keystore write that can fail or be
+   * interrupted, and nothing re-attempted it — so a process death between the marker and the seal,
+   * or one transient Keystore error, left the device permanently unsealed. Now the next raise
+   * fixes it.
+   */
+  public void ensureLegacyMigrationSealed() {
+    // Only when there is genuinely nothing to convert. Sealing while cleartext is still on disk
+    // would lock a legitimate upgrade out of its own migration.
+    if (needsMigration()) return;
+    cryptoBox.sealLegacyMigration();
+  }
+
   public boolean needsMigration() {
     if (MARKER_COMPLETE.equals(readMarker())) return false;
     return !payloadKeys().isEmpty();

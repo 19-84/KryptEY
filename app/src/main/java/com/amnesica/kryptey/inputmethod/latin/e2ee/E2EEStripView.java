@@ -474,7 +474,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // screen, and not on a failed load, which is why this sits after the guard above.
         clearStandingWarningIfAbout(chosenContact);
         clearCautionIfAbout(chosenContact);
-      clearCautionIfAbout(chosenContact);
         loadContactsIntoContactsListView();
         showOnlyUIView(UIView.CONTACT_LIST_VIEW);
       } catch (UnknownContactException e) {
@@ -1939,7 +1938,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // The javadoc on mWarningStanding says it is never cleared by anything the messenger can
     // cause. These two paths were the exception, and the exception was reachable with one ordinary
     // chat line.
-    if (!mWarningStanding) {
+    if (mStandingCaution != null) {
+      // The other unconditional banner writer, and the one the caution work did not reach. It runs
+      // from deleting ANY contact - so deleting Alice painted "No contact chosen" over a caution
+      // about Carol, which is precisely the cross-contact erase clearCautionIfAbout was scoped to
+      // prevent, arriving one line later. It also runs when the user taps the banner, a natural
+      // response to a notice they have just read.
+      //
+      // The flag stays up through all of it, so the invariant sweep could not see it either; that
+      // is why the sweep now asserts the WORDS survive, not only that something is standing.
+      setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+    } else if (!mWarningStanding) {
       setInfoTextViewMessage(mInfoTextView, INFO_NO_CONTACT_CHOSEN);
     }
   }
@@ -2322,9 +2331,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * on a system service that a test cannot invoke, and a test that re-implements its body proves
    * only that the copy behaves - which is the failure this codebase keeps finding elsewhere.
    */
-  /** Whether a WARNING (not the caution) is what is holding the banner. For tests only. */
-  boolean mayOverwriteInfoBannerIgnoringCautionForTest() {
-    return !storageIsUnreadable() && !mWarningStanding;
+  /**
+   * Whether a security WARNING is standing, as a plain state read.
+   *
+   * <p>Not a copy of {@code mayOverwriteInfoBanner} with a term dropped. The first version of this
+   * seam was exactly that, and it had already drifted when it was written: the real predicate also
+   * refuses over a password field, so a precondition asserted through the copy read "nothing is
+   * holding the banner" in a state where the app refuses to write. It also sat between
+   * {@code mayOverwriteInfoBanner} and its javadoc — the javadoc that says re-implementing a body
+   * in a test proves only that the copy behaves.
+   */
+  boolean warningIsStandingForTest() {
+    return mWarningStanding;
   }
 
   boolean mayOverwriteInfoBanner() {
