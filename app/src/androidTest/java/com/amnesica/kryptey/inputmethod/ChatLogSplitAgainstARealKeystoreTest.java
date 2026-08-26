@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -24,6 +25,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.security.KeyStore;
 import java.time.Instant;
 import java.util.ArrayList;
 
@@ -102,35 +104,65 @@ public class ChatLogSplitAgainstARealKeystoreTest {
     return account;
   }
 
+  /** Whether the shared master key exists in the platform Keystore right now. */
+  private boolean masterKeyExists() throws Exception {
+    final KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+    keyStore.load(null);
+    return keyStore.containsAlias("kryptey.storage.master");
+  }
+
   /**
-   * The identity survives building the log's second store, on a store shaped like a real upgrade.
+   * Loading a store whose master key is gone neither mints a replacement nor destroys the data.
    *
-   * <p>The account file holds everything and the log's file does not exist — exactly the state of
-   * every install at the moment this ships. Loading then forces the second store to be built. If it
-   * told the Keystore box this was a fresh device, the box could mint a new master key, and the
-   * identity key that comes back would not be the one that went in.
+   * <p><b>What this does not do, stated so nobody later believes otherwise: it does not
+   * discriminate the cross-file {@code hasExistingData} check.</b> Two earlier versions of this
+   * test claimed to and did not, and the second failure is the more interesting one. Seeding
+   * through {@code SignalProtocolMain.initialize} mints the key, so
+   * {@code AndroidKeystoreCryptoBox.resolve} finds the alias and returns before the refusal is
+   * consulted at all. Clearing the account file to get past that produces a state where nothing
+   * ever decrypts — an empty file means {@code needsMigration()} is false and every {@code get}
+   * returns null before touching the key — so no key is resolved and nothing could mint either
+   * way. Run with the cross-file check reduced to one file, this test still passes.
+   *
+   * <p>The contract that check exists to keep is pinned by the JVM test
+   * {@code ChatLogLivesInItsOwnFileTest#abuildingTheLogsStoreNeverClaimsAdeviceWithHistoryIsNew},
+   * which captures the boolean actually handed to the box and does fail when it is wrong. That is
+   * the right level for it: the downstream consequence turns out not to be reachable in any state
+   * this test can construct.
+   *
+   * <p>What this <em>does</em> establish, on real hardware, is worth keeping: a device whose key
+   * has gone — a changed lock-screen credential does exactly this — comes back with its data
+   * untouched and no new key quietly standing in for the old one. A silent recovery-by-destruction
+   * here would look like a working keyboard and be the loss of every session and verified contact.
    */
   @Test
-  public void theidentityKeySurvivesTheMoveToAsecondStore() throws Exception {
-    final Account before = seed();
-    final String identityBefore =
-        before.getIdentityKeyPair().getPublicKey().getFingerprint();
+  public void aloadWithNokeyNeitherMintsOneNorDestroysTheData() throws Exception {
+    seed();
+    assertTrue("precondition: seeding must have created the master key", masterKeyExists());
 
-    // Put the store back into its pre-split shape: log inside the account file, no log file at all.
-    final String sealed = messageFile.getString(LOG_KEY, null);
-    assertNotNull("precondition: the log must have been stored", sealed);
-    accountFile.edit().putString(LOG_KEY, sealed).commit();
-    messageFile.edit().clear().commit();
-    assertTrue("precondition: a pre-split device has no log file", messageFile.getAll().isEmpty());
+    // The state that actually exercises the refusal: the account's file is gone - a corrupt
+    // protocol.xml reads as an empty map - and only the chat log survives. Asking that one file
+    // "does this device hold data" answers no, and the box is then free to mint. With the account
+    // file still populated, both the one-file and two-file answers are "yes" and the test would
+    // pass either way, which is a test of nothing.
+    accountFile.edit().clear().commit();
 
-    final Account after = new StorageHelper(context).getAccountFromSharedPreferences();
-    assertNotNull("the account must still load", after);
-    after.getUnencryptedMessages();   // forces the log's store, and its crypto box, to be built
+    // And the user changes their lock-screen credential: the key is gone, the data is not.
+    new AndroidKeystoreCryptoBox(context, false).destroyMasterKey();
+    assertFalse("precondition: the key must be gone", masterKeyExists());
+    assertNotNull("precondition: the surviving data must still be there",
+        messageFile.getString(LOG_KEY, null));
 
-    assertEquals("the identity key changed across a reload that moved the chat log. The second "
-            + "store told the Keystore box this device held no data, so it minted a replacement "
-            + "master key - every session and every verified contact is gone.",
-        identityBefore, after.getIdentityKeyPair().getPublicKey().getFingerprint());
+    final StorageHelper helper = new StorageHelper(context);
+    assertTrue("the store must still report that this device holds data",
+        helper.hasExistingProtocolData());
+    helper.getAccountFromSharedPreferences();   // builds both stores, and their crypto boxes
+
+    assertFalse("a replacement master key was minted while the user's data was still on disk. "
+        + "Their identity key, every session and every verified contact are now sealed under a key "
+        + "that no longer exists, and the new one can read none of it.", masterKeyExists());
+    assertNotNull("and the surviving data must still be on disk afterwards - a load that cannot "
+        + "read anything must not tidy up after itself", messageFile.getString(LOG_KEY, null));
   }
 
   /** And the move itself works against real encryption: the log arrives, and leaves the old file. */

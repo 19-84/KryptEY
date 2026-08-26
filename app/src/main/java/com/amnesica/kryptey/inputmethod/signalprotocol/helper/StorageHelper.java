@@ -86,15 +86,30 @@ public class StorageHelper {
    * survivor, and this is the gate learning about it.
    */
   public boolean hasExistingProtocolData() {
-    if (mContext == null) return false;
-    final SharedPreferences accountFile = preferencesNamed(mSharedPreferenceName);
-    if (accountFile != null && new SharedPreferencesKeyValueStore(accountFile).contains(
-        String.valueOf(ProtocolIdentifier.PROTOCOL_STORE))) {
-      return true;
-    }
+    if (identityReachedDisk()) return true;
     final SharedPreferences messageFile = preferencesNamed(mMessageStoreName);
     return messageFile != null && new SharedPreferencesKeyValueStore(messageFile).contains(
         String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES));
+  }
+
+  /**
+   * Whether the <em>identity</em> specifically is on disk, in the account's own file.
+   *
+   * <p>A different question from {@link #hasExistingProtocolData()}, and separating them is the
+   * point. "Is there something here I must not overwrite" is answered by either file. "Did the
+   * identity I just generated actually persist" is answered by one, and only one.
+   *
+   * <p>They were briefly the same method, and it was a bad merge: the chat log is written before the
+   * account batch, so an install whose log commit succeeded and whose account batch failed - a full
+   * disk, one unserialisable value - satisfied the combined predicate. {@code initialize()} then
+   * reported success, the caller recorded "setup done" permanently, and the keyboard was left with
+   * no identity and no way back, while the strip told the user their contacts were safe but locked.
+   */
+  public boolean identityReachedDisk() {
+    if (mContext == null) return false;
+    final SharedPreferences accountFile = preferencesNamed(mSharedPreferenceName);
+    return accountFile != null && new SharedPreferencesKeyValueStore(accountFile).contains(
+        String.valueOf(ProtocolIdentifier.PROTOCOL_STORE));
   }
 
   /**
@@ -411,6 +426,20 @@ public class StorageHelper {
     if (account == null || !account.messageLogIsLoaded()) return;
     final ArrayList<StorageMessage> messages = account.getUnencryptedMessages();
     if (messages == null) return;
+
+    final SharedPreferences messageFile = preferencesNamed(mMessageStoreName);
+    final String logKey = String.valueOf(ProtocolIdentifier.UNENCRYPTED_MESSAGES);
+    if (messages.isEmpty() && (messageFile == null || !messageFile.contains(logKey))) {
+      // Nothing to say and nothing already said. Writing an empty list here would create the log's
+      // file on every install that has never sent a message, and that file's existence is now one
+      // of the things that says "this device holds data" - so an install with no history at all
+      // would look like one worth protecting, and a later loss of the account file would leave the
+      // keyboard refusing to re-initialise in order to preserve nothing.
+      //
+      // An empty list IS written once something has been stored: that is a user clearing history,
+      // and it must persist.
+      return;
+    }
 
     final EncryptedKeyValueStore store = messageStore();
     if (store == null) {

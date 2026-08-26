@@ -111,7 +111,12 @@ public class SignalProtocolMain {
     // Only report success if the identity actually reached disk. Storage now depends on the
     // Keystore and can fail; a caller that recorded "setup done" after a failed write would come
     // back on the next raise, find nothing stored, and generate a different identity.
-    return sInstance.mStorageHelper != null && sInstance.mStorageHelper.hasExistingProtocolData();
+    //
+    // identityReachedDisk, NOT hasExistingProtocolData: the latter is also satisfied by the chat
+    // log's file, which is written before the account batch. An install whose log commit landed and
+    // whose account batch failed would otherwise report success, and the caller would record "setup
+    // done" forever over a device with no identity.
+    return sInstance.mStorageHelper != null && sInstance.mStorageHelper.identityReachedDisk();
   }
 
   /**

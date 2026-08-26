@@ -226,6 +226,76 @@ public class ChatLogLivesInItsOwnFileTest {
             + "over their own data", StorageHelper.StorageState.UNREADABLE, helper().storageState());
   }
 
+  /**
+   * "Must not overwrite" and "did the identity persist" are different questions.
+   *
+   * <p>They were briefly the same method. The chat log is written before the account batch, so an
+   * install whose log commit succeeded and whose account batch failed satisfied the combined
+   * predicate — {@code initialize()} reported success, the caller recorded "setup done"
+   * permanently, and the keyboard was left with no identity and no way back.
+   */
+  @Test
+  public void theoverwriteCheckAndTheIdentityCheckAreDifferentQuestions() {
+    // Exactly the state a first save leaves when the log lands and the account batch does not.
+    accountFile.edit().clear().commit();
+    assertNotNull("precondition: the log must be stored", messageFile.getString(LOG_KEY, null));
+
+    assertTrue("there is data on this device, so nothing may overwrite it",
+        helper().hasExistingProtocolData());
+    assertFalse("but the identity did NOT reach disk, and initialize() must not report success - "
+            + "the caller would record 'setup done' over a device with no identity",
+        helper().identityReachedDisk());
+  }
+
+  /**
+   * An install that has never sent a message does not create the log's file at all.
+   *
+   * <p>Every save used to write the log, and a brand-new account reports its empty log as loaded -
+   * so every install created {@code protocol_messages} on its first save. That file's existence is
+   * now one of the things that says "this device holds data", so an install with no history at all
+   * looked like one worth protecting: lose the account file afterwards and the keyboard refuses to
+   * re-initialise, permanently, in order to preserve nothing.
+   */
+  @Test
+  public void afreshInstallWithNoMessagesDoesNotCreateTheLogsFile() throws Exception {
+    accountFile.edit().clear().commit();
+    messageFile.edit().clear().commit();
+
+    SignalProtocolMain.resetForTest();
+    SignalProtocolMain.testIsRunning = true;
+    SignalProtocolMain.initialize(null);
+    final Account fresh = SignalProtocolMain.getInstance().getAccount();
+    helper().storeAllInformationInSharedPreferences(fresh);
+
+    assertNull("a device that has never stored a message must not have a chat-log entry",
+        messageFile.getString(LOG_KEY, null));
+    assertFalse("and so must not look like a device with history to preserve",
+        new StorageHelper(context, box()).hasExistingProtocolData()
+            && !new StorageHelper(context, box()).identityReachedDisk());
+  }
+
+  /**
+   * But clearing a history that exists does persist as an empty log.
+   *
+   * <p>The skip above is "nothing to say and nothing already said". Once something has been stored,
+   * an empty list is a user deleting their history and must survive - otherwise the next load
+   * brings it all back.
+   */
+  @Test
+  public void clearingAstoredHistoryPersistsAsAnEmptyLog() {
+    assertNotNull("precondition: there is a stored history", messageFile.getString(LOG_KEY, null));
+
+    final Account loaded = helper().getAccountFromSharedPreferences();
+    assertNotNull(loaded);
+    loaded.getUnencryptedMessages().clear();
+    helper().storeAllInformationInSharedPreferences(loaded);
+
+    final Account afterwards = helper().getAccountFromSharedPreferences();
+    assertNotNull(afterwards);
+    assertEquals("clearing a stored history must persist, not be skipped as 'nothing to say'",
+        0, afterwards.getUnencryptedMessages().size());
+  }
+
   /** And after the move, a raise leaves the log's file untouched. */
   @Test
   public void araiseDoesNotRewriteTheLogsFile() {

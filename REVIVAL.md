@@ -2421,6 +2421,34 @@ account file alone, and it is always built first — so a mint there would leave
 finding a freshly created alias and its own cross-file refusal never reached. Both now ask both
 files.
 
+**And two further defects the same review found, both regressions this work introduced.**
+
+`hasExistingProtocolData()` was doing two jobs and they are not the same question. `initialize()`
+uses it as *"did the identity I just generated actually reach disk"*, and the chat log is written
+**before** the account batch — so an install whose log commit landed and whose account batch failed
+(a full disk, one unserialisable value) satisfied the merged predicate. `initialize()` reported
+success, `LatinIME` recorded "setup done" permanently, and the device was left with no identity and
+no way back, while the strip told the user their contacts were safe but locked. There is now a
+separate `identityReachedDisk()`, which asks the account's file and only that.
+
+And the gate tripped on an *empty* log. Every save wrote the log, and a brand-new account reports
+its empty log as loaded, so every install created the log's file on its first save — meaning an
+install that had never sent a message looked like one with history worth protecting. Lose the
+account file after that and the keyboard refuses to re-initialise, permanently, to preserve nothing.
+The log's file is no longer created just to record that there is nothing in it; an empty list is
+still written once something has been stored, because that is a user clearing their history.
+
+**One claim withdrawn.** `ChatLogSplitAgainstARealKeystoreTest` carried a test asserting the identity
+survives building the second store. It could not fail, and the second attempt to fix it could not
+either: seeding through `initialize()` mints the key, so the box finds the alias and returns before
+the refusal is consulted; clearing the account file to get past that produces a state where nothing
+ever decrypts, so no key is resolved and nothing could mint either way. Run with the cross-file
+check reduced to one file, it still passed. **The downstream consequence is not reachable in any
+state that test can construct**, so the claim is withdrawn rather than dressed up: the contract is
+pinned by the JVM test that captures the boolean handed to the box, and the on-device test now
+asserts only what it establishes — a device whose key has gone comes back with its data untouched
+and nothing minted in place of the old key.
+
 **What this does not fix.** The log still grows forever and is still peer-paced; the cap-versus-keep
 question is untouched. And a rollback now has a new shape worth knowing about: restoring the account
 file alone no longer rewinds the log, so the messages stay while the contact list goes back. Entries
