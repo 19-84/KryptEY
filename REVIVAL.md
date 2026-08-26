@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Fifty-one sections, written in the order things were found rather than by subject, so the
+Fifty-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -107,6 +107,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A fix that was true of the store and false of the app](#a-fix-that-was-true-of-the-store-and-false-of-the-app)
 - [FLAG_SECURE was down on the route users actually take](#flag_secure-was-down-on-the-route-users-actually-take)
 - [A writer on the right of an &&](#a-writer-on-the-right-of-an-)
+- [The first clean round in eleven, and a guard for the class](#the-first-clean-round-in-eleven-and-a-guard-for-the-class)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -3751,3 +3752,36 @@ device id against the envelope's raw one, where production folds both. A legacy 
 seam and the code it stands in for would take opposite arms. It asks production now. The javadoc two
 methods above it already said a seam that re-creates the thing under test pins only its own copy,
 and that the mistake had been made once in this file. This was the second time.
+
+
+## The first clean round in eleven, and a guard for the class
+
+**Round seventeen found nothing.** Rounds seven through sixteen each found a defect in the
+immediately preceding round's fix, so a clean result here is worth recording as a result rather than
+as an absence. It checked the `addContact` restructure for ordering, false firing, wrong-contact
+addressing and double-posting, and swept every `&&`/`||` operand in the strip for side effects.
+
+**The class got a guard, and the guard found a second instance before the round reported.**
+`NoWriterSitsInAshortCircuitTest` computes the set of side-effecting methods from the source — a
+hand-written list would need the same attention that missed the defect — and fails when one is
+invoked on the right of `&&` or `||`. Its control is the round-16 defect reintroduced verbatim.
+
+The second instance is `warnIfIdentityChanged(contact) || warnIfKeyWasRejected(contact)` in
+`selectContact`, and it is **not** a defect — which is why the guard asks for an argument rather
+than forbidding the shape. Both writers concern the same contact and write the same single warning
+slot, and the left one returns true only after it has posted, so when the short circuit fires a
+warning about that contact is already standing. Nobody is left with nothing, which is exactly what
+made round sixteen's case a defect rather than an ordering choice. Which of the two wins is a real
+judgement, and it is now made deliberately: a pending identity change is a live event, while the
+rejection record describes something the user already did. The reviewer reached the same conclusion
+independently.
+
+**One behaviour change worth recording**, from the same round and not a defect: on the failure arm,
+`warnIfIdentityChanged` now overwrites a duplicate-name warning set forty-five lines earlier in the
+same `addContact` call. Reachable — an attacker gets a key pinned at its own address, the user
+deletes that contact (the pin survives), and the attacker re-invites at the same address under a
+live contact's name with a different key. The duplicate-name warning is documented as never
+re-asserted while the identity-change one re-posts on every decrypt, so the durable warning displaces
+the one-shot one. Both are addressed to the same contact and both send the user to compare the
+security number, and the banner holds one warning — so this is a consequence, not a defect. It is
+here because it is the kind of thing that becomes a surprise later if nobody wrote it down.
