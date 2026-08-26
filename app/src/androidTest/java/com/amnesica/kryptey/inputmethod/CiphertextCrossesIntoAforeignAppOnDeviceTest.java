@@ -63,10 +63,15 @@ public class CiphertextCrossesIntoAforeignAppOnDeviceTest {
 
   @After
   public void tearDown() throws Exception {
-    // First: tell the foreign activity to go. The timer is only a backstop for a test that dies
-    // before reaching here; leaving it up on a timer is what made three unrelated tests fail with
-    // "something else holds focus".
-    shell("am broadcast -a " + ForeignAppActivity.ACTION_FINISH);
+    // Both jobs here are contamination-critical, so neither may be lost to the other throwing.
+    // shell() reads a ParcelFileDescriptor and can fail; putting it first without a finally left
+    // the strip restore and the singleton reset behind it, which is how an unrelated test came to
+    // fail on a FLAG_SECURE window in the first place.
+    try {
+      shell("am broadcast -a " + ForeignAppActivity.ACTION_FINISH);
+    } catch (final Exception ignored) {
+      // Cleanup only; the backstop timer still bounds the activity.
+    }
     // The live IME's protocol state and its strip were borrowed for this test; hand both back.
     //
     // The strip is the important half. Leaving a contact chosen leaves the IME window FLAG_SECURE,
@@ -195,11 +200,17 @@ public class CiphertextCrossesIntoAforeignAppOnDeviceTest {
 
     // The verdict, from the other process.
     String verdict = null;
+    final java.util.List<String> allVerdicts = new java.util.ArrayList<>();
     final long verdictDeadline = System.currentTimeMillis() + TIMEOUT_MS;
     while (System.currentTimeMillis() < verdictDeadline && verdict == null) {
       for (final String line : shell("logcat -d -s " + ForeignAppActivity.TAG).split("\n")) {
         if (line.contains(ForeignAppActivity.MARKER) && line.contains("nonce=" + nonce)) {
           verdict = line.trim();
+          // EVERY line, not just the last. afterTextChanged fires once per edit and the messenger
+          // receives every one of them, so "the plaintext must not reach the other application" is
+          // violated by any intermediate state. Keeping only the final line would accept an
+          // implementation that put the plaintext there and then replaced it.
+          allVerdicts.add(line.trim());
         }
       }
       if (verdict == null) Thread.sleep(POLL_MS);
@@ -219,6 +230,12 @@ public class CiphertextCrossesIntoAforeignAppOnDeviceTest {
     assertTrue("the other process must have been told what to look for, or containsSecret=false "
             + "means only that it was never given anything to compare: " + verdict,
         verdict.contains("haveSecret=true"));
+    for (final String seen : allVerdicts) {
+      assertTrue("an intermediate state of the other application's field contained the message. "
+              + "Every edit is delivered to that process, so a plaintext that is later replaced was "
+              + "still handed over. Line: " + seen,
+          seen.contains("containsSecret=false"));
+    }
     assertTrue("the message itself must not reach the other application - that is the whole point "
             + "of the app, and this is the first test that asks it across a real process boundary. "
             + "Verdict: " + verdict,

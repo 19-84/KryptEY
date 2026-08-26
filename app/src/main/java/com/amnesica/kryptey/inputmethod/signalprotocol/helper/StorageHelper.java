@@ -429,6 +429,14 @@ public class StorageHelper {
                 new SharedPreferencesKeyValueStore(accountFile));
 
     final CryptoBox cryptoBox = mCryptoBoxFactory.create(mContext, alreadyEncrypted);
+    if (cryptoBox == null) {
+      // The same rule as secureStore, which had it and this did not. The chat log's store is fed by
+      // the same factory, and its NPE would escape further: readMessageLog is the deferred loader,
+      // so an unchecked throw here travels out through Account.getUnencryptedMessages and past a
+      // click listener that catches only three checked types.
+      Log.e(TAG, "no crypto box; the chat log store cannot be opened");
+      return null;
+    }
     final EncryptedKeyValueStore store = new EncryptedKeyValueStore(rawMessages, cryptoBox);
     try {
       // NOT migrateToEncrypted. This file was created by this branch, after encryption existed, and

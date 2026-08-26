@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty sections, written in the order things were found rather than by subject, so the
+Sixty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -116,6 +116,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Ciphertext crosses the process boundary, measured](#ciphertext-crosses-the-process-boundary-measured)
 - [A guard for the third instance of the discarded answer](#a-guard-for-the-third-instance-of-the-discarded-answer)
 - [The cross-app tests, and what they cost to make honest](#the-cross-app-tests-and-what-they-cost-to-make-honest)
+- [A green test that could not go red](#a-green-test-that-could-not-go-red)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4146,8 +4147,42 @@ there; this is defence, not a live fix, and it is stated that way. `secureStore`
 outright rather than null-guarding each use, because the first use missed would be an unchecked throw
 out of the storage path.
 
-**Recorded rather than smoothed over:** `AutofillDoesNotReachTheKeyboardTest` failed on two
-consecutive device runs and passed on the third, with no change to it in between. It runs *before*
-the cross-app tests, so it cannot be contaminated by them within a run. The cause is not established
-and it is flaky as it stands — which is worth knowing about a test whose subject is whether decrypted
-plaintext is offered to an autofill service.
+**The flaky test, diagnosed.** `AutofillDoesNotReachTheKeyboardTest` failed on two consecutive
+device runs and passed on the third with nothing changed. It runs *before* the cross-app tests, so
+contamination was ruled out. The cause was in the test: the bind loop twenty lines above retries its
+`showSoftInput` on every poll — and this file already records why, "a single best-effort call is why
+an earlier version timed out on a freshly booted device and passed on one that had been up for a
+while" — while the focus move that actually triggers the fill request was a single best-effort call
+followed by a passive wait. The same lesson, in the same file, not applied to the second loop. It
+retries now, alternating between the two fields, because re-requesting focus on the view that
+already has it produces no new request. Three consecutive green runs since.
+
+
+## A green test that could not go red
+
+**The test written last commit to cover the log-write flag covered half of what its javadoc claimed,
+and a control said so.**
+
+Its "healthy store" case used a fresh account, whose log is loaded and **empty** — so
+`storeMessageLog` took its "nothing to say and nothing already said" arm and returned true without
+touching the store. The test then asserted `true`, which is also the field's initialiser. Deleting
+the write-path assignment outright left it green. It covered the null-store path and nothing else,
+while its javadoc said it closed both.
+
+Two changes make it discriminate. The healthy case puts a message in the log and additionally asserts
+the log key reached its own file, so the flag is reporting a write rather than a skipped one. And a
+third case makes the log write fail **alone**, which is what kills the mutant: asserting `true` on a
+healthy store never can, because `true` is the default. The AAD makes that constructible —
+`EncryptedKeyValueStore` binds the key *name* into it, so a box can refuse exactly the log's key and
+seal everything else.
+
+**Four more from the same review.** `messageStore()` still built a store around a null box after
+`secureStore()` stopped doing so — the same rationale, written out at one of the two sites, and the
+chat log's version escapes further because the deferred loader carries it past a click listener that
+catches three checked types. The finish receiver would throw `SecurityException` on API 33+, in
+`onCreate` *before* the backstop timer is posted, so the activity would die silently and both
+cross-app tests would fail with a message pointing at the app. The verdict scan kept only the last
+matching line, so an implementation that put the plaintext in the foreign field and later replaced it
+would satisfy the assertion — every edit is delivered to that process, so every line is asserted now.
+And `tearDown` had a throwing call ahead of its contamination-critical work with no `finally`, which
+is the ordering that produced the `FLAG_SECURE` cascade in the first place.

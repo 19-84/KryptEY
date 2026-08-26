@@ -196,11 +196,27 @@ public class AutofillDoesNotReachTheKeyboardTest {
 
       // Step 2: with the keyboard up, move focus. THIS is the request that matters.
       final int before = RecordingAutofillService.requestCount();
-      instrumentation.runOnMainSync(() -> typed.secondField.requestFocus());
 
+      // Retried, and the focus is TOGGLED rather than re-requested.
+      //
+      // This test failed on two consecutive device runs and passed on a third with nothing changed,
+      // and the loop it failed in was a single best-effort focus move followed by a passive wait.
+      // The bind loop twenty lines above retries its request on every poll, and this file already
+      // records why: "a single best-effort call is why an earlier version timed out on a freshly
+      // booted device and passed on one that had been up for a while". The same reasoning applies
+      // here and had not been applied.
+      //
+      // Re-requesting focus on the view that already has it is a no-op and produces no new fill
+      // request, so the retry alternates between the two fields - a focus CHANGE is what the
+      // framework builds a structure for.
       final long requestDeadline = System.currentTimeMillis() + TIMEOUT_MS;
+      boolean toggle = true;
       while (RecordingAutofillService.requestCount() <= before
           && System.currentTimeMillis() < requestDeadline) {
+        final boolean toSecond = toggle;
+        instrumentation.runOnMainSync(
+            () -> (toSecond ? typed.secondField : typed.field).requestFocus());
+        toggle = !toggle;
         Thread.sleep(POLL_MS);
       }
 

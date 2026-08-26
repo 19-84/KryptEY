@@ -7,6 +7,7 @@ import android.content.Context;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 
 import org.junit.After;
@@ -51,6 +52,17 @@ public class MessageLogWriteFlagTest {
     SignalProtocolMain.initialize(null);
     final Account account = SignalProtocolMain.getInstance().getAccount();
 
+    // A message in the log, which is what makes this test about the write at all.
+    //
+    // A fresh account's log is loaded and EMPTY, and storeMessageLog's "nothing to say and nothing
+    // already said" arm returns true without touching the store - so the first version of this
+    // asserted the flag's own initialiser and would have stayed green with the write-path
+    // assignment deleted outright. It covered the null-store path and nothing else, while claiming
+    // both.
+    account.getUnencryptedMessages().add(new StorageMessage(
+        StorageMessage.chatLogKey("bob-address", 1), "me", "bob-address",
+        java.time.Instant.ofEpochMilli(4000), "something to write"));
+
     final StorageHelper helper = new StorageHelper(context, (ctx, hasExistingData) ->
         new GcmCryptoBox() {
           @Override
@@ -63,6 +75,13 @@ public class MessageLogWriteFlagTest {
         helper.storeAllInformationInSharedPreferences(account));
     assertTrue("a store that works must report the log write as succeeded",
         helper.lastMessageLogWriteSucceeded());
+    // And the log really reached its own file, so the flag is reporting a write rather than a
+    // skipped one.
+    assertTrue("the log must actually be on disk for that report to mean anything",
+        context.getSharedPreferences("protocol_messages", Context.MODE_PRIVATE)
+            .contains(String.valueOf(
+                com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier
+                    .UNENCRYPTED_MESSAGES)));
   }
 
   /**
@@ -83,6 +102,49 @@ public class MessageLogWriteFlagTest {
         helper.storeAllInformationInSharedPreferences(account));
     assertFalse("a store that could not be resolved must not report a healthy log write - nothing "
             + "was written at all, and the flag's initialiser says the opposite",
+        helper.lastMessageLogWriteSucceeded());
+  }
+
+  /**
+   * The discriminating case: the log write fails while the account batch succeeds.
+   *
+   * <p>Asserting {@code true} on a healthy store cannot discriminate, because {@code true} is also
+   * the field's initialiser — a control proved that deleting the assignment left the healthy case
+   * green. What kills that mutant is a store where the log write is the only thing that fails, and
+   * the AAD makes it constructible: {@code EncryptedKeyValueStore} binds the key NAME into it, so a
+   * box can refuse exactly the log's key and seal everything else.
+   */
+  @Test
+  public void alogWriteThatFailsAloneIsReported() throws Exception {
+    SignalProtocolMain.initialize(null);
+    final Account account = SignalProtocolMain.getInstance().getAccount();
+    account.getUnencryptedMessages().add(new StorageMessage(
+        StorageMessage.chatLogKey("bob-address", 1), "me", "bob-address",
+        java.time.Instant.ofEpochMilli(4000), "something to write"));
+
+    final String logKey = String.valueOf(
+        com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier.UNENCRYPTED_MESSAGES);
+    final StorageHelper helper = new StorageHelper(context, (ctx, hasExistingData) ->
+        new GcmCryptoBox() {
+          @Override
+          protected javax.crypto.SecretKey key() {
+            return new javax.crypto.spec.SecretKeySpec(new byte[32], "AES");
+          }
+
+          @Override
+          public byte[] seal(final byte[] plaintext, final byte[] aad)
+              throws StorageCryptoException {
+            if (new String(aad, java.nio.charset.StandardCharsets.UTF_8).endsWith(logKey)) {
+              throw new StorageCryptoException("refusing to seal the chat log");
+            }
+            return super.seal(plaintext, aad);
+          }
+        });
+
+    assertTrue("precondition: the account batch itself must still succeed, or this is not the case "
+        + "under test", helper.storeAllInformationInSharedPreferences(account));
+    assertFalse("a log write that failed on its own must be reported, or the message is delivered "
+            + "and silently missing from the history while everything else looks healthy",
         helper.lastMessageLogWriteSucceeded());
   }
 }

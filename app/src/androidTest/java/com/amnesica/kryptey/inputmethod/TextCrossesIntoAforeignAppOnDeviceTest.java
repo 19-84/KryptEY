@@ -2,19 +2,15 @@ package com.amnesica.kryptey.inputmethod;
 
 import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.provider.Settings;
-import android.view.inputmethod.InputMethodManager;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-import com.amnesica.kryptey.inputmethod.keyboard.KeyboardSwitcher;
-import com.amnesica.kryptey.inputmethod.keyboard.MainKeyboardView;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -46,7 +42,6 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
 
   private static final String IME_ID = "com.amnesica.kryptey/.inputmethod.latin.LatinIME";
   private static final String FOREIGN_PACKAGE = "com.amnesica.kryptey.test";
-  private static final long FOCUS_TIMEOUT_MS = 30_000L;
   private static final long BIND_TIMEOUT_MS = 60_000L;
   private static final long POLL_MS = 250L;
 
@@ -54,9 +49,6 @@ public class TextCrossesIntoAforeignAppOnDeviceTest {
     return getInstrumentation().getTargetContext();
   }
 
-  private static String imeDump() throws Exception {
-    return shell("dumpsys input_method");
-  }
 
   /** A shell command, read through the automation the instrumentation owns. */
   private static String shell(final String command) throws Exception {

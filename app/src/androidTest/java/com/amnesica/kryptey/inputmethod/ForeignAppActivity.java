@@ -129,12 +129,26 @@ public class ForeignAppActivity extends Activity {
     // of the stack, holding FLAG_KEEP_SCREEN_ON and the input connection, is ambient contamination
     // for every test that runs afterwards - and it cost this suite a failure the first time round.
     // The test's own signal, which is what normally ends this activity.
-    registerReceiver(new BroadcastReceiver() {
+    final BroadcastReceiver finisher = new BroadcastReceiver() {
       @Override
       public void onReceive(final android.content.Context ignored, final Intent intent) {
         finish();
       }
-    }, new IntentFilter(ACTION_FINISH));
+    };
+    // RECEIVER_EXPORTED, and it must be: the sender is the shell, a different uid. From Android 13
+    // a registerReceiver for a non-system action without an export flag throws SecurityException -
+    // which would land here in onCreate BEFORE the backstop timer is posted and before the text
+    // watcher is attached, so the activity would die silently and both cross-app tests would fail
+    // with "the keyboard never became active", pointing at the app. The suite pins API 28 today;
+    // this is for the day that image moves.
+    // The platform flag directly rather than ContextCompat: androidx.core is not on the
+    // androidTest classpath, and adding it would mean new hashes in the dependency verification
+    // metadata for a two-line guard.
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(finisher, new IntentFilter(ACTION_FINISH), RECEIVER_EXPORTED);
+    } else {
+      registerReceiver(finisher, new IntentFilter(ACTION_FINISH));
+    }
 
     final long finishAfter = getIntent() == null ? 0L
         : getIntent().getLongExtra(EXTRA_FINISH_AFTER_MS, 0L);
