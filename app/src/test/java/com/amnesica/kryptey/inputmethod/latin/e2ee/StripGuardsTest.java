@@ -593,8 +593,16 @@ public class StripGuardsTest {
     assertTrue("precondition: the decrypt button must be pressable",
         strip.findViewById(R.id.e2ee_button_decrypt).performClick());
 
-    assertEquals("the warning must survive the user pressing decrypt on the attacker's payload",
-        warned, infoField().getText().toString());
+    // Asserted on the warning itself rather than on the whole banner. A decrypt identifies a
+    // sender, which moves the chosen recipient, and the banner now carries a "Sending to: X" line
+    // under a standing warning so the screen cannot name one contact while addressing another - so
+    // the captured banner above legitimately differs by that line afterwards. What must not change
+    // is the warning, and what must not appear is the routine banner it would have been replaced by.
+    final String afterwards = infoField().getText().toString();
+    assertTrue("the warning must survive the user pressing decrypt on the attacker's payload: "
+        + afterwards, afterwards.contains("already have a contact"));
+    assertFalse("and must not have been replaced by the routine detected-contact line: " + afterwards,
+        afterwards.contains("Detected contact"));
   }
 
   private android.widget.EditText firstNameField() {

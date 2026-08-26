@@ -700,6 +700,20 @@ public class StorageHelper {
   /**
    * Builds the encrypted store, running the one-time cleartext migration if this is an upgrade from
    * 0.1.5. Returns {@code null} — never a cleartext fallback — when secure storage is unavailable.
+   *
+   * <p><b>This file runs that migration and the chat log's file does not, deliberately.</b> Sealing
+   * cleartext found on disk is a laundering primitive: it takes bytes an attacker wrote and returns
+   * them sealed under the real master key, and the AAD binds the key name rather than the file, so
+   * the result is portable between the two. The log's file was created by this branch, after
+   * encryption existed, so cleartext in it is never legitimate and {@code requireEncryptedOnly}
+   * refuses it outright. This file cannot take that position: accepting 0.1.5 cleartext is the
+   * whole upgrade path, and refusing it would strand every existing install.
+   *
+   * <p>So the primitive is still here, and the guard on it — refusing cleartext that sits beside
+   * decryptable data — is weaker than it looks, because an attacker with the data directory can
+   * simply empty the file first. What that costs them is stealth rather than difficulty: they must
+   * now supply cleartext for every key at once, including the ones they cannot read, so the user's
+   * contact list visibly disappears instead of surviving under a substituted identity.
    */
   private EncryptedKeyValueStore secureStore() {
     if (mSecureStore != null) return mSecureStore;

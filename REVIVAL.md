@@ -2443,8 +2443,31 @@ key that does not belong there and any payload that is not a decryptable envelop
 legitimate write can leave — `put` commits the value and the marker separately, so a kill between
 them leaves an envelope with no marker — still reads back, and a test pins that.
 
-The stronger fix the review also offered, binding the file name into the AAD, was not taken: it
-breaks every existing envelope and the move path itself, and closing the oracle is sufficient.
+The stronger fix the review also offered — binding the file name into the AAD — was not taken: it
+breaks every existing envelope and the move path itself.
+
+**What that leaves, stated properly, because the first version of this entry said "closing the
+oracle is sufficient" and that was an overclaim.** The account file still runs the cleartext
+migration, and it has to: accepting 0.1.5 cleartext is the entire upgrade path. So an attacker who
+replaces `protocol.xml` wholesale with cleartext of their own authorship still gets it sealed under
+the real key. That is **pre-existing** and predates the split — the anti-laundering check fires only
+when the same file also holds a decryptable envelope, which is a condition the attacker chooses by
+emptying it.
+
+What the fix actually removed is the *stealthy* version. Through the log's file the attacker could
+replace `PROTOCOL_STORE` **alone**, leaving `CONTACTS`, `RETIRED_DISPLAY_NAMES` and the display-tag
+secret — values they cannot read — sealed and intact, so the app came up with the user's own contact
+list under the attacker's identity and nothing looked wrong. Through the account file they must
+supply cleartext for every key at once, and the user's contacts visibly vanish. A reduction in
+stealth, not a closure, and the asymmetry between the two stores is now written into
+`secureStore`'s javadoc rather than left for a reader to infer.
+
+**One residual worth naming**, from the same review and not acted on: `MARKER_MIGRATING` is written
+as its own durable commit before the values it vouches for, so during any genuine 0.1.5 upgrade a
+sealed copy of it sits on disk in a readable window. The marker's unforgeability argument assumes it
+is never observable. An attacker who harvests one can then present cleartext beside genuine
+envelopes and pass the check that exists to stop exactly that. It needs winning a read race during a
+one-time upgrade, so it is recorded rather than fixed.
 
 **The split created a survivor, and one gate did not know about it.** Found by review, and it is
 the most interesting thing about this change. `hasExistingProtocolData()` is what stops
@@ -2809,6 +2832,37 @@ dismissal path is not the same as removing an erasure.
   user never made, or destroying a key they never doubted. Warnings now carry the address they are
   about, and deleting that contact clears it. Deliberately *not* used to let selection clear one:
   that was the original hole.
+
+**And that fix had five defects of its own, which is the point of running the rounds.** A third
+review of the same area, and two of the five were introduced by the fix rather than found in the
+original code:
+
+- **A refused deletion cleared the warning anyway.** The clear ran before `removeContact`, which
+  throws when the chat log will not read — so the contact stayed, the flag came down, and the
+  warning text stayed on screen. Screen says warning, model says none, so the messenger's next
+  clipboard event overwrites it. A one-tap warning eraser that does not even delete the contact.
+  The clear now runs after the deletion succeeds.
+- **The "Sending to: X" line was written twice and invalidated never.** Every other path that moves
+  the recipient is deliberately banner-silent while a warning stands — a decrypt that identifies a
+  sender, an invite being processed, the recipient being forgotten — so the line kept naming
+  whoever was chosen when the warning went up. Reposting another contact's own earlier invite is
+  enough to move the recipient silently, and this document already records that replay. **That is
+  worse than what it replaced**: an invisible recipient says nothing, a stale one says something
+  false. The repaint moved into `setChosenContact`, so it cannot be forgotten by the next path that
+  moves the recipient, and it covers null — otherwise the name rode into the next app through
+  `forgetChosenRecipient`, which exists to stop exactly that.
+- **Three of the four contact-scoped warnings recorded no address**, including the duplicate-name
+  one, whose entire subject is two rows the user cannot tell apart and whose resolution is deleting
+  one of them. So the deletion route could not clear the one warning that most needs it. The test
+  could not see this because it posted its warning through a test-only seam.
+- **The test seam re-implemented the ordering it was supposed to pin.** The re-arm could be deleted
+  from the real listener with the suite still green. There is now one implementation that both the
+  listener and the seam call — which is what `mayOverwriteInfoBanner` was extracted for in the
+  first place, and duplicating the ordering beside it put the mistake straight back.
+- **The button decision read "storage is unreadable" out of the banner's prose.** Any warning that
+  overwrote that banner took the button state with it, which mattered the moment the re-arm moved
+  ahead of the guard: messenger-driven clipboard traffic could light Encrypt and Decrypt on a store
+  that cannot be decrypted. It asks the store directly now, as well.
 
 **The verify screen never mentioned a standing rejection.** Same sweep. Pressing Verify there is
 what *clears* a rejection — `rejectedAddresses` is documented as retired only by a fresh comparison,

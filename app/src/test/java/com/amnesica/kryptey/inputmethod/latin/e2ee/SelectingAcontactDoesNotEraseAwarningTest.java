@@ -117,6 +117,34 @@ public class SelectingAcontactDoesNotEraseAwarningTest {
     assertTrue("and the warning must still be standing", banner().contains("different key for Bob"));
   }
 
+  /**
+   * Clipboard traffic must not re-arm the buttons on a store that cannot be decrypted.
+   *
+   * <p>The button decision read "storage is unreadable" out of the banner's prose. Any warning that
+   * overwrites {@code INFO_STORAGE_UNREADABLE} therefore took the button state with it — which
+   * mattered little while the clipboard listener returned early on a standing warning, and mattered
+   * the moment the re-arm moved ahead of that guard to fix Decrypt going dark. Messenger-driven
+   * traffic could then light Encrypt and Decrypt on an install whose account will not load.
+   */
+  @Test
+  public void clipboardTrafficDoesNotArmTheButtonsOnAnUnreadableStore() {
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    // A warning about a contact, which overwrites the storage banner - that is the whole point.
+    strip.setWarningMessageForTest("Careful: someone offered a different key for Bob.");
+    assertFalse("precondition: the banner must no longer be the storage one, or this tests nothing",
+        E2EEStripView.disablesActionButtons(banner()));
+
+    strip.onClipboardHoldsDecryptableItemForTest();
+
+    final View decrypt = strip.findViewById(R.id.e2ee_button_decrypt);
+    final View encrypt = strip.findViewById(R.id.e2ee_button_encrypt);
+    assertNotNull(decrypt);
+    assertNotNull(encrypt);
+    assertFalse("Decrypt was armed by clipboard traffic on a store that cannot be decrypted",
+        decrypt.isEnabled());
+    assertFalse("and so was Encrypt", encrypt.isEnabled());
+  }
+
   /** Deleting the contact a warning names puts the warning down; deleting another does not. */
   @Test
   public void deletingTheNamedContactClearsItsWarningAndOnlyItsWarning() {

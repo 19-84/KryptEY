@@ -126,22 +126,39 @@ public class MessageStoreIsNotAlaunderingOracleTest {
         "{\"attacker\":\"identity store of my choosing\"}", messageFile.getString(STORE_KEY, null));
   }
 
-  /** And a key that does not belong in this file is refused outright. */
+  /**
+   * A key that does not belong in this file makes the store refuse to come up.
+   *
+   * <p>Asserting the refusal, not the absence of a seal — and the difference is the whole test. An
+   * earlier version only checked that the planted value had not been sealed, which
+   * {@code requireEncryptedOnly} never does under any mutation, including being gutted to an empty
+   * method. It also kept the sealed marker from {@code setUp}, so {@code needsMigration()} was
+   * false and the old vulnerable code would not have sealed anything either. It passed against
+   * everything and discriminated nothing.
+   *
+   * <p>What must hold is that the store is refused: with the check gone, {@code get} falls through
+   * its cleartext branch and hands back whatever the attacker wrote as the user's chat log.
+   */
   @Test
-  public void aforeignKeyInTheLogsFileIsRefused() {
-    // Log key left in place, so the store is actually built; see the note above.
+  public void aforeignKeyInTheLogsFileMakesTheStoreRefuseToOpen() {
+    // The sealed log and marker from setUp stay, so the store is genuinely built and the only
+    // thing wrong with the file is the extra key.
     messageFile.edit().putString(STORE_KEY, "anything at all").commit();
 
     final Account loaded = helper().getAccountFromSharedPreferences();
     assertNotNull("the account itself must still load - the account file is untouched", loaded);
+
     try {
       loaded.getUnencryptedMessages();
-    } catch (final RuntimeException expected) {
-      // The log's store refuses to come up, which is what should happen.
+      throw new AssertionError("a file carrying a key that cannot legitimately be there was opened "
+          + "anyway. Whatever else is in it is then read as the user's own data.");
+    } catch (final com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException
+        expected) {
+      // Refusing is the point.
     }
 
-    assertEquals("a foreign key must be left exactly as found, not sealed", "anything at all",
-        messageFile.getString(STORE_KEY, null));
+    assertEquals("and the foreign value must be left exactly as found, not sealed",
+        "anything at all", messageFile.getString(STORE_KEY, null));
   }
 
   /** The legitimate interrupted write still works: an envelope with no marker reads back. */

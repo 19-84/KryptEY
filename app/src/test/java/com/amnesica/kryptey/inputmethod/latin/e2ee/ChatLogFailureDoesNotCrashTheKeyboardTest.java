@@ -158,6 +158,39 @@ public class ChatLogFailureDoesNotCrashTheKeyboardTest {
   }
 
   /**
+   * A deletion that was REFUSED must not put a standing warning down.
+   *
+   * <p>Deleting the contact a warning names is the one deliberate response the verify screen cannot
+   * offer once the row is gone, so it clears the warning — but the clear ran before the deletion,
+   * and the deletion can be refused. Sweeping that contact's messages needs the chat log, so with
+   * an unreadable log {@code removeContact} throws and the contact list is untouched.
+   *
+   * <p>That left the worst of both: the contact still there, the flag down, and the warning text
+   * still on screen. The screen says "warning" while the model says none, so
+   * {@code mayOverwriteInfoBanner} answers true and the messenger's next clipboard event replaces
+   * the app's only lasting warning with "Keybundle detected". A one-tap warning eraser for anyone
+   * whose log will not read, which does not even delete the contact.
+   */
+  @Test
+  public void arefusedDeletionDoesNotClearTheWarning() {
+    final String warning = "Careful: someone offered a different key for Bob.";
+    strip.setWarningMessageAboutForTest(warning, bob);
+
+    strip.removeContact(bob);   // refused: the log cannot be read
+
+    final android.widget.TextView banner = strip.findViewById(R.id.e2ee_info_text);
+    assertNotNull(banner);
+    assertTrue("the deletion was refused, so the warning it would have answered must still stand: "
+        + banner.getText(), banner.getText().toString().contains(warning));
+
+    // And the flag must still be up, or the next clipboard event overwrites it.
+    strip.onClipboardHoldsDecryptableItemForTest();
+    assertTrue("a refused deletion left the model believing no warning stands, so ordinary "
+            + "clipboard traffic erased it: " + banner.getText(),
+        banner.getText().toString().contains(warning));
+  }
+
+  /**
    * And the harness is real: the log genuinely refuses to load.
    *
    * <p>Without this the three tests above would pass against a loader that quietly worked, and this

@@ -170,8 +170,8 @@ public class StripWarningErasureTest {
     final String shown = infoField().getText().toString();
     assertFalse("a success line must not stand in for a security warning: " + shown,
         shown.startsWith("Contact "));
-    assertEquals("accepting an unrelated invite must not erase the substitution warning",
-        warned, shown);
+    assertTrue("accepting an unrelated invite must not erase the substitution warning: " + shown,
+        shown.contains(warned));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -203,8 +203,9 @@ public class StripWarningErasureTest {
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
     strip.onClipboardChangedForTest();
 
-    assertEquals("merely opening the verify screen and backing out must not hand the messenger "
-        + "the warning's erasure", warned, infoField().getText().toString());
+    assertTrue("merely opening the verify screen and backing out must not hand the messenger "
+        + "the warning's erasure: " + infoField().getText(),
+        infoField().getText().toString().contains(warned));
   }
 
   // ---------------------------------------------------------------------------------------------
