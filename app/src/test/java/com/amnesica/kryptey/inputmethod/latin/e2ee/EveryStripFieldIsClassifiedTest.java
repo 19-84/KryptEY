@@ -40,7 +40,16 @@ public class EveryStripFieldIsClassifiedTest {
   private static final Set<String> CARRIED = new HashSet<>(Arrays.asList(
       "encodingMethod",        // the user's choice of wire encoding; a rebuild reset it to RAW
       "mHostFieldIsPassword",  // armed by onStartInputViewInternal, which then rebuilds the strip
-      "mWarningStanding"));    // its javadoc says the messenger cannot clear it; a rebuild could
+      "mWarningStanding",      // its javadoc says the messenger cannot clear it; a rebuild could
+      // The warning's own text, without the recipient line the banner may carry. Carried for the
+      // same reason as the flag beside it, and separately from the banner: rebuilding it FROM the
+      // banner would append the recipient twice, and not carrying it at all leaves a strip that
+      // believes a warning stands with nothing to paint.
+      "mStandingWarningText",
+      // The address that warning is about. Carried for the same reason: without it, a rotation
+      // between the warning and the deletion means deleting the named contact no longer clears it,
+      // and the banner is stuck again - the exact state carrying the flag alone was meant to avoid.
+      "mStandingWarningAddress"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

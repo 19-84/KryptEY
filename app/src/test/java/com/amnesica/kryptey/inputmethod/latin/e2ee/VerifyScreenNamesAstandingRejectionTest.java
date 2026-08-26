@@ -134,6 +134,41 @@ public class VerifyScreenNamesAstandingRejectionTest {
   }
 
   /**
+   * When a change is pending AND a rejection stands, the screen says both.
+   *
+   * <p>One extra post reaches this state: reject, let the attacker's bundle be re-pinned, then let
+   * them post again so a change is recorded pending. Confirming here calls both
+   * {@code clearRejection} and {@code dismissIdentityChange} — so a screen showing only the
+   * pending-change text tells the user confirming dismisses one warning while it silently retires
+   * the refusal as well. That is the omission the rejection notice was added to close, reappearing
+   * in the state that needs it most.
+   */
+  @Test
+  public void bothNoticesAppearWhenAchangeIsPendingAndArejectionStands() throws Exception {
+    rejectThenLetItBeRePinned();
+
+    // One more forged bundle, from a different key, so a change is recorded as pending.
+    SignalProtocolMain.initialize(null);
+    final String attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(victim);
+    SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(attackerBundle), peerAddress);
+    assertTrue("precondition: a change must be pending",
+        SignalProtocolMain.hasUnacceptedIdentityChange(bob().getSignalProtocolAddress()));
+    assertTrue("precondition: and the rejection must still stand",
+        SignalProtocolMain.wasKeyRejected(bob().getSignalProtocolAddress()));
+
+    strip.selectContact(bob());
+    strip.loadFingerprintInVerifyContactView();
+
+    final String shown = verifyScreenText();
+    assertTrue("the pending change must still be named: " + shown,
+        shown.contains("offered a different key"));
+    assertTrue("and so must the standing refusal, because confirming clears that too: " + shown,
+        shown.contains("did not match") && shown.contains("clears"));
+  }
+
+  /**
    * And the buttons come down for a contact with no pinned key.
    *
    * <p>They are members that persist across selections and were only ever enabled, never disabled —

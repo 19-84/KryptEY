@@ -3,6 +3,7 @@ package com.amnesica.kryptey.inputmethod.latin.e2ee;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
 import android.widget.EditText;
@@ -148,13 +149,13 @@ public class StripRecipientChangeTest {
     strip.setWarningMessageForTest("Someone offered a different key for Bob.");
     strip.selectContact(contact("Bob", "bob-uuid"));
 
-    assertEquals("selecting a contact must not erase a standing warning",
-        "Someone offered a different key for Bob.", infoField().getText().toString());
+    assertTrue("selecting a contact must not erase a standing warning",
+        infoField().getText().toString().contains("Someone offered a different key for Bob."));
 
     strip.onClipboardChangedForTest();
 
-    assertEquals("and the warning must still hold off ordinary clipboard traffic afterwards",
-        "Someone offered a different key for Bob.", infoField().getText().toString());
+    assertTrue("and the warning must still hold off ordinary clipboard traffic afterwards",
+        infoField().getText().toString().contains("Someone offered a different key for Bob."));
   }
 
   /** A warning naming one contact is not erased by choosing a different one. */
@@ -164,9 +165,13 @@ public class StripRecipientChangeTest {
 
     strip.selectContact(contact("Alice", "alice-uuid"));
 
-    assertEquals("a warning about Bob was erased by tapping Alice - the re-assertion asks about "
-            + "the contact chosen, not the contact the warning names",
-        "Someone offered a different key for Bob.", infoField().getText().toString());
+    final String shown = infoField().getText().toString();
+    assertTrue("a warning about Bob was erased by tapping Alice - the re-assertion asks about "
+            + "the contact chosen, not the contact the warning names. Banner: " + shown,
+        shown.contains("Someone offered a different key for Bob."));
+    assertTrue("and the banner must say the next message goes to Alice, or the warning naming Bob "
+        + "is the only name on screen while Alice is the recipient: " + shown,
+        shown.contains("Alice"));
   }
 
 

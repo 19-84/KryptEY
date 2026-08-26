@@ -80,9 +80,57 @@ public class SelectingAcontactDoesNotEraseAwarningTest {
 
     strip.selectContact(contact("Bob", "impostor-address"));
 
-    assertEquals("the warning about two contacts being indistinguishable was erased by tapping one "
-        + "of them, which is exactly what its own text tells the user to go and do", warning,
-        banner());
+    assertTrue("the warning about two contacts being indistinguishable was erased by tapping one "
+            + "of them, which is exactly what its own text tells the user to go and do. Banner: "
+            + banner(), banner().contains(warning));
+    assertTrue("and the banner must name who the next message would go to - the main view has no "
+            + "other recipient indicator, so a warning holding it silently was a mis-send waiting "
+            + "to happen. Banner: " + banner(), banner().contains("Sending to:"));
+  }
+
+  /**
+   * A standing warning must not leave Decrypt permanently dark.
+   *
+   * <p>The cost of making warnings sticky, and it took a review to see it. Decrypting disables the
+   * Decrypt button; the only thing that used to re-enable it was the banner being rewritten, which
+   * fires a {@code TextWatcher}. Once a warning held the banner, the clipboard listener returned
+   * early before re-enabling anything and nothing wrote the banner again — so one decrypt left the
+   * keyboard unable to decrypt anything else until the user pressed Verify or Reject on somebody.
+   * Before warnings became sticky the escape was tapping a contact row, which repainted the banner;
+   * removing that erasure removed the escape with it.
+   */
+  @Test
+  public void astandingWarningDoesNotLeaveDecryptPermanentlyDark() {
+    strip.setWarningMessageForTest("Someone offered a different key for Bob.");
+
+    final View decrypt = strip.findViewById(R.id.e2ee_button_decrypt);
+    assertNotNull(decrypt);
+    strip.setDecryptButtonDisabledForTest();
+    assertFalse("precondition: a decrypt must have left the button down", decrypt.isEnabled());
+
+    // An ordinary copy of something decryptable, which is how the user would try again.
+    strip.onClipboardHoldsDecryptableItemForTest();
+
+    assertTrue("Decrypt stayed dark while a warning held the banner, so the keyboard could not "
+        + "decrypt anything again until the user pressed Verify or Reject on someone",
+        decrypt.isEnabled());
+    assertTrue("and the warning must still be standing", banner().contains("different key for Bob"));
+  }
+
+  /** Deleting the contact a warning names puts the warning down; deleting another does not. */
+  @Test
+  public void deletingTheNamedContactClearsItsWarningAndOnlyItsWarning() {
+    final Contact bob = contact("Bob", "bob-address");
+    strip.setWarningMessageAboutForTest("Careful: Bob's key changed.", bob);
+
+    strip.removeContact(contact("Alice", "alice-address"));
+    assertTrue("deleting a different contact must not clear a warning about Bob: " + banner(),
+        banner().contains("Bob's key changed"));
+
+    strip.removeContact(bob);
+    assertFalse("deleting the contact a warning names must clear it - its verify screen is gone, "
+            + "so otherwise the only way out is asserting a comparison about someone else: "
+            + banner(), banner().contains("Bob's key changed"));
   }
 
   /**
@@ -102,8 +150,8 @@ public class SelectingAcontactDoesNotEraseAwarningTest {
 
     strip.selectContact(contact("Bob", "bob-address"));
 
-    assertEquals("a warning that is not about any contact was erased by choosing one",
-        E2EEStripView.INFO_STORAGE_UNREADABLE, banner());
+    assertTrue("a warning that is not about any contact was erased by choosing one. Banner: "
+        + banner(), banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
 
     final View encrypt = strip.findViewById(R.id.e2ee_button_encrypt);
     assertNotNull(encrypt);

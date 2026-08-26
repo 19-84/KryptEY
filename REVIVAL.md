@@ -2787,6 +2787,29 @@ with it. The deliberate responses still clear it: comparing a safety number, or 
 match. An existing test asserted the old behaviour, calling a tap "a deliberate act"; it encoded the
 defect and now asserts the opposite. Control: restore the unconditional clear and four tests fail.
 
+**Making warnings sticky broke three things, and a review found all three.** Recorded because the
+fix that caused them was right and the cost was not noticed at the time — removing the only
+dismissal path is not the same as removing an erasure.
+
+- **Decrypt could be left permanently dark.** Decrypting disables the Decrypt button, and the only
+  thing that re-enabled it was the banner being rewritten, through a `TextWatcher`. Once a warning
+  held the banner the clipboard listener returned early before re-enabling anything, so one decrypt
+  left the keyboard unable to decrypt again until the user pressed Verify or Reject on somebody.
+  The buttons are now re-armed *before* the banner guard, through `refreshActionButtons` so the
+  password-field and unreadable-storage answers still win.
+- **The chosen recipient stopped being shown.** The banner is the main view's only recipient
+  indicator, so tapping Alice while a warning about Bob stood left the screen naming Bob with Alice
+  as the recipient — the "invisible recipient … a mis-send" this file rules out elsewhere in as
+  many words. The banner now carries the warning *and* a "Sending to: X" line, rather than choosing
+  between them. That also caught a second defect in the same change:
+  `disablesActionButtons` matched by equality, so appending that line silently re-enabled the
+  buttons on an unreadable store. It matches by prefix now.
+- **A warning about a deleted contact was unclearable.** Its verify screen is gone with the row, so
+  the only remaining exit was Verify or Reject on someone unrelated — asserting a comparison the
+  user never made, or destroying a key they never doubted. Warnings now carry the address they are
+  about, and deleting that contact clears it. Deliberately *not* used to let selection clear one:
+  that was the original hole.
+
 **The verify screen never mentioned a standing rejection.** Same sweep. Pressing Verify there is
 what *clears* a rejection — `rejectedAddresses` is documented as retired only by a fresh comparison,
 and `isContactKeyTrustworthy` ranks a standing rejection above a verified badge. Yet the screen
@@ -2795,6 +2818,12 @@ one screen that undoes their earlier "these numbers do not match" and read only 
 comparison advice. It now names it, and says that confirming clears it. The reason the
 pending-change notice exists — tell the user before they compare, so they compare attentively —
 applies here at least as strongly.
+
+It also had a gap in the state that needs it most: an `else if` meant a pending change suppressed
+the rejection notice, and one extra post reaches the state where both hold — reject, let the bundle
+be re-pinned, post again. Confirming there calls both `clearRejection` and `dismissIdentityChange`,
+so a screen showing only the pending-change text described one of the two things it does. Both
+notices now appear.
 
 Its sibling finding was **checked and found wrong**, which is worth recording because not every
 reported defect is one. The review said the verify and reject buttons stay live for a contact with

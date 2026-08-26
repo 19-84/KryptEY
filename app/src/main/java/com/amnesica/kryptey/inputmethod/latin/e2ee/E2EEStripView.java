@@ -544,11 +544,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // which the user most needs to know WHICH contact they are looking at.
       setInfoTextViewMessage(mVerifyContactInfoTextView,
           String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact)));
+      // ...and if a rejection ALSO stands, say so in the same breath.
+      //
+      // An else-if here was wrong, and one extra post reaches the state that proves it: reject,
+      // let the attacker's bundle be re-pinned, then let them post again to record a pending
+      // change. Both hold. Confirming calls clearRejection AND dismissIdentityChange, so the
+      // pending-change text - "confirm it to dismiss the warning" - was describing one of the two
+      // things it does, which is the omission this notice was added to close.
+      if (mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())) {
+        setInfoTextViewMessage(mVerifyContactInfoTextView,
+            String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact))
+                + "\n\n" + String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact)));
+      }
     } else if (mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())) {
-      // Checked second, not instead: a pending change is the more urgent of the two, because the
-      // offered key is on the table right now. But a standing rejection was not mentioned here at
-      // all, and pressing Verify on this screen is what clears it - so the user was being asked to
-      // make that decision without being told what it undoes.
+      // A rejection with no pending change.
       setInfoTextViewMessage(mVerifyContactInfoTextView,
           String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact)));
     }
@@ -1089,13 +1098,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // anyone" line. That line is the part that actually protects their pins, and the copy that
         // erased it is the attacker's invite: the whole workflow is copy-then-paste, so the
         // warning survived exactly until the moment it mattered.
-        if (!mayOverwriteInfoBanner()) return;
-
         // Parse once. This ran on every clipboard change and used to deserialize up to three
         // times, and getMessageType returns null for anything unrecognised - which then NPE'd on
         // .equals() inside a system clipboard callback.
         final MessageType clipboardType =
             mE2EEStrip.getMessageType(EnvelopeCodec.fromWire(decodedItem));
+
+        // Re-arm the buttons BEFORE the banner guard, and through refreshActionButtons so the
+        // password-field and unreadable-storage answers still win.
+        //
+        // The guard below protects the BANNER. It used to protect the buttons too, by accident,
+        // because the only thing that re-enabled them was the TextWatcher firing on a banner
+        // write - so once a warning stood and stopped banner writes, a single decrypt left
+        // Decrypt dark and nothing could bring it back. Every later copy hit the early return.
+        // Before warnings became sticky the escape was tapping a contact row, which repainted the
+        // banner; removing that erasure removed the escape with it, and the user was left with a
+        // keyboard that could not decrypt anything until they pressed Verify or Reject on someone.
+        if (clipboardType == MessageType.UPDATED_PRE_KEY_RESPONSE_MESSAGE_AND_SIGNAL_MESSAGE
+            || clipboardType == MessageType.PRE_KEY_RESPONSE_MESSAGE
+            || clipboardType == MessageType.SIGNAL_MESSAGE) {
+          refreshActionButtons();
+        }
+
+        if (!mayOverwriteInfoBanner()) return;
         if (clipboardType == MessageType.UPDATED_PRE_KEY_RESPONSE_MESSAGE_AND_SIGNAL_MESSAGE) {
           changeImageButtonState(mDecryptButton, ButtonState.ENABLED);
           setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_AND_SIGNAL_MESSAGE_DETECTED);
@@ -1129,7 +1154,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * decision, not the wiring.
    */
   static boolean disablesActionButtons(final String message) {
-    return INFO_NO_CONTACT_CHOSEN_TEXT.equals(message) || INFO_STORAGE_UNREADABLE.equals(message);
+    if (message == null) return false;
+    // startsWith, not equals. The banner may now carry a "Sending to: X" line under a standing
+    // warning, and matching on equality meant appending that line silently re-enabled Encrypt and
+    // Decrypt on an install whose store cannot be decrypted. Caught by the test that asserts the
+    // storage warning keeps its buttons down - which is the whole reason that assertion is in it.
+    return message.startsWith(INFO_NO_CONTACT_CHOSEN_TEXT)
+        || message.startsWith(INFO_STORAGE_UNREADABLE);
   }
 
   private void setMainInfoTextTextChangeListener() {
@@ -1641,7 +1672,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!mE2EEStrip.wasKeyRejected(sender.getSignalProtocolAddress())) return false;
     final String warning = String.format(INFO_PINNED_AFTER_REJECT, labelFor(sender));
     Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
-    setWarningMessage(warning);
+    setWarningMessage(warning, String.valueOf(sender.getSignalProtocolAddress()));
     return true;
   }
 
@@ -1711,6 +1742,33 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean mWarningStanding = false;
 
   /**
+   * The standing warning's own text, kept so the chosen recipient can be shown beside it.
+   *
+   * <p>The banner is the only place the main view names who a message would go to. Once a warning
+   * held it permanently, choosing a contact stopped updating it - so tapping Alice while a warning
+   * about Bob stood left the banner reading "Bob" with Alice as the recipient, and Encrypt would
+   * send to Alice. This file rules that out in as many words elsewhere: "encryption would still go
+   * to a contact the screen no longer names, which is an invisible recipient ... a mis-send". The
+   * fix is to show both rather than to choose between them.
+   */
+  private String mStandingWarningText = null;
+
+  /**
+   * The address the standing warning is about, or null when it is not about one contact.
+   *
+   * <p>Only used to let deleting that contact put the warning down. Removing a contact IS a
+   * deliberate response to a warning about them - arguably the strongest one available - and
+   * without this the warning outlives the row it names, unreachable: its verify screen is gone, so
+   * the only way to clear it is to press Verify or Reject on some unrelated contact, which asserts
+   * a comparison the user never made or destroys a key they never doubted.
+   *
+   * <p>Deliberately NOT used to let <em>selecting</em> a contact clear it. That was the hole this
+   * whole area was fixed for: tapping a row is not a response to a warning, and for the
+   * duplicate-name warning it is the ambiguous act the warning exists to flag.
+   */
+  private String mStandingWarningAddress = null;
+
+  /**
    * Posts a warning to the info banner and marks it as standing.
    *
    * <p>Every security warning goes through here rather than {@code setInfoTextViewMessage}, so that
@@ -1720,9 +1778,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>That was not true of {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} when this sentence was
    * written, which is the trouble with an invariant stated in prose: it goes on reading as true.
    */
+  /** The warning, with the chosen recipient named under it when there is one. */
+  private String warningWithRecipient() {
+    if (mStandingWarningText == null) return null;
+    if (chosenContact == null) return mStandingWarningText;
+    return mStandingWarningText + "\n\nSending to: " + labelFor(chosenContact);
+  }
+
   private void setWarningMessage(final String message) {
-    setInfoTextViewMessage(mInfoTextView, message);
+    setWarningMessage(message, null);
+  }
+
+  /** @param aboutAddress the contact this warning concerns, or null when it concerns no one. */
+  private void setWarningMessage(final String message, final String aboutAddress) {
+    mStandingWarningText = message;
+    mStandingWarningAddress = aboutAddress;
     mWarningStanding = true;
+    setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
 
   /**
@@ -1892,10 +1964,33 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     setWarningMessage(message);
   }
 
-  /** Simulates a clipboard event carrying something KryptEY-shaped, for tests. */
-  void onClipboardChangedForTest() {
+  /** Posts a warning about a particular contact, for tests that drive the strip. */
+  void setWarningMessageAboutForTest(final String message, final Contact about) {
+    setWarningMessage(message,
+        about == null ? null : String.valueOf(about.getSignalProtocolAddress()));
+  }
+
+  /** Leaves Decrypt down, as a completed decryption does. */
+  void setDecryptButtonDisabledForTest() {
+    changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
+  }
+
+  /**
+   * Simulates a clipboard event carrying something KryptEY-shaped, for tests.
+   *
+   * <p>Mirrors the listener's ORDER, which is the part that matters: the buttons are re-armed
+   * before the banner guard, so a standing warning stops the banner being overwritten without also
+   * stopping Decrypt from coming back. Re-arming after the guard is what left the keyboard unable
+   * to decrypt anything once a warning stood.
+   */
+  void onClipboardHoldsDecryptableItemForTest() {
+    refreshActionButtons();
     if (!mayOverwriteInfoBanner()) return;
     setInfoTextViewMessage(mInfoTextView, INFO_PRE_KEY_DETECTED);
+  }
+
+  void onClipboardChangedForTest() {
+    onClipboardHoldsDecryptableItemForTest();
   }
 
   /**
@@ -1934,6 +2029,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   /** Clears a standing warning. Only call this from a deliberate user action. */
   private void clearStandingWarning() {
+    mStandingWarningText = null;
+    mStandingWarningAddress = null;
     mWarningStanding = false;
   }
 
@@ -2048,16 +2145,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final boolean wasComposing;
     private final CharSequence banner;
     private final boolean warningStanding;
+    /**
+     * The warning's own text, without the recipient line the banner may carry.
+     *
+     * <p>Carried separately from {@code banner} because the two are not the same string: the banner
+     * is the warning plus "Sending to: X". Rebuilding from the banner would append the recipient a
+     * second time on the next selection, and rebuilding from nothing would leave a strip that
+     * believes a warning stands with no text to paint - which sets the banner to null.
+     */
+    private final String standingWarningText;
+    /** The address that warning is about, so deleting that contact still clears it after a rebuild. */
+    private final String standingWarningAddress;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
     private CarriedState(final CharSequence draft, final boolean wasComposing,
         final CharSequence banner, final boolean warningStanding,
+        final String standingWarningText, final String standingWarningAddress,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
       this.banner = banner;
       this.warningStanding = warningStanding;
+      this.standingWarningText = standingWarningText;
+      this.standingWarningAddress = standingWarningAddress;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -2132,8 +2243,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // on holding the discarded box - and through its parent chain, the whole discarded strip.
     if (mRichInputConnection != null) mRichInputConnection.setOtherIC(null);
 
-    return new CarriedState(draft, wasComposing, banner, mWarningStanding,
-        mHostFieldIsPassword, encodingMethod);
+    return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
+        mStandingWarningAddress, mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -2189,7 +2300,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // The previous round fixed exactly this collision for ordinary banners and introduced it again
     // in the branch it added for warnings.
     if (carried.warningStanding && !mWarningStanding) {
-      setWarningMessage(String.valueOf(carried.banner));
+      // The warning's own text, not the banner: the banner may already carry a "Sending to: X"
+      // line, and re-warning with that would append the recipient twice on the next selection.
+      // Falling back to the banner keeps a strip carried from before this field existed readable.
+      setWarningMessage(carried.standingWarningText != null
+          ? carried.standingWarningText : String.valueOf(carried.banner),
+          carried.standingWarningAddress);
     }
 
     // Not the view's to lose either. The password-field guard is re-armed only by
@@ -2375,9 +2491,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // anything", and opening the contact list to do that is the gesture that erased it.
     final boolean warnedAboutThisContact =
         warnIfIdentityChanged(contact) || warnIfKeyWasRejected(contact);
-    // And do not write over one either. "Chosen contact: Bob" replacing a warning is the same
-    // erasure whether or not the flag came down with it, because what the user reads is the banner.
-    if (!warnedAboutThisContact && !mWarningStanding) {
+    if (mWarningStanding) {
+      // Do not write OVER the warning - that is the same erasure whether or not the flag comes down
+      // with it, because what the user reads is the banner. Repaint it with the new recipient named
+      // underneath instead, so the screen says both what is wrong and who the next message goes to.
+      setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+    } else if (!warnedAboutThisContact) {
       showChosenContactInMainInfoField();
     }
     showOnlyUIView(UIView.MAIN_VIEW);
@@ -2386,6 +2505,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   @Override
   public void removeContact(Contact contact) {
     try {
+      // Deleting the contact a warning names puts that warning down, and nothing else does.
+      // Without this the banner outlives the row: its verify screen is gone, so the only remaining
+      // way to clear it is Verify or Reject on somebody else - a comparison the user never made,
+      // or a key they never doubted. Scoped to the address, so a warning about Bob survives
+      // deleting Alice.
+      if (mWarningStanding && contact != null && mStandingWarningAddress != null
+          && mStandingWarningAddress.equals(String.valueOf(contact.getSignalProtocolAddress()))) {
+        clearStandingWarning();
+      }
       mE2EEStrip.removeContact(contact);
     } catch (ChatLogUnavailableException e) {
       // Deleting a contact has to sweep that contact's messages out of the log, which needs the
