@@ -154,6 +154,20 @@ and takes the whole account with it. `ProtocolAddresses` folds legacy ids back i
 deterministically. Identity keys and safety numbers survive; local sessions survive; **the user's
 public address changes permanently**, which breaks mixed-version pairs until both sides upgrade.
 
+**Settled by the user (2026-08-26): mixed-version compatibility is not a requirement.** So the
+address change above is accepted rather than a cost to be managed, and nothing needs to be built to
+soften it.
+
+It is worth being exact about what that does *not* license removing, because the two are easy to
+confuse and one of them is a crash. Talking to a 0.1.5 peer is compatibility. Surviving a message
+that *claims* to be from one is not — a device id outside libsignal's `[1,127]` range makes the raw
+address constructor throw `IllegalArgumentException`, nothing on the clipboard-decrypt path catches
+unchecked exceptions, and the keyboard dies in whatever app the user is typing in. An attacker can
+put any integer in that field. `LegacyPeerInteropTest` guards the paths that consume a peer-supplied
+device id, and it stays for that reason, not for compatibility. The same applies to `ProtocolAddresses`
+folding and `LegacyKeyMigration`: those are about the user's own store surviving an upgrade, which
+has nothing to do with who they are talking to.
+
 Also: `libsignal_jni_testing.so` excluded (82 MB/ABI of test-only native code), ABI splits enabled,
 core library desugaring required.
 
