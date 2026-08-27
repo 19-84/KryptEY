@@ -1225,7 +1225,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // on top of a security warning, which StripWarningErasureTest exists to forbid.
           //
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
-          setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.", chosenContact);
+          cautionThatAkeyWasPinned();
         }
       } else {
         // warnIfIdentityChanged is a WRITER, not a predicate, and it was sitting on the right of an
@@ -1265,7 +1265,51 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // places that pin, which is the same mistake in the opposite direction. Both arms call the
       // shared helper now; it is a no-op unless a key is really pinned at a rejected address.
       warnIfKeyWasRejected(chosenContact);
+
+      // And the caution, which this arm pinned a key without.
+      //
+      // This is the INVITER'S side of every conversation this app sets up. The help describes it:
+      // "Your chat partner has to add you to their contact list and then send you an encrypted
+      // message... The contact is now automatically selected." So whoever sent the invite meets
+      // this arm, once, at the moment their peer's key is pinned - and the pin here is
+      // trust-on-first-use over a key that arrived through the messenger, which is the party this
+      // app treats as the adversary. Choosing this arm costs a relay one omitted field: the type is
+      // decided by field presence alone, and decrypt takes its PreKey branch on the ciphertext type
+      // where isTrustedIdentity returns true whenever nothing is pinned.
+      //
+      // The bundle arm has said this for several rounds, and its comment there argues it is the
+      // most important of the four outcomes on that arm precisely BECAUSE it fires when nothing was
+      // noticed - which is what a successful substitution looks like from inside the app. The same
+      // sentence was owed here and was not being said.
+      //
+      // Beside any standing warning rather than instead of one, for the reason the sibling records:
+      // replacing would be a success line landing on top of a security warning, and suppressing
+      // would let a relay raise a warning about anyone in order to silence the one notice that
+      // fires because nothing was noticed.
+      //
+      // It also, not incidentally, repaints the banner. Nothing else on this path does, so the
+      // banner was left reading "No contact chosen" while a contact WAS chosen and Encrypt aimed at
+      // them - and since disablesActionButtons matches that exact sentence, Encrypt and Decrypt
+      // stayed dark. The user was handed a decrypted message and no way to answer it, on the flow
+      // the help calls "automatically selected".
+      cautionThatAkeyWasPinned();
     }
+  }
+
+  /**
+   * The caution both arms that pin a key owe the user, in one place.
+   *
+   * <p>Written once because it was written twice. The two arms of {@code addContact} that pin -
+   * a bundle that established a session, and a bundle-less message that pinned by
+   * trust-on-first-use - must say the same thing, and a second copy of a sentence is a sentence
+   * that will drift: this file already carries a test forbidding one claim from being shared
+   * between two messages for the opposite reason, and the moment one copy is reworded the two arms
+   * start describing the same event differently.
+   */
+  private void cautionThatAkeyWasPinned() {
+    setCautionBesideAnyWarning("Contact " + labelFor(chosenContact)
+        + " created. This key reached you through the messenger and the app cannot tell whose it is"
+        + " - compare the security number by voice before sending anything private.", chosenContact);
   }
 
   private void abortContactAdding() {

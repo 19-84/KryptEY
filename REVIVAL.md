@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-three sections, written in the order things were found rather than by subject, so the
+Sixty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -119,6 +119,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A green test that could not go red](#a-green-test-that-could-not-go-red)
 - [An unreadable history is not an empty one](#an-unreadable-history-is-not-an-empty-one)
 - [The round that fixed a sentence by breaking its opposite](#the-round-that-fixed-a-sentence-by-breaking-its-opposite)
+- [The inviter's side pinned a key and said nothing](#the-inviters-side-pinned-a-key-and-said-nothing)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4333,3 +4334,49 @@ thing it described moved*. The difference here is that the round-eighteen invers
 It was reasoning from a type's name instead of from its throw site, in a file where the type name and
 the meaning point in opposite directions, and it shipped because the arm had a control for crashing
 and none for lying.
+
+## The inviter's side pinned a key and said nothing
+
+**Round twenty found the most reachable trust defect any round has produced: the arm that handles the
+first message from a new peer pinned that peer's key by trust-on-first-use, posted no caution, left
+the banner claiming no contact was chosen, and left the two action buttons dark.**
+
+This is not an exotic path. It is the inviter's side of **every conversation this app has ever set
+up**, and the help describes it: *"Your chat partner has to add you to their contact list and then
+send you an encrypted message… The contact is now automatically selected."* Whoever sent the invite
+meets this arm exactly once, at the moment their peer's key is pinned.
+
+What arrives is a message with no bundle beside it. `getMessageType` branches on field presence
+alone, so choosing this arm costs a relay one omitted field; `decrypt` then takes its PreKey branch
+on the ciphertext **type**, where `isTrustedIdentity` returns true whenever nothing is pinned — a
+rejection record does not block trust-on-first-use. So the key is pinned, and it arrived through the
+messenger, which is the party this app treats as the adversary.
+
+The sibling arm has posted a caution for this for several rounds, and the comment there argues it is
+the most important of the four outcomes on that arm **because it fires when nothing was noticed**,
+which is what a successful substitution looks like from inside the app. The same sentence was owed
+here and was never said. It is now said from one place rather than two: a second copy of a claim is a
+claim that will drift, which this document records happening to comments, to counts, and to the
+duplicate post-rejection warning that kept the old behaviour after the helper it copied learned a new
+rule.
+
+**Two further consequences fell out of the same silence, and they are what the user actually sees.**
+Nothing on that path repainted the banner, so it was left reading "No contact chosen" while a contact
+*was* chosen and Encrypt aimed at them — false about the thing that matters most on that screen, who
+the next message goes to. And because `disablesActionButtons` matches on that exact sentence, Encrypt
+and Decrypt stayed disabled: the user was handed a decrypted message and no way to answer it, on the
+flow the help calls "automatically selected". One caution fixes all three, because posting it is what
+repaints the banner.
+
+`TheInviterSideIsToldToCompareTheNumberTest` drives it through the real clipboard and the real
+Decrypt button rather than calling the arm directly, so the banner and the button states are the ones
+the flow produces. It was written failing — three of its four tests red against the shipped code,
+with the fourth passing to prove a key really was pinned — and removing the caution turns all three
+red again.
+
+**What this says about the previous rounds.** Two rounds in a row moved a check to "where the key
+actually got pinned" and each time reached only one of the two places that pin. The lesson recorded
+after the first was that a fix here is usually right about the threat and wrong about its blast
+radius; this is the third instance, and the pattern is specific enough now to name: *when a defect is
+fixed on one arm of `addContact`, the fix is not finished until the other two arms have been walked
+by hand.*
