@@ -4301,6 +4301,32 @@ and a working button looked broken. `TheInviteGoesToTheHostAppTest` gives the li
 `LatinIME` does and asserts what lands in the host field parses back to a key bundle. Two mutants
 kill it: not delivering, and delivering something that is not a bundle.
 
+**A sweep over every button, and the hollow first version of it.** The strip carries eighteen click
+listeners and two unchecked catches, and this is an input method: an exception out of a listener does
+not land in a dialog, it takes the keyboard out of whatever app the user is typing in, and the states
+that produce one — an invalidated Keystore key, a corrupt stored value, a store that will not write —
+are persistent, so it is crash-on-tap in every app until reinstall. The existing crash test presses
+three buttons chosen by hand against one broken state; the choosing is the weakness, because a
+nineteenth listener is covered by nobody.
+
+`NoButtonOnTheStripCanKillTheKeyboardTest` walks the inflated hierarchy, finds every view that really
+has a listener attached (sixteen, plus the reject button once the verify screen has been loaded — its
+listener does not exist before that), and presses all of them in four states: healthy, unreadable
+chat log, a store that will not write, and no account at all.
+
+**Its first version was vacuous, and went green.** It pressed the buttons in hierarchy order against
+one shared strip, and the first thing in that order is `e2ee_info_text`, whose listener is
+`resetChosenContactAndInfoText`. So it cleared the chosen contact and the fifteen buttons after it
+took their "no contact chosen" early return. Four passing tests pressing nothing. The proof is that
+replacing the chat-log screen's real `catch (ChatLogUnavailableException)` with a catch that cannot
+match — a genuine, reachable IME kill — failed none of them. Rebuilding the whole world per button
+makes the same mutant fail exactly the unreadable-log test.
+
+That is the ninth distinct hollow control this document records, and the second whose hollowness came
+from **the test's own earlier steps changing the state its later steps read**. The rule that keeps
+holding: a control that passes is the thing to distrust, and the only way to know is to make the
+defect and watch it fail.
+
 Both round-nineteen wording defects are the same shape as the one this document already records
 about comments and about its own counts — *a statement that was true when written, kept after the
 thing it described moved*. The difference here is that the round-eighteen inversion was not drift.
