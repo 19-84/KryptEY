@@ -1307,6 +1307,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * start describing the same event differently.
    */
   private void cautionThatAkeyWasPinned() {
+    // A contact that did not reach disk gets the stronger sentence, and gets it on the surface that
+    // lasts.
+    //
+    // The lost write was reported by a toast while the caution beside it was stored in
+    // mStandingCaution - so the false statement was the PERSISTENT one. A toast is about three and
+    // a half seconds; the caution survives every repaint, a screen switch and a rebuild. The user
+    // read "compare the security number by voice before sending anything private" for as long as
+    // they looked at the screen, went off to compare a number for a contact that will not exist
+    // after the next raise, and the messenger picks when that raise happens.
+    //
+    // The advice is also strictly stronger, so nothing is lost by replacing rather than appending:
+    // "do not send them anything until you have added them again successfully" covers everything
+    // "do not send anything private" does, and covers the reason the contact is about to vanish,
+    // which the other sentence does not mention.
+    if (!mE2EEStrip.lastContactWriteReachedDisk()) {
+      setCautionBesideAnyWarning(String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+          chosenContact);
+      return;
+    }
     setCautionBesideAnyWarning("Contact " + labelFor(chosenContact)
         + " created. This key reached you through the messenger and the app cannot tell whose it is"
         + " - compare the security number by voice before sending anything private.", chosenContact);
@@ -3368,13 +3387,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Deleting the contact a warning names is the one deliberate response that the verify screen
     // cannot offer once the row is gone. Scoped to the address, so a warning about Bob survives
     // deleting Alice.
-    if (mWarningStanding && contact != null && mStandingWarningAddress != null
+    // And only if it REACHED DISK, which is the other half of the same rule.
+    //
+    // The arm above covers a deletion that was refused; this covers one that was performed in
+    // memory and not written. The row is gone from the list right now, so the warning has nothing
+    // visible to point at - and that is exactly why clearing it was wrong. The next reloadAccount
+    // brings the contact, its pinned key and its messages back, and the app's only lasting warning
+    // about that key does not come back with them. The messenger chooses when that raise happens.
+    //
+    // So the warning stands over a contact that is temporarily not in the list. That is the lesser
+    // evil, and the same trade the unreadable-log arm above settles the same way: a warning with no
+    // visible subject is confusing, a subject that returns with no warning is a silent
+    // key-substitution window.
+    if (deleted && mWarningStanding && contact != null && mStandingWarningAddress != null
         && mStandingWarningAddress.equals(String.valueOf(contact.getSignalProtocolAddress()))) {
       clearStandingWarning();
     }
     // The caution about a deleted contact has nothing left to be about, and the verify screen it
-    // points at is gone with the row.
-    clearCautionIfAbout(contact);
+    // points at is gone with the row - unless the deletion did not land, in which case the row and
+    // everything the caution is about are coming back.
+    if (deleted) clearCautionIfAbout(contact);
     loadContactsIntoContactsListView();
     resetChosenContactAndInfoText();
   }

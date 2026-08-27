@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-four sections, written in the order things were found rather than by subject, so the
+Sixty-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -120,6 +120,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [An unreadable history is not an empty one](#an-unreadable-history-is-not-an-empty-one)
 - [The round that fixed a sentence by breaking its opposite](#the-round-that-fixed-a-sentence-by-breaking-its-opposite)
 - [The inviter's side pinned a key and said nothing](#the-inviters-side-pinned-a-key-and-said-nothing)
+- [The true thing faded and the false thing stayed](#the-true-thing-faded-and-the-false-thing-stayed)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4380,3 +4381,49 @@ after the first was that a fix here is usually right about the threat and wrong 
 radius; this is the third instance, and the pattern is specific enough now to name: *when a defect is
 fixed on one arm of `addContact`, the fix is not finished until the other two arms have been walked
 by hand.*
+
+## The true thing faded and the false thing stayed
+
+**Round twenty's remaining findings, and they share one shape: the accurate statement was put on the
+surface that lasts three and a half seconds, and the inaccurate one on the surface that survives
+everything.**
+
+**A contact that did not reach disk.** The lost write was a toast; the caution stored beside it said
+*"Contact X created… compare the security number by voice before sending anything private"*, and
+that one lives in `mStandingCaution` — it survives every repaint, a screen switch, and a rebuild. So
+the user read the false sentence for as long as they looked at the screen and went off to compare a
+number for a contact that will not exist after the next raise, whose timing the messenger controls.
+The standing item now carries the failure instead. Nothing is lost by replacing rather than
+appending: *"do not send them anything until you have added them again successfully"* covers
+everything the other sentence covers, plus the reason the contact is about to vanish, which the other
+does not mention.
+
+**A deletion that did not reach disk still took the warning down.** Deleting the contact a warning
+names is the deliberate response to that warning, so a successful deletion clears it. There are two
+ways for the deletion not to happen, and only one was handled: a deletion *refused* because the log
+will not read. The other is one performed in memory whose write did not land — and there the row is
+gone from the list *right now*, which is exactly why clearing looked right and exactly why it was
+wrong. The next `reloadAccount` brings the contact, its pinned key and its messages back, and the
+app's only lasting warning about that key does not come back with them.
+
+The trade is a warning standing over a contact temporarily absent from the list. That is the lesser
+evil, and the same one the unreadable-log arm beside it settles the same way: a warning with no
+visible subject is confusing; a subject that returns with no warning is a silent key-substitution
+window.
+
+**And one existing test was asserting the defect.** `SelectingAcontactDoesNotEraseAwarningTest`
+checked that deleting a named contact clears its warning — with a fixture whose write does not land,
+so it was describing the state the app should not be in, and passing only because the clear was
+unconditional. Gating the clear made that visible. Its precondition is now stated rather than
+assumed. **This is the third time in two ticks that a "healthy" fixture turned out not to write**,
+including in a positive control written this tick, which failed the moment it was asked to do the
+thing it claimed to test. A fixture that does not write is indistinguishable from a store that
+cannot, and nothing says so out loud.
+
+**The help stops promising a deletion it cannot make.** It said *"if you delete the contact, the
+message history will be deleted too"*. `removeContact`'s own comment records the exception: an entry
+from a version before messages were labelled by address keeps a bare name, `belongsTo` cannot match
+one, so deleting every contact can leave that plaintext in storage where no screen reaches it — there
+is a test named for it. The help now says what is deleted, that the app reports a failed write, and
+the two things it does not promise, including the one no keyboard can promise: nothing here removes
+what was already sent through the messenger.

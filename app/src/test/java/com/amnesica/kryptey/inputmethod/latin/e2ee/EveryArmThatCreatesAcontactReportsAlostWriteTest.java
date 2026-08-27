@@ -231,4 +231,44 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     assertTrue("the notice must not fire when the contact was saved, or the three tests above "
         + "prove nothing", !theLostWriteWasReported());
   }
+
+  /**
+   * And the lost write reaches the surface that lasts, not only the one that fades.
+   *
+   * <p>The defect this closes: the toast said the contact was not saved while the caution stored
+   * beside it said "Contact X created… compare the security number by voice before sending anything
+   * private". The toast is about three and a half seconds; the caution survives every repaint, a
+   * screen switch and a rebuild. So the FALSE statement was the persistent one, and it sent the user
+   * off to compare a number for a contact that will not exist after the next raise — a raise whose
+   * timing the messenger controls.
+   */
+  @Test
+  public void thelostWriteIsOnTheBannerAndNotOnlyInAtoast() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    final String banner = String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+
+    assertTrue("the banner is what survives; it must carry the lost write rather than a success "
+            + "claim about the same contact: " + banner,
+        banner.contains("could not be saved"));
+    assertTrue("and it must not still be telling the user to go and compare a security number for "
+            + "a contact that is about to disappear: " + banner,
+        !banner.contains("compare the security number"));
+  }
+
+  /** The healthy case keeps the caution it is supposed to keep. */
+  @Test
+  public void awriteThatLandsStillGetsTheCompareTheNumberCaution() throws Exception {
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    final String banner = String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("replacing the caution on a FAILED write must not have removed it from the "
+            + "succeeding one - that caution is the only notice that fires because nothing was "
+            + "noticed: " + banner, banner.contains("compare the security number"));
+  }
 }

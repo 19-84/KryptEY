@@ -155,6 +155,21 @@ public class SelectingAcontactDoesNotEraseAwarningTest {
     assertTrue("deleting a different contact must not clear a warning about Bob: " + banner(),
         banner().contains("Bob's key changed"));
 
+    // A store whose write lands, which is what "deleting the contact" means here.
+    //
+    // Without it this fixture's default write fails, so removeContact returns false and the
+    // deletion has NOT reached disk - the contact and its pinned key come back at the next raise.
+    // The clear used to be unconditional, so the assertion below passed while describing a state
+    // the app should not be in; gating the clear on the write landing made that visible.
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(
+              final com.amnesica.kryptey.inputmethod.signalprotocol.Account account) {
+            return true;
+          }
+        });
+
     strip.removeContact(bob);
     assertFalse("deleting the contact a warning names must clear it - its verify screen is gone, "
             + "so otherwise the only way out is asserting a comparison about someone else: "
