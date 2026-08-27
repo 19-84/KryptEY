@@ -1,0 +1,234 @@
+package com.amnesica.kryptey.inputmethod.latin.e2ee;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import android.app.Application;
+import android.view.ContextThemeWrapper;
+import android.widget.EditText;
+
+import com.amnesica.kryptey.inputmethod.R;
+import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
+import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
+import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
+
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.shadows.ShadowToast;
+import org.signal.libsignal.protocol.SignalProtocolAddress;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A contact that exists only in memory must be reported however it was created.
+ *
+ * <p>{@code createAndAddContactToContacts} records whether the account write landed, and there is
+ * exactly one place it is called from the add screen — but THREE ways out of {@code addContact}
+ * after it. The notice was read inside one of them, the arm where a bundle both arrived and
+ * established a session, so the other two created a contact that will not survive the next raise
+ * and said nothing about it.
+ *
+ * <p>The silent one that matters is the ciphertext-only envelope. That arm's own comment records
+ * that it pins a key by trust-on-first-use; the user reads a decrypted message from a brand-new
+ * contact, is sent off to compare a security number, and the row is gone at the next raise — and
+ * the log write can succeed while the account write fails, so the message notice does not cover it
+ * either. Nothing on screen is false there; nothing is said at all, which for a disappearing
+ * contact is the same thing.
+ *
+ * <p>This drives all three arms with a storage layer whose account write fails, and demands the
+ * notice from each. It is written as a cross-product rather than three cases so that a fourth exit
+ * added later is a hole someone has to notice rather than one this file silently ignores — the
+ * completeness check at the bottom counts the arms.
+ */
+@RunWith(RobolectricTestRunner.class)
+public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
+
+  private E2EEStripView strip;
+  private Account victim;
+  private Account peer;
+  private SignalProtocolAddress peerAddress;
+  private String genuineBundle;
+
+  @Before
+  public void setUp() throws Exception {
+    final Application app = RuntimeEnvironment.getApplication();
+
+    SignalProtocolMain.resetForTest();
+    SignalProtocolMain.testIsRunning = true;
+
+    SignalProtocolMain.initialize(null);
+    victim = SignalProtocolMain.getInstance().getAccount();
+    SignalProtocolMain.initialize(null);
+    peer = SignalProtocolMain.getInstance().getAccount();
+    peerAddress = ProtocolAddresses.of(peer.getSignalProtocolAddress().getName(),
+        peer.getDeviceId());
+
+    SignalProtocolMain.getInstance().setAccount(peer);
+    peer.setMessageLogLoader(ArrayList::new);
+    genuineBundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(victim);
+    victim.setMessageLogLoader(ArrayList::new);
+
+    strip = new E2EEStripView(
+        new ContextThemeWrapper(app, R.style.KeyboardTheme_LXX_Pure_Day), null);
+    strip.setListener(new E2EEStripView.Listener() {
+      @Override public void onTextInput(final String rawText) { }
+      @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
+    }, strip);
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+  }
+
+  @After
+  public void tearDown() {
+    SignalProtocolMain.resetForTest();
+    SignalProtocolMain.testIsRunning = false;
+  }
+
+  /**
+   * A store that loads fine and cannot write.
+   *
+   * <p>The state the notice exists for, and the one that looks healthy: an unreadable store has no
+   * account and therefore creates no contact, so it was already covered by having nothing to
+   * report.
+   */
+  private void makeTheAccountWriteFail() {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, hasExistingData) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+  }
+
+  private void typeTheName() {
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+  }
+
+  /** The relay's edit: a bundle whose one-time pre-key is gone, which this app refuses. */
+  private MessageEnvelope refusedInvite() throws Exception {
+    final PreKeyResponse genuine = EnvelopeCodec.fromWire(genuineBundle).getPreKeyResponse();
+    final PreKeyResponseItem device = genuine.getDevices().get(0);
+    assertNotNull("precondition: a genuine invite carries a one-time pre-key", device.getPreKey());
+    final List<PreKeyResponseItem> devices = new ArrayList<>();
+    devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
+        device.getSignedPreKey(), null, device.getKyberPreKey()));
+    return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(new MessageEnvelope(
+        new PreKeyResponse(genuine.getIdentityKey(), devices),
+        peerAddress.getName(), peerAddress.getDeviceId())));
+  }
+
+  /** A message with no bundle beside it — the arm that pins by trust-on-first-use. */
+  private MessageEnvelope ciphertextOnly() throws Exception {
+    final SignalProtocolAddress victimAddress = ProtocolAddresses.of(
+        victim.getSignalProtocolAddress().getName(), victim.getDeviceId());
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    SignalProtocolMain.getInstance().setAccount(peer);
+    assertTrue("precondition: the peer must be able to open a session with us",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(victimBundle), victimAddress));
+    final MessageEnvelope sent = SignalProtocolMain.encryptMessage("hello from a stranger",
+        victimAddress);
+    assertNotNull(sent);
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    // Stripped of any bundle, which is what an ordinary PreKey message from someone the user has
+    // never added looks like on arrival.
+    return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(new MessageEnvelope(
+        sent.getCiphertextMessage(), sent.getCiphertextType(),
+        peerAddress.getName(), peerAddress.getDeviceId())));
+  }
+
+  private String expectedNotice() throws Exception {
+    final java.lang.reflect.Field f =
+        E2EEStripView.class.getDeclaredField("INFO_CONTACT_NOT_SAVED");
+    f.setAccessible(true);
+    return (String) f.get(strip);
+  }
+
+  /**
+   * Whether any toast raised during the add said the contact was not saved.
+   *
+   * <p>Every toast, not the latest one. The security warnings on these arms are posted AFTER this
+   * notice on purpose - the last toast posted is the one left on screen, and a key warning must not
+   * be buried under a storage one - so a check that read only the latest would report the opposite
+   * of the truth on exactly the arms that matter.
+   */
+  private boolean theLostWriteWasReported() throws Exception {
+    final String notice = expectedNotice();
+    final String stem = notice.substring(0, notice.indexOf("%s"));
+    for (final android.widget.Toast toast : org.robolectric.Shadows
+        .shadowOf(RuntimeEnvironment.getApplication()).getShownToasts()) {
+      // Through the shadow's own record rather than through Toast.getView(), which returns null for
+      // an ordinary text toast on every API this app supports.
+      final Object shadow = org.robolectric.shadow.api.Shadow.extract(toast);
+      final java.lang.reflect.Field textField =
+          shadow.getClass().getDeclaredField("text");
+      textField.setAccessible(true);
+      final Object text = textField.get(shadow);
+      if (text != null && String.valueOf(text).startsWith(stem)) return true;
+    }
+    return false;
+  }
+
+  @Test
+  public void abundleThatEstablishesAsessionReportsIt() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("the arm this notice was written for must still report", theLostWriteWasReported());
+  }
+
+  @Test
+  public void abundleThatWasRefusedReportsItToo() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(refusedInvite());
+
+    assertTrue("a refused invite still creates the contact row, and that row is still lost at the "
+            + "next raise. The banner's ask-for-a-fresh-invite advice does not cover it: the user "
+            + "asks for another invite, gets one, and the contact vanishes again.",
+        theLostWriteWasReported());
+  }
+
+  @Test
+  public void amessageWithNoBundleReportsItAsWell() throws Exception {
+    final MessageEnvelope message = ciphertextOnly();
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(message);
+
+    assertTrue("the silent arm. A contact is created, a key is pinned by trust-on-first-use, a "
+            + "message is decrypted and shown, and the row does not survive the next raise - with "
+            + "the log write succeeding, so the message notice does not cover it either. The user "
+            + "is sent to compare a security number for a contact that is about to disappear.",
+        theLostWriteWasReported());
+  }
+
+  /**
+   * And a successful write says nothing, so the tests above are not passing on a notice that always
+   * fires.
+   */
+  @Test
+  public void awriteThatLandsSaysNothing() throws Exception {
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("the notice must not fire when the contact was saved, or the three tests above "
+        + "prove nothing", !theLostWriteWasReported());
+  }
+}

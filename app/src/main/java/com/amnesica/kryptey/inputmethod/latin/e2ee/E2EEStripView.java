@@ -270,8 +270,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * analysis is that the generic decryption-failure advice drives users to delete the contact and
    * ask for a new invite - which is a key-substitution window opened by advice about the wrong
    * problem. One flipped byte in the sealed log makes that permanent.
+   *
+   * <p>And deliberately says nothing about WHICH storage failure it was, because the flag behind it
+   * covers two. {@code mLastChatLogWriteFailed} is raised both when the log cannot be read and when
+   * it reads fine but the write does not land, and the sentence used to name only the first: "the
+   * stored history cannot be opened". On the write arm that is false, and falsifiable on screen in
+   * one tap - the chat-log button opens the very history the toast says cannot be opened, showing
+   * the message it says was not saved, which will then vanish at the next raise. Naming a cause the
+   * user can immediately disprove is worse than naming none: it teaches them the notices are
+   * unreliable, and the notices are all this app has.
    */
-  private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history, because the stored history cannot be opened. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
+  private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history - the app could not store it. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
 
   private final String INFO_INVITE_REFUSED_BUT_KEY_PINNED = "The key update from %s could not be used - it does not verify, which means it was changed on the way here. The message it arrived with has set up a key for them anyway, and this app cannot tell whose it is - compare the security number by voice before sending anything private.";
 
@@ -919,10 +928,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         messages = mE2EEStrip.getUnencryptedMessages(chosenContact);
         accountName = mE2EEStrip.getAccountName();
       } catch (UnknownContactException e) {
-        // A lookup that failed, reported as a lookup that failed. Saying "there are no saved
-        // messages for this contact" turns not finding the contact into a fact about their history.
-        Toast.makeText(getContext(), INFO_SAVED_MESSAGES_UNREADABLE, Toast.LENGTH_LONG).show();
-        Log.d(TAG, "the contact could not be resolved; showing no history");
+        // An empty history, said plainly - and NOT the unreadable-log sentence, however much the
+        // exception's name invites it. Reaching here means getUnencryptedMessages RETURNED: the log
+        // was opened and read, and nothing in it belongs to this contact. An unreadable log throws
+        // ChatLogUnavailableException out of that same call and lands in the arm below; a null
+        // account or contact returns null and throws nothing at all. So this arm has exactly one
+        // meaning, and it is the ordinary one.
+        //
+        // Written this way because the round before this got it backwards, on the reasoning that
+        // the type is called UnknownContact so it must be a lookup that failed. The cost of that
+        // was not cosmetic: every newly added contact is in this state before the first message,
+        // and so is every user who has just successfully cleared their history - and both were told
+        // their messages "are still on this device", with "do not assume anything here has been
+        // removed". A deletion that worked, reported as a deletion to distrust, is the one direction
+        // this sentence was written to avoid.
+        Toast.makeText(getContext(), INFO_NO_SAVED_MESSAGES, Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "no stored messages for this contact");
         e.printStackTrace();
       } catch (ChatLogUnavailableException e) {
         // The stored log exists and could not be read. Show no history rather than no keyboard:
@@ -1123,6 +1144,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     resetAddContactInputTextFields();
     showOnlyUIView(UIView.MAIN_VIEW);
 
+    // Here, because here is where the row was created - not down in the arm that also happens to
+    // establish a session.
+    //
+    // The check lived inside "getPreKeyResponse() != null && successful", which is one of THREE
+    // ways out of this method, and the flag is set by createAndAddContactToContacts eight lines
+    // above regardless of which one is taken. The two it missed:
+    //
+    //   - a bundle that was refused (successful == false). The row is in memory, the banner gives
+    //     the ask-for-a-fresh-invite advice, and the lost write is not mentioned.
+    //   - a ciphertext-only envelope, handled further down - the arm whose own comment records that
+    //     it pins a key by trust-on-first-use. There the contact is created, a key is pinned, the
+    //     message is decrypted and shown, and nothing at all is said: the account write can fail
+    //     while the LOG write succeeds, so INFO_MESSAGE_NOT_SAVED does not cover it either. The
+    //     user ends on the main view having read a message from a contact that will not survive the
+    //     next raise, told nothing.
+    //
+    // That second one is the same shape as the defect this notice was added for, in the arm it did
+    // not reach. Fired before the security warnings below on purpose: toasts queue, so the last one
+    // posted is the one left on screen, and a key warning must not be buried under a storage one.
+    if (!mE2EEStrip.lastContactWriteReachedDisk()) {
+      Toast.makeText(getContext(),
+          String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+          Toast.LENGTH_LONG).show();
+    }
+
     // A key arriving where the user previously reported a mismatch is not a first sighting, even
     // though the store looks empty. Without this the forged bundle that provoked the rejection can
     // simply be re-delivered and pinned silently.
@@ -1179,11 +1225,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // on top of a security warning, which StripWarningErasureTest exists to forbid.
           //
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
-          if (!mE2EEStrip.lastContactWriteReachedDisk()) {
-            Toast.makeText(getContext(),
-                String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
-                Toast.LENGTH_LONG).show();
-          }
           setCautionBesideAnyWarning("Contact " + labelFor(chosenContact) + " created. This key reached you through the messenger and the app cannot tell whose it is - compare the security number by voice before sending anything private.", chosenContact);
         }
       } else {

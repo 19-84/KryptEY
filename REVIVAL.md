@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-two sections, written in the order things were found rather than by subject, so the
+Sixty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -118,6 +118,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The cross-app tests, and what they cost to make honest](#the-cross-app-tests-and-what-they-cost-to-make-honest)
 - [A green test that could not go red](#a-green-test-that-could-not-go-red)
 - [An unreadable history is not an empty one](#an-unreadable-history-is-not-an-empty-one)
+- [The round that fixed a sentence by breaking its opposite](#the-round-that-fixed-a-sentence-by-breaking-its-opposite)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4234,3 +4235,75 @@ test driving the invite button produced nothing at all, with no toast and an emp
 the cause was not found within the time this tick had. The test was deleted rather than committed
 red or left asserting less than its name. The claim rests on reading plus the device test, and that
 is written here rather than implied by an absent test.
+
+## The round that fixed a sentence by breaking its opposite
+
+**Round nineteen found that the previous round's best fix had inverted the one arm where the old
+message was true.** The chat-log screen has two ways of showing nothing, and they mean opposite
+things: the history is empty, or the history cannot be opened. The screen looks identical in both —
+an empty list under "Message log with: X" — so the sentence beside it is the whole of the
+distinction. Round eighteen replaced *"There are no saved messages for this contact"* with the
+unreadable-log sentence on **both** arms.
+
+The reasoning was that the exception is called `UnknownContactException`, so it must be a lookup that
+failed. It is not. There is exactly one throw site reachable from that call, and reaching it requires
+`getUnencryptedMessages()` to have **returned**: the log was opened, read, and held nothing for this
+contact. An unreadable log throws `ChatLogUnavailableException` out of the same call and lands in the
+arm below; a null account returns null and throws nothing at all.
+
+So the app told every contact with no messages yet — the state **every** contact starts in, and the
+state a user is in **immediately after successfully clearing their history** — that their messages
+"are still on this device", and to "not assume anything here has been removed". A deletion that
+worked, reported as a deletion to distrust. That is the direction the sentence was written to
+prevent, arrived at by the fix for it.
+
+Nothing failed, because no test tied either sentence to a state; both arms only had to not crash.
+`EachChatLogSentenceMatchesItsStateTest` ties them, asserting the exact text on purpose — the point
+is *which of two sentences* a user reads, so a test satisfied by either is not testing the thing that
+broke. Restoring the old sentence with the old mutant re-applied fails it.
+
+**A second notice named a cause the user can disprove in one tap.** One flag,
+`mLastChatLogWriteFailed`, is raised by two different failures — a log that cannot be READ, and a log
+that reads fine but whose WRITE does not land — and the notice named only the first: "because the
+stored history cannot be opened". On the write arm the chat-log button opens the very history the
+toast says cannot be opened, showing the message it says was not saved, which then vanishes at the
+next raise. The cause clause is gone; what is true on both arms stays. This matters past accuracy:
+this app's entire trust surface is sentences, and the only thing separating a key substitution from
+an ordinary reconnection is a notice the user is asked to believe. One they can catch out about
+storage is one they will not believe about a key. `AnoticeMayNotNameAcauseTheScreenDisprovesTest`
+drives the write arm and asserts the state, not the wording — it opens the log in the same state the
+notice describes and demands the app not contradict itself between the two.
+
+**And the lost-contact-write notice reached one of the three arms that create a contact.** The read
+sat nested inside "a bundle arrived" *and* "a session was established", while the flag is set by
+`createAndAddContactToContacts` above, whichever of three exits is then taken. The two it missed:
+
+- a **refused** bundle — the row exists in memory, the banner gives the ask-for-a-fresh-invite
+  advice, and the lost write is not mentioned. The user asks for another invite, gets one, and the
+  contact vanishes again.
+- a **ciphertext-only** envelope — the arm whose own comment records that it pins a key by
+  trust-on-first-use. A contact is created, a key is pinned, a message is decrypted and shown, and
+  nothing is said at all: the account write can fail while the LOG write succeeds, so the message
+  notice does not cover it either. The user is sent to compare a security number for a contact that
+  is about to disappear.
+
+The check now sits where the row is created, above all three. `EveryArmThatCreatesAcontactReportsAlostWriteTest`
+drives each arm with a store whose account write fails and demands the notice from each, with a
+fourth test asserting a successful write says nothing — without which the other three would pass on a
+notice that always fires. Deleting the hoisted check kills exactly the three, and leaves the fourth
+green.
+
+**The invite-button test dropped last round is reinstated, and the cause was a fixture error rather
+than a defect.** The strip does not commit the invite itself: it hands the text to
+`Listener.onTextInput`, and in production that listener is `LatinIME`, which wraps it in an `Event`
+and commits it through `InputLogic`. The deleted test's listener ignored the text, so nothing arrived
+and a working button looked broken. `TheInviteGoesToTheHostAppTest` gives the listener the job
+`LatinIME` does and asserts what lands in the host field parses back to a key bundle. Two mutants
+kill it: not delivering, and delivering something that is not a bundle.
+
+Both round-nineteen wording defects are the same shape as the one this document already records
+about comments and about its own counts — *a statement that was true when written, kept after the
+thing it described moved*. The difference here is that the round-eighteen inversion was not drift.
+It was reasoning from a type's name instead of from its throw site, in a file where the type name and
+the meaning point in opposite directions, and it shipped because the arm had a control for crashing
+and none for lying.
