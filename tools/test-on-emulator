@@ -140,25 +140,65 @@ echo "==> enabling the recording autofill service"
 docker exec "$NAME" $ADB shell settings put secure autofill_service \
   'com.amnesica.kryptey/com.amnesica.kryptey.inputmethod.RecordingAutofillService'
 
-echo "==> running the instrumentation tests"
-out=$(docker exec "$NAME" $ADB shell am instrument -w -r \
-        com.amnesica.kryptey.test/androidx.test.runner.AndroidJUnitRunner)
-echo "$out"
+# Two attempts, and the second one is loud about being a second one.
+#
+# The guest runs under software emulation with no /dev/kvm, and this harness has now produced two
+# failures that did not reproduce: a native abort deep in the framework's view-tree draw with no
+# application frame in the stack, and an instrumentation process that died before a single test
+# started, leaving the crash buffer empty. Neither is a test result. The script's own header already
+# records that multi-core TCG crashed the guest's system server, which is the same class of thing.
+#
+# A retry is a real risk - it can hide a test that fails intermittently for a reason of its own - so
+# it is bounded at one, the first attempt's device state is still captured and printed, and a run
+# that only passed the second time says so in its result line rather than reporting a clean pass.
+# A reproducible failure fails both attempts and is reported exactly as before.
+run_instrumentation() {
+  docker exec "$NAME" $ADB shell am instrument -w -r \
+    com.amnesica.kryptey.test/androidx.test.runner.AndroidJUnitRunner
+}
 
 # am instrument exits 0 whether the tests passed or not, so the result has to be read out of
 # the stream rather than taken from the exit status.
 # "OK (0 tests)" is also an OK line. A filter that matches nothing, or a test APK that contributed
 # no runnable tests, would otherwise be reported as a pass - which is the vacuous-green shape this
 # repo has had to unpick more than once.
-if echo "$out" | grep -qE '^OK \([1-9][0-9]* tests?\)'; then
-  echo "==> PASSED"
-else
-  echo "==> FAILED"
+passed() {
+  echo "$1" | grep -qE '^OK \([1-9][0-9]* tests?\)'
+}
+
+capture_device_state() {
   # The container is about to be removed by the EXIT trap, taking with it the only copy of what
   # the device was doing - and re-running costs a full cold boot.
-  echo "==> capturing device state before teardown"
+  echo "==> capturing device state"
   docker exec "$NAME" $ADB logcat -d -b crash 2>/dev/null | tail -60 || true
+  # The main buffer too: the failure that started this retry left the crash buffer empty, so the
+  # only place anything about it could have been was here.
+  docker exec "$NAME" $ADB logcat -d 2>/dev/null | tail -80 || true
   docker exec "$NAME" $ADB shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' || true
   docker exec "$NAME" $ADB shell dumpsys input_method 2>/dev/null | grep -E 'mCurId|mCurMethodId|mBoundToMethod' || true
-  exit 1
+}
+
+echo "==> running the instrumentation tests"
+out=$(run_instrumentation)
+echo "$out"
+
+if passed "$out"; then
+  echo "==> PASSED"
+  exit 0
 fi
+
+capture_device_state
+echo "==> the first attempt did not pass; retrying ONCE, because this harness has produced"
+echo "==> failures that did not reproduce. A real failure will fail this attempt too."
+out=$(run_instrumentation)
+echo "$out"
+
+if passed "$out"; then
+  echo "==> PASSED ON THE SECOND ATTEMPT - the first attempt did NOT pass; its device state is"
+  echo "==> printed above. Treat this as a flake to be explained, not as a clean run."
+  exit 0
+fi
+
+echo "==> FAILED"
+capture_device_state
+exit 1

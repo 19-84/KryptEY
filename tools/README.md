@@ -96,6 +96,17 @@ There is no `/dev/kvm` on this machine and the CPU exposes no virtualisation ext
 read for a long time as "an emulator cannot run here". It was the wrong conclusion: KVM is an
 accelerator, and `-no-accel` makes QEMU emulate the guest in software instead. Slow, not impossible.
 
+**The suite is retried once, loudly.** Two failures have now been observed that did not reproduce:
+a native abort deep in the framework's view-tree draw with no application frame in the stack, and an
+instrumentation process that died before a single test started with an empty crash buffer. Neither
+is a test result, and re-running by hand to find out costs a cold boot. So the script runs the suite
+a second time when the first does not pass — once, never more — and a run that only passed the
+second time says `PASSED ON THE SECOND ATTEMPT` rather than reporting a clean pass, with the first
+attempt's crash log, main log tail, window focus and input-method state printed above it. A retry
+can hide a test that fails intermittently for a reason of its own, which is why the result line
+refuses to look like a clean one: treat it as a flake to be explained. A reproducible failure fails
+both attempts and is reported exactly as before.
+
 Two things are easy to trip over:
 
 - **x86_64 is not a shipped ABI.** The splits produce `arm64-v8a` and `armeabi-v7a`, neither of
