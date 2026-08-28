@@ -71,7 +71,16 @@ public class EveryStripFieldIsClassifiedTest {
       // because it is the only thing between the user and sending to somebody the app has told
       // them not to send to; a rebuild that dropped it would put "do not send them anything" back
       // on screen with Encrypt live, and a configuration change is host-forceable.
-      "mContactsNotOnDisk"));
+      "mContactsNotOnDisk",
+      // A notice about the store rather than about a contact - a deletion whose log write failed,
+      // leaving plaintext owned by no row. Carried because the condition survives a rebuild and
+      // nothing re-asserts it: the user's one chance to learn of it would be spent on whichever
+      // rotation happened first.
+      "mStandingStoreNotice",
+      // The log-write count when that notice went up. Carried with it: a fresh strip starts this
+      // below every real count, so dropping it would clear the notice on the first repaint after a
+      // rotation - silently, and the condition is never re-asserted.
+      "mLogWritesLandedWhenNoticeRaised"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

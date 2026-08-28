@@ -2505,6 +2505,11 @@ public class SignalProtocolMain {
    */
   private long mAccountWritesLanded = 0;
 
+  public static long messageLogWritesLanded() {
+    return sInstance == null || sInstance.mStorageHelper == null ? 0
+        : sInstance.mStorageHelper.messageLogWritesLanded();
+  }
+
   public static long accountWritesLanded() {
     return sInstance == null ? 0 : sInstance.mAccountWritesLanded;
   }

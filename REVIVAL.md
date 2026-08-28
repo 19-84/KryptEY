@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-nine sections, written in the order things were found rather than by subject, so the
+Eighty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -135,6 +135,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Comparing the arms instead of remembering them](#comparing-the-arms-instead-of-remembering-them)
 - [One sentence doing four jobs](#one-sentence-doing-four-jobs)
 - [A row with no key, and the arm that filled it](#a-row-with-no-key-and-the-arm-that-filled-it)
+- [Two facts, one slot, again](#two-facts-one-slot-again)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5039,3 +5040,30 @@ than residue: that paste pinned a key at an address that held none, which is exa
 caution describes — it had simply never been said on that path. What those tests were actually
 guarding, that "always warn" must not pass them, is asked of **warnings** now, which is what the
 guard was for.
+
+## Two facts, one slot, again
+
+**The notice that a deletion left plaintext behind was put in the caution slot, and the caution slot
+holds one thing.** So the routine "Contact X created. Compare the security number" posted on the very
+next add destroyed it — and a messenger can time that: relay an invite straight after the failed
+deletion, the user adds the contact because adding contacts is what this app is for, and the notice
+is gone. It also names no contact, which `clearCautionIfAbout` reads as "about anyone", so verifying
+or deleting *anybody* cleared it too. Nothing re-asserts it, and it is the user's only chance to
+learn of a condition no screen can otherwise show and their one erasure action cannot reach.
+
+It has a slot of its own now. The previous commit's claim that ordering alone made it well-behaved
+was wrong in both directions at once: too easy to lose in the ordinary case, and unclearable in the
+case that produces it.
+
+**And it has a real resolution rather than none.** The orphaned entries were already removed from the
+in-memory log by the deletion; only the write failed. So the next message-log write that *does* land
+persists the pruned log and the plaintext is gone — which is why the notice is tied to a
+message-log write counter rather than to anything the user does to a contact. That was the tell: a
+notice that no user action can resolve does not belong in a slot cleared by user actions.
+
+**Four checks said "warning or caution" and had to learn about a third kind.** `mayOverwriteInfoBanner`,
+the rebuild repaint, the reset-on-delete and the chosen-contact repaint were each written as an
+explicit pair, so adding a third standing item meant finding all four — and the one that was missed
+first is the one the test caught: the plain "Chosen contact: X" line painted straight over the
+notice. They ask one shared question now, which is what should have been there before a third kind
+existed.

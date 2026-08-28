@@ -297,4 +297,73 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
     assertTrue("a deletion where both files committed must not warn about leftover plaintext: "
             + banner(), !banner().contains("could not be deleted"));
   }
+
+  /**
+   * The leftover-plaintext notice survives the next ordinary contact add.
+   *
+   * <p>It shared the single caution slot, so the routine "Contact X created. Compare the security
+   * number" posted on the very next add destroyed it — and a messenger can time that: relay an
+   * invite straight after the failed deletion, the user adds the contact because adding contacts is
+   * what this app is for, and the notice is gone. Nothing re-asserts it. It is the user's only
+   * chance to learn of a condition no screen can otherwise show and their one erasure action cannot
+   * reach.
+   */
+  @Test
+  public void thestoreNoticeSurvivesTheNextContactAdd() {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return true;
+          }
+
+          @Override
+          public boolean lastMessageLogWriteSucceeded() {
+            return false;
+          }
+        });
+    strip.removeContact(bob);
+    assertTrue("precondition: the notice must be up: " + banner(),
+        banner().contains("could not be deleted"));
+
+    // Any routine caution about any contact.
+    strip.setCautionForTest("Contact Carol Smith created. Compare the security number by voice.",
+        bob);
+
+    assertTrue("a routine caution about a contact must not destroy a notice about the store - they "
+            + "are different facts and the store one is never said again: " + banner(),
+        banner().contains("could not be deleted"));
+  }
+
+  /**
+   * And verifying somebody does not clear it either.
+   *
+   * <p>The notice names no contact, because the contact it is about is gone. {@code
+   * clearCautionIfAbout} reads a null address as "about anyone", so while it lived in the caution
+   * slot, verifying or deleting <em>anybody</em> took it down.
+   */
+  @Test
+  public void thestoreNoticeIsNotClearedByActingOnSomeoneElse() {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return true;
+          }
+
+          @Override
+          public boolean lastMessageLogWriteSucceeded() {
+            return false;
+          }
+        });
+    strip.removeContact(bob);
+    assertTrue("precondition", banner().contains("could not be deleted"));
+
+    strip.selectContact(bob);
+    strip.showVerifyContactForTest(bob);
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+
+    assertTrue("acting on a contact says nothing about whether the log still holds somebody else's "
+            + "plaintext: " + banner(), banner().contains("could not be deleted"));
+  }
 }

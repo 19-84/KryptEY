@@ -475,6 +475,13 @@ public class StorageHelper {
   /** Whether the last {@code storeAllInformationInSharedPreferences} got the log to disk. */
   private boolean mLastMessageLogWriteSucceeded = true;
 
+  /** How many message-log writes have landed; see the increment for what reads it. */
+  private long mMessageLogWritesLanded = 0;
+
+  public long messageLogWritesLanded() {
+    return mMessageLogWritesLanded;
+  }
+
   public boolean lastMessageLogWriteSucceeded() {
     return mLastMessageLogWriteSucceeded;
   }
@@ -632,6 +639,10 @@ public class StorageHelper {
     // result. They are different facts: a lost account write costs a trust decision, a lost log
     // write costs a message from the history, and the app says different things about each.
     mLastMessageLogWriteSucceeded = storeMessageLog(account);
+    // Counted, so a notice about plaintext the log could not drop can tell whether it still holds.
+    // The entries were already removed from the in-memory log by the deletion; only the write
+    // failed, so the next log write that lands persists the pruned log and the orphans are gone.
+    if (mLastMessageLogWriteSucceeded) mMessageLogWritesLanded++;
 
     final Map<String, String> batch = new LinkedHashMap<>();
     put(batch, ProtocolIdentifier.METADATA_STORE, account.getMetadataStore());

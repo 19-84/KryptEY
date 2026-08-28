@@ -326,6 +326,11 @@ public class E2EEStrip {
     return SignalProtocolMain.lastDeletionLeftMessagesBehind();
   }
 
+  /** @see SignalProtocolMain#messageLogWritesLanded */
+  public long messageLogWritesLanded() {
+    return SignalProtocolMain.messageLogWritesLanded();
+  }
+
   /** @see SignalProtocolMain#accountWritesLanded */
   public long accountWritesLanded() {
     return SignalProtocolMain.accountWritesLanded();

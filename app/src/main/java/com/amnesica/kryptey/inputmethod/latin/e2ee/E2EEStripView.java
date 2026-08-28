@@ -1871,6 +1871,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private final Map<String, Long> mContactsNotOnDisk = new HashMap<>();
 
+  /**
+   * A notice about the store rather than about a contact, kept apart from the caution slot.
+   *
+   * <p>There is one thing that goes here: a deletion whose account write landed and whose message
+   * log write did not, leaving that contact's plaintext in the log owned by no row. It is the
+   * user's only chance to learn of a condition no screen can otherwise show and their one erasure
+   * action cannot reach.
+   *
+   * <p>It cannot live in {@code mStandingCaution}. There is one caution slot, so the next ordinary
+   * contact add overwrote it; and it names no contact, which {@code clearCautionIfAbout} reads as
+   * "about anyone", so verifying or deleting anybody cleared it as well. Both are trivially
+   * reachable straight after the deletion that raises it.
+   */
+  private String mStandingStoreNotice;
+
+  /** The message-log write count when that notice went up; see {@link #clearAstoreNoticeThatHasBeenResolved}. */
+  private long mLogWritesLandedWhenNoticeRaised = -1;
+
   private void refreshActionButtons() {
     // The same guard setMainInfoTextTextChangeListener carries, and no more: the buttons come from
     // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
@@ -2605,7 +2623,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // The javadoc on mWarningStanding says it is never cleared by anything the messenger can
     // cause. These two paths were the exception, and the exception was reachable with one ordinary
     // chat line.
-    if (mStandingCaution != null) {
+    // The store notice counts here for the same reason the caution does: this method runs from
+    // deleting ANY contact, which is precisely the moment the notice is raised.
+    if (mStandingCaution != null || mStandingStoreNotice != null) {
       // The other unconditional banner writer, and the one the caution work did not reach. It runs
       // from deleting ANY contact - so deleting Alice painted "No contact chosen" over a caution
       // about Carol, which is precisely the cross-contact erase clearCautionIfAbout was scoped to
@@ -2733,16 +2753,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * through this whenever a warning is standing.
    */
   private String warningWithRecipient() {
-    if (mStandingWarningText == null && mStandingCaution == null) return null;
-    final String body;
-    if (mStandingWarningText == null) {
-      body = mStandingCaution;
-    } else if (mStandingCaution == null) {
-      body = mStandingWarningText;
-    } else {
-      body = mStandingWarningText + "\n\n" + mStandingCaution;
+    if (mStandingWarningText == null && mStandingCaution == null && mStandingStoreNotice == null) {
+      return null;
     }
-    if (chosenContact == null) return body;
+    final StringBuilder body = new StringBuilder();
+    if (mStandingWarningText != null) body.append(mStandingWarningText);
+    if (mStandingCaution != null) {
+      if (body.length() > 0) body.append("\n\n");
+      body.append(mStandingCaution);
+    }
+    // Last, and in a slot of its own. It is about the store rather than about a contact, so it has
+    // no address - and everything else here is addressed. Sharing the caution slot meant the next
+    // ordinary contact add overwrote it, and clearCautionIfAbout treats a null address as "about
+    // anyone", so verifying or deleting anybody destroyed it too. It reports a condition that is
+    // permanent until the log can be rewritten and is never re-asserted, so losing it once loses it
+    // for good.
+    if (mStandingStoreNotice != null) {
+      if (body.length() > 0) body.append("\n\n");
+      body.append(mStandingStoreNotice);
+    }
+    if (chosenContact == null) return body.toString();
     return body + "\n\nSending to: " + labelFor(chosenContact);
   }
 
@@ -3056,10 +3086,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   boolean mayOverwriteInfoBanner() {
-    if (storageIsUnreadable() || mWarningStanding || mStandingCaution != null) {
-      // The caution counts. It is the notice shown when a key was pinned and the app noticed
+    if (storageIsUnreadable() || aStandingItemHoldsTheBanner()) {
+      // Through the shared predicate, so a fourth kind of standing item cannot be forgotten here.
+      //
+      // The caution counts: it is the notice shown when a key was pinned and the app noticed
       // nothing about it, which is what a successful substitution looks like - so letting an
       // ordinary clipboard event paint over it is the erase, whether or not a warning is up too.
+      // The store notice counts for the same reason and had to be added to four separate checks
+      // written as "warning or caution", which is why they now ask one question.
       Log.i(TAG, "A security warning is on screen; leaving it in place");
       return false;
     }
@@ -3130,8 +3164,29 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * been told - the reset path, the recipient repaint, the session-failure line. Each fix taught one
    * more copy. This is the thing they should all have been asking.
    */
+  /**
+   * Takes the store notice down once a later message-log write has landed.
+   *
+   * <p>The orphaned entries were already removed from the in-memory log by the deletion; only the
+   * write failed. So the next message-log write that does land persists the pruned log, and the
+   * plaintext the notice is about is gone. That is a real resolution rather than a timeout, and it
+   * is the only one - the condition cannot be resolved by anything the user does to a contact,
+   * which is why sharing the contact-addressed caution slot was wrong in the first place.
+   */
+  private void clearAstoreNoticeThatHasBeenResolved() {
+    if (mStandingStoreNotice == null) return;
+    if (mE2EEStrip.messageLogWritesLanded() > mLogWritesLandedWhenNoticeRaised) {
+      mStandingStoreNotice = null;
+      mLogWritesLandedWhenNoticeRaised = -1;
+      setInfoTextViewMessage(mInfoTextView,
+          aStandingItemHoldsTheBanner() ? warningWithRecipient() : INFO_NO_CONTACT_CHOSEN);
+    }
+  }
+
   private boolean aStandingItemHoldsTheBanner() {
-    return mWarningStanding || mStandingCaution != null;
+    // The store notice counts: it holds the banner exactly as the other two do, and leaving it out
+    // meant every routine informational line painted straight over it.
+    return mWarningStanding || mStandingCaution != null || mStandingStoreNotice != null;
   }
 
   private void clearCautionIfAbout(final Contact contact) {
@@ -3436,6 +3491,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      * anything" back on screen with Encrypt live.
      */
     private final Map<String, Long> contactsNotOnDisk;
+    /**
+     * The store notice and the log-write count when it went up.
+     *
+     * <p>Carried because the condition it reports survives a rebuild and nothing re-asserts it: the
+     * user's one chance to learn that a deletion left their plaintext behind would be spent on
+     * whichever rotation happened first.
+     */
+    private final String standingStoreNotice;
+    private final long logWritesLandedWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
@@ -3444,6 +3508,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final String standingCautionAddress, final Map<String, Long> contactsNotOnDisk,
+        final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -3455,6 +3520,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingCaution = standingCaution;
       this.standingCautionAddress = standingCautionAddress;
       this.contactsNotOnDisk = contactsNotOnDisk;
+      this.standingStoreNotice = standingStoreNotice;
+      this.logWritesLandedWhenNoticeRaised = logWritesLandedWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -3532,6 +3599,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
         mStandingCautionAddress, new HashMap<>(mContactsNotOnDisk),
+        mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
         mHostFieldIsPassword, encodingMethod);
   }
 
@@ -3615,9 +3683,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the host app can force.
     mContactsNotOnDisk.clear();
     if (carried.contactsNotOnDisk != null) mContactsNotOnDisk.putAll(carried.contactsNotOnDisk);
+    mStandingStoreNotice = carried.standingStoreNotice;
+    mLogWritesLandedWhenNoticeRaised = carried.logWritesLandedWhenNoticeRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the
     // warning alone - which is the erase this carry exists to stop.
-    if (mWarningStanding || mStandingCaution != null) {
+    if (aStandingItemHoldsTheBanner()) {
       setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
     }
 
@@ -3772,7 +3842,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // A standing caution holds the banner too, and it carries the recipient line itself - so this
     // repaints through the shared builder rather than returning, which would leave "Sending to: X"
     // naming whoever was chosen before.
-    if (mStandingCaution != null) {
+    if (mStandingCaution != null || mStandingStoreNotice != null) {
       setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
       return;
     }
@@ -3955,8 +4025,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // above would have had the very next line erase it. Ordering, not scoping, is what makes it
       // stand.
       if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
-        setCautionBesideAnyWarning(
-            String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)), null);
+        mStandingStoreNotice = String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact));
+        mLogWritesLandedWhenNoticeRaised = mE2EEStrip.messageLogWritesLanded();
+        setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
       }
     }
     loadContactsIntoContactsListView();
