@@ -1512,7 +1512,22 @@ public class SignalProtocolMain {
     return recipient;
   }
 
+  /**
+   * Whether the last deletion removed the contact but could not remove their stored messages.
+   *
+   * <p>Separate from the return value, which answers "did the deletion reach disk". Both facts are
+   * needed and they are different: one costs the user a contact that comes back, the other leaves
+   * their plaintext in a file no screen can reach.
+   */
+  private boolean mLastDeletionLeftMessagesBehind = false;
+
+  public static boolean lastDeletionLeftMessagesBehind() {
+    return sInstance.mLastDeletionLeftMessagesBehind;
+  }
+
   private boolean removeContact(final Contact contactToRemove) {
+    // Cleared at entry, so a caller asking about THIS deletion is never told about a previous one.
+    mLastDeletionLeftMessagesBehind = false;
     ArrayList<Contact> contacts = getContactListFromAccount();
     if (contacts == null) return false;
 
@@ -1627,14 +1642,28 @@ public class SignalProtocolMain {
     // "they and their saved messages will come back", and until now that was true only after a
     // reload the user cannot trigger.
     //
-    // What comes back is the ROW, not everything. The swept messages and the deleted session were
-    // removed from memory above and are not restored here; they are still on disk, because that is
-    // the write that failed, so the next reload brings them. So the honest description of this
-    // state is "the contact is here and their session is not until the keyboard restarts", which is
-    // worse than a clean undo and much better than a contact the user can neither see nor retry.
-    // Encrypting to them meanwhile fails the way any sessionless contact does, which is a refusal
-    // rather than a silent plaintext path.
+    // Everything is restored: the row, the swept messages and the session record. An earlier
+    // version of this comment said the messages and session were NOT restored and would come back
+    // from disk on the next reload - it was written for a partial rollback that has since been
+    // completed, and it survived the change. It is corrected here rather than deleted because a
+    // maintainer reading the old text would have reasoned about a state this code does not produce,
+    // which is the same defect this file records about comments generally.
     final boolean deletionReachedDisk = storeAllAccountInformationInSharedPreferences();
+    // The LOG is a second file with a second commit, and the deletion's success was reported from
+    // the account's result alone.
+    //
+    // storeAllInformationInSharedPreferences writes protocol_messages first and protocol second and
+    // returns only the second. So a log commit that fails while the account commit succeeds - two
+    // independent commits on very differently sized files, which is ordinary on a nearly full disk
+    // - produced a deletion reported as complete: no notice, the standing warning about that
+    // contact cleared, the row gone from disk, and that contact's plaintext still in the log file,
+    // now owned by no row and reachable by no screen. The user's one erasure action can never
+    // remove it afterwards.
+    //
+    // That is the outcome the refusal above this method calls the worse of the two: a contact row
+    // removed while its plaintext stayed behind, which the help text promises does not happen.
+    mLastDeletionLeftMessagesBehind = deletionReachedDisk && mStorageHelper != null
+        && !mStorageHelper.lastMessageLogWriteSucceeded();
     if (!deletionReachedDisk) {
       Log.e(TAG, "The deletion did not reach disk; restoring what it removed so it can be retried");
       mAccount.setContactList(contacts);

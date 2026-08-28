@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-four sections, written in the order things were found rather than by subject, so the
+Seventy-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -130,6 +130,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Four of my own fixes, undone](#four-of-my-own-fixes-undone)
 - [Keeping a fact where nothing else owns it](#keeping-a-fact-where-nothing-else-owns-it)
 - [Two mutants that survived, and what they were hiding](#two-mutants-that-survived-and-what-they-were-hiding)
+- [The file the deletion did not check](#the-file-the-deletion-did-not-check)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4851,3 +4852,44 @@ that the counter has exactly one increment so the exclusion cannot be sidesteppe
 caught a predicate I had made mutate while it sat on the right of an `&&`, and the
 discarded-result guard caught the reload's write. Both were correct, and both caught the defect
 before a review round did. That is the first time in this log the guards have got there first.
+
+## The file the deletion did not check
+
+**The store is two files with two commits, and the deletion's success was read from one of them.**
+
+`storeAllInformationInSharedPreferences` writes `protocol_messages` first and `protocol` second, and
+returns only the second. So a log commit that fails while the account commit succeeds — two
+independent commits on very differently sized files, which is ordinary on a nearly full disk —
+produced a deletion reported as **complete**: no notice, the standing warning about that contact
+cleared, the row gone from disk, and that contact's plaintext still sitting in the log file, owned by
+no row. `belongsTo` compares the full rendered address, so nothing matches it afterwards. It is
+beyond the one erasure action the user has, permanently.
+
+That is the outcome the app's own deletion refusal calls the worse of the two — *a contact row
+removed while its plaintext stayed behind* — reached through the one file the return value did not
+cover. It is now reported as its own fact, on the banner, worded as what it is: the contact went, the
+messages did not, and nothing on this device can reach them now.
+
+**A failed deletion also had no durable surface.** It was the last member of this family whose only
+notice was a toast — three and a half seconds, and then a screen that looks like an ordinary success
+with the row, the session, the pinned key and the messages all restored. A user who deleted a contact
+because they suspected a key substitution, which is this app's own standard advice, had no way to
+learn the deletion had not happened. It gets the standing caution and the send-refusal the failed
+*add* has had for several rounds.
+
+**Ordering, not scoping, is what makes that caution stand.** The leftover-plaintext caution names no
+contact — the contact is gone, so nothing about them could ever take it down, and a caution nobody
+can clear is the dead end this file keeps closing. But a null address is exactly what
+`clearCautionIfAbout` treats as "about anyone", so posting it where the other notices go had the very
+next line erase it. It is posted after the clears.
+
+**And the rotation notice reached one of three arms the messenger chooses between.**
+`getMessageType` dispatches on field presence alone, so appending arbitrary bytes as a ciphertext
+moves a bundle from the bundle-only arm to the combined one. The reader lived on the bundle-only arm:
+**one appended field and the notice disappeared** — and the combined arm is the *ordinary* shape for
+a signed-pre-key rotation, so the arm with no reader was the common one. Both arms call one helper
+now.
+
+That is the fourth time a control in this file reached one of two or three places that needed it. The
+pattern is specific enough to state as a rule: **when the messenger picks which branch handles its
+input, a control on one branch is not a control.**

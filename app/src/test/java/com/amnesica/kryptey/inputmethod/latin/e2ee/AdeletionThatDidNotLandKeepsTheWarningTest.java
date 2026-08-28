@@ -248,4 +248,53 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
             + "them fails to decrypt, and the advice for that is delete-and-re-invite",
         account.getSignalProtocolStore().containsSession(bobAddress));
   }
+
+  /**
+   * A deletion that left the messages behind says so.
+   *
+   * <p>The store is two files with two commits — the log first, the account second — and the
+   * deletion's success was reported from the second alone. A log commit that fails while the account
+   * commit succeeds produced a deletion reported as complete: no notice, the standing warning about
+   * that contact cleared, the row gone from disk, and that contact's plaintext still in the log file
+   * owned by no row. `belongsTo` compares the full rendered address, so nothing matches it
+   * afterwards — it is beyond the one erasure action the user has.
+   *
+   * <p>That is the outcome the app's own deletion refusal calls the worse of the two, and the help
+   * text now promises the opposite.
+   */
+  @Test
+  public void adeletionThatCouldNotRemoveTheMessagesSaysSo() {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return true;   // the account file commits
+          }
+
+          @Override
+          public boolean lastMessageLogWriteSucceeded() {
+            return false;  // the log file does not
+          }
+        });
+
+    strip.removeContact(bob);
+
+    assertTrue("the contact really is deleted - the account write landed",
+        !SignalProtocolMain.getInstance().getAccount().getContactList().contains(bob));
+    assertTrue("but their plaintext is still on the device and nothing can reach it, which the "
+            + "user must be told: reporting this as a clean deletion is the app breaking the one "
+            + "promise its help text makes about erasure. Banner: " + banner(),
+        banner().contains("could not be deleted"));
+  }
+
+  /** And a clean deletion says nothing of the sort. */
+  @Test
+  public void acleanDeletionDoesNotClaimMessagesWereLeftBehind() {
+    TestStores.writesLand();
+
+    strip.removeContact(bob);
+
+    assertTrue("a deletion where both files committed must not warn about leftover plaintext: "
+            + banner(), !banner().contains("could not be deleted"));
+  }
 }

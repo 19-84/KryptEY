@@ -129,4 +129,38 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
     assertTrue("a healthy rotation must not claim a storage failure: " + banner(),
         !banner().contains("could not be saved"));
   }
+
+  /**
+   * And the messenger cannot move the envelope to an arm with no reader.
+   *
+   * <p>{@code getMessageType} dispatches on field presence alone, so appending arbitrary bytes as a
+   * ciphertext moves a bundle from the bundle-only arm to the combined one. The reader lived on the
+   * bundle-only arm, so one appended field made the notice disappear — and the combined arm is the
+   * <em>ordinary</em> shape for a signed-pre-key rotation, which means the arm with no reader was
+   * the common one.
+   */
+  @Test
+  public void appendingAciphertextDoesNotSilenceTheReport() throws Exception {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+
+    // The same rotation, with bytes stapled on. One field.
+    final MessageEnvelope rotation = EnvelopeCodec.fromWire(rotatedBundle);
+    rotation.setCiphertextMessage(new byte[] {3, 9, 9, 9, 9, 9, 9, 9});
+    rotation.setCiphertextType(2);
+    final MessageEnvelope combined =
+        EnvelopeCodec.fromWire(EnvelopeCodec.toWire(rotation));
+
+    strip.processUpdatedPreKeyResponseForTest(combined, bob);
+
+    assertTrue("the notice must not depend on which arm the messenger routed the envelope to. "
+            + "Appending one field moved it to the arm with no reader, and that arm is the "
+            + "ordinary shape for a rotation. Banner: " + banner(),
+        banner().contains("could not be saved"));
+  }
 }

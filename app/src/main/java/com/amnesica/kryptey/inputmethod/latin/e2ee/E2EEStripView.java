@@ -276,6 +276,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_CONTACT_NOT_SAVED = "Not saved: contact %s was set up here, but it could not be saved - the app could not write to its own storage. They will be gone once this keyboard restarts. Do not send them anything until you have added them again successfully.";
 
 
+  /**
+   * The contact went; their stored messages did not.
+   *
+   * <p>Two files, two commits: the log is written first and the account second, and only the second
+   * decided whether the deletion was reported as done. A log commit that fails while the account
+   * commit succeeds leaves that contact's plaintext in the log file owned by no row - unreachable
+   * by any screen, and beyond the one erasure action the user has. Said out loud because it is the
+   * outcome the app's own refusal elsewhere calls the worse of the two, and because the help text
+   * now promises the opposite.
+   */
+  private final String INFO_DELETED_BUT_MESSAGES_REMAIN = "%s was removed, but their saved messages could not be deleted - the app could not write to its own storage. Those messages are still on this device and no screen can reach them now. Try deleting another contact once the device has free space, which rewrites the same file.";
+
   /** A deletion that did not reach disk, which the next raise will undo. */
   private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
 
@@ -2423,25 +2435,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final boolean usable =
           decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
       warnIfKeyWasRejected(sender);
-      // A rotation whose write did not land, on the arm that had no reader for it.
-      //
-      // The flag was recorded on every buildSession and read in exactly one place, inside
-      // addContact - so a key rotation from an EXISTING contact was written down and never
-      // reported. That is the same "delivered but not recorded" silence the message paths were
-      // fixed for, about a key rather than a message: the new key and the session built from it
-      // exist in memory only, the user is told the contact was detected, and the next reload
-      // restores the old session while the peer has moved on. Every message after that fails to
-      // decrypt, and this app's standard advice for that is delete-and-re-invite, which is the
-      // key-substitution window this file exists to keep shut.
-      if (!mE2EEStrip.lastSessionWriteReachedDisk()) {
-        rememberContactIsNotOnDisk(chosenContact);
-        Toast.makeText(getContext(),
-            String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
-            Toast.LENGTH_LONG).show();
-        setCautionBesideAnyWarning(
-            String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)), chosenContact);
-        return;
-      }
+      if (reportIfTheRotationWasNotSaved()) return;
       // Only if there is actually a session. Otherwise the refusal notice written above stands,
       // instead of being painted over by a line saying the contact was detected.
       if (usable) setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
@@ -2479,6 +2473,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return true;
   }
 
+  /**
+   * Reports a key rotation whose write did not land, and whether it did.
+   *
+   * <p>Shared, because the reader existed on one of the three arms an envelope can take and the
+   * messenger chooses the arm. {@code getMessageType} dispatches on field presence alone, so
+   * appending any bytes as a ciphertext to a bundle moves it from the bundle-only arm to the
+   * combined one - one field, and the notice disappeared. The combined arm is also the ORDINARY
+   * shape for a signed-pre-key rotation, so the arm with no reader was the common one.
+   *
+   * <p>What is at stake: the new key and the session built from it exist in memory only. The user is
+   * told the contact was detected; the next reload restores the old session while the peer has moved
+   * on, every message after that fails to decrypt, and this app's standard advice for a failed
+   * decrypt is delete-and-re-invite - the key-substitution window this file exists to keep shut.
+   */
+  private boolean reportIfTheRotationWasNotSaved() {
+    if (mE2EEStrip.lastSessionWriteReachedDisk()) return false;
+    rememberContactIsNotOnDisk(chosenContact);
+    Toast.makeText(getContext(),
+        String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+        Toast.LENGTH_LONG).show();
+    setCautionBesideAnyWarning(
+        String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)), chosenContact);
+    return true;
+  }
+
   private void processUpdatedPreKeyResponse(MessageEnvelope messageEnvelope, Contact sender) {
     // debug only Toast.makeText(getContext(), "Updated signed pre key detected!", Toast.LENGTH_SHORT).show();
     if (sender == null) {
@@ -2496,6 +2515,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // isSessionCreation is false here so nothing else on this arm ever asked.
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       warnIfKeyWasRejected(sender);
+      // The same reader the sibling arm has. One appended field moves an envelope here, and this
+      // arm is the ordinary shape for a rotation, so it was the common one with no reader at all.
+      if (reportIfTheRotationWasNotSaved()) return;
       // Asked of the BUNDLE, not of the message.
       //
       // This used to read the method's return value, which stopped meaning "the bundle was
@@ -2854,6 +2876,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** The reset an undecodable paste and a cancelled add both reach, for tests. */
   void resetChosenContactAndInfoTextForTest() {
     resetChosenContactAndInfoText();
+  }
+
+  /** Drives the combined bundle-and-message path, for tests. */
+  void processUpdatedPreKeyResponseForTest(final MessageEnvelope envelope, final Contact sender) {
+    processUpdatedPreKeyResponse(envelope, sender);
   }
 
   /** Drives the known-contact bundle path, for tests. */
@@ -3760,6 +3787,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!deleted) {
       Toast.makeText(getContext(), INFO_DELETE_NOT_SAVED, Toast.LENGTH_LONG).show();
       Log.e(TAG, "the deletion could not be written; it will not survive the next raise");
+      // On the surface that lasts, not only in a toast.
+      //
+      // A failed deletion was the one member of this family with no durable notice - three and a
+      // half seconds and then a screen that looks like an ordinary success, with the row, the
+      // session, the pinned key and the messages all restored. A user who deleted a contact because
+      // they suspected a key substitution, which is this app's own standard advice, would have no
+      // way to know the deletion had not happened.
+      setCautionBesideAnyWarning(String.format(INFO_CONTACT_NOT_SAVED, labelFor(contact)), contact);
+      rememberContactIsNotOnDisk(contact);
+    } else if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
+      Toast.makeText(getContext(),
+          String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)),
+          Toast.LENGTH_LONG).show();
+      Log.e(TAG, "the contact was deleted but their stored messages could not be removed");
     }
 
     // Only now, once the deletion has actually happened.
@@ -3799,6 +3840,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // Nothing left to refuse about: the row is gone from disk as well as from memory.
       if (contact != null) {
         mContactsNotOnDisk.remove(String.valueOf(contact.getSignalProtocolAddress()));
+      }
+      // AFTER the clear, which is the only place it survives.
+      //
+      // This caution names no contact - the contact is gone, so nothing about them could ever take
+      // it down, and a caution nobody can clear is the dead end this file keeps closing. But a
+      // null address is exactly what clearCautionIfAbout treats as "about anyone", so posting it
+      // above would have had the very next line erase it. Ordering, not scoping, is what makes it
+      // stand.
+      if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
+        setCautionBesideAnyWarning(
+            String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)), null);
       }
     }
     loadContactsIntoContactsListView();
