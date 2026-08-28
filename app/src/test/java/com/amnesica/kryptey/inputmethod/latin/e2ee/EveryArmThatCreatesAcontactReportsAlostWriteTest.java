@@ -389,10 +389,12 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
         writes.get() > 1);
     final String banner = String.valueOf(
         ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    // The session sentence: this is the state where the row landed and only the session write was
+    // lost, so the contact-row wording would be false in both its claims.
     assertTrue("a session that exists only in memory must be reported. The user is otherwise told "
             + "the session was created and sent off to compare a security number for a key that "
             + "will be gone at the next reload. Banner: " + banner,
-        banner.contains("could not be saved"));
+        banner.contains("could not save the change"));
     assertTrue("and Encrypt must be dark, for the same reason it is when the row is the part that "
             + "was lost", !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
   }
@@ -552,9 +554,16 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
 
     final String banner = String.valueOf(
         ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    // The SESSION sentence, not the contact-row one. The row landed here - only the write inside
+    // decrypt failed - so "they will be gone once this keyboard restarts" would be false, and its
+    // advice, "add them again successfully", is the delete-and-re-invite instruction this project
+    // removed from storage notices because a messenger can provoke the exchange it names.
     assertTrue("the arm that pins by trust-on-first-use must report a lost write, not only the one "
             + "that builds a session from a bundle: " + banner,
-        banner.contains("could not be saved"));
+        banner.contains("could not save the change"));
+    assertTrue("and it must not use the contact-row sentence, whose claims are false when the row "
+            + "landed and whose advice is the key swap: " + banner,
+        !banner.contains("added them again successfully"));
     assertTrue("and sending must be refused until it is saved", strip.sendingIsRefusedForTest());
   }
 

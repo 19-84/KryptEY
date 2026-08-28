@@ -623,6 +623,12 @@ public class MessengerCannotClearAstandingWarningTest {
     NOT_WARNINGS.put("INFO_CONTACT_NOT_SAVED",
         "a Toast in addContact, which also raises warnings - it reports a failed write and does not "
             + "set mWarningStanding");
+    NOT_WARNINGS.put("INFO_SESSION_NOT_SAVED",
+        "the sibling of the line above, and it appears in addContact for the same reason: when the "
+            + "contact ROW landed and the session write did not, the row sentence is false in both "
+            + "of its claims and its advice is delete-and-re-invite. It is a caution and a Toast, "
+            + "not a warning - it never sets mWarningStanding - and it is retired by a later landed "
+            + "write rather than by anything the messenger can do");
   }
 
   /** And the ones deliberately not swept, each with the reason sweeping it would prove nothing. */

@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-eight sections, written in the order things were found rather than by subject, so the
+Eighty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -144,6 +144,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A sentence that travelled further than its meaning](#a-sentence-that-travelled-further-than-its-meaning)
 - [An invariant that was written down and false](#an-invariant-that-was-written-down-and-false)
 - [A warning nobody can answer](#a-warning-nobody-can-answer)
+- [Three call sites, three answers to one question](#three-call-sites-three-answers-to-one-question)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5347,3 +5348,39 @@ already about**. That the flag is what bounds the growth is not obvious, and is 
 separate "have I already said this" guard was written, and the mutant proved it dead — the flag alone
 does the work, because a composed caution marked as a storage notice is no longer something the next
 paste appends to.
+
+## Three call sites, three answers to one question
+
+**The same collision — a storage caution arriving while a pin caution stands — was reached from three
+places and solved three different ways: one appended, one replaced, and one replaced while storing a
+null address.**
+
+Only the first was right, and the reasoning behind it is what the other two were missing: no storage
+sentence contains "compare the security number", so replacing loses the notice that fires *because
+nothing was noticed*, which is what a successful key substitution looks like from inside the app. The
+null-addressed one was worse again — `clearCautionIfAbout` reads a null address as "about anyone", so
+verifying or deleting any contact cleared it.
+
+There is one composer now. It appends only when the standing caution is a pin caution **about this
+contact**, so composing cannot re-scope somebody else's caution onto this address, and it always
+stores the result as a storage notice — which is both true and what bounds it, since a composed
+caution marked that way is not something the next paste appends to again.
+
+**And `addContact` was reporting a lost session write with the contact-row sentence.** In the state
+where the row landed and only the session write failed, that sentence says the contact "will be gone
+once this keyboard restarts" — false, the row is on disk — and instructs the user to "add them again
+successfully", which is the delete-and-re-invite exchange this project spent a commit removing from
+storage notices precisely because a messenger can provoke it. The correct sentence existed twenty
+lines away and says "nothing here needs deleting or re-inviting". The comment justifying the reuse —
+*"same sentence for both, because it is true of both"* — was written before the second sentence
+existed and was wrong the moment it did.
+
+**The guard I built for this could not catch it.** `NostorageFailureAdvisesReInvitingTest` checks that
+no storage notice *contains* re-invite advice. Here the notice was fine and the **state that posted
+it** was wrong — the same sentence, true in one state and false in another. A scan over strings
+cannot see that, and saying so is more useful than widening it until it appears to.
+
+**A completeness guard caught the consequence immediately.** Adding a second sentence to `addContact`
+made `INFO_SESSION_NOT_SAVED` reachable from a method that raises warnings, and the sweep that
+requires every such constant to be swept or excused failed on it within one run — which is the third
+time a mechanical guard here has reported a change's side effect before a review round did.

@@ -89,6 +89,17 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
 
     strip = new E2EEStripView(
         new ContextThemeWrapper(app, R.style.KeyboardTheme_LXX_Pure_Day), null);
+    // The send path writes through this and dereferences it; without one the Encrypt button NPEs.
+    com.amnesica.kryptey.inputmethod.latin.RichInputMethodManager.init(app);
+    final android.view.inputmethod.BaseInputConnection host =
+        new android.view.inputmethod.BaseInputConnection(new android.view.View(app), true);
+    strip.setRichInputConnection(new com.amnesica.kryptey.inputmethod.latin.RichInputConnection(
+        new android.inputmethodservice.InputMethodService() {
+          @Override
+          public android.view.inputmethod.InputConnection getCurrentInputConnection() {
+            return host;
+          }
+        }));
     strip.setListener(new E2EEStripView.Listener() {
       @Override public void onTextInput(final String rawText) { }
       @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
@@ -255,5 +266,39 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
     assertTrue("the storage sentence must appear once however many messages arrive; five pastes "
             + "produced " + copies + " copies, and the messenger chooses how many arrive. Banner "
             + "length " + shown.length(), copies <= 1);
+  }
+
+  /**
+   * The send path composes too, rather than replacing the pin caution.
+   *
+   * <p>The reasoning for composing on the rotation path — the storage sentence says nothing about
+   * comparing a number, so replacing loses the notice that fires because nothing was noticed —
+   * applies unchanged to the send path and to the invite refusal, which were both still replacing.
+   * All three go through one composer now.
+   */
+  @Test
+  public void thesendPathComposesRatherThanReplacingThePinCaution() throws Exception {
+    strip.selectContact(bob);
+    strip.setCautionForTest("A key for Bob Jones has been stored. This key reached you through the "
+        + "messenger and the app cannot tell whose it is - compare the security number by voice "
+        + "before sending anything private.", bob);
+
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_input_field))
+        .setText("something to send");
+    strip.findViewById(R.id.e2ee_button_encrypt).performClick();
+
+    assertTrue("the send's lost key state must be reported: " + banner(),
+        banner().contains("could not save the key state"));
+    assertTrue("and the pin caution must survive it - a messenger-supplied key was pinned by "
+            + "trust-on-first-use, and no storage sentence carries the compare-the-number "
+            + "instruction: " + banner(),
+        banner().contains("compare the security number"));
   }
 }
