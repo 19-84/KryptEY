@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and four sections, written in the order things were found rather than by subject, so the
+One hundred and five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -160,6 +160,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A control on one branch is not a control](#a-control-on-one-branch-is-not-a-control)
 - [A return value that meant something else](#a-return-value-that-meant-something-else)
 - [Two attacks that would work if the library were built differently](#two-attacks-that-would-work-if-the-library-were-built-differently)
+- [Newest first, when it meant oldest first](#newest-first-when-it-meant-oldest-first)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5946,3 +5947,32 @@ round are still open and are real: bundle fields can be spliced between two genu
 same identity, because the one-time pre-key is covered by no signature and the ids are unsigned; and
 `pruneUsedPreKeys` drops the lowest used **id** while the allocator hands out the lowest free id, so
 a recycled id can make the newest invite the first one pruned. Both are next.
+
+## Newest first, when it meant oldest first
+
+**Retention kept the fifty most recently used one-time pre-keys by dropping the lowest ids. The
+allocator hands out the lowest free id, so the record it dropped first was often the newest.**
+
+Used records are kept rather than deleted, because a peer's first message arrives long after the
+invite was handed over and the key must still be there to open it. Fifty are kept, since the whole
+store is rewritten on every message. Which fifty was decided by sorting ids — a proxy for age that
+`findUnusedPreKeyId` breaks: it returns the **lowest free** id, and when a peer's first message
+finally arrives libsignal removes that id and the app regenerates it in place, unused. The next
+invite therefore carries a low id, and the invite after that prunes it.
+
+Measured on the real invite path before the fix: fifty-five invites, the oldest retained id answered,
+and **the invite handed that id was destroyed by the very next invite** while fifty older keys were
+kept. The peer holding it could never be decrypted — their messages simply stopped working, with
+nothing on either screen to say why. The relay does not have to wait for any of it: an invite it
+discards still spent an id, so making invites fail makes the user press Invite again, which is what
+mints and prunes.
+
+Records now carry **when** they were consumed, and retention drops the earliest consumption. The
+sequence is derived from the store rather than persisted beside it, because a counter that restarts
+at zero after a reload would make everything consumed afterwards look older than everything before —
+the same defect through a different door. A record written by an older build carries zero, which
+sorts it oldest: correct, since it was consumed before the field existed.
+
+Two mutants: pruning by id again, and a sequence that never advances. Both are killed by the
+measured case, and the bound itself is pinned separately so the fix cannot quietly become "keep
+everything".
