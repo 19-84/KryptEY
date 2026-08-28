@@ -2543,6 +2543,20 @@ public class SignalProtocolMain {
    */
   private long mMessageLogWritesLanded = 0;
 
+  /**
+   * Whether the stored contact list could not be read, so nothing can be written.
+   *
+   * <p>Exposed because the app had no way to say it. Values are sealed per key, so this one can fail
+   * while the identity key, the address and the protocol store all read fine - and
+   * {@code storageState()} trial-decrypts only the protocol store, so it reports READABLE. The strip
+   * then showed an empty contact list under the ordinary "invite someone" line: byte-identical to a
+   * fresh install, which is the reading the storage warning exists to prevent.
+   */
+  public static boolean contactsAreUnreadable() {
+    return sInstance != null && sInstance.mAccount != null
+        && sInstance.mAccount.contactsWereUnreadable();
+  }
+
   public static long messageLogWritesLanded() {
     return sInstance == null ? 0 : sInstance.mMessageLogWritesLanded;
   }

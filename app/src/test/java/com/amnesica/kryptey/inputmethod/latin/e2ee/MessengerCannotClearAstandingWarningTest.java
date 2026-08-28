@@ -639,5 +639,12 @@ public class MessengerCannotClearAstandingWarningTest {
         "observed through mayOverwriteInfoBanner, which returns false from storageIsUnreadable() "
             + "alone - so both the precondition and the assertion hold regardless of the warning, "
             + "and the row could never fail");
+    EXCUSED.put("INFO_CONTACTS_UNREADABLE",
+        "raised by refreshOpeningMessage from a state the messenger cannot enter or leave: the "
+            + "stored contact list failing to decrypt. It is re-derived on every raise rather than "
+            + "remembered, so an erase would be undone by the next setInputView and sweeping it "
+            + "would measure the re-raise rather than the erase - the same reason its sibling above "
+            + "is excused. What matters about it is that it is SAID at all, which is pinned by "
+            + "AnUnreadableContactListIsNotOverwrittenTest");
   }
 }

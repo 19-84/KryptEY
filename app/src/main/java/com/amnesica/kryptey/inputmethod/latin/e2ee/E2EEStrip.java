@@ -331,6 +331,11 @@ public class E2EEStrip {
     return SignalProtocolMain.lastBundleExportReachedDisk();
   }
 
+  /** @see SignalProtocolMain#contactsAreUnreadable */
+  public boolean contactsAreUnreadable() {
+    return SignalProtocolMain.contactsAreUnreadable();
+  }
+
   /** @see SignalProtocolMain#messageLogWritesLanded */
   public long messageLogWritesLanded() {
     return SignalProtocolMain.messageLogWritesLanded();

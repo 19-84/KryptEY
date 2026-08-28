@@ -100,12 +100,6 @@ public class EveryStripFieldIsClassifiedTest {
       // Rebuilt with the view. Registered in the constructor and now released in surrenderState,
       // which is what stopped the discarded strip running on every clipboard change.
       "mClipboardListener",
-      // Whether the LAST paste carried an invite that did not verify. Deliberately not carried: it
-      // is cleared at the top of every decrypt attempt and read only within that same call, so it
-      // describes one paste rather than a standing condition. A rebuild happens between pastes, so
-      // there is nothing in flight for it to lose - and carrying a per-attempt flag would mean a
-      // rebuild could report the previous paste's outcome about the next one.
-      "mLastInviteWasRefused",
       // Facades over SignalProtocolMain and the IME; hold no state of their own.
       "mE2EEStrip", "mListener", "mMainKeyboardView",
       // Animators on this view's own digit views, cancelled when the digits are blanked.

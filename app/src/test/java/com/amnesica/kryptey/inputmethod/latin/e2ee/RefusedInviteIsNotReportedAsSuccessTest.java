@@ -892,8 +892,14 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
 
     assertTrue("the standing warning must survive - suppressing the refusal's banner text is "
             + "correct: " + bannerText(), bannerText().contains("something else entirely"));
-    assertTrue("but the refusal must still be recorded. Losing the fact with the sentence let one "
-            + "cheap warning buy silence on every tampered invite that followed.",
-        strip.lastInviteWasRefusedForTest());
+    // Asserted on the surface the user actually gets, because that is the whole of what the app
+    // does here. A field recording the fact was tried and removed: nothing read it, so it was a
+    // variable rather than a separation, and the separation that mattered was making the toast
+    // unconditional.
+    assertTrue("the refusal must still be said. Suppressing it with the banner text let one cheap "
+            + "warning buy silence on every tampered invite that followed.",
+        org.robolectric.shadows.ShadowToast.getTextOfLatestToast() != null
+            && org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
+                .contains("changed on the way here"));
   }
 }

@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-nine sections, written in the order things were found rather than by subject, so the
+Ninety sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -145,6 +145,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [An invariant that was written down and false](#an-invariant-that-was-written-down-and-false)
 - [A warning nobody can answer](#a-warning-nobody-can-answer)
 - [Three call sites, three answers to one question](#three-call-sites-three-answers-to-one-question)
+- [The failure the app had no words for](#the-failure-the-app-had-no-words-for)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5384,3 +5385,40 @@ cannot see that, and saying so is more useful than widening it until it appears 
 made `INFO_SESSION_NOT_SAVED` reachable from a method that raises warnings, and the sweep that
 requires every such constant to be swept or excused failed on it within one run — which is the third
 time a mechanical guard here has reported a change's side effect before a review round did.
+
+## The failure the app had no words for
+
+**One storage failure was invisible to everything the app uses to describe storage failures, and it
+is the one that lasts.**
+
+Values are sealed per key, so the CONTACTS value can fail to open while the identity key, the address
+and the protocol store all read fine — and `storageState()` trial-decrypts only the protocol store,
+so it reports READABLE. The strip then showed an **empty contact list** under the ordinary "invite
+someone" line: byte-identical to a fresh install, which is exactly the reading the storage warning
+exists to prevent, because the obvious response to an apparently empty app is to re-invite everyone
+and replace every key already compared.
+
+Meanwhile every write is refused — correctly, since writing would replace the unreadable list with an
+empty one — so the invite the user is invited to send is refused too, **every time**, with advice to
+free up space that can never work. The app was silently permanently broken while saying nothing was
+wrong.
+
+It says it now, as a warning rather than a line, because what it has to head off is the same thing
+the storage warning heads off. It says the contacts are still there, that nothing is being saved on
+purpose, not to re-invite anyone, and that free space will not help — which is the clause that
+matters, because it is the instruction the previous message gave and could not deliver.
+
+**A fact with no consumer is a variable, not a separation.** `mLastInviteWasRefused` was added to
+record the invite-refusal "separately from whether the sentence is painted", and nothing ever read
+it — the toast beside it was the only surface either way. The separation that mattered was making
+that toast unconditional; the field was speculative state on the surface where the last several
+rounds of defects started, and it is gone. Its test now asserts the surface the user actually gets.
+
+**And one fix was reverted for a better reason than it was made.** The decoder refuses any device
+count but one; the encoder still accepts up to 255, and that asymmetry was reported as another
+written-and-false invariant. Tightening the encoder was wrong twice: an attacker does not use it —
+the decoder is the boundary and it is the side that changed — and it is what the tests use to build
+the hostile multi-device wire texts that prove the decoder refuses them. Tightening removed the
+ability to construct the adversarial input while protecting nothing. **The claim is corrected instead
+of enforced**: what is true is that the app's own callers build exactly one device, which is why
+refusing more on the way in cannot reject anything legitimate.

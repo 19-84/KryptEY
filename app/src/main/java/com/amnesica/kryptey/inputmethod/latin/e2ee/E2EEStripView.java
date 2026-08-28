@@ -1944,16 +1944,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean mStandingCautionIsAstorageNotice;
 
-  /**
-   * Whether the last paste carried an invite that did not verify.
-   *
-   * <p>Recorded separately from whether the sentence was painted. The paint is suppressed when a
-   * more serious warning already holds the banner, and for several rounds that suppression took the
-   * fact with it - so raising any cheap warning first bought silence on every tampered invite
-   * afterwards.
-   */
-  private boolean mLastInviteWasRefused;
-
   private String mStandingStoreNotice;
 
   /** The message-log write count when that notice went up; see {@link #clearAstoreNoticeThatHasBeenResolved}. */
@@ -2507,7 +2497,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // contact list is the flow for a NEW contact - and a null address is what clearCautionIfAbout
       // reads as "about anyone". The composer keeps that honest by never composing onto somebody
       // else's caution when there is no address to compare.
-      postStorageCaution(INFO_INVITE_NOT_SAVED, chosenContact);
+      // The accurate sentence for the state that produces this permanently. INFO_INVITE_NOT_SAVED
+      // says "free up space or unlock the device, then make a new one", which is right for a
+      // transient failure and is an instruction that can never be followed when the contact list
+      // cannot be read - there, every write is refused for as long as that holds.
+      postStorageCaution(mE2EEStrip.contactsAreUnreadable()
+          ? INFO_CONTACTS_UNREADABLE : INFO_INVITE_NOT_SAVED, chosenContact);
       Log.e(TAG, "the invite's private halves did not reach disk; refusing to hand it over");
       return;
     }
@@ -2986,8 +2981,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * appearing, and {@code openingMessage} was honest that it covered "WHICH message is chosen, not
    * that the view displays it".
    */
+  /**
+   * The one storage failure the app could not describe.
+   *
+   * <p>When only the CONTACTS value fails to open, everything else reads fine and
+   * {@code storageState()} - which trial-decrypts the protocol store - reports READABLE. The strip
+   * then showed an empty contact list under "invite someone", byte-identical to a fresh install,
+   * which is exactly the reading the storage warning exists to prevent. Meanwhile every write is
+   * refused, so the user could never produce an invite again and was told to free up space, which
+   * will never help.
+   *
+   * <p>Said plainly instead. It is a warning rather than an informational line because it must not
+   * be painted over by ordinary clipboard traffic, and because the response it has to head off -
+   * re-inviting everyone into an apparently empty app - is the same one the storage warning heads
+   * off.
+   */
+  private final String INFO_CONTACTS_UNREADABLE = "Your contacts are still on this device and this app cannot open them right now. It is not saving anything until it can, so that it does not replace them with an empty list. This is not an empty app: do NOT re-invite anyone, because re-inviting replaces keys you have already checked. Freeing up space will not help - this clears when the device can read its own storage again, usually after an unlock or a restart.";
+
   public void refreshOpeningMessage() {
     if (mInfoTextView == null) return;
+    // Asked first, because it is invisible to storageState(): the protocol store opens, so that
+    // reports READABLE while the contact list is unreadable and every write is refused.
+    if (mE2EEStrip.contactsAreUnreadable()) {
+      setWarningMessage(INFO_CONTACTS_UNREADABLE);
+      return;
+    }
     final String opening = openingMessage(SignalProtocolMain.storageState());
     if (INFO_STORAGE_UNREADABLE.equals(opening)) {
       setWarningMessage(opening);
@@ -3152,11 +3170,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   int refusalCountForTest() {
     expireRefusalsSettledByAlaterWrite();
     return mContactsNotOnDisk.size();
-  }
-
-  /** Whether the last paste carried an invite that did not verify, for tests. */
-  boolean lastInviteWasRefusedForTest() {
-    return mLastInviteWasRefused;
   }
 
   /** Whether sending is refused for the chosen contact, for tests. */
@@ -3497,8 +3510,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     meant "the bundle was not refused".
    */
   private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
-    // Cleared per attempt, so a caller asking about THIS paste is never told about a previous one.
-    mLastInviteWasRefused = false;
     // BEFORE the decrypt, because the decrypt itself can create one. decryptMessage's PREKEY_TYPE
     // arm pins by trust-on-first-use whenever the address holds no key, and a refused attached
     // bundle does not stop it - the PreKeySignalMessage carries its own identity key. Asking
@@ -3571,9 +3582,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // one unsigned byte - from every subsequent invite, and "it does not verify, which means it
       // was changed on the way here" is never shown at all. That claim is strictly stronger than
       // anything the pin caution says, and it was the half being dropped.
-      mLastInviteWasRefused = true;
-
       // Said out loud even when the banner is not available to say it on.
+      //
+      // Recorded as a field first, "separately from whether the sentence is painted", and nothing
+      // ever read it - the toast below was the only surface either way. A fact with no consumer is
+      // not a separation of concerns, it is a variable; the separation that mattered was making the
+      // TOAST unconditional, which is what this line is. Removed rather than kept in case somebody
+      // wants it: speculative state on this surface is how the last four rounds of defects started.
       //
       // A toast cannot displace the standing warning, so this keeps the suppression's purpose - a
       // refusal must not paint over a detected key substitution - while still telling the user that

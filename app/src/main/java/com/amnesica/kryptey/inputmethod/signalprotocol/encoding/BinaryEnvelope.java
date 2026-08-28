@@ -217,6 +217,16 @@ public final class BinaryEnvelope {
 
     final List<PreKeyResponseItem> devices = bundle.getDevices();
     if (devices == null || devices.isEmpty()) throw new IOException("bundle has no devices");
+    // Deliberately still 1..255 here, while the DECODER refuses anything but one.
+    //
+    // The asymmetry was reported as a written-and-false invariant and the first fix was to tighten
+    // this too. That was wrong twice over. An attacker does not use this encoder - the decoder is
+    // the boundary, and it is the side that had to change - and this encoder is how the tests build
+    // the hostile multi-device wire texts that prove the decoder refuses them. Tightening here
+    // removed the ability to construct the adversarial input without protecting anything.
+    //
+    // So the claim is corrected rather than enforced: what is true is that the app's own callers
+    // build exactly one device, which is why refusing more on the way in costs nothing.
     if (devices.size() > 255) throw new IOException("too many devices: " + devices.size());
     out.write(devices.size());
 
@@ -259,7 +269,13 @@ public final class BinaryEnvelope {
 
     final int deviceCount = c.u8("deviceCount");
     if (deviceCount == 0) throw new IOException("bundle has no devices");
-    // Exactly one, because exactly one is ever encoded and exactly one is ever read.
+    // Exactly one, because exactly one is ever BUILT by this app and exactly one is ever read.
+    //
+    // Not "exactly one is ever encoded": the encoder still accepts up to 255, deliberately, because
+    // it is what the tests use to construct the hostile input this refusal is about. The property
+    // that matters is about the app's own callers - createPreKeyResponse builds one item, and the
+    // rotation path goes through it - so refusing more on the way in cannot reject anything the app
+    // can legitimately produce.
     //
     // createPreKeyBundle consumes getDevices().get(0) and nothing else, so entries 1..254 were
     // parsed, retained and validated against nothing. Each costs about 300 bytes and can carry up

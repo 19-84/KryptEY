@@ -128,4 +128,46 @@ public class AnUnreadableContactListIsNotOverwrittenTest {
     assertTrue("the load must mark the account, or the write path has nothing to refuse on",
         reloaded.contactsWereUnreadable());
   }
+
+  /**
+   * And the app says so, instead of looking like a fresh install.
+   *
+   * <p>This is the half the refusal did not cover. Values are sealed per key, so the contact list can
+   * fail to open while the identity key, the address and the protocol store all read fine — and
+   * {@code storageState()} trial-decrypts only the protocol store, so it reports READABLE. The strip
+   * then showed an empty contact list under the ordinary "invite someone" line: byte-identical to a
+   * fresh install, which is precisely the reading the storage warning exists to prevent, because the
+   * obvious response to an apparently empty app is to re-invite everyone and replace every key
+   * already compared.
+   *
+   * <p>Worse, every write is refused in that state, so the user could never produce an invite again
+   * — and was told to free up space, an instruction that can never work here.
+   */
+  @Test
+  public void theuserIsToldRatherThanShownAnEmptyApp() throws Exception {
+    SignalProtocolMain.initialize(null);
+    final Account account = SignalProtocolMain.getInstance().getAccount();
+    assertNotNull(account);
+    account.markContactsUnreadable();
+
+    final com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStripView strip =
+        new com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStripView(
+            new android.view.ContextThemeWrapper(
+                org.robolectric.RuntimeEnvironment.getApplication(),
+                com.amnesica.kryptey.inputmethod.R.style.KeyboardTheme_LXX_Pure_Day), null);
+    strip.setListener(new com.amnesica.kryptey.inputmethod.latin.e2ee.E2EEStripView.Listener() {
+      @Override public void onTextInput(final String rawText) { }
+      @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
+    }, strip);
+    strip.refreshOpeningMessage();
+
+    final String banner = String.valueOf(((android.widget.TextView)
+        strip.findViewById(com.amnesica.kryptey.inputmethod.R.id.e2ee_info_text)).getText());
+    assertTrue("the app must say the contacts are there and unreadable, not show an empty list "
+            + "that reads as a fresh install - the obvious response to which is to re-invite "
+            + "everyone and replace every key already compared. Banner: " + banner,
+        banner.contains("cannot open them right now"));
+    assertTrue("and it must not send the user after free space, which cannot fix this: " + banner,
+        banner.contains("Freeing up space will not help"));
+  }
 }
