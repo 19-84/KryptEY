@@ -152,7 +152,15 @@ public class TheButtonsNeverContradictTheBannerTest {
     /** So does tapping the banner, which is a natural gesture on a notice just read. */
     TAP_THE_BANNER,
     /** And ordinary clipboard traffic, which the messenger produces at will. */
-    CLIPBOARD_TRAFFIC
+    CLIPBOARD_TRAFFIC,
+    /**
+     * A configuration change, which the host app can force whenever it likes.
+     *
+     * <p>Included because a refusal has already been lost here once. A rebuild destroys the strip
+     * and everything on it; whatever must survive has to be in {@code CarriedState}, and the
+     * failure mode is silent - the new strip simply does not refuse, and looks correct.
+     */
+    REBUILD
   }
 
   /** The states this cross product walks, named so a failure says which one broke. */
@@ -226,6 +234,21 @@ public class TheButtonsNeverContradictTheBannerTest {
       case CLIPBOARD_TRAFFIC:
         strip.onClipboardHoldsDecryptableItemForTest();
         break;
+      case REBUILD: {
+        final E2EEStripView.CarriedState carried = strip.surrenderState();
+        final E2EEStripView rebuilt = new E2EEStripView(new ContextThemeWrapper(
+            RuntimeEnvironment.getApplication(), R.style.KeyboardTheme_LXX_Pure_Day), null);
+        rebuilt.setListener(new E2EEStripView.Listener() {
+          @Override public void onTextInput(final String rawText) { }
+          @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
+        }, rebuilt);
+        rebuilt.adoptState(carried);
+        strip = rebuilt;
+        // The recipient is deliberately not carried, so the user re-chooses - which is exactly
+        // when a refusal that did not survive would show itself.
+        if (chosen != null) strip.selectContact(chosen);
+        break;
+      }
       case NOTHING:
       default:
         break;
