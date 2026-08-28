@@ -98,6 +98,51 @@ public class DocsDoNotContradictTheAppTest {
   }
 
   /**
+   * The instrumentation-test count in `tools/README.md` must be the real one.
+   *
+   * <p>It said seventeen for several rounds after the suite had grown to thirty, with a
+   * three-group breakdown that accounted for barely half of it. Nothing was wrong with the tests;
+   * what was wrong is that the only document describing them told a reader they had covered ground
+   * they had not, and that reader is whoever next decides whether something needs a device test.
+   *
+   * <p>Counted from the source rather than from a list kept here, so the number cannot drift again
+   * the moment a test is added. The count is textual - `@Test` occurrences outside comments - which
+   * is exactly what a person would count, and that is the number the sentence is claiming.
+   */
+  @Test
+  public void thereadmeQuotesTheRealInstrumentationTestCount() throws IOException {
+    Path androidTests = Paths.get("app/src/androidTest/java");
+    if (!Files.isDirectory(androidTests)) androidTests = Paths.get("src/androidTest/java");
+    assertTrue("the instrumentation sources must be findable from " + Paths.get("").toAbsolutePath(),
+        Files.isDirectory(androidTests));
+
+    int actual = 0;
+    try (java.util.stream.Stream<Path> walk = Files.walk(androidTests)) {
+      for (final Path file : walk.filter(p -> p.toString().endsWith(".java"))
+          .collect(java.util.stream.Collectors.toList())) {
+        final String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+            .replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("//[^\n]*", " ");
+        final java.util.regex.Matcher test =
+            java.util.regex.Pattern.compile("@Test\\b").matcher(text);
+        while (test.find()) actual++;
+      }
+    }
+    assertTrue("no instrumentation tests were found; this guard has stopped counting anything",
+        actual >= 10);
+
+    final String readme = read("tools/README.md");
+    final java.util.regex.Matcher stated = java.util.regex.Pattern.compile(
+        "tools/test-on-emulator` runs them\\. There are (\\d+)").matcher(readme);
+    assertTrue("the instrumentation section of tools/README.md must state a count; if the sentence "
+        + "was reworded, reword this guard with it rather than deleting it", stated.find());
+
+    assertEquals("tools/README.md states an instrumentation-test count that the source contradicts. "
+        + "It is the only document describing what a device test covers here, so a stale number "
+        + "tells the next reader they have coverage they do not have",
+        actual, Integer.parseInt(stated.group(1)));
+  }
+
+  /**
    * The comparison must name its channel, in both copies.
    *
    * <p>The original defect: "compare the number with your chat partner's number" is satisfied by

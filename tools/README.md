@@ -73,11 +73,19 @@ entry added there is a finding nobody will look at again.
 
 ## Instrumentation tests
 
-`tools/test-on-emulator` runs them. There are 17: eleven cover the Android Keystore, which has no
-JVM equivalent because there is no TEE behind a desktop provider; three cover whether the platform
-will bind a service declared `exported="false"` as an input method; and three establish that the
-decrypted-message compose box is never handed to an autofill service. Until recently none of them
-had ever executed anywhere.
+`tools/test-on-emulator` runs them. There are 30, and the count in this sentence is checked against
+the source by `DocsDoNotContradictTheAppTest` — it said 17 for several rounds after the suite had
+grown past it, which is the kind of claim this project treats as a defect rather than as tidying.
+
+Eleven cover the Android Keystore, which has no JVM equivalent because there is no TEE behind a
+desktop provider. Three more exercise the chat-log split against that same real keystore. Three
+cover whether the platform will bind a service declared `exported="false"` as an input method, and
+three establish that the decrypted-message compose box is never handed to an autofill service.
+Three run a protocol round trip on real hardware and two run the strip's own round trip; the
+remaining five are single assertions that only a device can make — ciphertext and plain text
+crossing into a foreign app, typing on the key surface, `FLAG_SECURE` actually reaching the window,
+and the banner not clipping the recipient line. Until recently none of them had ever executed
+anywhere.
 
 The last two groups need device state that only shell can set - a selected input method, a
 registered autofill service - so the script sets it and the tests assert it as a precondition
