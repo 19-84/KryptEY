@@ -77,6 +77,21 @@ public final class BinaryEnvelope {
    * A hostile bundle with an inner deviceId of 0, or a registrationId with the high bit set, decoded
    * cleanly here and then killed the IME process inside {@code new PreKeyBundle(...)}.
    */
+  /**
+   * A presence flag is 0 or 1 and nothing else.
+   *
+   * <p>Read as {@code != 0}, the 254 other values all meant "present" - so every envelope carrying
+   * an optional field had 254 alternative wire texts that decoded to an identical object and passed
+   * both the canonical-encoding check and {@code requireExhausted}. Canonicality is a property of
+   * the whole wire text; a byte with 255 accepted spellings is a hole in it.
+   */
+  private static boolean requireFlag(final int value, final String field) throws IOException {
+    if (value != 0 && value != 1) {
+      throw new IOException(field + " must be 0 or 1, was " + value);
+    }
+    return value == 1;
+  }
+
   private static void requireValidDeviceId(final int deviceId) throws IOException {
     if (deviceId < 1 || deviceId > 127) {
       throw new IOException("device id out of libsignal's range [1,127]: " + deviceId);
@@ -244,6 +259,23 @@ public final class BinaryEnvelope {
 
     final int deviceCount = c.u8("deviceCount");
     if (deviceCount == 0) throw new IOException("bundle has no devices");
+    // Exactly one, because exactly one is ever encoded and exactly one is ever read.
+    //
+    // createPreKeyBundle consumes getDevices().get(0) and nothing else, so entries 1..254 were
+    // parsed, retained and validated against nothing. Each costs about 300 bytes and can carry up
+    // to 255 unchecked bytes in its signature field, and filler entries may set both optional flags
+    // to zero and reuse one genuine EC point - so within MAX_WIRE_CHARS roughly five kilobytes of
+    // arbitrary attacker bytes rode inside an envelope this parser then declared exhausted.
+    //
+    // That directly contradicts requireExhausted's own sentence: "refusing keeps a hostile envelope
+    // from smuggling data past the parser". Nothing renders those bytes, so this was a broken
+    // stated invariant and a malleability primitive rather than the staple-prose attack the
+    // canonical check defends against - but an invariant that is written down and false is worse
+    // than one that was never claimed.
+    if (deviceCount != 1) {
+      throw new IOException("bundle carries " + deviceCount + " devices; exactly one is encoded "
+          + "and exactly one is ever used");
+    }
 
     final List<PreKeyResponseItem> devices = new LinkedList<>();
     for (int i = 0; i < deviceCount; i++) {
@@ -251,21 +283,40 @@ public final class BinaryEnvelope {
       requireValidDeviceId(deviceId);
       final int registrationId = c.u32("registrationId");
       requireUnsigned(registrationId, "registrationId");
+      // libsignal's registration ids are 14 bits. Accepting the whole non-negative int range let a
+      // sender put 31 bits of chosen data in a field the encoder can only ever fill with 14.
+      if (registrationId > 16380) {
+        throw new IOException("registrationId out of libsignal's range: " + registrationId);
+      }
 
       final int signedId = c.u32("signedPreKeyId");
       requireUnsigned(signedId, "signedPreKeyId");
       final ECPublicKey signedKey = ec(c.bytes(c.u8("signedKeyLen"), "signedPreKey"));
       final byte[] signedSig = c.bytes(c.u8("signedSigLen"), "signedPreKey.signature");
 
+      // The top-level device id and this one are deliberately NOT required to agree.
+      //
+      // They can disagree, and nothing compares them: the pin is made at the top-level address
+      // while this id is what reaches new PreKeyBundle. Requiring agreement was tried and reverted,
+      // because it buys nothing and costs something. It buys nothing: the top-level NAME is equally
+      // sender-chosen, so a fresh unpinned address is already free, and an attacker who wants one
+      // simply writes both ids the same. It costs something: envelopes that disagree are exactly
+      // what a lazy splice produces, and refusing them at the parser turns a substitution attempt
+      // the trust layer would have WARNED about into an unexplained "not a valid encoded envelope".
+      // Refusing input is usually the safe direction; here it removes a signal and blocks nobody.
+      //
+      // What the disagreement actually costs the user is real and lives elsewhere: two contacts
+      // sharing an address name share one chat log, which ImpostorDeviceIdTest pins.
+
       PreKeyEntity preKey = null;
-      if (c.u8("hasPreKey") != 0) {
+      if (requireFlag(c.u8("hasPreKey"), "hasPreKey")) {
         final int preKeyId = c.u32("preKeyId");
         requireUnsigned(preKeyId, "preKeyId");
         preKey = new PreKeyEntity(preKeyId, ec(c.bytes(c.u8("preKeyLen"), "preKey")));
       }
 
       KyberPreKeyEntity kyber = null;
-      if (c.u8("hasKyber") != 0) {
+      if (requireFlag(c.u8("hasKyber"), "hasKyber")) {
         final int kyberId = c.u32("kyberPreKeyId");
         requireUnsigned(kyberId, "kyberPreKeyId");
         final byte[] kyberKey = c.bytes(c.u16("kyberKeyLen"), "kyberPreKey");

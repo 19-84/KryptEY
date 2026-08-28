@@ -226,23 +226,51 @@ public class WireBoundaryTest {
   }
 
   /**
-   * The device count is written as a single byte, so 255 is the last value that fits and 256 the
-   * first that does not. One key pair is reused across all the items: the bound under test is the
-   * collection size, and generating 255 real key sets would make this test slow for no gain.
+   * A bundle carrying more than one device is refused, and 255 is the shape that showed why.
+   *
+   * <p>The count is a single byte, so 255 used to be the largest accepted value and this test pinned
+   * it. Only ONE device is ever encoded and only {@code getDevices().get(0)} is ever consumed, so
+   * entries 1..254 were parsed, retained, and validated against nothing: about 300 bytes each, up to
+   * 255 unchecked bytes apiece in the signature field, filler entries free to set both optional
+   * flags to zero and reuse one genuine key. Within the wire-length cap that is roughly five
+   * kilobytes of arbitrary attacker bytes riding inside an envelope the parser then declared
+   * exhausted — directly contradicting {@code requireExhausted}'s own sentence about smuggling data
+   * past the parser.
+   *
+   * <p>Nothing renders those bytes, so this was a broken stated invariant rather than the
+   * staple-prose attack the canonical check defends against. An invariant that is written down and
+   * false is still worse than one never claimed.
    */
   @Test
-  public void aBundleOfExactlyTwoHundredAndFiftyFiveDevicesIsAccepted() throws Exception {
+  public void aBundleCarryingMoreThanOneDeviceIsRefused() throws Exception {
     final var pub = org.signal.libsignal.protocol.ecc.ECKeyPair.generate().getPublicKey();
     final var devices =
         new java.util.ArrayList<com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem>();
     for (int i = 0; i < 255; i++) devices.add(item(pub, 64));
 
     final byte[] encoded = BinaryEnvelope.encode(bundleOf(devices));
-    final MessageEnvelope decoded = BinaryEnvelope.decode(encoded);
+
+    final IOException refused = assertThrows(
+        "extra device entries are read by nothing and validated against nothing; carrying them is "
+            + "how bytes ride past a parser that says nothing rides past it",
+        IOException.class, () -> BinaryEnvelope.decode(encoded));
+    assertTrue("the refusal must name the count rather than fail as generic corruption: "
+        + refused.getMessage(), refused.getMessage().contains("devices"));
+  }
+
+  /** And exactly one, which is what the encoder produces, still round-trips. */
+  @Test
+  public void aBundleOfExactlyOneDeviceRoundTrips() throws Exception {
+    final var pub = org.signal.libsignal.protocol.ecc.ECKeyPair.generate().getPublicKey();
+    final var devices =
+        new java.util.ArrayList<com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem>();
+    devices.add(item(pub, 64));
+
+    final MessageEnvelope decoded = BinaryEnvelope.decode(BinaryEnvelope.encode(bundleOf(devices)));
 
     assertNotNull(decoded.getPreKeyResponse());
-    assertEquals("255 devices is the largest count a u8 can carry and must round-trip",
-        255, decoded.getPreKeyResponse().getDevices().size());
+    assertEquals("the one shape the encoder produces must survive the tightening",
+        1, decoded.getPreKeyResponse().getDevices().size());
   }
 
   @Test

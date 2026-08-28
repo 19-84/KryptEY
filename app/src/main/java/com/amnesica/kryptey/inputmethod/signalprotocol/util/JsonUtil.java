@@ -167,9 +167,24 @@ public class JsonUtil {
     @Override
     public SignalProtocolAddress deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
       Log.d(TAG, "SignalProtocolAddressDeserializer used");
-      JsonNode node = p.getCodec().readTree(p);
-      String name = node.get("name").asText();
-      int deviceId = (Integer) ((IntNode) node.get("deviceId")).numberValue();
+      final JsonNode node = p.getCodec().readTree(p);
+      // Unchecked failures converted to IOException, like every sibling deserializer in this file.
+      //
+      // This one was the exception to that discipline, and the two ways past it are both ordinary
+      // shapes of malformed JSON rather than anything exotic: an absent "name" makes get() return
+      // null and asText() throw NullPointerException, and a "deviceId" that is 3.5, 9999999999 or
+      // the string "3" is a DoubleNode, LongNode or TextNode, so the cast to IntNode throws
+      // ClassCastException. Neither is wire-reachable today - the wire path no longer goes through
+      // a general-purpose deserializer and this JSON is app-private - which is why this is
+      // discipline rather than a defect. Discipline is what stops the next caller being the one
+      // that makes it reachable.
+      final JsonNode nameNode = node.get("name");
+      final JsonNode deviceIdNode = node.get("deviceId");
+      if (nameNode == null || deviceIdNode == null || !deviceIdNode.isInt()) {
+        throw new IOException("stored address is missing a name or a valid device id");
+      }
+      final String name = nameNode.asText();
+      final int deviceId = deviceIdNode.intValue();
       // Legacy stores hold device ids up to 9999, which libsignal 0.86 refuses to construct.
       return ProtocolAddresses.of(name, deviceId);
     }

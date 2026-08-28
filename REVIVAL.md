@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-six sections, written in the order things were found rather than by subject, so the
+Eighty-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -142,6 +142,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A method with no callers, and an invite dead on arrival](#a-method-with-no-callers-and-an-invite-dead-on-arrival)
 - [One warning slot, and what fits in it](#one-warning-slot-and-what-fits-in-it)
 - [A sentence that travelled further than its meaning](#a-sentence-that-travelled-further-than-its-meaning)
+- [An invariant that was written down and false](#an-invariant-that-was-written-down-and-false)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5263,3 +5264,47 @@ sentence out of the source anchored on the literal `setCautionBesideAnyWarning("
 failed the moment the wording became a choice of two. Loudly, which is correct. It anchors on the
 method now, and reads the whole body — so both wordings are covered, and a later edit that gave one
 of them its own instruction would still be checked.
+
+## An invariant that was written down and false
+
+**`requireExhausted` says its job is that "refusing keeps a hostile envelope from smuggling data past
+the parser". About five kilobytes could ride past it.**
+
+The bundle carries a device count as one byte, so up to 255 entries were parsed and retained — while
+`createPreKeyBundle` consumes `getDevices().get(0)` and nothing else. Entries 1..254 were validated
+against nothing: about 300 bytes each, up to 255 unchecked bytes apiece in the signature field, and
+filler entries free to set both optional flags to zero and reuse one genuine key. Exactly one device
+is ever encoded and exactly one is ever read, so the parser now refuses any other count. Nothing
+renders those bytes, so this was a broken stated invariant rather than the staple-prose attack the
+canonical check defends — but **an invariant that is written down and false is worse than one never
+claimed**, because the next person to rely on it has a sentence saying they may.
+
+**And the presence flags had 255 spellings each.** They were read as `!= 0` while the encoder writes
+0 or 1, so every envelope carrying an optional field had 254 alternative wire texts that decoded to
+an identical object and passed both the canonical-encoding check and `requireExhausted`. Canonicality
+is a property of the whole wire text; a byte with 255 accepted values is a hole in it.
+
+That one is pinned by a property rather than a case: take a canonical envelope, change one byte, and
+check that the result cannot decode back to the same envelope — sameness decided by re-encoding, so
+two distinct wire texts meaning one message is exactly what fails. It is honest about its limit in
+the file: one byte at a time, from a small set of values, so a malleability needing two simultaneous
+changes is outside it. Loosening the flag fails it immediately.
+
+**`registrationId` accepted 31 bits where the encoder can write 14.** libsignal's ids are 14-bit;
+the parser checked only the sign. A test had been using 287 million as a "distinct id", which is how
+long the gap had been visible without being seen.
+
+**One check was tried and reverted, and the reason is worth as much as the fixes.** Requiring the
+top-level device id to equal the bundle's own is superficially the same kind of tightening — the
+encoder cannot produce a disagreement. But it buys nothing, because the top-level *name* is equally
+sender-chosen, so an unpinned address is already free and an attacker simply writes both ids the
+same. And it costs something: a disagreement is what a lazy splice produces, and refusing it at the
+parser turns a substitution attempt the trust layer would have **warned** about into an unexplained
+"not a valid encoded envelope". Refusing input is usually the safe direction; here it removes a
+signal and blocks nobody. Twelve tests failing was the evidence, not the reason.
+
+**And one deserializer was the exception to its own file's discipline.** Every sibling converts
+unchecked failures to `IOException`; this one dereferenced two nodes and cast one. Not wire-reachable
+— that path no longer goes through a general-purpose deserializer — which is why it is discipline
+rather than a defect, and why it is worth keeping: discipline is what stops the next caller being the
+one that makes it reachable.

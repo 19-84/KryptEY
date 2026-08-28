@@ -101,7 +101,11 @@ public class BinaryEnvelopeTest {
 
     final com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem rebuilt =
         new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem(
-            device.getDeviceId(), 0x11223344,
+            // 16380 is the top of libsignal's 14-bit registration-id range, which the parser now
+            // enforces. The previous value here was 0x11223344 - 287 million - which the encoder
+            // could never produce and which let a sender put 31 bits of chosen data in a field
+            // that carries 14.
+            device.getDeviceId(), 16380,
             new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.SignedPreKeyEntity(
                 7001, device.getSignedPreKey().getPublicKey(),
                 device.getSignedPreKey().getSignature()),
@@ -122,7 +126,7 @@ public class BinaryEnvelopeTest {
         BinaryEnvelope.decode(BinaryEnvelope.encode(envelope)).getPreKeyResponse()
             .getDevices().get(0);
 
-    assertEquals("registrationId lost", 0x11223344, after.getRegistrationId());
+    assertEquals("registrationId lost", 16380, after.getRegistrationId());
     assertEquals("signedPreKeyId lost", 7001, after.getSignedPreKey().getKeyId());
     assertEquals("preKeyId lost", 7002, after.getPreKey().getKeyId());
     assertEquals("kyberPreKeyId lost", 7003, after.getKyberPreKey().getKeyId());
@@ -152,9 +156,17 @@ public class BinaryEnvelopeTest {
     assertNotNull("the signed pre key should survive", after.getSignedPreKey());
   }
 
-  /** M24: every device after the first could be silently dropped. */
+  /**
+   * M24, restated: a second device must be REFUSED rather than silently dropped.
+   *
+   * <p>The mutant this guards against is a parser that reads one device and ignores the rest, which
+   * is indistinguishable from a parser that refuses them - until you ask what happened to the bytes.
+   * Silently dropping is the dangerous half: the entries are still in the wire text, still counted
+   * by the length fields, and still declared exhausted, which is how arbitrary bytes ride inside a
+   * "canonical" envelope. Refusing is what makes {@code requireExhausted}'s sentence true.
+   */
   @Test
-  public void everyDeviceInABundleIsCarried() throws Exception {
+  public void asecondDeviceIsRefusedRatherThanDropped() throws Exception {
     final MessageEnvelope original = bundleEnvelope();
     final PreKeyResponseItem device = original.getPreKeyResponse().getDevices().get(0);
 
@@ -169,13 +181,14 @@ public class BinaryEnvelopeTest {
             original.getPreKeyResponse().getIdentityKey(), devices),
         original.getSignalProtocolAddressName(), original.getDeviceId());
 
-    final java.util.List<PreKeyResponseItem> after =
-        BinaryEnvelope.decode(BinaryEnvelope.encode(envelope)).getPreKeyResponse().getDevices();
+    final byte[] encoded = BinaryEnvelope.encode(envelope);
 
-    assertEquals("devices were dropped", 2, after.size());
-    assertEquals(11, after.get(0).getDeviceId());
-    assertEquals(22, after.get(1).getDeviceId());
-    assertEquals(202, after.get(1).getRegistrationId());
+    final java.io.IOException refused = org.junit.Assert.assertThrows(
+        "a second device must not be quietly ignored: only the first is ever consumed, so the rest "
+            + "would be bytes the parser carried and nothing checked",
+        java.io.IOException.class, () -> BinaryEnvelope.decode(encoded));
+    assertTrue("the refusal must name what it refused: " + refused.getMessage(),
+        refused.getMessage().contains("devices"));
   }
 
   @Test
