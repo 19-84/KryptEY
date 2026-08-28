@@ -39,8 +39,15 @@ public abstract class GcmCryptoBox implements CryptoBox {
   private static final int HEADER_BYTES = 1 + NONCE_BYTES;
 
   /**
-   * The AES-256 key to use. Called per operation rather than cached in this class so that a
-   * Keystore-backed subclass can invalidate and re-resolve its handle.
+   * The AES-256 key to use, asked for per operation rather than cached here.
+   *
+   * <p>The stated reason used to be "so a Keystore-backed subclass can invalidate and re-resolve its
+   * handle", and no such re-resolve exists: the Keystore subclass caches permanently and its only
+   * invalidator has no production caller. What per-operation resolution actually buys today is
+   * narrower and still worth having - a subclass decides afresh each time, so a key that becomes
+   * unusable mid-session surfaces as a refused operation rather than as a stale handle that keeps
+   * appearing to work. The re-resolve is the thing that would have to exist first if recovery from
+   * that state were ever attempted; it does not, and this comment no longer implies it does.
    */
   protected abstract SecretKey key() throws StorageCryptoException;
 

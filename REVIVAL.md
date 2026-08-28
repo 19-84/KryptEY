@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and ten sections, written in the order things were found rather than by subject, so the
+One hundred and eleven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -166,6 +166,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Eighty-four characters, and where they landed](#eighty-four-characters-and-where-they-landed)
 - [The half of the deletion that did happen](#the-half-of-the-deletion-that-did-happen)
 - [Asked once, and the answer written down](#asked-once-and-the-answer-written-down)
+- [Cannot, and cannot right now](#cannot-and-cannot-right-now)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6182,3 +6183,44 @@ better for it — a legacy entry is now visibly a legacy entry rather than an or
 to be keyed oddly. The new field is excluded from `equals` with its reason: it is bookkeeping, not
 identity, and including it would stop a migrated entry matching the copy a deletion rollback took
 before it.
+
+## Cannot, and cannot right now
+
+**The key ladder read a temporary answer as a permanent one, and degraded for the life of the
+install.**
+
+Two of the four rungs bind the storage key to the screen lock. Each candidate is certified by a
+**real seal/open** — deliberately, so a key that cannot actually be used is never accepted — and a
+seal/open is precisely what a lock-bound key refuses **while the device is locked**. So a first key
+generated on a locked device failed both lock-bound rungs, and the ladder stepped down to one with no
+lock binding at all. The ladder is walked once, at generation, and never revisited: a device that
+fully supports lock-bound storage would spend the rest of the install with storage readable whenever
+the app runs, and the only trace was a log line from months earlier.
+
+The suite could not catch it, and not by oversight: `afailedSelfTestFallsThroughToTheNextRung`
+**asserts** the step-down. There was no mutant to run, because the degradation was the recorded
+intent — which is what a review round is for.
+
+The ladder now asks whether the device is locked, and defers instead of degrading. **Refusing is safe
+here and nowhere else**: this loop runs only when the alias is absent and there is no existing data,
+so deferring costs a keyboard raise, and the app already renders that state and says it clears after
+an unlock. Repairing a weak key later would mean deleting it — the destructive direction, with no way
+back, and the reason this fix had to be generation-time only. An unknown answer reads as locked, so
+the failure direction is a deferral rather than a silent downgrade.
+
+The floor matters as much as the fix: an unlocked device that genuinely cannot honour a rung must
+still step down, or a phone without StrongBox ends up with **no** storage rather than weaker storage.
+Two mutants — degrade while locked, and defer while unlocked — die on those two tests respectively.
+
+**Five comments were corrected alongside it**, all of the kind this file counts as defects. The
+migration's class javadoc still said ambiguous entries are *deleted* while its body, forty-five lines
+below, says "kept, not deleted" and explains that deleting them was a destruction primitive. Two more
+justified the marker with a skip that does not exist. One said per-operation key resolution exists so
+a subclass can "invalidate and re-resolve", when no re-resolve exists anywhere. And one enumerated
+two bare-name comparison arms when only one is left — its conclusion still holds, but a reader
+deciding whether the separator must stay non-printable should be counting the real arms.
+
+**What remains open on this surface, and needs a device rather than an argument:** which rung a given
+install actually took is still recorded nowhere a user or a test can see, and whether an
+unlocked-device-required key survives removal of the screen lock is a version-dependent question that
+a comment currently answers by assumption.

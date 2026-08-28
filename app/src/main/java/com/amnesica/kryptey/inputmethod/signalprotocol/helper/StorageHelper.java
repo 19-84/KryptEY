@@ -595,10 +595,18 @@ public class StorageHelper {
    * <p>The transformation itself lives in {@link LegacyKeyMigration}; this decides whether it has
    * already happened. The marker is an efficiency guard, not the safety property - a first version
    * of this comment claimed it was what made the load-time answer sound, and a test written against
-   * that claim passed with the check removed. What actually makes it safe is that re-keying is
-   * idempotent: a re-keyed entry carries the separator and is skipped, so a second pass has nothing
-   * to act on however the contact list has changed. The marker saves rescanning the whole log on
-   * every setInputView, which happens a great deal.
+   * that claim passed with the check removed. It is still not the safety property, but the sentence
+   * that replaced it was also wrong: it said a re-keyed entry "carries the separator and is
+   * skipped", and there is no such skip - deciding that from the shape of a key is the smuggling
+   * hole {@code LegacySeparatorSmugglingTest} exists to keep shut.
+   *
+   * <p>What makes it safe is that each entry records whether this question has already been put to
+   * it, written in the same file and the same commit as the re-keying it describes. That matters
+   * because the marker below cannot do the job: it travels in the account batch, the log is
+   * committed first, and a log re-keyed without its marker is a state this ordering deliberately
+   * produces - on which a second pass re-evaluated a RENDERED key against the current contact list
+   * and moved a conversation into an attacker's row. The marker saves rescanning the whole log on
+   * every setInputView, which happens a great deal, and that is all it does.
    */
   private void migrateLegacyKeys(final Account account, final boolean contactsWereReadable) {
     if (account == null) return;

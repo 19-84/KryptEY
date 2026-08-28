@@ -25,8 +25,11 @@ public enum ProtocolIdentifier {
   /**
    * Marks that the one-time key migration has run. See {@code StorageHelper.migrateLegacyKeys}.
    *
-   * <p>An efficiency guard rather than a safety one: re-keying is idempotent, so a second pass
-   * finds nothing to do. It saves rescanning the whole chat log on every {@code setInputView}.
+   * <p>An efficiency guard rather than a safety one, and specifically NOT the thing that makes
+   * running twice safe - it is written in the account batch while the log is committed first, so a
+   * re-keyed log without this marker is a state that ordering produces. What makes a second pass
+   * harmless is that each log entry records whether the question has been put to it. This saves
+   * rescanning the whole chat log on every {@code setInputView}.
    */
   KEY_SCHEMA_MIGRATED(String.class);
 

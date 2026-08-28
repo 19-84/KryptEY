@@ -27,9 +27,17 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
  * <p>So the question is asked once, here, at the only moment it has a sound answer: the first load
  * after the upgrade, when the contact list is still exactly what the pre-upgrade binary wrote and
  * before any new code has let the messenger touch it. Unambiguous entries are re-keyed. Ambiguous
- * ones are <b>deleted</b>, not left in place: unattributable plaintext that can later be handed to
- * whichever contact survives is worse than history that is gone, and orphaned plaintext with no
- * row to reach it from cannot be erased by the user either.
+ * ones are <b>kept, not deleted</b> — and the reason deletion was once chosen is worth keeping, so
+ * it is not re-chosen: unattributable plaintext that a bare-name reader could later hand to
+ * whichever row survived was worse than history that is gone. No reader does that any more, so an
+ * un-re-keyed entry is inert rather than dangerous, and deleting it turned a safety measure into a
+ * destruction primitive — one ordinary invite sent before the upgrade was enough to have a genuine
+ * conversation classed ambiguous and erased with no prompt. See the body, which is what runs.
+ *
+ * <p><b>Once</b> is enforced per entry, on the entry, and not by the marker: the marker travels in
+ * the account batch while the log is committed first, so a log re-keyed without its marker is a
+ * state the write order deliberately produces, and a second pass re-evaluates a rendered key against
+ * a contact list the messenger has had time to arrange.
  *
  * <p>Gated on a sealed marker for the same reason the encrypted-store migration is: if a hostile
  * store could clear it, the migration would re-run against a contact list the messenger has since

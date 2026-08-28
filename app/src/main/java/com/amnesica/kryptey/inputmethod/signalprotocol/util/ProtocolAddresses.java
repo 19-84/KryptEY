@@ -87,8 +87,11 @@ public final class ProtocolAddresses {
    * <p>A dot was wrong, and the way it was wrong is worth keeping. Two keys built this way never
    * collide with each other - device ids are dot-free integers, so the last dot splits uniquely -
    * and that is the collision the obvious analysis looks for. The live one is between a key and a
-   * BARE address name, because the chat log's legacy arm and the retired-name migration arm both
-   * still compare against bare names for upgrade compatibility. The messenger writes address names:
+   * BARE address name, because the retired-name migration arm still compares against bare names for
+   * upgrade compatibility. (The chat log's legacy arm was named here too and is gone: belongsTo
+   * makes one comparison, against the full rendered address. The conclusion is unchanged - one
+   * bare-name comparison is enough to need this - but a reader deciding whether the separator must
+   * still be non-printable should count the real arms.) The messenger writes address names:
    * it picks {@code bobsName.7}, which is a perfectly ordinary printable name at a fresh unpinned
    * address that collides with no contact and triggers no duplicate warning - and every message
    * filed for the real Bob at device 7 then matches it.

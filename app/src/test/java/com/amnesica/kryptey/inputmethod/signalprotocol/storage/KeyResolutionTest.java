@@ -49,6 +49,7 @@ public class KeyResolutionTest {
   private static final class RecordingOps implements AndroidKeystoreCryptoBox.KeystoreOps {
     SecretKey existing;
     boolean deviceSecure = true;
+    boolean deviceLocked = false;
     /** Candidates that will fail their self-test, as "strongBox/requireUnlocked". */
     final List<String> selfTestFailures = new ArrayList<>();
     /** Candidates whose generate() will throw. */
@@ -71,6 +72,11 @@ public class KeyResolutionTest {
     @Override
     public boolean isDeviceSecure() {
       return deviceSecure;
+    }
+
+    @Override
+    public boolean isDeviceLocked() {
+      return deviceLocked;
     }
 
     @Override
@@ -199,6 +205,56 @@ public class KeyResolutionTest {
 
     assertEquals(List.of("true/true", "false/true"), ops.generated);
     assertEquals("the alias must be cleared even when generate itself failed", 1, ops.deletions);
+  }
+
+  /**
+   * A locked device makes the ladder DEFER, not degrade.
+   *
+   * <p>The two rungs that bind the key to the screen lock are certified by a real seal/open, and
+   * that is exactly the operation such a key refuses while the device is locked. So generating the
+   * first key on a locked device failed both of them and stepped down to a rung with no lock
+   * binding at all - permanently, because the ladder is walked once, at generation, and never
+   * revisited. A device that fully supports lock-bound storage would spend the rest of the install
+   * with storage readable whenever the app runs, and the only trace was a log line.
+   *
+   * <p>Refusing is safe at this point and nowhere else: the ladder is reached only when the alias is
+   * absent and there is no existing data, so deferring costs a keyboard raise. The app already
+   * renders that state and tells the user it clears after an unlock. Repairing a weak key later
+   * would mean deleting it, which is the destructive direction with no way back.
+   */
+  @Test
+  public void alockedDeviceDefersRatherThanFallingBackToAnunboundKey() {
+    final RecordingOps ops = new RecordingOps();
+    ops.deviceLocked = true;
+    ops.selfTestFailures.add("true/true");
+    ops.selfTestFailures.add("false/true");
+
+    final StorageCryptoException refused = assertThrows("a locked device must defer",
+        StorageCryptoException.class, () -> AndroidKeystoreCryptoBox.resolve(ops, false));
+
+    assertTrue("the refusal must say it is deferring rather than sounding like a broken device: "
+        + refused.getMessage(), refused.getMessage().contains("locked"));
+    assertEquals("and it must not have tried a rung with no lock binding",
+        List.of("true/true"), ops.generated);
+  }
+
+  /**
+   * But an UNLOCKED device that genuinely cannot honour the strong rungs still steps down.
+   *
+   * <p>The floor. Without it the test above is satisfied by a build that refuses to generate a key
+   * at all when anything fails, which would leave a device that simply lacks StrongBox with no
+   * storage rather than with weaker storage.
+   */
+  @Test
+  public void anunlockedDeviceThatCannotHonourArungStillStepsDown() throws Exception {
+    final RecordingOps ops = new RecordingOps();
+    ops.deviceLocked = false;
+    ops.selfTestFailures.add("true/true");
+
+    AndroidKeystoreCryptoBox.resolve(ops, false);
+
+    assertEquals("a device that cannot do StrongBox must still get a lock-bound key",
+        List.of("true/true", "false/true"), ops.generated);
   }
 
   /**

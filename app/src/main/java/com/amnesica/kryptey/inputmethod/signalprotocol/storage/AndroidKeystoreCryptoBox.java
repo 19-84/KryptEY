@@ -90,6 +90,16 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
 
     boolean isDeviceSecure();
 
+    /**
+     * Whether the screen is locked RIGHT NOW, as distinct from whether a lock exists at all.
+     *
+     * <p>The two rungs that bind the key to the screen lock are certified by a real seal/open, and
+     * that is exactly the operation such a key refuses while the device is locked. Without this
+     * question the ladder reads "this device cannot" from an answer that only means "not right
+     * now", and steps down permanently.
+     */
+    boolean isDeviceLocked();
+
     SecretKey generate(boolean strongBox, boolean requireUnlocked) throws Exception;
 
     /** Must exercise the same seal/open path production uses. */
@@ -108,6 +118,11 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
       @Override
       public boolean isDeviceSecure() {
         return AndroidKeystoreCryptoBox.this.isDeviceSecure();
+      }
+
+      @Override
+      public boolean isDeviceLocked() {
+        return AndroidKeystoreCryptoBox.this.isDeviceLocked();
       }
 
       @Override
@@ -159,6 +174,28 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
             + ", unlockedDeviceRequired=" + requireUnlocked + ")", e);
         // A half-created alias would shadow the next attempt, so clear it before retrying.
         ops.deleteAlias();
+
+        // "Cannot" and "cannot right now" are different answers, and the ladder read them the same.
+        //
+        // The self-test is a real seal/open - deliberately, so that a key which cannot actually be
+        // used is never accepted - and a seal/open is precisely what an unlocked-device-required key
+        // refuses while the device is locked. So generating the first key while the screen is locked
+        // made both lock-bound rungs fail, and the ladder stepped down to one with no lock binding
+        // AT ALL, permanently: the ladder is walked once, at generation, and never revisited. A
+        // device that fully supports lock-bound storage would spend the rest of the install with
+        // storage readable whenever the app runs, and the only trace was one log line.
+        //
+        // Refusing is safe HERE and nowhere else: this loop is reached only when the alias is absent
+        // and hasExistingData is false, so there is nothing to lose by deferring. The caller already
+        // renders the state - storage unreadable, "this clears when the device can read its own
+        // storage again, usually after an unlock" - and the next raise on an unlocked device gets
+        // the strong key. Regenerating or deleting to repair a weak key later would be the opposite
+        // of this: destructive, with no way back.
+        if (requireUnlocked && ops.isDeviceLocked()) {
+          throw new StorageCryptoException("the device is locked, so a key bound to the lock cannot "
+              + "be certified right now; deferring rather than falling back to one that is not "
+              + "bound to it", last);
+        }
       }
     }
     throw new StorageCryptoException("no usable Keystore configuration on this device", last);
@@ -223,6 +260,18 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
       return km != null && km.isDeviceSecure();
     } catch (Exception e) {
       return false;
+    }
+  }
+
+  private boolean isDeviceLocked() {
+    try {
+      final KeyguardManager km =
+          (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+      return km != null && km.isDeviceLocked();
+    } catch (Exception e) {
+      // Unknown reads as locked, which defers rather than degrades. Deferring costs a raise; the
+      // other direction costs the lock binding for the life of the install.
+      return true;
     }
   }
 
