@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and eight sections, written in the order things were found rather than by subject, so the
+One hundred and nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -164,6 +164,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Fields that were never issued together](#fields-that-were-never-issued-together)
 - [What the signature does not close](#what-the-signature-does-not-close)
 - [Eighty-four characters, and where they landed](#eighty-four-characters-and-where-they-landed)
+- [The half of the deletion that did happen](#the-half-of-the-deletion-that-did-happen)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6109,3 +6110,38 @@ And two comments explaining a refusal by libsignal's signed-pre-key check now de
 happens earlier and for a different reason. Corrected rather than deleted, because what those tests
 are about — that the refusal lands *after* the warning has been posted — is unchanged by which check
 gets there first.
+
+## The half of the deletion that did happen
+
+**"Nothing was deleted — they, their key and their saved messages are all still here" was false about
+the messages, in the one case the report cannot see.**
+
+A save writes the message log to its own file **first** and the account batch second, and reports
+only the batch. That ordering is deliberate and load-bearing: the batch carries the migration marker,
+and batch-first would let a kill seal that marker over a log still holding pre-upgrade keys, which is
+unrecoverable. But it leaves one pair of outcomes outside the report — the log commit lands and the
+account batch fails, which this file already argues is ordinary on a nearly full disk, having
+reasoned about it only in the other direction.
+
+`removeContact` then sees "the deletion did not reach disk", rolls the contact, the session and the
+messages back **in memory**, and the strip says nothing was deleted. **Measured**: the reload came
+back with the contact row present and the log **empty**. The one half of the deletion that had
+actually happened was the destructive half, and the app asserted the opposite — durably, in a notice
+and in the help text. In memory the messages survive until the next keyboard raise, which on an
+input method is imminent, and then they are simply gone.
+
+The repair uses the same ordering that caused it: **the rollback writes again**, the log goes out
+first, and the restored messages reach disk even when the account batch fails a second time. Nothing
+about it can make the state worse — the batch is the half that was already failing — and the return
+value is unchanged, because whether the *deletion* landed is still false.
+
+Two shapes were rejected before that one. Writing the batch first is the thing that must not be done,
+for the reason above. Restoring the log file explicitly introduces a restore that can itself fail,
+and a failed restore leaves the identical state while now claiming a rollback happened — worse than
+saying nothing. What made the third option findable was asking which write had *already* succeeded,
+rather than which one to add.
+
+The test pins both directions: a deletion that did not land leaves the messages on disk, and one that
+did still takes them. Without the second, the first passes against a build that never prunes at all —
+which breaks the same promise from the other side, for a user deleting a contact precisely to be rid
+of the conversation.

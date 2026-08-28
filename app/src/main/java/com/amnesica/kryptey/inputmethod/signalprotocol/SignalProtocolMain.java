@@ -1772,6 +1772,27 @@ public class SignalProtocolMain {
       // different address raise the duplicate-name warning. Leaving it in place on a failed
       // deletion costs the user a warning they might not need; undoing it would cost them one they
       // do. The pinned identity is untouched for the same reason it is untouched on success.
+
+      // And the restored state is written back, because "the deletion did not reach disk" was not
+      // true of all of it.
+      //
+      // A save writes the message log to its own file FIRST and the account batch second, and
+      // reports only the batch. So the pair that produces this branch - log commit lands, account
+      // batch fails - has already pruned that contact's messages from disk by the time we get here.
+      // Measured: removeContact reports false, the strip tells the user "they, their key and their
+      // saved messages are all still here", and a reload comes back with the contact row present
+      // and the log empty. The user is told the deletion did not happen while its most destructive
+      // half already has.
+      //
+      // Writing again repairs exactly that, and the ordering that caused it is what makes the
+      // repair work: the log goes out first, so the restored messages reach disk even when the
+      // account batch fails a second time. Nothing here can make the state worse - the batch is the
+      // half that was already failing - and the return value is unchanged, because whether the
+      // DELETION landed is still false.
+      final boolean restored = storeAllAccountInformationInSharedPreferences();
+      if (!restored) {
+        Log.e(TAG, "The rollback write also failed; the account batch is not accepting writes");
+      }
     }
     return deletionReachedDisk;
   }
