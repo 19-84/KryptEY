@@ -3047,7 +3047,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final String opening = openingMessage(SignalProtocolMain.storageState());
     if (INFO_STORAGE_UNREADABLE.equals(opening)) {
       setWarningMessage(opening);
-    } else if (!mWarningStanding) {
+      return;
+    }
+
+    // Lowered when the condition goes away, which nothing did.
+    //
+    // These two are the only warnings raised from a condition rather than from an event, and they
+    // were raised and never taken down: when control reached the branch below, a standing warning
+    // meant "leave the banner alone", so the sentence stayed after storage recovered. Every clause
+    // of it was then false, including the one describing its own exit - "this clears when the
+    // device can read its own storage again" - and it held mWarningStanding, so every informational
+    // line was suppressed for the life of the process. The only way out was pressing Verify or
+    // Reject on some contact, a security gesture performed for a cosmetic reason, which this file
+    // calls a false affordance everywhere else.
+    //
+    // Only these two are lowered here, and only when they are the text standing: every other
+    // warning is about an event that happened, and an event does not stop having happened.
+    if (mWarningStanding && (INFO_STORAGE_UNREADABLE.equals(mStandingWarningText)
+        || INFO_CONTACTS_UNREADABLE.equals(mStandingWarningText))) {
+      clearStandingWarning();
+    }
+
+    if (!mWarningStanding) {
       setInfoTextViewMessage(mInfoTextView, opening);
     }
   }

@@ -344,20 +344,25 @@ public class Account {
     final String address = addressName == null ? "" : addressName;
 
     final LinkedList<String[]> retired = getRetiredDisplayNames();
-    // By NAME, which is what the reader matches on and therefore what the bound has to count.
+    // By NAME AND ADDRESS, and this was changed to name-only for one round and changed back.
     //
-    // Requiring the address to match too meant the bound counted (name, address) pairs. The address
-    // is derived from a peer-chosen value - the attacker mints a fresh one per invite for nothing -
-    // so varying it made every delete-and-re-add cycle a distinct entry, and a hundred cycles
-    // evicted the genuine retired entry: the one that stops a later contact reusing a deleted
-    // person's name at a new address from being accepted in silence. Folding the name was the fix
-    // for varying the NAME; this is the same attack through the field that was still exact.
+    // The argument for name-only was that the reader matches on the name, so the hundred-entry
+    // bound should count names - otherwise an attacker varying the address fills it. That attack is
+    // real and it is expensive: entries are created only when the USER deletes a contact, so it
+    // needs a hundred add-and-delete cycles the user performs. The attacker cannot mint entries
+    // under a name the user never types.
     //
-    // What is given up is small and in the safe direction. The stored address is used only to
-    // suppress the warning for a re-add at that same address while its pin survives, so collapsing
-    // to the most recent address means an older one is no longer suppressed - a warning the user
-    // did not need, rather than a warning they did.
-    retired.removeIf(entry -> entry.length > 2
+    // Name-only eviction bought a much cheaper attack in exchange. The user deletes the genuine
+    // "Bob" at one address; an impostor invites as "Bob" from another, which correctly warns; the
+    // user heeds the warning and deletes the impostor - and that deletion, under the same folded
+    // name, EVICTS the genuine entry. Deletion deliberately keeps the pin, so the impostor's next
+    // invite at that same address is suppressed by hasRetiredDisplayName and arrives with no
+    // warning at all. One cycle, using the name it is impersonating as the eviction key, turning a
+    // firing warning into silence.
+    //
+    // A hundred user-driven cycles to crowd out an entry is worse than nothing; one attacker-driven
+    // cycle to delete the exact entry that would have warned is worse than that.
+    retired.removeIf(entry -> entry.length > 2 && address.equals(entry[2])
         && SignalProtocolMain.displayNamesMatch(entry[0], entry[1], first, last));
     retired.addLast(new String[] {first, last, address});
     while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();

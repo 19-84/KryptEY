@@ -41,6 +41,9 @@ public class RetiredNamesFoldTheWayTheyAreReadTest {
     final Account account = account();
     final String key = ProtocolAddresses.key(address());
 
+    // All at ONE address, which is the case the fold is about: the writer must collapse spellings
+    // the reader treats as one name. Across addresses they stay separate, which the test below
+    // covers and which is what stops one deletion erasing the record of another.
     account.retireDisplayName("Bob", "Jones", key);
     account.retireDisplayName("Bob ", "Jones", key);
     account.retireDisplayName("Bob", " Jones ", key);
@@ -65,32 +68,33 @@ public class RetiredNamesFoldTheWayTheyAreReadTest {
   }
 
   /**
-   * The same name at a different address is ONE entry, because the reader matches on the name.
+   * The same name at a different address is a SEPARATE entry, and this test asserted the opposite
+   * for one round.
    *
-   * <p>This test asserted the opposite until a review round showed what that cost. Requiring the
-   * address to match as well meant the hundred-entry bound counted (name, address) pairs — and the
-   * address is derived from a peer-chosen value, so an attacker mints a fresh one per invite for
-   * nothing. Varying it made every delete-and-re-add cycle a distinct entry, and a hundred cycles
-   * evicted the genuine retired entry: the one that stops a later contact reusing a deleted
-   * person's name at a new address from being accepted in silence. Folding the name closed that
-   * attack through the name; this closes it through the field that was still exact.
+   * <p>The case for merging them was that the reader matches on the name, so a bound meant to count
+   * names should not be fillable by varying the address. That attack is real and expensive: entries
+   * are created only when the <em>user</em> deletes a contact, so it needs a hundred add-and-delete
+   * cycles the user performs, and the attacker cannot mint entries under a name the user never
+   * types.
    *
-   * <p>What is given up is in the safe direction. The stored address suppresses the warning for a
-   * re-add at that same address while its pin survives, so collapsing to the most recent address
-   * means an older one is no longer suppressed — a warning the user did not need, rather than a
-   * warning they did.
+   * <p>Merging bought a far cheaper attack. The user deletes the genuine "Bob" at one address; an
+   * impostor invites as "Bob" from another, which correctly warns; the user heeds the warning and
+   * deletes the impostor — and that deletion, under the same folded name, evicts the genuine entry.
+   * Deletion deliberately keeps the pin, so the impostor's next invite at that same address is
+   * suppressed and arrives with no warning at all. One cycle, using the name it is impersonating as
+   * the eviction key, turning a firing warning into silence.
    */
   @Test
-  public void thesameNameAtAdifferentAddressIsOneEntry() {
+  public void thesameNameAtAdifferentAddressIsAseparateEntry() {
     final Account account = account();
 
     account.retireDisplayName("Bob", "Jones", ProtocolAddresses.key(address()));
     account.retireDisplayName("Bob", "Jones",
         ProtocolAddresses.key(ProtocolAddresses.of("22222222-2222-2222-2222-222222222222", 1)));
 
-    assertEquals("the bound has to count what the reader distinguishes, which is names. Counting "
-        + "pairs let an attacker who controls the address fill it with one name.",
-        1, account.getRetiredDisplayNames().size());
+    assertEquals("deleting a contact at one address must not erase the record of a deletion at "
+        + "another - that record is what warns about the next impersonation",
+        2, account.getRetiredDisplayNames().size());
   }
 
   /** And the fold is the reader's, not a second one that could drift from it. */

@@ -133,4 +133,46 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
             + "into an apparently empty install; it must be re-derived rather than remembered: "
             + banner(), banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
   }
+
+  /**
+   * And a storage warning is lowered when it stops being true.
+   *
+   * <p>These two are the only warnings raised from a <em>condition</em> rather than from an event,
+   * and nothing lowered them: when the condition went away the method's remaining branch treated a
+   * standing warning as "leave the banner alone", so the sentence stayed. Every clause of it was
+   * then false — including the one describing its own exit, "this clears when the device can read
+   * its own storage again" — and it held the warning flag, so every informational line was
+   * suppressed for the life of the process. The only way out was pressing Verify or Reject on some
+   * contact: a security gesture performed for a cosmetic reason.
+   */
+  @Test
+  public void thestorageWarningIsLoweredOnceStorageRecovers() {
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+    assertTrue("precondition: the storage warning must be standing: " + banner(),
+        banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
+
+    // Storage recovers, and the keyboard is raised again.
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.refreshOpeningMessage();
+
+    assertTrue("the warning must come down with its condition. Left standing it asserts something "
+            + "false about the store AND suppresses every other notice for the life of the "
+            + "process: " + banner(),
+        !banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
+    assertTrue("and the flag must be down too, or nothing can write the banner again",
+        !strip.warningIsStandingForTest());
+  }
+
+  /** But a warning about an EVENT is not lowered, because the event still happened. */
+  @Test
+  public void aneventWarningIsNotLoweredByArefresh() {
+    strip.setWarningMessageAboutForTest("Careful: someone offered a different key for Bob.", bob);
+
+    strip.refreshOpeningMessage();
+
+    assertTrue("only the two condition warnings are lowered here. A key substitution does not stop "
+            + "having happened because the store is readable: " + banner(),
+        banner().contains("different key for Bob"));
+  }
 }

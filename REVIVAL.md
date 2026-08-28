@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-four sections, written in the order things were found rather than by subject, so the
+Ninety-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -150,6 +150,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Twenty-eight seams and no way in](#twenty-eight-seams-and-no-way-in)
 - [Nine Errors nobody could catch](#nine-errors-nobody-could-catch)
 - [One slot, two facts, four defects](#one-slot-two-facts-four-defects)
+- [A warning raised from a condition has to come down with it](#a-warning-raised-from-a-condition-has-to-come-down-with-it)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5542,3 +5543,41 @@ justifying comment that is wrong on a fact the code beside it settles — "the p
 re-posted", the containment argument above, "every warning is re-derived on selection". The reasoning
 was being written faster than it was checked against the body. Three of that round's seven findings
 were exactly that, and they are why this section exists.
+
+## A warning raised from a condition has to come down with it
+
+**Two warnings here describe a state rather than an event, and nothing ever lowered them.** When the
+condition went away, the method's remaining branch treated a standing warning as "leave the banner
+alone", so the sentence stayed. Every clause was then false — including the one describing its own
+exit, *"this clears when the device can read its own storage again"* — and it held the warning flag,
+which suppressed every informational line for the life of the process. The only way out was pressing
+Verify or Reject on some contact: a security gesture performed for a cosmetic reason, which this file
+calls a false affordance everywhere else.
+
+Only those two are lowered, and only when they are the text standing. **Every other warning is about
+an event, and an event does not stop having happened** — a key substitution is not undone by the
+store becoming readable. Both halves are pinned: the condition warning comes down, the event warning
+does not.
+
+**And the retired-name dedup went back to keying on name AND address, one round after being changed
+to name alone.** The case for name-only was that the reader matches on the name, so a bound meant to
+count names should not be fillable by varying the address. That attack is real and it is *expensive*:
+retired entries are created only when the **user** deletes a contact, so it needs a hundred
+add-and-delete cycles the user performs, and an attacker cannot mint entries under a name the user
+never types.
+
+Name-only bought a far cheaper attack in exchange. The user deletes the genuine "Bob" at one address;
+an impostor invites as "Bob" from another, which correctly warns; the user heeds the warning and
+deletes the impostor — and that deletion, under the same folded name, **evicts the genuine entry**.
+Deletion deliberately keeps the pin, so the impostor's next invite at that same address is suppressed
+and arrives with no warning at all. One cycle, using the name it is impersonating as the eviction
+key, turning a firing warning into silence.
+
+A hundred user-driven cycles to crowd out an entry is worse than nothing; one attacker-driven cycle
+to delete the exact entry that would have warned is worse than that. **Both readings were defensible
+from the code; only counting who pays for each cycle decides between them.**
+
+**A mistake worth recording:** the edit that changed this back deleted the de-duplication line
+entirely — a comment replacement swallowed it — and three tests failed at once saying a hundred
+entries had accumulated where two were expected. That is what those tests are for, and it is the
+second time this session that a mechanical guard has caught a bad edit rather than a bad design.

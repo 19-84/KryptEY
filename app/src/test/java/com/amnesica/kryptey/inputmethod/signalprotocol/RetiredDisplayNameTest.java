@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -59,7 +61,10 @@ public class RetiredDisplayNameTest {
     // not check the premise either. Both now do.
     me.getSignalProtocolStore().getIdentityKeyStore().saveIdentity(peerAddress,
         org.signal.libsignal.protocol.IdentityKeyPair.generate().getPublicKey());
-  }
+      // This file deletes contacts and asserts they are gone. A deletion whose write does
+    // not land is rolled back so the user can retry, so the fixture has to say it writes.
+    TestStores.writesLand();
+}
 
   private SignalProtocolAddress elsewhere() {
     return ProtocolAddresses.of("attacker-uuid", 9);
