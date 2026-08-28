@@ -135,6 +135,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         ? contact != null
         : !chosenContact.equals(contact);
     chosenContact = contact;
+    // The flag is about the CHOSEN contact, so moving to somebody else must not carry their
+    // storage trouble onto this one - Encrypt would be dark for a contact whose row is on disk.
+    if (changed) mChosenContactReachedDisk = true;
     if (changed && mInputEditText != null && mInputEditText.getText().length() > 0) {
       Log.i(TAG, "Recipient changed; clearing the staged message");
       clearComposeFieldAndCaches();
@@ -248,24 +251,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * the host app decides when that happens.
    */
   /**
-   * Opens with a fixed phrase, and that is load-bearing rather than stylistic.
+   * Leads with the problem, and says nothing about when the contact disappears that is not true.
    *
-   * <p>{@code disablesActionButtons} matches the banner with {@code startsWith}, so a sentence whose
-   * first variable part is the contact's name cannot be matched at all. This notice tells the user
-   * "do not send them anything"; while it stood, the repaint that posted it turned Encrypt back on,
-   * so the app forbade and offered the same act on one screen. A stable opening is what lets the
-   * buttons agree with the sentence.
+   * <p>It once said "the next time the keyboard opens". That event does not reload the account:
+   * {@code reloadAccount} runs only from {@code LatinIME.setInputView}, whose only in-app caller
+   * fires on a theme or ui-mode change. Lowering and raising the keyboard changes nothing, so the
+   * contact stays present and usable in memory for as long as the process lives - the opposite of
+   * what the sentence promised, on the surface it had just been moved onto.
    *
-   * <p>It no longer says "the next time the keyboard opens" either. That event does not reload the
-   * account: {@code reloadAccount} runs only from {@code LatinIME.setInputView}, whose only in-app
-   * caller fires on a theme or ui-mode change. Lowering and raising the keyboard changes nothing, so
-   * the contact stays present and usable in memory for as long as the process lives - which is the
-   * opposite of what the sentence promised, on the surface it was just moved onto.
+   * <p>The fixed opening was briefly load-bearing: {@code disablesActionButtons} matched it with
+   * {@code startsWith} to keep Encrypt dark. That did not work and could not be made to - the banner
+   * is composed warning-first, so any warning sharing it pushed this notice off the start of the
+   * string and the match failed exactly when a security warning was already on screen. The refusal
+   * is a flag now, {@code mChosenContactReachedDisk}, and this phrase is only wording again.
    */
   private final String INFO_CONTACT_NOT_SAVED = "Not saved: contact %s was set up here, but it could not be saved - the app could not write to its own storage. They will be gone once this keyboard restarts. Do not send them anything until you have added them again successfully.";
 
-  /** The stable opening of {@link #INFO_CONTACT_NOT_SAVED}; see its javadoc. */
-  static final String INFO_NOT_SAVED_PREFIX = "Not saved:";
 
   /** A deletion that did not reach disk, which the next raise will undo. */
   private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
@@ -522,8 +523,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // warning about Alice, and the duplicate-name warning is never re-asserted, so it was gone
       // for good. Null-addressed warnings (storage, same-address) still clear here - they have no
       // other exit, and scoping them strictly would recreate the dead end round five removed.
-      clearStandingWarningIfAbout(chosenContact);
-      clearCautionIfAbout(chosenContact);
       // Ask BEFORE rejecting: afterwards there is never a pin, so the answer would always be no.
       final boolean hadAkeyToForget =
           mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress());
@@ -543,6 +542,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
               : hadAkeyToForget ? INFO_KEY_REJECTED
                   : (alreadyRejected ? INFO_ALREADY_REJECTED : INFO_NOTHING_TO_REJECT), label),
           Toast.LENGTH_LONG).show();
+
+      // Only once the rejection is on disk, which is the last member of this family to learn it.
+      //
+      // Scoped, for the reason removeContact is scoped: a deliberate response about THIS contact
+      // must not put down a warning about a different one. Rejecting Bob used to clear a standing
+      // warning about Alice, and the duplicate-name warning is never re-asserted, so it was gone
+      // for good. Null-addressed warnings (storage, same-address) still clear here - they have no
+      // other exit, and scoping them strictly would recreate the dead end round five removed.
+      //
+      // The clears used to run BEFORE the write, unconditionally. When the account write failed,
+      // the toast said so for three and a half seconds while the persistent surface had already
+      // been wiped and nothing put it back - and on the next reloadAccount the rejected key is
+      // pinned again with rejectedAddresses empty. That is the silent trust-on-first-use that
+      // markKeyRejected exists to prevent, with the app's only lasting warning about it gone.
+      // verifyContact learned this first and rolls back; removeContact learned it next; this was
+      // the one left.
+      if (mE2EEStrip.lastRejectionReachedDisk()) {
+        clearStandingWarningIfAbout(chosenContact);
+        clearCautionIfAbout(chosenContact);
+      }
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);
     });
@@ -1181,7 +1200,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // That second one is the same shape as the defect this notice was added for, in the arm it did
     // not reach. Fired before the security warnings below on purpose: toasts queue, so the last one
     // posted is the one left on screen, and a key warning must not be buried under a storage one.
-    if (!mE2EEStrip.lastContactWriteReachedDisk()) {
+    // Recorded as a FACT about this contact, not inferred later from what the banner happens to say.
+    //
+    // Reading it back off the banner failed in the state that matters most. The banner is composed
+    // warning-first, so the moment any warning shares it - a post-rejection pin, a duplicate name,
+    // both reachable in this same method - the notice is no longer at the START of the string and a
+    // startsWith gate simply misses it. The gate was defeated exactly when a security warning was
+    // already on screen.
+    // Before either arm can pin anything. Both of them run in this method, and the second reads a
+    // world the first may have changed, so a per-arm snapshot would be taken too late on the arm
+    // that matters.
+    final boolean keyPinnedBeforeThisAdd =
+        mE2EEStrip.hasPinnedKey(recipientProtocolAddress);
+
+    mChosenContactReachedDisk = mE2EEStrip.lastContactWriteReachedDisk();
+    if (!mChosenContactReachedDisk) {
       Toast.makeText(getContext(),
           String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
           Toast.LENGTH_LONG).show();
@@ -1243,7 +1276,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // on top of a security warning, which StripWarningErasureTest exists to forbid.
           //
           // So: both. The warning keeps standing and keeps its text; the caution appears under it.
-          cautionThatAkeyWasPinned();
+          cautionThatAkeyWasPinned(keyPinnedBeforeThisAdd);
         }
       } else {
         // warnIfIdentityChanged is a WRITER, not a predicate, and it was sitting on the right of an
@@ -1310,7 +1343,36 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // them - and since disablesActionButtons matches that exact sentence, Encrypt and Decrypt
       // stayed dark. The user was handed a decrypted message and no way to answer it, on the flow
       // the help calls "automatically selected".
-      cautionThatAkeyWasPinned();
+      cautionThatAkeyWasPinned(keyPinnedBeforeThisAdd);
+      // And the banner is repainted whether or not anything was pinned.
+      //
+      // It used to be repainted only as a side effect of posting that caution, so gating the
+      // caution took the repaint with it: on a decrypt that pins nothing the banner was left
+      // reading "No contact chosen" while a contact WAS chosen, which is false about the thing that
+      // matters most on this screen and, because disablesActionButtons matches that sentence, left
+      // both action buttons dark.
+      showChosenContactInMainInfoField();
+    }
+
+    // Last, so it is the caution left standing.
+    //
+    // Both arms above may post the compare-the-number caution, and there is one caution slot. The
+    // two sentences are about different things - one about a key, one about the contact row - but
+    // when both are true the row is the one to say, because its advice contains the other's: "do
+    // not send them anything until you have added them again successfully" already forbids sending
+    // anything private to a key nobody has compared, and it also explains why the contact is about
+    // to vanish, which the compare-the-number sentence does not mention.
+    //
+    // Posted here rather than where the fact is learned, for exactly that ordering: written earlier,
+    // it was overwritten a few lines later by the arm that pinned, and the screen went back to
+    // reassuring the user about a contact that will not survive the next restart.
+    //
+    // Independent of whether a key was pinned, which folding it into the pin caution had made it:
+    // a refused invite whose write also failed says nothing about keys, and used to say nothing
+    // about the lost row either, past a toast.
+    if (!mChosenContactReachedDisk) {
+      setCautionBesideAnyWarning(String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+          chosenContact);
     }
   }
 
@@ -1324,50 +1386,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * between two messages for the opposite reason, and the moment one copy is reworded the two arms
    * start describing the same event differently.
    */
-  private void cautionThatAkeyWasPinned() {
-    // Only if one actually was, which the first version of this did not ask.
-    //
-    // The sentence is a claim about an event - "this key reached you through the messenger" - and
-    // the ciphertext arm that calls it attempts a decrypt and discards the result. A decrypt that
-    // fails pins nothing, so one crafted paste (no bundle, arbitrary bytes, a type this app will
-    // route here on field presence alone) bought the messenger a false security claim: the user is
-    // told a key arrived that the app cannot attribute and sent to compare a security number, on a
-    // screen with no fingerprint to render, whose Reject button is re-armed only for a standing
-    // WARNING and so stays dark. A standing caution also makes mayOverwriteInfoBanner refuse, so
-    // the banner is held for the life of the strip and every later clipboard hint is suppressed.
-    //
-    // It also painted over the truth. An envelope carrying a bundle AND a message runs both arms;
-    // with the bundle refused the first arm writes "Could not set up a session from that invite.
-    // Ask your contact to send a fresh one" as a plain line, and this repaint composes the banner
-    // from the standing items alone - so the one sentence telling the user what to do next was
-    // replaced by a claim that a contact was created and a key arrived.
-    //
-    // The file had the right shape twice already and this was written without either:
-    // warnIfKeyWasRejected is gated on an actual pin, and decryptMessageAndShowMessageInMainInput-
-    // Field computes keyPinnedByThisPaste before choosing its wording.
-    if (chosenContact == null
-        || !mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress())) {
-      return;
-    }
-    // A contact that did not reach disk gets the stronger sentence, and gets it on the surface that
-    // lasts.
-    //
-    // The lost write was reported by a toast while the caution beside it was stored in
-    // mStandingCaution - so the false statement was the PERSISTENT one. A toast is about three and
-    // a half seconds; the caution survives every repaint, a screen switch and a rebuild. The user
-    // read "compare the security number by voice before sending anything private" for as long as
-    // they looked at the screen, went off to compare a number for a contact that will not exist
-    // after the next raise, and the messenger picks when that raise happens.
-    //
-    // The advice is also strictly stronger, so nothing is lost by replacing rather than appending:
-    // "do not send them anything until you have added them again successfully" covers everything
-    // "do not send anything private" does, and covers the reason the contact is about to vanish,
-    // which the other sentence does not mention.
-    if (!mE2EEStrip.lastContactWriteReachedDisk()) {
-      setCautionBesideAnyWarning(String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
-          chosenContact);
-      return;
-    }
+  /**
+   * The caution owed when a key was pinned by THIS paste.
+   *
+   * <p>Gated on the event actually having happened, and "happened" means <em>changed</em>, not
+   * "is true now". {@code hasPinnedKey} alone is satisfied by a pin that survived a deletion —
+   * {@code removeContact} keeps the identity on purpose — so after deleting a contact and re-adding
+   * them, any envelope at that address made the app announce that a key had just reached the user
+   * through the messenger when nothing of the sort occurred. It also fires on the honest re-add,
+   * where the message decrypts precisely BECAUSE it matched the key already trusted, which is the
+   * opposite of an unattributable new key.
+   *
+   * <p>The caller passes whether anything was pinned before it acted; this fires only on the
+   * transition. That is exactly the {@code keyPinnedByThisPaste} shape the sibling on the decrypt
+   * path already uses, and the before-value has to be a parameter because by the time this runs the
+   * pin has happened and the old answer is gone.
+   *
+   * <p>A pin that merely CHANGES cannot occur here and is not the omission it looks like: with a key
+   * already pinned, a different one is refused rather than substituted, which is the whole point of
+   * pinning.
+   */
+  private void cautionThatAkeyWasPinned(final boolean pinnedBefore) {
+    if (chosenContact == null || pinnedBefore) return;
+    if (!mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress())) return;
+
     setCautionBesideAnyWarning("Contact " + labelFor(chosenContact)
         + " created. This key reached you through the messenger and the app cannot tell whose it is"
         + " - compare the security number by voice before sending anything private.", chosenContact);
@@ -1593,13 +1635,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Decrypt on an install whose store cannot be decrypted. Caught by the test that asserts the
     // storage warning keeps its buttons down - which is the whole reason that assertion is in it.
     return message.startsWith(INFO_NO_CONTACT_CHOSEN_TEXT)
-        || message.startsWith(INFO_STORAGE_UNREADABLE)
-        // A contact that did not reach disk. The banner says "do not send them anything until you
-        // have added them again successfully", and the repaint that put it there used to turn
-        // Encrypt on - so the app forbade and offered the same act at once, and encryptAndSend has
-        // no storage guard of its own. Sending would hand the messenger ciphertext for a session
-        // that exists only in memory.
-        || message.startsWith(INFO_NOT_SAVED_PREFIX);
+        || message.startsWith(INFO_STORAGE_UNREADABLE);
   }
 
   private void setMainInfoTextTextChangeListener() {
@@ -1648,6 +1684,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * over a password box with a substitution warning on screen both buttons stayed lit - the one
    * state where both of the app's reasons to refuse are live at once.
    */
+  /**
+   * Whether the chosen contact's row is known to have reached disk.
+   *
+   * <p>A fact, kept because the alternative was reading it back out of the banner - and the banner
+   * is composed warning-first, so any warning sharing it moved the notice off the start of the
+   * string and a prefix match missed it precisely when a security warning was already on screen.
+   */
+  private boolean mChosenContactReachedDisk = true;
+
   private void refreshActionButtons() {
     // The same guard setMainInfoTextTextChangeListener carries, and no more: the buttons come from
     // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
@@ -1665,7 +1710,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
             || disablesActionButtons(mInfoTextView.getText().toString())
             ? ButtonState.DISABLED : ButtonState.ENABLED;
     changeImageButtonState(mDecryptButton, state);
-    changeImageButtonState(mEncryptButton, state);
+
+    // Encrypt alone carries the lost-write refusal, and Decrypt deliberately does not.
+    //
+    // Disabling both was a trap with no exit. The notice says "do not send them anything until you
+    // have added them again successfully"; adding them again means pasting their invite, and
+    // pasting needs Decrypt. Deleting the contact first does not help - a deletion whose write also
+    // fails is not treated as done, so the caution stays up while the row leaves the list, taking
+    // that contact's verify screen and therefore the only unconditional clear with it. The banner
+    // then held a caution nothing could clear, with both buttons dark FOR EVERY CONTACT, including
+    // ones whose keys are fine on disk, until the input-method process was killed. A rotation did
+    // not help: the caution is carried across a rebuild on purpose.
+    //
+    // Refusing to SEND is the whole of what the sentence asks for. Reading is how the user gets out.
+    changeImageButtonState(mEncryptButton,
+        state == ButtonState.ENABLED && !mChosenContactReachedDisk
+            ? ButtonState.DISABLED : state);
   }
 
   /**
@@ -2985,6 +3045,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final String standingCaution;
     /** The contact that caution is about, so a rebuild does not widen or narrow its scope. */
     private final String standingCautionAddress;
+    /**
+     * Whether the chosen contact's row reached disk.
+     *
+     * <p>Carried for the same reason the caution beside it is: a rebuild would otherwise re-enable
+     * Encrypt under a banner still saying "do not send them anything until you have added them
+     * again successfully", so the app would forbid and offer the same act across a rotation - and a
+     * configuration change is something the host app can force at will.
+     */
+    private final boolean chosenContactReachedDisk;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
@@ -2992,7 +3061,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final CharSequence banner, final boolean warningStanding,
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
-        final String standingCautionAddress,
+        final String standingCautionAddress, final boolean chosenContactReachedDisk,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -3003,6 +3072,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingWarningIsInviteRefusal = standingWarningIsInviteRefusal;
       this.standingCaution = standingCaution;
       this.standingCautionAddress = standingCautionAddress;
+      this.chosenContactReachedDisk = chosenContactReachedDisk;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -3079,7 +3149,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
-        mStandingCautionAddress, mHostFieldIsPassword, encodingMethod);
+        mStandingCautionAddress, mChosenContactReachedDisk, mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -3154,6 +3224,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       mStandingCaution = carried.standingCaution;
       mStandingCautionAddress = carried.standingCautionAddress;
     }
+    // Restored unconditionally, and outside the caution block: the two travel together, but a
+    // rebuild that dropped this while keeping the caution would light Encrypt under a banner that
+    // forbids sending.
+    mChosenContactReachedDisk = carried.chosenContactReachedDisk;
     // Repainted through the shared builder so the restored banner shows both, rather than the
     // warning alone - which is the erase this carry exists to stop.
     if (mWarningStanding || mStandingCaution != null) {

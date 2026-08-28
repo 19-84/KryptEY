@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-seven sections, written in the order things were found rather than by subject, so the
+Sixty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -123,6 +123,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The true thing faded and the false thing stayed](#the-true-thing-faded-and-the-false-thing-stayed)
 - [A claim about an event, made without checking the event](#a-claim-about-an-event-made-without-checking-the-event)
 - [The fail-open that made every fixture mean two things](#the-fail-open-that-made-every-fixture-mean-two-things)
+- [The refusal that locked the keyboard](#the-refusal-that-locked-the-keyboard)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4537,3 +4538,55 @@ Those were testing the event against a deletion that never happened.
 rather than quietly changing what a dozen fixtures mean. It is the same file that pinned the
 disagreement one commit earlier, rewritten rather than deleted, because the disagreement is the
 reason the agreement is worth asserting.
+
+## The refusal that locked the keyboard
+
+**Round twenty-two found six defects, four of them introduced by the two rounds before it. The worst
+was a state the user could not get out of.**
+
+**The lock.** The lost-write notice disabled Encrypt *and* Decrypt. The notice says "do not send them
+anything until you have added them again successfully" — and adding them again means pasting their
+invite, which needs Decrypt. Deleting them first does not help: a deletion whose write also fails is
+correctly not treated as done, so the caution stays up while the row leaves the list, taking that
+contact's verify screen and therefore the only unconditional clear with it. The banner then held a
+caution nothing could clear, with **both buttons dark for every contact**, including ones whose keys
+are fine on disk, until the input-method process was killed. A rotation did not help: the caution is
+carried across a rebuild on purpose. The user could not read a message from anybody.
+
+Encrypt alone carries the refusal now. Refusing to *send* is the whole of what the sentence asks
+for; reading is how the user gets out.
+
+**The gate that was defeated exactly when it mattered.** Button state was derived by matching the
+start of the banner. The banner is composed **warning-first**, so any standing warning — a
+post-rejection pin, a duplicate name, both reachable in the same `addContact` — pushed the notice
+into the middle of the string and the match missed. Encrypt came back on precisely when a security
+warning was already on screen. The refusal is a fact now, `mChosenContactReachedDisk`, recorded where
+it is known instead of inferred from what the screen happens to say. Prose is not a data structure.
+
+**The gate that asked the wrong question.** `hasPinnedKey` answers "is a key pinned now", and
+`removeContact` keeps the pin on purpose. So after deleting a contact, any envelope at that address
+made the app announce that a key had just reached the user through the messenger — weeks after it
+had. It fired on the honest re-add too, where the message decrypts *because* it matched the key
+already trusted, which this file elsewhere spends a paragraph explaining is the opposite of an
+unattributable new key. The caller now passes what was pinned before it acted, which is the
+`keyPinnedByThisPaste` shape the decrypt path had all along.
+
+**And the two facts were folded into one.** "A key was pinned" and "the contact row reached disk"
+have nothing to do with each other, but the lost-write notice had been put inside the pin caution —
+so a refused invite whose write also failed said so for three and a half seconds and then looked
+ordinary. They are separate again, and the row's notice is posted last, because when both are true
+the row is the one to say: its advice contains the other's.
+
+**Reject was the last member of the write family clearing unconditionally.** It put the standing
+warning and caution down *before* writing. When the write failed, the toast said so briefly while the
+persistent surface had already been wiped and nothing restored it — and on the next `reloadAccount`
+the rejected key is pinned again with `rejectedAddresses` empty, which is the silent
+trust-on-first-use `markKeyRejected` exists to prevent. `verifyContact` learned this first,
+`removeContact` next, this last.
+
+**A control of mine was hollow again, in the way already written down here.** Two of the three tests
+for the reject fix read the banner text. `clearStandingWarning` lowers the flag and does not repaint,
+so those assertions passed whether or not the warning was cleared. They assert the flag now, with the
+clipboard test beside them proving the screen follows it. That lesson had been recorded twice before
+and still had to be learned a third time on first draft — which is the honest reason it is being
+written again rather than a new one.

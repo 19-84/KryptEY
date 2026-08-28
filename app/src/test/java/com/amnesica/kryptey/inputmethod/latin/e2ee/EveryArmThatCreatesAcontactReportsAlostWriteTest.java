@@ -156,6 +156,11 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
         peerAddress.getName(), peerAddress.getDeviceId())));
   }
 
+  private String banner() {
+    return String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+  }
+
   private String expectedNotice() throws Exception {
     final java.lang.reflect.Field f =
         E2EEStripView.class.getDeclaredField("INFO_CONTACT_NOT_SAVED");
@@ -277,30 +282,75 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
   }
 
   /**
-   * The buttons must agree with the sentence.
+   * The buttons must agree with the sentence — and only the button the sentence is about.
    *
-   * <p>The banner says "do not send them anything until you have added them again successfully",
-   * and the repaint that posts it runs {@code refreshActionButtons}. While that sentence could not
-   * be matched by {@code disablesActionButtons} - its first variable part was the contact's name,
-   * and the match is a {@code startsWith} - the same repaint turned Encrypt back on. So the app
-   * forbade and offered the same act on one screen, and {@code encryptAndSendInputFieldContent} has
-   * no storage guard of its own: pressing it hands the messenger ciphertext for a contact and
-   * session that exist only in memory.
+   * <p>Encrypt goes dark, because the banner says "do not send them anything until you have added
+   * them again successfully" and {@code encryptAndSendInputFieldContent} has no storage guard of its
+   * own: pressing it hands the messenger ciphertext for a contact and session that exist only in
+   * memory.
+   *
+   * <p><b>Decrypt does not</b>, and that is the more important half. Disabling both was a trap with
+   * no exit: adding the contact again means pasting their invite, and pasting needs Decrypt.
+   * Deleting them first does not help — a deletion whose write also fails is not treated as done, so
+   * the caution stays up while the row leaves the list, taking that contact's verify screen and
+   * therefore the only unconditional clear with it. The banner then held a caution nothing could
+   * clear, with both buttons dark <em>for every contact</em>, until the input-method process was
+   * killed; a rotation did not help, because the caution is carried across a rebuild on purpose.
    */
   @Test
-  public void alostWriteLeavesEncryptDisabled() throws Exception {
+  public void alostWriteDisablesEncryptAndLeavesDecryptAlone() throws Exception {
     makeTheAccountWriteFail();
     typeTheName();
     strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
 
-    assertTrue("precondition: the banner must be carrying the lost write",
-        String.valueOf(((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text))
-            .getText()).startsWith(E2EEStripView.INFO_NOT_SAVED_PREFIX));
-    assertTrue("and that banner must disable the buttons, or the app forbids and offers the same "
-            + "act at once", E2EEStripView.disablesActionButtons(
-                String.valueOf(((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text))
-                    .getText())));
+    assertTrue("precondition: the banner must be carrying the lost write. " + banner(),
+        banner().contains("could not be saved"));
     assertTrue("Encrypt must be dark while the app is telling the user not to send anything",
         !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+    assertTrue("Decrypt must stay live, or the instruction in the banner cannot be followed: "
+            + "adding the contact again means pasting their invite, and there is no other route "
+            + "back to the add screen",
+        strip.findViewById(R.id.e2ee_button_decrypt).isEnabled());
   }
+
+  /**
+   * And the refusal is not read off the banner, so a warning sharing it cannot defeat it.
+   *
+   * <p>The banner is composed warning-first. While the button state was derived by matching the
+   * start of that string, any standing warning pushed the notice into the middle and the match
+   * missed — so Encrypt came back on precisely when a security warning was already on screen, which
+   * is the state where sending matters most. Both are reachable together in one {@code addContact}.
+   */
+  @Test
+  public void awarningSharingTheBannerDoesNotReviveEncrypt() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.setWarningMessageForTest("Careful: something about a key.");
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("precondition: a warning must be sharing the banner, ahead of the notice: "
+            + banner(), banner().startsWith("Careful:"));
+    assertTrue("and the notice must still be there, further down: " + banner(),
+        banner().contains("could not be saved"));
+    assertTrue("Encrypt must still be dark. Deriving this from the start of the banner meant a "
+            + "warning could turn sending back on.",
+        !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
+
+  /** Choosing somebody else must not inherit this contact's storage trouble. */
+  @Test
+  public void anotherContactIsNotPunishedForThisOne() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    assertTrue("precondition", !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+
+    strip.selectContact(new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
+        "Carol", "Smith", peerAddress.getName(), peerAddress.getDeviceId() + 1, false));
+
+    assertTrue("a contact whose row is on disk must be usable; the refusal is about the contact "
+            + "that failed to save, not about the app",
+        strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
+
 }

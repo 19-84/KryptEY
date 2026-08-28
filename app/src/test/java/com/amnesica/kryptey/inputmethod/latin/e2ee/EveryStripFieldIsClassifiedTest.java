@@ -62,7 +62,12 @@ public class EveryStripFieldIsClassifiedTest {
       // And the contact it is about. Carried for the same reason the warning's address is: without
       // it a rebuild widens the caution's scope to "any contact", so the next deliberate response
       // about anybody takes it down.
-      "mStandingCautionAddress"));
+      "mStandingCautionAddress",
+      // Whether the chosen contact's row reached disk. Carried for the same reason as the caution
+      // it travels with: a rebuild would otherwise re-enable Encrypt under a banner still saying
+      // "do not send them anything until you have added them again successfully", and a
+      // configuration change is something the host app can force at will.
+      "mChosenContactReachedDisk"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

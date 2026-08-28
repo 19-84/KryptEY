@@ -177,4 +177,43 @@ public class TheCautionOnlyFiresWhenAkeyWasPinnedTest {
     assertTrue("the caution that fires because nothing was noticed must survive being gated: "
             + banner(), banner().contains("compare the security number"));
   }
+
+  /**
+   * A pin that survived a deletion is not a key that just arrived.
+   *
+   * <p>{@code removeContact} keeps the pinned identity on purpose — that is what stops a later
+   * invite claiming to be the same person from being accepted silently — while removing the row. So
+   * after a deletion the add-contact screen is reachable at an address that still holds a pin, and
+   * "is a key pinned here?" answers yes about an event that happened weeks ago.
+   *
+   * <p>Asking that question was the first attempt at this gate, and it is wrong in both directions
+   * that matter: it fires on the dishonest path, where the messenger reposts arbitrary bytes at a
+   * deleted contact's address, and on the honest one, where the peer's message decrypts precisely
+   * BECAUSE it matched the key the app already trusted — which the file elsewhere spends a paragraph
+   * explaining is the opposite of an unattributable new key. The gate now asks whether the pin
+   * <em>changed</em>.
+   */
+  @Test
+  public void apinLeftBehindByAdeletionIsNotAnewKey() throws Exception {
+    // Add Bob properly, so a key is pinned at his address.
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    assertTrue("precondition: the genuine add must pin a key",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    // Delete him. The row goes; the pin deliberately stays.
+    strip.removeContact(strip.chosenContactForTest());
+    assertTrue("precondition: deletion must keep the pin - that is what this test is about",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    // The messenger reposts arbitrary bytes at that address; the user adds the contact again.
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+    strip.addContactForTest(rubbishCiphertext());
+
+    assertFalse("nothing was pinned by this add - the key has been there since before the "
+            + "deletion - so the app must not announce that a key just reached the user through "
+            + "the messenger. Saying so also holds the banner for the life of the strip, because a "
+            + "standing caution makes mayOverwriteInfoBanner refuse. Banner: " + banner(),
+        banner().contains("This key reached you through the messenger"));
+  }
 }
