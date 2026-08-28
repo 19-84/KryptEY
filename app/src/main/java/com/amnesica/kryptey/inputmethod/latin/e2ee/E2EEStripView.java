@@ -1908,6 +1908,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean mStandingCautionIsAstorageNotice;
 
+  /**
+   * Whether the last paste carried an invite that did not verify.
+   *
+   * <p>Recorded separately from whether the sentence was painted. The paint is suppressed when a
+   * more serious warning already holds the banner, and for several rounds that suppression took the
+   * fact with it - so raising any cheap warning first bought silence on every tampered invite
+   * afterwards.
+   */
+  private boolean mLastInviteWasRefused;
+
   private String mStandingStoreNotice;
 
   /** The message-log write count when that notice went up; see {@link #clearAstoreNoticeThatHasBeenResolved}. */
@@ -3061,6 +3071,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return mContactsNotOnDisk.size();
   }
 
+  /** Whether the last paste carried an invite that did not verify, for tests. */
+  boolean lastInviteWasRefusedForTest() {
+    return mLastInviteWasRefused;
+  }
+
   /** Whether sending is refused for the chosen contact, for tests. */
   boolean sendingIsRefusedForTest() {
     // Expire first, exactly as the send path does. Asking the bare predicate would be asking a
@@ -3290,6 +3305,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
+  /**
+   * Re-raises the duplicate-name warning while two rows still share a rendered name.
+   *
+   * <p>Recomputed rather than remembered. The condition is a fact about the contact list, so asking
+   * it is always possible, and a warning that can be asked again cannot be evicted for good by an
+   * attacker who raises a cheaper one to take the slot.
+   *
+   * <p>Scoped to this contact's address, so deleting either of the two rows puts it down - which is
+   * the resolution the warning is asking for, and the reason the original was addressed.
+   */
+  private boolean warnIfNameIsShared(final Contact contact) {
+    if (contact == null) return false;
+    if (!mE2EEStrip.hasContactWithSameDisplayName(contact.getFirstName(), contact.getLastName(),
+        contact.getSignalProtocolAddress())) {
+      return false;
+    }
+    final String duplicate = String.format(duplicateNameMessage(contact), labelFor(contact));
+    setWarningMessage(duplicate, String.valueOf(contact.getSignalProtocolAddress()));
+    return true;
+  }
+
   /** Posts the refused-invite warning, tagged so a later good invite can retract it. */
   private void setInviteRefusalWarning(final String message, final String aboutAddress) {
     setWarningMessage(message, aboutAddress);
@@ -3364,6 +3400,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     meant "the bundle was not refused".
    */
   private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
+    // Cleared per attempt, so a caller asking about THIS paste is never told about a previous one.
+    mLastInviteWasRefused = false;
     // BEFORE the decrypt, because the decrypt itself can create one. decryptMessage's PREKEY_TYPE
     // arm pins by trust-on-first-use whenever the address holds no key, and a refused attached
     // bundle does not stop it - the PreKeySignalMessage carries its own identity key. Asking
@@ -3427,6 +3465,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // ordinary message would be overwritten with "Chosen contact: Bob" and the refusal would be
       // as silent as before. Soft, because it must not be able to suppress a message that says
       // more than it does - see setInfoUnlessWarned.
+      // The fact is recorded whether or not the sentence is painted, which is the same separation
+      // the add path needed and got.
+      //
+      // Suppressing the sentence when another warning already stands is right - a refusal must not
+      // paint over a detected key substitution. Losing the FACT with it was not: an attacker who
+      // first raises any cheap warning (one forged bundle) can then strip the one-time pre-key -
+      // one unsigned byte - from every subsequent invite, and "it does not verify, which means it
+      // was changed on the way here" is never shown at all. That claim is strictly stronger than
+      // anything the pin caution says, and it was the half being dropped.
+      mLastInviteWasRefused = true;
+
+      // Said out loud even when the banner is not available to say it on.
+      //
+      // A toast cannot displace the standing warning, so this keeps the suppression's purpose - a
+      // refusal must not paint over a detected key substitution - while still telling the user that
+      // the invite they just pasted was altered in transit. Three and a half seconds is a poor
+      // surface for it, and it is strictly better than the nothing that was there: an attacker who
+      // raises one cheap warning first was otherwise buying silence on every tampered invite that
+      // followed, for one unsigned byte each.
+      Toast.makeText(getContext(),
+          String.format(INFO_INVITE_REFUSED, labelFor(sender)), Toast.LENGTH_LONG).show();
+
       if (!identityChanged && !mWarningStanding) {
         // Three states, and each needs its own sentence. Two of them were collapsed into one and
         // the collapse pointed the wrong way: the reassuring wording landed on the first-pin case.
@@ -4007,8 +4067,35 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // to need it too: a bundle whose signature fails is refused and pins nothing, so "the pin lands
     // after the check" was only true for good bundles. Keeping a copy of it here as well would be a
     // guard no mutation could kill.
-    final boolean warnedAboutThisContact =
-        warnIfIdentityChanged(contact) || warnIfKeyWasRejected(contact);
+    // Three now, not two, and the third is the one that could be lost for good.
+    //
+    // The duplicate-name warning was raised in exactly one place - inside addContact - and never
+    // re-asserted. The warning slot holds one thing, so any later warning REPLACED it: a forged
+    // bundle for a different contact costs an attacker nothing and calls setWarningMessage
+    // unconditionally. The user then does what that second warning tells them - compares the number
+    // for the genuine contact, it matches, presses Verify - and the clear is address-scoped to the
+    // contact they just verified, so both warnings are gone. The impostor row is left
+    // indistinguishable from a healthy contact and nothing mentions it again.
+    //
+    // Written as a re-assertion rather than a fourth slot because the condition is standing state:
+    // two rows whose rendered names fold together is a fact about the contact list, recomputable at
+    // any time, exactly like a pending identity change or a rejection record. A warning that can be
+    // recomputed cannot be evicted permanently.
+    // All three called, none of them behind a short circuit, and deliberately in reverse order of
+    // severity.
+    //
+    // They are writers: each posts into the single warning slot, so the LAST one that fires is the
+    // one left on screen. Calling them in an || chain skipped the later ones whenever an earlier
+    // one fired, which is how a writer stops being called - the defect this file records about
+    // warnIfIdentityChanged. Calling them in severity order would be worse: the least serious would
+    // land last and hold the slot.
+    //
+    // So: shared name, then rejection, then identity change. A detected key substitution outranks
+    // everything and is written last.
+    final boolean sharedName = warnIfNameIsShared(contact);
+    final boolean rejected = warnIfKeyWasRejected(contact);
+    final boolean identityChanged = warnIfIdentityChanged(contact);
+    final boolean warnedAboutThisContact = sharedName || rejected || identityChanged;
     if (mWarningStanding) {
       // Do not write OVER the warning - that is the same erasure whether or not the flag comes down
       // with it, because what the user reads is the banner. Repaint it with the new recipient named

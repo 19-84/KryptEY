@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-four sections, written in the order things were found rather than by subject, so the
+Eighty-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -140,6 +140,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A sentence with no caller](#a-sentence-with-no-caller)
 - [The advice that must never be given for a storage error](#the-advice-that-must-never-be-given-for-a-storage-error)
 - [A method with no callers, and an invite dead on arrival](#a-method-with-no-callers-and-an-invite-dead-on-arrival)
+- [One warning slot, and what fits in it](#one-warning-slot-and-what-fits-in-it)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5191,3 +5192,40 @@ reply this device could not decrypt — and the app's advice for an unreadable m
 contact and ask for a new invite, which is the key-substitution window, reached out of a storage
 fault nobody mentioned. The invite is refused now rather than handed over, and the send path reports
 its own lost key state, which was the last write in the family with no reader at all.
+
+## One warning slot, and what fits in it
+
+**The duplicate-name warning was raised in exactly one place and never re-asserted, while the warning
+slot holds one thing. That is an eviction an attacker can buy for one forged bundle.**
+
+The warning fires when a second contact's rendered name folds onto an existing one — the file calls
+it "the only control covering the case the pin cannot", because two rows the user cannot tell apart
+is the cheapest bypass of the whole trust model. The attack: get a second "Bob Jones" added at an
+address you control, then post one forged bundle for the genuine Bob. That second warning costs
+nothing and calls `setWarningMessage` unconditionally, replacing the duplicate-name text. The user
+then does exactly what the app tells them — compares the number for the genuine Bob, it matches
+because the pin never moved, presses Verify — and the clear is scoped to the contact they just
+verified. Both warnings are gone, the impostor row is indistinguishable from a healthy contact, and
+nothing mentions it again.
+
+It is recomputed now rather than remembered. Two rows sharing a folded name is a fact about the
+contact list, so it can be asked at selection time like a pending identity change or a rejection
+record — and **a warning that can be asked again cannot be evicted for good.**
+
+**Three writers now share that slot, and the order they run in is the fix's other half.** They are
+writers, so the last one to fire holds the banner. Chained with `||` the later ones were skipped
+whenever an earlier one fired — the short-circuit guard caught that immediately, as it has every time
+this file has done it. Calling them in severity order would have been worse: the least serious would
+land last and hold the slot. So they run in *reverse* severity — shared name, then rejection, then
+identity change — and a detected key substitution is written last.
+
+**And the invite-refusal fact was being lost with its sentence.** Suppressing the refusal's banner
+text while a more serious warning stands is right. Dropping the *fact* meant an attacker who first
+raises any cheap warning could then strip the one-time pre-key — one unsigned byte, covered by
+neither signature — from every subsequent invite, and "it does not verify, which means it was changed
+on the way here" was never shown at all. That claim is strictly stronger than anything the pin
+caution says. It is recorded per attempt now and said on a channel that cannot displace the warning,
+which is a poor surface for it and strictly better than the nothing that was there.
+
+That is the third time this exact separation has been needed — record the fact, decide separately
+whether to paint it — and each time the suppression was correct and taking the fact with it was not.

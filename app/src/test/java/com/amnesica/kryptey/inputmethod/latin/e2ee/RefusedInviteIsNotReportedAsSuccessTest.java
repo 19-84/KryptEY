@@ -867,4 +867,33 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     assertTrue("and nothing may be left standing over the banner after a healthy rotation",
         strip.mayOverwriteInfoBanner());
   }
+
+  /**
+   * A refused invite is still said when a warning already holds the banner.
+   *
+   * <p>The banner suppression is right — a refusal must not paint over a detected key substitution —
+   * but the FACT was being suppressed with the sentence. So an attacker who first raises any cheap
+   * warning, which one forged bundle does, could then strip the one-time pre-key from every
+   * subsequent invite (one unsigned byte, covered by neither signature) and "it does not verify,
+   * which means it was changed on the way here" was never shown at all. That claim is strictly
+   * stronger than anything the pin caution says, and it was the half being dropped.
+   *
+   * <p>It is said on a channel that cannot displace the warning. Three and a half seconds is a poor
+   * surface for it and is strictly better than nothing.
+   */
+  @Test
+  public void arefusedInviteIsRecordedEvenWhenAwarningHoldsTheBanner() throws Exception {
+    contactRowWithoutASession();
+    // Any warning at all, which is what an attacker arranges first.
+    strip.setWarningMessageForTest("Careful: something else entirely.");
+
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    assertTrue("the standing warning must survive - suppressing the refusal's banner text is "
+            + "correct: " + bannerText(), bannerText().contains("something else entirely"));
+    assertTrue("but the refusal must still be recorded. Losing the fact with the sentence let one "
+            + "cheap warning buy silence on every tampered invite that followed.",
+        strip.lastInviteWasRefusedForTest());
+  }
 }
