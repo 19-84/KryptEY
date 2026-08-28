@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-eight sections, written in the order things were found rather than by subject, so the
+Seventy-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -134,6 +134,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A decision, rather than a third flip](#a-decision-rather-than-a-third-flip)
 - [Comparing the arms instead of remembering them](#comparing-the-arms-instead-of-remembering-them)
 - [One sentence doing four jobs](#one-sentence-doing-four-jobs)
+- [A row with no key, and the arm that filled it](#a-row-with-no-key-and-the-arm-that-filled-it)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5009,3 +5010,32 @@ written for: it ran once at construction against an empty map and never on a tap
 described what it would do if it were one line further in. Removing it is trivial; noticing it
 mattered, because it is why the expiry is concentrated entirely on the Encrypt tap, which is what
 made the defect above a single-tap sequence rather than a slow drift.
+
+## A row with no key, and the arm that filled it
+
+**The caution that exists for exactly one event — a key arriving through the messenger that the app
+cannot attribute — had both of its callers inside `addContact`. So it announced pins made while
+adding a contact, and no others.**
+
+A contact row with no pinned key is not an exotic state; the attacker makes one. Strip the one-time
+pre-key from a genuine invite — one unsigned byte, covered by neither signature — and the bundle is
+refused while the row, created before the bundle is processed, survives. From then on that address is
+a **known contact**, so a later message from it routes to the message arms rather than to the add
+screen. `isTrustedIdentity` returns true whenever nothing is pinned, and `decrypt` takes its PreKey
+arm on the ciphertext type alone, so a bundle-less `PreKeySignalMessage` pins its own identity key by
+trust-on-first-use. The user sees a decrypted message under "Detected contact".
+
+Neither step needs a forged signature. **Omitting one optional field is what moved the envelope from
+the arm that cautions to the arm that said nothing** — the fifth instance of that shape, and the
+first found by a review round after the mechanical guard for it was written, because that guard
+compares the three arms to each other and this control was on none of them.
+
+The check now sits where every arm's pin passes through, on the decrypt path, next to the
+before-value that was already being computed there and used for one sentence only.
+
+**Two existing tests had to change, and they were right to.** Both asserted that nothing stands over
+the banner after a healthy re-invite. A compare-the-number caution now does, and it is correct rather
+than residue: that paste pinned a key at an address that held none, which is exactly the event the
+caution describes — it had simply never been said on that path. What those tests were actually
+guarding, that "always warn" must not pass them, is asked of **warnings** now, which is what the
+guard was for.

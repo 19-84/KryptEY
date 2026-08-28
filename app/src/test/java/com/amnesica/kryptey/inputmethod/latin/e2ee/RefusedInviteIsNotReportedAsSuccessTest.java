@@ -188,9 +188,15 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     final String shown = bannerText();
     assertFalse("a good invite must not raise the refusal warning: " + shown,
         shown.contains("could not be used"));
-    assertTrue("and nothing may be left standing over the banner after a healthy invite - without "
-        + "this, 'always warn' would pass the test above while breaking every normal re-invite",
-        strip.mayOverwriteInfoBanner());
+    // The guard this line exists for is "always warn would pass the test above" - so it asks about
+    // WARNINGS. A compare-the-number caution does stand here and is correct: this paste pinned a
+    // key at an address that held none, which is exactly the event that caution describes, and it
+    // was previously said only when the pin happened during addContact.
+    assertFalse("no warning may be left standing after a healthy invite - without this, 'always "
+        + "warn' would pass the test above while breaking every normal re-invite",
+        strip.warningIsStandingForTest());
+    assertTrue("and the caution that does stand must be the compare-the-number one, not a "
+            + "refusal: " + shown, shown.contains("compare the security number"));
   }
 
   /** A working session with the peer, which is the state the earlier fix could not see past. */
@@ -298,11 +304,19 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
 
     assertTrue("precondition: the good invite must build a session",
         SignalProtocolMain.hasSessionWith(peerAddress));
-    assertTrue("following the app's own advice must clear the warning it gave. Otherwise a working "
-        + "contact sits under 'Nothing has been set up', every later notice is suppressed, and the "
-        + "user may reject a good key on the strength of it.", strip.mayOverwriteInfoBanner());
+    assertFalse("following the app's own advice must clear the WARNING it gave. Otherwise a "
+        + "working contact sits under a refusal, and the user may reject a good key on the "
+        + "strength of it.", strip.warningIsStandingForTest());
     assertFalse("and the refusal text must be gone: " + bannerText(),
         bannerText().contains("could not be used"));
+    // What stands instead is the compare-the-number caution, and that is correct rather than
+    // residue. This paste pinned a key that reached the user through the messenger, which is the
+    // same event the add-contact arm cautions about - it was simply never said on this path,
+    // because both callers of that caution were inside addContact. A contact row can exist with no
+    // pinned key (a refused bundle leaves exactly that), so the pin can happen here.
+    assertTrue("a key was pinned by this paste, so the user must be told to compare the number - "
+            + "the same sentence the add-contact arm posts for the same event: " + bannerText(),
+        bannerText().contains("compare the security number"));
   }
 
   /**

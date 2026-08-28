@@ -3250,6 +3250,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // exactly as a good one does), and must displace the generic advice on the failure path.
     final boolean identityChanged = warnIfIdentityChanged(sender);
 
+    // The caution for a key pinned by THIS paste, on the path where every arm's pin happens.
+    //
+    // Both callers of cautionThatAkeyWasPinned were inside addContact, so it announced pins made
+    // while adding a contact and nothing else. But a contact ROW can exist with no pinned key -
+    // a refused bundle leaves the row and pins nothing, which this file already records - and from
+    // then on the address is a known contact, so a later PreKeySignalMessage from it routes to the
+    // message arms instead. isTrustedIdentity returns true whenever nothing is pinned, and decrypt
+    // takes its PREKEY arm on the ciphertext type alone, so the key lands by trust-on-first-use
+    // with no bundle in sight and nothing said.
+    //
+    // Two steps for the attacker, neither of which needs a forged signature: strip the one-time
+    // pre-key from an invite so the bundle is refused and the row is left keyless, then send a
+    // bundle-less PreKey message from that same address. The user sees "Detected contact: Alice"
+    // and a decrypted message. Omitting one optional field is what moves the envelope from an arm
+    // that cautions to one that said nothing.
+    //
+    // Placed here rather than on each arm because this is the one place all of them pass through,
+    // and because keyPinnedBefore is already computed above for the refused-bundle wording - the
+    // transition was being measured and used for one sentence only.
+    if (!keyPinnedBefore && sender != null
+        && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress())) {
+      cautionThatAkeyWasPinned(false);
+    }
+
     if (bundleRefused) {
       // A warning rather than a plain line: the banner is repainted straight after this by
       // showChosenContactInMainInfoField, which is guarded only by a standing warning, so an
