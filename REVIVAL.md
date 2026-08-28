@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-one sections, written in the order things were found rather than by subject, so the
+Eighty-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -137,6 +137,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A row with no key, and the arm that filled it](#a-row-with-no-key-and-the-arm-that-filled-it)
 - [Two facts, one slot, again](#two-facts-one-slot-again)
 - [A bound that counted what the app does not distinguish](#a-bound-that-counted-what-the-app-does-not-distinguish)
+- [A sentence with no caller](#a-sentence-with-no-caller)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5100,3 +5101,25 @@ The comment now says what the check defends and names the test that already pins
 This is the same class as every wording defect in this document, applied to a comment rather than to
 a notice: **a control that describes itself more broadly than it works is a control someone will
 later rely on for the part that does not exist.**
+
+## A sentence with no caller
+
+**`INFO_NO_SAVED_MESSAGES` once became unreachable, and nothing noticed.** Both arms of the chat-log
+screen were pointed at the unreadable-log sentence, so the constant sat in the file looking like a
+feature while the arm that should have used it told users their deleted history was still on the
+device. It took a review round to find, and the fix is recorded several sections above.
+
+The mechanical half of that is now a test: every `INFO_` constant on the strip must be referenced
+somewhere other than its own declaration. Recreating the original defect — pointing the empty-history
+arm at the unreadable-log constant — fails it.
+
+**What it does not claim** is stated in the file. A reference inside dead code satisfies it, so this
+is not reachability; and it says nothing about whether the sentence is *true* where it is used, which
+is what the tests around it are for. It checks the one thing that is mechanical: that a sentence
+still has a caller at all. Notices are this app's entire trust surface and the branches beneath them
+are edited every round, so a sentence losing its last caller is a live failure mode rather than a
+tidiness question.
+
+Fifty-two notices, all of them called. The exemption list is empty on purpose: a notice with no
+caller should be deleted, not parked — and a second test stops the list naming constants that no
+longer exist, which is the same rot every classification list here is guarded against.
