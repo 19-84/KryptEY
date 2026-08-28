@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-five sections, written in the order things were found rather than by subject, so the
+Sixty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -121,6 +121,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The round that fixed a sentence by breaking its opposite](#the-round-that-fixed-a-sentence-by-breaking-its-opposite)
 - [The inviter's side pinned a key and said nothing](#the-inviters-side-pinned-a-key-and-said-nothing)
 - [The true thing faded and the false thing stayed](#the-true-thing-faded-and-the-false-thing-stayed)
+- [A claim about an event, made without checking the event](#a-claim-about-an-event-made-without-checking-the-event)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4415,10 +4416,23 @@ window.
 checked that deleting a named contact clears its warning — with a fixture whose write does not land,
 so it was describing the state the app should not be in, and passing only because the clear was
 unconditional. Gating the clear made that visible. Its precondition is now stated rather than
-assumed. **This is the third time in two ticks that a "healthy" fixture turned out not to write**,
-including in a positive control written this tick, which failed the moment it was asked to do the
-thing it claimed to test. A fixture that does not write is indistinguishable from a store that
-cannot, and nothing says so out loud.
+assumed.
+
+**And the reason it happened is a production inconsistency, not a fixture quirk — which is the
+correction to what this section first claimed.** Two helpers answer "did the write land", and with no
+storage helper they answer opposite ways: `accountWriteSucceeded()` returns **true** (contact
+creation, verification and key rejection report through it), while
+`storeAllAccountInformationInSharedPreferences()` returns **false**, and `removeContact` returns that
+directly. So in one ordinary fixture a created contact reports saved and a deleted one reports lost,
+about the same store, in the same test class. That is why three fixtures in two ticks looked healthy
+and were not, and it is pinned by `TheTwoWriteReportersDisagreeTest` rather than described.
+
+The true-on-null branch fails **open**: every trust decision reported as saved while nothing is
+stored. It is unreachable in production today, because `LatinIME.setInputView` always passes a real
+context so the helper always exists — but "unreachable today" is exactly the status this document has
+been wrong about before. **Closing it is one line and turns 46 existing tests red**, because that
+many fixtures depend on the fail-open. Measured, not estimated. That is a deliberate migration rather
+than a drive-by, and it is owed.
 
 **The help stops promising a deletion it cannot make.** It said *"if you delete the contact, the
 message history will be deleted too"*. `removeContact`'s own comment records the exception: an entry
@@ -4427,3 +4441,60 @@ one, so deleting every contact can leave that plaintext in storage where no scre
 is a test named for it. The help now says what is deleted, that the app reports a failed write, and
 the two things it does not promise, including the one no keyboard can promise: nothing here removes
 what was already sent through the messenger.
+
+## A claim about an event, made without checking the event
+
+**Round twenty-one found that the previous round's fix bought the messenger a false security claim
+for the price of one crafted paste.** The caution added there — *"This key reached you through the
+messenger and the app cannot tell whose it is, compare the security number by voice"* — was posted
+unconditionally on the arm that handles a message with no bundle. That arm attempts a decrypt and
+discards the result, and a decrypt that fails pins nothing.
+
+So: put an envelope on the clipboard with no bundle and arbitrary bytes as its ciphertext. The type
+is decided by field presence alone, so it routes here; there is no session, so the decrypt throws;
+the contact row was already created. The app then told the user a key had arrived that it could not
+attribute, and sent them to compare a security number — on a screen with no fingerprint to render,
+whose Reject button is re-armed only for a standing *warning*, which a caution is not. And because a
+standing caution makes `mayOverwriteInfoBanner` refuse, the banner was then held for the life of the
+strip, suppressing every later clipboard hint. The only way down was deleting the contact.
+
+**It also painted over the truth.** An envelope carrying a bundle *and* a message runs both arms.
+With the bundle refused, the first arm writes "Could not set up a session from that invite. Ask your
+contact to send a fresh one" as a plain line, and this repaint composes the banner from the standing
+items alone — so the one sentence telling the user what to do next was replaced by a claim that a
+contact was created and a key arrived. The exact inversion the last three commits exist to remove,
+introduced by them.
+
+The gate was already in this file twice: `warnIfKeyWasRejected` requires an actual pin, and
+`decryptMessageAndShowMessageInMainInputField` computes `keyPinnedByThisPaste` before choosing its
+wording. The new caution was written with neither. It now asks.
+
+**The lost-write notice forbade and offered the same act.** Its repaint runs `refreshActionButtons`,
+and `disablesActionButtons` matches with `startsWith` — so a sentence whose first variable part is
+the contact's name could not be matched at all, and the same repaint that posted "do not send them
+anything until you have added them again successfully" turned Encrypt back on. `encryptAndSend` has
+no storage guard of its own, so pressing it hands the messenger ciphertext for a session that exists
+only in memory. The notice now opens with a fixed phrase so the buttons can agree with it.
+
+**And two sentences promised the wrong event.** Both said "the next time the keyboard opens", which
+is the one event that does *not* reload: `reloadAccount` runs only from `LatinIME.setInputView`,
+whose only in-app caller fires on a theme or ui-mode change. Lowering and raising the keyboard
+changes nothing. So a contact whose write was lost stays present and usable for as long as the
+process lives — the opposite of what the sentence promised, on the surface it had just been moved
+onto.
+
+**The help item reworded last commit was wrong, and this is the correction.** It said messages from
+an older version "cannot be matched to anyone". `LegacyKeyMigration` re-keys every pre-upgrade entry
+whose bare name identifies exactly one contact; only the ambiguous remainder keeps a bare key, which
+is what `removeContact`'s own comment says. The rewrite had generalised the remainder to all old
+history, telling users their whole past was orphaned when most of it is attributed, shown, and
+deleted with the contact. It now says that, and adds the omission that matters more than either:
+deletion **keeps the pinned key on purpose**, so deleting is not a way to start over with someone —
+which the app needs to say plainly, given how often its own advice mentions deleting and re-inviting.
+
+**Three rounds running have now found the previous round's fix.** Not the same defect each time — a
+sentence inverted, a check that reached one arm of three, a claim made without checking its own
+subject — but the same *kind*: the fix was right about the threat and wrong about the conditions
+under which it fires. The rule earned here is narrower than "test the fix": **a notice that asserts
+an event must be gated on that event having happened, and the gate belongs beside the notice, not in
+the caller that usually happens to be right.**

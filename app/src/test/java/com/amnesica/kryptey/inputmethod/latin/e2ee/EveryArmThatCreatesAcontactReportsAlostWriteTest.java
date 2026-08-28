@@ -271,4 +271,32 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
             + "succeeding one - that caution is the only notice that fires because nothing was "
             + "noticed: " + banner, banner.contains("compare the security number"));
   }
+
+  /**
+   * The buttons must agree with the sentence.
+   *
+   * <p>The banner says "do not send them anything until you have added them again successfully",
+   * and the repaint that posts it runs {@code refreshActionButtons}. While that sentence could not
+   * be matched by {@code disablesActionButtons} - its first variable part was the contact's name,
+   * and the match is a {@code startsWith} - the same repaint turned Encrypt back on. So the app
+   * forbade and offered the same act on one screen, and {@code encryptAndSendInputFieldContent} has
+   * no storage guard of its own: pressing it hands the messenger ciphertext for a contact and
+   * session that exist only in memory.
+   */
+  @Test
+  public void alostWriteLeavesEncryptDisabled() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("precondition: the banner must be carrying the lost write",
+        String.valueOf(((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text))
+            .getText()).startsWith(E2EEStripView.INFO_NOT_SAVED_PREFIX));
+    assertTrue("and that banner must disable the buttons, or the app forbids and offers the same "
+            + "act at once", E2EEStripView.disablesActionButtons(
+                String.valueOf(((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text))
+                    .getText())));
+    assertTrue("Encrypt must be dark while the app is telling the user not to send anything",
+        !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
 }

@@ -247,7 +247,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * sends the user to verify a contact that will not be there after the next keyboard raise — and
    * the host app decides when that happens.
    */
-  private final String INFO_CONTACT_NOT_SAVED = "Contact %s was set up here, but it could not be saved - the app could not write to its own storage. They will be gone the next time the keyboard opens. Do not send them anything until you have added them again successfully.";
+  /**
+   * Opens with a fixed phrase, and that is load-bearing rather than stylistic.
+   *
+   * <p>{@code disablesActionButtons} matches the banner with {@code startsWith}, so a sentence whose
+   * first variable part is the contact's name cannot be matched at all. This notice tells the user
+   * "do not send them anything"; while it stood, the repaint that posted it turned Encrypt back on,
+   * so the app forbade and offered the same act on one screen. A stable opening is what lets the
+   * buttons agree with the sentence.
+   *
+   * <p>It no longer says "the next time the keyboard opens" either. That event does not reload the
+   * account: {@code reloadAccount} runs only from {@code LatinIME.setInputView}, whose only in-app
+   * caller fires on a theme or ui-mode change. Lowering and raising the keyboard changes nothing, so
+   * the contact stays present and usable in memory for as long as the process lives - which is the
+   * opposite of what the sentence promised, on the surface it was just moved onto.
+   */
+  private final String INFO_CONTACT_NOT_SAVED = "Not saved: contact %s was set up here, but it could not be saved - the app could not write to its own storage. They will be gone once this keyboard restarts. Do not send them anything until you have added them again successfully.";
+
+  /** The stable opening of {@link #INFO_CONTACT_NOT_SAVED}; see its javadoc. */
+  static final String INFO_NOT_SAVED_PREFIX = "Not saved:";
 
   /** A deletion that did not reach disk, which the next raise will undo. */
   private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
@@ -1307,6 +1325,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * start describing the same event differently.
    */
   private void cautionThatAkeyWasPinned() {
+    // Only if one actually was, which the first version of this did not ask.
+    //
+    // The sentence is a claim about an event - "this key reached you through the messenger" - and
+    // the ciphertext arm that calls it attempts a decrypt and discards the result. A decrypt that
+    // fails pins nothing, so one crafted paste (no bundle, arbitrary bytes, a type this app will
+    // route here on field presence alone) bought the messenger a false security claim: the user is
+    // told a key arrived that the app cannot attribute and sent to compare a security number, on a
+    // screen with no fingerprint to render, whose Reject button is re-armed only for a standing
+    // WARNING and so stays dark. A standing caution also makes mayOverwriteInfoBanner refuse, so
+    // the banner is held for the life of the strip and every later clipboard hint is suppressed.
+    //
+    // It also painted over the truth. An envelope carrying a bundle AND a message runs both arms;
+    // with the bundle refused the first arm writes "Could not set up a session from that invite.
+    // Ask your contact to send a fresh one" as a plain line, and this repaint composes the banner
+    // from the standing items alone - so the one sentence telling the user what to do next was
+    // replaced by a claim that a contact was created and a key arrived.
+    //
+    // The file had the right shape twice already and this was written without either:
+    // warnIfKeyWasRejected is gated on an actual pin, and decryptMessageAndShowMessageInMainInput-
+    // Field computes keyPinnedByThisPaste before choosing its wording.
+    if (chosenContact == null
+        || !mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress())) {
+      return;
+    }
     // A contact that did not reach disk gets the stronger sentence, and gets it on the surface that
     // lasts.
     //
@@ -1551,7 +1593,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Decrypt on an install whose store cannot be decrypted. Caught by the test that asserts the
     // storage warning keeps its buttons down - which is the whole reason that assertion is in it.
     return message.startsWith(INFO_NO_CONTACT_CHOSEN_TEXT)
-        || message.startsWith(INFO_STORAGE_UNREADABLE);
+        || message.startsWith(INFO_STORAGE_UNREADABLE)
+        // A contact that did not reach disk. The banner says "do not send them anything until you
+        // have added them again successfully", and the repaint that put it there used to turn
+        // Encrypt on - so the app forbade and offered the same act at once, and encryptAndSend has
+        // no storage guard of its own. Sending would hand the messenger ciphertext for a session
+        // that exists only in memory.
+        || message.startsWith(INFO_NOT_SAVED_PREFIX);
   }
 
   private void setMainInfoTextTextChangeListener() {

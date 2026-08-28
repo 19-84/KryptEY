@@ -155,7 +155,7 @@
 			<h3>How can I see past messages with my chat partner?</h3>
 			<ul>
 				<li>Select your chat partner from the contact list (person icon) and then click on the \"message log\" button in the main view (text bubble icon).</li>
-				<li>Deleting the contact deletes the messages stored for them, and the app tells you if that could not be saved. Two things it does not promise: messages from a version of this app older than the one that started labelling them by address cannot be matched to anyone, so deleting every contact can leave them in storage where no screen can reach them; and nothing here can remove what you already sent through the messenger.</li>
+				<li>Deleting the contact deletes the messages stored for them, and the app tells you if that could not be saved. Three things it does not do: it keeps that contact\'s key on purpose, so that a later invite claiming to be them cannot be accepted silently - deleting is not a way to start over with someone; a message from an old version of this app that could not be matched to any one contact stays in storage where no screen reaches it; and nothing here can remove what you already sent through the messenger.</li>
 			</ul>
 
 			<h3>How can I verify that my chat partner is who they claim to be?</h3>
