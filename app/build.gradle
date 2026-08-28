@@ -114,6 +114,12 @@ android {
         // and replays the last result. That already cost two controls on this branch which reported
         // "survived" against a test that was biting correctly.
         inputs.file('../REVIVAL.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        // The settled-claims ledger, for the same reason: a guard reads it to check that a claim
+        // refuted against one libsignal version still names the version the build pins, and without
+        // this the task stays UP-TO-DATE when the ledger changes and replays its last result. That
+        // is not hypothetical - it was measured on this very guard, whose mutant survived until
+        // this line existed.
+        inputs.file('../REVIEW-SETTLED.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)

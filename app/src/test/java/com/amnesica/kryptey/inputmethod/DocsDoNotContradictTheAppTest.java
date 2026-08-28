@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The repository's help is a second copy of the app's help, and it had none of the corrections.
@@ -95,6 +97,36 @@ public class DocsDoNotContradictTheAppTest {
             components, Integer.parseInt(m.group(1)));
       }
     }
+  }
+
+  /**
+   * A claim settled against one library version must name that version.
+   *
+   * <p>`REVIEW-SETTLED.md` records claims that were investigated and refuted, so a later review round
+   * does not spend itself on ground already covered. Two of those entries are refuted **by
+   * measurement against libsignal 0.86.5** — a corrupted first message reaches no store callback, so
+   * it burns no base key and marks no pre-key used. That is a property of the library, not of this
+   * code. An upgrade could move those callbacks earlier and make both claims true again, and the
+   * ledger would go on saying they were refuted.
+   *
+   * <p>So the version in the ledger is checked against the one the build actually pins. If they
+   * diverge the ledger is stale by construction, and the entry has to be re-measured rather than
+   * re-read. {@code AcorruptedFirstMessageDoesNotPoisonTheGenuineOneTest} is what would fail if the
+   * behaviour changed; this is what fails if the version changes and nobody looked.
+   */
+  @Test
+  public void theSettledLedgerNamesTheLibsignalVersionTheBuildPins() throws IOException {
+    final Matcher pinned = Pattern.compile("org\\.signal:libsignal-android:([0-9.]+)")
+        .matcher(read("app/build.gradle"));
+    assertTrue("the build must pin a libsignal version; if the dependency was renamed, re-point "
+        + "this guard rather than deleting it", pinned.find());
+
+    final String ledger = read("REVIEW-SETTLED.md");
+    assertTrue("REVIEW-SETTLED.md refutes two claims by measurement against a specific libsignal "
+            + "version, and the build now pins " + pinned.group(1) + ". Re-measure those entries "
+            + "against the new version and update the ledger - a refutation that names the wrong "
+            + "version is worse than no entry, because a reviewer will trust it",
+        ledger.contains("libsignal " + pinned.group(1)));
   }
 
   /**
