@@ -140,4 +140,30 @@ public class AwarningOnScreenKeepsTheWindowCoveredTest {
             + "and adoptState restores the warning without the recipient on purpose.",
         secure.get());
   }
+
+  /**
+   * And an ordinary caution does NOT hold the flag up forever.
+   *
+   * <p>The first fix for this counted every standing item. A caution goes up after every successful
+   * contact add and comes down only when the user verifies, rejects or deletes that contact — so the
+   * flag would be up whenever the keyboard was, from the first contact onward. A {@code FLAG_SECURE}
+   * window blanks the entire system screenshot, so that silently breaks screenshots device-wide
+   * during ordinary typing in every app, which is the opposite of the decision the predicate's own
+   * javadoc records.
+   *
+   * <p>The residue is real and stated rather than hidden: a caution naming a contact is capturable
+   * once the recipient has been forgotten. Warnings are the rarer, sharper case and the one the gap
+   * was found in.
+   */
+  @Test
+  public void anordinaryCautionDoesNotBlankScreenshotsForever() {
+    strip.selectContact(bob);
+    strip.setCautionForTest("Contact Bob Jones created. Compare the security number by voice.", bob);
+
+    strip.onKeyboardHidden();
+
+    assertTrue("with no recipient and no warning, ordinary typing must screenshot normally - the "
+            + "flag being up here means every app on the device loses screenshots whenever this "
+            + "keyboard is raised", !secure.get());
+  }
 }

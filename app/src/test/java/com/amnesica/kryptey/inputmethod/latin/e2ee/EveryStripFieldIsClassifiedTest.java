@@ -67,7 +67,11 @@ public class EveryStripFieldIsClassifiedTest {
       // caution because it belongs to it: a rebuild restoring the sentence without the refusal
       // would put "do not send them anything" back on screen with Encrypt live, and a
       // configuration change is something the host app can force at will.
-      "mStandingCautionIsLostWrite"));
+      "mStandingCautionIsLostWrite",
+      // The write count when that caution went up. Carried with it, and dropping it would not
+      // merely lose information - it would silently CANCEL the refusal, because a fresh strip
+      // starts this below every real count, so the "a later write has landed" test passes at once.
+      "mWritesLandedWhenCautionRaised"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

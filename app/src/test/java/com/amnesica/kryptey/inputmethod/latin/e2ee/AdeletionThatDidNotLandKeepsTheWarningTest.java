@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -211,5 +212,40 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
 
     assertFalse("a successful deletion must still delete",
         SignalProtocolMain.getInstance().getAccount().getContactList().contains(bob));
+  }
+
+  /**
+   * And what comes back is everything, not just the row.
+   *
+   * <p>A partial rollback is worse than none, because the account batch writes the WHOLE in-memory
+   * account: the first later successful write — sending to somebody else, receiving anything —
+   * persists whatever half-state was left behind. Restoring only the contact left it permanently
+   * session-less and history-less, after the app had said the deletion did not happen and the
+   * messages would come back. Every message from them would then fail to decrypt, and this app's
+   * standard advice for that is delete-and-re-invite, which is the key-substitution window.
+   */
+  @Test
+  public void awritefailureRestoresTheMessagesAndTheSessionToo() throws Exception {
+    final org.signal.libsignal.protocol.SignalProtocolAddress bobAddress =
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.of(
+            bob.getSignalProtocolAddressName(), bob.getDeviceId());
+    final Account account = SignalProtocolMain.getInstance().getAccount();
+
+    assertNotNull("precondition: a message must be logged, or the restore has nothing to prove",
+        SignalProtocolMain.encryptMessage("before the deletion", bobAddress));
+    final int messagesBefore = account.getUnencryptedMessages().size();
+    assertTrue("precondition: the log must hold it", messagesBefore > 0);
+    assertTrue("precondition: a session must exist",
+        account.getSignalProtocolStore().containsSession(bobAddress));
+
+    makeTheWriteFail();
+    strip.removeContact(bob);
+
+    assertEquals("the messages must come back with the row - the app said they would, and the "
+            + "next successful write persists whatever is in memory at that moment",
+        messagesBefore, account.getUnencryptedMessages().size());
+    assertTrue("and so must the session, or the contact is restored unusable: every message from "
+            + "them fails to decrypt, and the advice for that is delete-and-re-invite",
+        account.getSignalProtocolStore().containsSession(bobAddress));
   }
 }

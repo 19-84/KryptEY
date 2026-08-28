@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-one sections, written in the order things were found rather than by subject, so the
+Seventy-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -127,6 +127,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Stating the rule instead of fixing the case](#stating-the-rule-instead-of-fixing-the-case)
 - [The refusal the adversary could switch off](#the-refusal-the-adversary-could-switch-off)
 - [A deletion that undid itself everywhere but on disk](#a-deletion-that-undid-itself-everywhere-but-on-disk)
+- [Four of my own fixes, undone](#four-of-my-own-fixes-undone)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4722,3 +4723,53 @@ together.
 they delete a contact and assert the deletion happened, which had been true only because a failed
 write left the in-memory pruning in place. That is the migration continuing to pay out — every one of
 these was a test whose subject was a successful deletion and whose fixture performed a failed one.
+
+## Four of my own fixes, undone
+
+**Round twenty-four reviewed the working tree, uncommitted changes and all, and most of what it found
+had been introduced within the previous few hours. Four of its findings were reversals of fixes made
+the same day.**
+
+**The partial rollback was worse than none.** A deletion whose write fails now restores the contact
+row — but it restored only the row, leaving the swept messages and the deleted session gone. The
+account batch writes the *whole* in-memory account, so the first later successful write — sending to
+somebody else, receiving anything — persisted that half-state permanently. The user was told the
+deletion had not happened and the messages would come back; what they got was a contact with no
+session and no history, for good, whose every incoming message then fails to decrypt — and this
+app's standard advice for a failed decrypt is delete-and-re-invite, the key-substitution window.
+The rollback now restores the messages and the session record too. The retired display name is
+deliberately left retired, because that asymmetry errs toward warning.
+
+**The FLAG_SECURE fix disabled screenshots for the whole device.** Counting *every* standing item as
+sensitive covered the reported gap and cost far more than it was worth: a caution goes up after every
+successful contact add and comes down only when the user verifies, rejects or deletes that contact.
+So from the first contact onward the flag was up whenever the keyboard was — and a FLAG_SECURE window
+blanks the entire system screenshot, silently breaking screenshots in every app during ordinary
+typing, which is the opposite of the decision the predicate's own javadoc records. Scoped to
+warnings, which are the rarer, sharper case and the one the gap was actually found in. **The residue
+is stated rather than hidden**: a caution naming a contact is capturable once the recipient has been
+forgotten.
+
+**The escape hatch was a false affordance with a permanent destructive side effect.** Offering Reject
+when a *storage* caution stands is not offering a deliberate response — `rejectContactKey` marks the
+address whether or not anything was pinned, and that record is deliberately permanent. Pressing it
+either brands an address the user never complained about, so the contact's next genuine invite raises
+a key warning that is simply untrue, or — if the write fails, which is the state the caution reports
+— does that in memory and does not even clear the caution, because the clear is gated on the
+rejection landing. Withdrawn. The dead end it was meant to open has been closed where it actually
+was: a failed deletion now leaves the contact and its verify screen reachable.
+
+**And "the last member of the write family" was only half of one.** `buildSession` has two arms that
+write, and only the success arm was fixed. The failure arm is the one place a bundle-borne key
+substitution is ever recorded — if its write is lost, the recorded change and the cleared badge live
+in memory only and the next host-forced rebuild restores the pre-attack state. That arm records its
+result now. The flag also had exactly one reader, inside `addContact`, so a rotation from an
+*existing* contact was written down and never reported; that path reads it too.
+
+**What this round costs to admit.** Two of the four were fixes for real defects that created worse
+ones, and both were mine, made the same day, each with a test that passed. The tests were not wrong
+about what they asserted — they asserted the reported defect was gone. What neither asked was *what
+else changed*, and in both cases the answer was reachable in one step: a caution stands after every
+add; the account batch writes everything. **A fix whose blast radius is not measured is a fix that
+has not been finished** — this document has said that twice before, and this is the round that had to
+pay for it in the same session.

@@ -33,6 +33,7 @@ import org.signal.libsignal.protocol.NoSessionException;
 import org.signal.libsignal.protocol.SessionBuilder;
 import org.signal.libsignal.protocol.SessionCipher;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
+import org.signal.libsignal.protocol.state.SessionRecord;
 import org.signal.libsignal.protocol.UntrustedIdentityException;
 import org.signal.libsignal.protocol.ecc.ECPublicKey;
 import org.signal.libsignal.protocol.fingerprint.Fingerprint;
@@ -1519,6 +1520,23 @@ public class SignalProtocolMain {
     // every contact leaves that plaintext in the store - unreachable by any screen, and not erased
     // by the one action the user has. Keeping it is still the right trade (deleting it was a
     // destruction primitive), but the gap is real and is recorded in REVIVAL.md.
+    // Everything this method is about to destroy, kept until the write says it is safe to let go.
+    //
+    // A partial rollback is worse than none, and that is not a style judgement: the account batch
+    // writes the WHOLE in-memory account, so the first later successful write - sending to somebody
+    // else, receiving anything - persists whatever half-state was left behind. Restoring only the
+    // row left a contact with no session and no history, permanently, after the app had said the
+    // deletion did not happen and the messages would come back.
+    final ArrayList<StorageMessage> messagesBefore =
+        mAccount.getUnencryptedMessages() == null ? null
+            : new ArrayList<>(mAccount.getUnencryptedMessages());
+    final SessionRecord sessionBefore =
+        mAccount.getSignalProtocolStore().getSessionStore()
+            .containsSession(contactToRemove.getSignalProtocolAddress())
+            ? mAccount.getSignalProtocolStore().getSessionStore()
+                .loadSession(contactToRemove.getSignalProtocolAddress())
+            : null;
+
     Log.d(TAG, "Deleting unencrypted messages for contact");
     mAccount.removeAllUnencryptedMessages(contactToRemove);
 
@@ -1601,9 +1619,18 @@ public class SignalProtocolMain {
     // rather than a silent plaintext path.
     final boolean deletionReachedDisk = storeAllAccountInformationInSharedPreferences();
     if (!deletionReachedDisk) {
-      Log.e(TAG, "The deletion did not reach disk; restoring the contact in memory so it can be "
-          + "retried");
+      Log.e(TAG, "The deletion did not reach disk; restoring what it removed so it can be retried");
       mAccount.setContactList(contacts);
+      if (messagesBefore != null) mAccount.setUnencryptedMessages(messagesBefore);
+      if (sessionBefore != null) {
+        mAccount.getSignalProtocolStore().getSessionStore()
+            .storeSession(contactToRemove.getSignalProtocolAddress(), sessionBefore);
+      }
+      // The retired display name is deliberately NOT un-retired, and that is the one asymmetry
+      // here. Retiring errs toward warning: it makes a later contact reusing this name at a
+      // different address raise the duplicate-name warning. Leaving it in place on a failed
+      // deletion costs the user a warning they might not need; undoing it would cost them one they
+      // do. The pinned identity is untouched for the same reason it is untouched on success.
     }
     return deletionReachedDisk;
   }
@@ -2285,7 +2312,16 @@ public class SignalProtocolMain {
       mAccount.getSignalProtocolStore().getIdentityKeyStore()
           .recordIdentityChange(recipientSignalProtocolAddress, preKeyBundle.getIdentityKey());
       clearVerificationFor(recipientSignalProtocolAddress);
-      storeAllAccountInformationInSharedPreferences();
+      // Recorded on THIS arm too, and it is the more important of the two.
+      //
+      // Only the success arm was fixed last round, which left the highest-value record in the file
+      // going nowhere: this is the one place a bundle-borne key substitution is ever written down.
+      // If the write fails, the recorded change and the cleared verification badge exist in memory
+      // only, and the next setInputView calls reloadAccount and restores the pre-attack state -
+      // hasUnacceptedIdentityChange goes back to false, and the verify screen stops saying a
+      // different number was offered. A configuration change is something the host app can force,
+      // so the attacker chooses when the evidence disappears.
+      mLastSessionWriteReachedDisk = storeAllAccountInformationInSharedPreferences();
       return false;
     } catch (InvalidKeyException e) {
       // Signature verification on the bundle failed. Swallowing this into a log made a forged
@@ -2382,6 +2418,25 @@ public class SignalProtocolMain {
     return storeAllAccountInformationInSharedPreferences();
   }
 
+  /**
+   * How many account writes have landed, ever, in this process.
+   *
+   * <p>Exists so a notice about a lost write can tell whether it is still true. The account batch
+   * writes the WHOLE account, contact list included, so any later successful write puts on disk the
+   * very row an earlier failure left in memory - and the notice saying "they will be gone once this
+   * keyboard restarts" becomes false without anything touching it. Verifying somebody else, or
+   * receiving a message, is enough.
+   *
+   * <p>A count rather than a flag, because the question is not "did the last write succeed" but
+   * "has any write succeeded since the moment I was raised", and the holder of the notice is the
+   * only thing that knows that moment.
+   */
+  private long mAccountWritesLanded = 0;
+
+  public static long accountWritesLanded() {
+    return sInstance == null ? 0 : sInstance.mAccountWritesLanded;
+  }
+
   private boolean storeAllAccountInformationInSharedPreferences() {
     if (mAccount == null) {
       Log.e(TAG, "Error: No protocol resources were stored (mAccount is null)");
@@ -2391,7 +2446,9 @@ public class SignalProtocolMain {
       Log.e(TAG, "Error: No protocol resources were stored (mStorageHelper is null)");
       return false;
     }
-    return mStorageHelper.storeAllInformationInSharedPreferences(mAccount);
+    final boolean landed = mStorageHelper.storeAllInformationInSharedPreferences(mAccount);
+    if (landed) mAccountWritesLanded++;
+    return landed;
   }
 
   private void initializeStorageHelper(Context context) {
@@ -2449,6 +2506,7 @@ public class SignalProtocolMain {
     // isolation rather than a fix - a trap set for the first test that reads it.
     sInstance.mLastAttachedBundleRefused = false;
     sInstance.mLastChatLogWriteFailed = false;
+    sInstance.mAccountWritesLanded = 0;
     // The third flag of this shape, and the one that was missed when the other two were listed.
     sInstance.mLastRejectionReachedDisk = true;
     sInstance.mLastContactWriteReachedDisk = true;

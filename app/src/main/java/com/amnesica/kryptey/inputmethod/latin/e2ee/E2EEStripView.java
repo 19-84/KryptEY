@@ -646,7 +646,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // asked as one.
         || (isUp(mLayoutE2EEMainView)
             && (chosenContact != null
-                || aStandingItemHoldsTheBanner()
+                // A standing WARNING, not any standing item, and the difference is a product
+                // decision rather than an oversight.
+                //
+                // Counting cautions too covered the same disclosure and cost far more than it was
+                // worth: a caution goes up after EVERY successful contact add, and cautions come
+                // down only when the user verifies, rejects or deletes that contact. So from the
+                // first contact onward the flag would be up whenever the keyboard is, and a
+                // FLAG_SECURE window blanks the whole system screenshot - silently breaking
+                // screenshots device-wide during ordinary typing in every app, which is exactly the
+                // decision this method's javadoc records the other way.
+                //
+                // Warnings are the rarer and sharper case, and they are the one the gap was found
+                // in: they name a contact, they survive the hide and the rebuild that clear the
+                // recipient, and they mean something is actually wrong. The residue is stated
+                // rather than hidden - a caution naming a contact is capturable once the recipient
+                // has been forgotten - and it is recorded in REVIVAL.md.
+                || mWarningStanding
                 || (mInputEditText != null && mInputEditText.getText().length() > 0)));
   }
 
@@ -814,8 +830,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // dark because no warning stood, and the remaining exit - deleting the contact - is refused
       // when its own write fails, which is the same storage trouble that raised the caution. The
       // banner then held a sentence nothing could clear, for the life of the process.
-      if (mVerifyContactRejectButton != null
-          && (aStandingItemAbout(chosenContact) || aStandingItemWithNoAddress())) {
+      //
+      // A standing CAUTION does not qualify, and the round that added it was wrong. The escape
+      // hatch exists so a standing item always leaves a deliberate response - but Reject is not a
+      // deliberate response to a STORAGE failure, and offering it there is a false affordance with
+      // a permanent destructive side effect: rejectContactKey marks the address whether or not
+      // anything was pinned, and that record is deliberately permanent. Pressing it on a
+      // lost-write caution either brands an address the user never had a complaint about - so the
+      // contact's next genuine invite raises a key warning that is simply untrue - or, if the
+      // write fails, does that in memory and does not even clear the caution, because the clear is
+      // gated on the rejection landing. Both outcomes are worse than the dead end it was meant to
+      // open, and the dead end has since been closed where it actually was: a failed deletion now
+      // restores the row, so the contact and its verify screen stay reachable.
+      if (mWarningStanding && mVerifyContactRejectButton != null
+          && (mStandingWarningAddress == null || mStandingWarningAddress
+              .equals(String.valueOf(chosenContact.getSignalProtocolAddress())))) {
         mVerifyContactRejectButton.setEnabled(true);
       }
       // "yet ... ask them for a key bundle first" describes an address nothing has happened at.
@@ -1783,6 +1812,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean mStandingCautionIsLostWrite = false;
 
+  /**
+   * The write count at the moment the lost-write caution went up.
+   *
+   * <p>The account batch writes the whole account, contact list included, so ANY later successful
+   * write puts the row on disk - and the caution saying "they will be gone once this keyboard
+   * restarts" is then false, with nothing having touched it. Verifying somebody else is enough, and
+   * so is receiving a message.
+   *
+   * <p>So the caution is checked against this rather than believed forever. It is a claim about a
+   * moment, and this is the moment.
+   */
+  private long mWritesLandedWhenCautionRaised = -1;
+
   private void refreshActionButtons() {
     // The same guard setMainInfoTextTextChangeListener carries, and no more: the buttons come from
     // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
@@ -1835,28 +1877,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean sendingIsRefusedForTheChosenContact() {
     if (!mStandingCautionIsLostWrite || chosenContact == null) return false;
+    // Not if a later write has landed. The batch carries the whole contact list, so one successful
+    // write anywhere - verifying another contact, receiving a message - puts this row on disk and
+    // makes the refusal wrong. Refusing to send to a contact who is in fact saved is the same class
+    // of defect as the reverse, and it is the one that teaches users to ignore the notice.
+    if (mE2EEStrip.accountWritesLanded() > mWritesLandedWhenCautionRaised) return false;
     return mStandingCautionAddress == null || mStandingCautionAddress
         .equals(String.valueOf(chosenContact.getSignalProtocolAddress()));
-  }
-
-  /** Whether a warning or caution is standing and names this contact. */
-  private boolean aStandingItemAbout(final Contact contact) {
-    if (contact == null) return false;
-    final String address = String.valueOf(contact.getSignalProtocolAddress());
-    return (mWarningStanding && address.equals(mStandingWarningAddress))
-        || (mStandingCaution != null && address.equals(mStandingCautionAddress));
-  }
-
-  /**
-   * Whether a standing item names nobody.
-   *
-   * <p>Those have no other exit - the storage warning and the same-address refusal are about the
-   * app rather than about a contact - so any verify screen may take them down. That is deliberate
-   * and predates the caution being counted here.
-   */
-  private boolean aStandingItemWithNoAddress() {
-    return (mWarningStanding && mStandingWarningAddress == null)
-        || (mStandingCaution != null && mStandingCautionAddress == null);
   }
 
   private boolean storageIsUnreadable() {
@@ -2324,6 +2351,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final boolean usable =
           decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
       warnIfKeyWasRejected(sender);
+      // A rotation whose write did not land, on the arm that had no reader for it.
+      //
+      // The flag was recorded on every buildSession and read in exactly one place, inside
+      // addContact - so a key rotation from an EXISTING contact was written down and never
+      // reported. That is the same "delivered but not recorded" silence the message paths were
+      // fixed for, about a key rather than a message: the new key and the session built from it
+      // exist in memory only, the user is told the contact was detected, and the next reload
+      // restores the old session while the peer has moved on. Every message after that fails to
+      // decrypt, and this app's standard advice for that is delete-and-re-invite, which is the
+      // key-substitution window this file exists to keep shut.
+      if (!mE2EEStrip.lastSessionWriteReachedDisk()) {
+        Toast.makeText(getContext(),
+            String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+            Toast.LENGTH_LONG).show();
+        setCautionBesideAnyWarning(
+            String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)), chosenContact, true);
+        return;
+      }
       // Only if there is actually a session. Otherwise the refusal notice written above stands,
       // instead of being painted over by a line saying the contact was detected.
       if (usable) setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
@@ -2738,6 +2783,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     resetChosenContactAndInfoText();
   }
 
+  /** Drives the known-contact bundle path, for tests. */
+  void processPreKeyResponseForTest(final MessageEnvelope envelope, final Contact sender) {
+    processPreKeyResponse(envelope, sender);
+  }
+
+  /** Posts a caution, for tests that need one standing without a warning beside it. */
+  void setCautionForTest(final String caution, final Contact about) {
+    setCautionBesideAnyWarning(caution, about);
+  }
+
   /** Posts a warning, for tests that drive the strip. */
   void setWarningMessageForTest(final String message) {
     setWarningMessage(message);
@@ -2880,6 +2935,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setCautionBesideAnyWarning(final String caution, final Contact about,
       final boolean isLostWrite) {
     mStandingCautionIsLostWrite = isLostWrite;
+    mWritesLandedWhenCautionRaised = isLostWrite ? mE2EEStrip.accountWritesLanded() : -1;
     // Stored in BOTH cases, then painted through the same builder every repaint uses.
     //
     // The no-warning branch used to write straight to the view and store nothing, and that is the
@@ -3190,6 +3246,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      * A configuration change is something the host app can force at will.
      */
     private final boolean standingCautionIsLostWrite;
+    /**
+     * The write count when that caution went up.
+     *
+     * <p>Carried with it, and dropping it would not merely lose information - it would silently
+     * CANCEL the refusal, because a fresh strip starts the snapshot below every real count, so the
+     * "a later write landed" test passes immediately. A configuration change is something the host
+     * app can force.
+     */
+    private final long writesLandedWhenCautionRaised;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
@@ -3198,6 +3263,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final String standingCautionAddress, final boolean standingCautionIsLostWrite,
+        final long writesLandedWhenCautionRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -3209,6 +3275,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingCaution = standingCaution;
       this.standingCautionAddress = standingCautionAddress;
       this.standingCautionIsLostWrite = standingCautionIsLostWrite;
+      this.writesLandedWhenCautionRaised = writesLandedWhenCautionRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -3285,8 +3352,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
-        mStandingCautionAddress, mStandingCautionIsLostWrite, mHostFieldIsPassword,
-        encodingMethod);
+        mStandingCautionAddress, mStandingCautionIsLostWrite, mWritesLandedWhenCautionRaised,
+        mHostFieldIsPassword, encodingMethod);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -3365,6 +3432,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // that dropped it while keeping the caution would put "do not send them anything" back on
     // screen with Encrypt live.
     mStandingCautionIsLostWrite = carried.standingCautionIsLostWrite;
+    mWritesLandedWhenCautionRaised = carried.writesLandedWhenCautionRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the
     // warning alone - which is the erase this carry exists to stop.
     if (mWarningStanding || mStandingCaution != null) {

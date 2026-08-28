@@ -321,6 +321,11 @@ public class E2EEStrip {
     return SignalProtocolMain.getFingerprint(contact);
   }
 
+  /** @see SignalProtocolMain#accountWritesLanded */
+  public long accountWritesLanded() {
+    return SignalProtocolMain.accountWritesLanded();
+  }
+
   /** @see SignalProtocolMain#lastSessionWriteReachedDisk */
   public boolean lastSessionWriteReachedDisk() {
     return SignalProtocolMain.lastSessionWriteReachedDisk();
