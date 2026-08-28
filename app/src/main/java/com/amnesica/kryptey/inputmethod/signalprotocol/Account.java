@@ -204,6 +204,29 @@ public class Account {
     return mUnencryptedMessages;
   }
 
+  /**
+   * Set when the stored contact list could not be read, to stop the next write destroying it.
+   *
+   * <p>The load substituted an empty list for an unreadable value and carried on. The very next
+   * raise then wrote that empty list back over the ciphertext - every contact row, and with them
+   * every verified badge, gone permanently even where the stored bytes were recoverable. The
+   * migration beside it already guards against exactly this shape and says so in its own comment;
+   * the contact list itself had no such guard.
+   *
+   * <p>Values are sealed per key, so one value can fail to open while the identity key, the address
+   * and the protocol store all read fine - which is why the app looks healthy in this state and
+   * reports READABLE storage.
+   */
+  private boolean contactsWereUnreadable = false;
+
+  public void markContactsUnreadable() {
+    this.contactsWereUnreadable = true;
+  }
+
+  public boolean contactsWereUnreadable() {
+    return contactsWereUnreadable;
+  }
+
   public void setUnencryptedMessages(ArrayList<StorageMessage> unencryptedMessages) {
     this.mMessageLogLoader = null;
     this.mUnencryptedMessages = unencryptedMessages;

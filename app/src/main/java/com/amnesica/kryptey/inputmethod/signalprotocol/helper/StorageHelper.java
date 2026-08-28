@@ -201,6 +201,9 @@ public class StorageHelper {
     }
 
     Account account = new Account(name, signalProtocolAddress.getDeviceId(), identityKeyPair, metadataStore, signalProtocolStore, signalProtocolAddress); // deviceId is static
+    // Carried onto the account so the write path can refuse. Without it the empty list substituted
+    // above is written back on the next raise, over ciphertext that may well have been recoverable.
+    if (!contactsWereReadable) account.markContactsUnreadable();
     // The chat log is handed over as a way to read it, not as its contents.
     //
     // This is the whole point of the change: loading an account happens on setInputView, which runs
@@ -589,6 +592,24 @@ public class StorageHelper {
    * to encrypt any one value writes none of them.
    */
   public boolean storeAllInformationInSharedPreferences(final Account account) {
+    // Refused outright when the contact list could not be read.
+    //
+    // The alternative is what used to happen: the load substituted an empty list, and this method
+    // wrote it back over the stored ciphertext - every contact and every verified badge destroyed
+    // permanently, silently, on the next raise. Skipping just the CONTACTS key would protect the
+    // old rows and silently fail to save any new ones, which is the same defect wearing a smaller
+    // coat.
+    //
+    // So the whole write is refused, and refusing is reported: every operation that needs a write
+    // already threads its result up and tells the user it could not be saved. The app becomes
+    // read-only until the store can be read again, which is a state the user is told about rather
+    // than one that quietly eats their contacts.
+    if (account != null && account.contactsWereUnreadable()) {
+      Log.e(TAG, "Refusing to write: the stored contact list could not be read, and writing now "
+          + "would replace it with an empty one");
+      mLastMessageLogWriteSucceeded = false;
+      return false;
+    }
     final EncryptedKeyValueStore store = secureStore();
     if (store == null) {
       // Nothing is written here, INCLUDING the log - so the log flag must not keep saying the last

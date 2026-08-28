@@ -30,6 +30,12 @@ import java.util.ArrayList;
 /**
  * A key rotation from a contact the user already has, whose write did not land.
  *
+ * <p>Its own sentence, not the failed-add one. On this path the contact exists and is on disk; what
+ * was lost is the session - the advanced ratchet, or a key just pinned. The shared string said the
+ * contact "was set up here" and "will be gone once this keyboard restarts", both false here, and
+ * told the user to add them again - which is the delete-and-re-invite advice this file identifies
+ * as a key-substitution window, given for a storage fault.
+ *
  * <p>{@code buildSession} records whether its write reached disk, and that record had exactly one
  * reader — inside {@code addContact}. So a rotation from an <em>existing</em> contact was written
  * down and never reported: the new key and the session built from it exist in memory only, the user
@@ -123,7 +129,7 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
             + "in memory only; the next reload restores the old session while the peer has moved "
             + "on, every message then fails to decrypt, and the advice for that is "
             + "delete-and-re-invite. Banner: " + banner(),
-        banner().contains("could not be saved"));
+        banner().contains("could not save the change"));
   }
 
   /** And a rotation that landed is not reported as lost. */
@@ -133,7 +139,7 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
     strip.processPreKeyResponseForTest(rotation, bob);
 
     assertTrue("a healthy rotation must not claim a storage failure: " + banner(),
-        !banner().contains("could not be saved"));
+        !banner().contains("could not save the change"));
   }
 
   /**
@@ -167,7 +173,7 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
     assertTrue("the notice must not depend on which arm the messenger routed the envelope to. "
             + "Appending one field moved it to the arm with no reader, and that arm is the "
             + "ordinary shape for a rotation. Banner: " + banner(),
-        banner().contains("could not be saved"));
+        banner().contains("could not save the change"));
   }
 
   /**
@@ -211,6 +217,6 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
     assertTrue("a message arm that writes session state must report a lost write, exactly as the "
             + "two bundle arms do. It carries no bundle, which is why it looked like it had "
             + "nothing to lose. Banner: " + banner(),
-        banner().contains("could not be saved"));
+        banner().contains("could not save the change"));
   }
 }

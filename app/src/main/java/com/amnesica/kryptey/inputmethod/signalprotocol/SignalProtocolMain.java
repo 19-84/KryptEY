@@ -1831,7 +1831,10 @@ public class SignalProtocolMain {
     if (pinned == null || pinned.equals(offered)) return;
     mAccount.getSignalProtocolStore().getIdentityKeyStore().recordIdentityChange(address, offered);
     clearVerificationFor(address);
-    storeAllAccountInformationInSharedPreferences();
+    // And here, which is the bundle-borne half of the same record. All three sites that write a
+    // detected key substitution now report whether it reached disk; a record of an attack that
+    // exists only in memory is undone by a configuration change.
+    mLastSessionWriteReachedDisk = storeAllAccountInformationInSharedPreferences();
   }
 
   /**
@@ -1978,7 +1981,16 @@ public class SignalProtocolMain {
         mAccount.getSignalProtocolStore().getIdentityKeyStore()
             .recordIdentityChange(signalProtocolAddress, preKeySignalMessage.getIdentityKey());
         clearVerificationFor(signalProtocolAddress);
-        storeAllAccountInformationInSharedPreferences();
+        // Recorded, not discarded - the third and last site, and the sibling of the one in
+        // buildSession's refusal arm.
+        //
+        // This comment already calls this "the substitution path an attacker would choose", and
+        // this write is the only place that choice is written down. Lose it and the recorded change
+        // and the cleared badge live in memory until the next reloadAccount, which the host app can
+        // force with a theme change - after which hasUnacceptedIdentityChange is false again and the
+        // verify screen has stopped saying a different number was offered. The attacker picks when
+        // the evidence disappears.
+        mLastSessionWriteReachedDisk = storeAllAccountInformationInSharedPreferences();
         throw e;
       }
       decryptedMessage = new String(plaintext);

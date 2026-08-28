@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-seven sections, written in the order things were found rather than by subject, so the
+Seventy-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -133,6 +133,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The file the deletion did not check](#the-file-the-deletion-did-not-check)
 - [A decision, rather than a third flip](#a-decision-rather-than-a-third-flip)
 - [Comparing the arms instead of remembering them](#comparing-the-arms-instead-of-remembering-them)
+- [One sentence doing four jobs](#one-sentence-doing-four-jobs)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4961,3 +4962,50 @@ raised several rounds ago. It is called unconditionally into a local now — saf
 sets the flag true at entry and only a write can make it false, so a decrypt that failed before
 writing reports nothing. That is the second time in two ticks a mechanical guard has corrected the
 work in progress rather than a review round correcting it afterwards.
+
+## One sentence doing four jobs
+
+**Round twenty-six caught a string being reused for four different failures, true of one of them —
+and the previous commit had just put it on the busiest path in the app.**
+
+`INFO_CONTACT_NOT_SAVED` says the contact *"was set up here"*, that they *"will be gone once this
+keyboard restarts"*, and to *"add them again successfully"*. On a failed **deletion** every clause is
+inverted: the row, messages and session are rolled back and disk was never touched, so the contact is
+not gone and will not be gone — they are still there, which is the thing the user needs to know. On a
+lost **session** write the contact exists and is on disk; what was lost is the ratchet, or a key just
+pinned — and "add them again" is the delete-and-re-invite advice this file elsewhere identifies as a
+key-substitution window, handed out for a storage fault. Adding the rotation reader to the third arm
+last commit moved that wrong text onto **every incoming message**.
+
+Each failure has its own sentence now, and each says what is actually true of it.
+
+**The refusal machinery was inverted for deletions too, and it cost a send.** A failed deletion
+recorded the contact as "not on disk" — false; the row is there, its *removal* is what failed. The
+expiry rule built on that says a later landed write settles the refusal, which is right for a failed
+add (the write supplies the missing row) and exactly backwards for a failed delete (the write
+persists the *restored* row). And because expiry runs at the moment of the act rather than on the
+repaint, the button stayed dark on the stale refusal — so one tap on it expired the entry, sent the
+message, and wiped the notice in the same call. A failed deletion no longer touches that machinery:
+nothing about it makes sending unsafe, because the contact, their key and their session are exactly
+as they were before the user asked.
+
+**And one unreadable value cost the user every contact they had.** The load substituted an empty list
+for a contact list it could not read; the next raise wrote that empty list back over the stored
+ciphertext. Every row and every verified badge, destroyed permanently and silently, even where the
+bytes were recoverable. Values are sealed per key, so one can fail while the identity key, address
+and protocol store all read fine — `storageState()` still reports READABLE and the strip shows "No
+contact chosen", **byte-identical to a fresh install**, which the opening message's own javadoc calls
+the worst possible reading of the situation because the obvious response to it is to re-invite
+everybody. The migration beside it already guards against this exact shape and says so in its own
+comment; the contact list had no such guard.
+
+The whole write is refused now, not just the contacts key: skipping one key would protect the old
+rows and silently fail to save new ones, which is the same defect in a smaller coat. Refusing is
+reported, because every operation that needs a write already threads its result up — so the app
+becomes read-only and *says so*, rather than quietly eating the contact list.
+
+**A dead statement, and what it was hiding.** An expiry call sat one line outside the lambda it was
+written for: it ran once at construction against an empty map and never on a tap, while its comment
+described what it would do if it were one line further in. Removing it is trivial; noticing it
+mattered, because it is why the expiry is concentrated entirely on the Encrypt tap, which is what
+made the defect above a single-tap sequence rather than a slow drift.

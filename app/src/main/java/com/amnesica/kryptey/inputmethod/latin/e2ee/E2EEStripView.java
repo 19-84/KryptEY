@@ -288,8 +288,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private final String INFO_DELETED_BUT_MESSAGES_REMAIN = "%s was removed, but their saved messages could not be deleted - the app could not write to its own storage. Those messages are still on this device and no screen can reach them now. Try deleting another contact once the device has free space, which rewrites the same file.";
 
+  /**
+   * The session state was not saved. A different failure from a contact row that was not saved.
+   *
+   * <p>One string was doing four jobs and was true of one of them. On this path the contact exists
+   * and is on disk; what was lost is the session - the advanced ratchet, or a key just pinned. So
+   * "was set up here" and "they will be gone once this keyboard restarts" were both false, and "add
+   * them again successfully" is the delete-and-re-invite advice this file elsewhere identifies as a
+   * key-substitution window, given for a storage fault.
+   *
+   * <p>Worse after the last commit, which put this path on every incoming message: a lost write
+   * during ordinary use told the user their established, possibly verified contact had just been
+   * set up here and was about to disappear.
+   */
+  private final String INFO_SESSION_NOT_SAVED = "The keys for %s changed and the app could not save the change - it could not write to its own storage. Messages you send now may not be readable after this keyboard restarts, and nothing here needs deleting or re-inviting. Wait until the device has free space and ask them to send another message.";
+
   /** A deletion that did not reach disk, which the next raise will undo. */
-  private final String INFO_DELETE_NOT_SAVED = "That contact was removed here, but it could not be saved - the app could not write to its own storage. They and their saved messages will come back the next time the keyboard opens. Try again, and do not rely on this having deleted anything yet.";
+  private final String INFO_DELETE_NOT_SAVED = "That contact was not removed - the app could not write to its own storage. They, their key and their saved messages are all still here, exactly as they were. Try again once the device has free space, and do not rely on this having deleted anything.";
 
   /**
    * The send-side counterpart, because the receive-side wording is not true here.
@@ -1671,9 +1686,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void setMainInfoTextClearChosenContactListener() {
     if (mInfoTextView == null) return;
-    // Unconditionally, and before the question below is asked: expiring is a write, and a write
-    // must not sit where a short circuit can skip it.
-    expireRefusalsSettledByAlaterWrite();
+    // No expiry call here. One was placed outside this lambda, where it ran once at construction
+    // with an empty map and never on a tap - a statement whose comment described what it would do
+    // if it were one line further in. The expiry that matters runs where the act happens, in
+    // encryptAndSendInputFieldContent.
     mInfoTextView.setOnClickListener(v -> resetChosenContactAndInfoText());
   }
 
@@ -2534,10 +2550,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mE2EEStrip.lastSessionWriteReachedDisk()) return false;
     rememberContactIsNotOnDisk(chosenContact);
     Toast.makeText(getContext(),
-        String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+        String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)),
         Toast.LENGTH_LONG).show();
     setCautionBesideAnyWarning(
-        String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)), chosenContact);
+        String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)), chosenContact);
     return true;
   }
 
@@ -3848,8 +3864,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // session, the pinned key and the messages all restored. A user who deleted a contact because
       // they suspected a key substitution, which is this app's own standard advice, would have no
       // way to know the deletion had not happened.
-      setCautionBesideAnyWarning(String.format(INFO_CONTACT_NOT_SAVED, labelFor(contact)), contact);
-      rememberContactIsNotOnDisk(contact);
+      // The deletion's own sentence, and NOT the missing-row machinery.
+      //
+      // Both were wrong here, in the same direction. The text said the contact "was set up here"
+      // and "will be gone once this keyboard restarts" - the exact inverse: the row was restored,
+      // disk was never touched, and they come back. And rememberContactIsNotOnDisk means "this row
+      // is missing from disk", which is false; the row is there, its removal is what failed. The
+      // refusal built on that then expired on the next landed write - because that rule was written
+      // for a failed ADD, where a later write supplies the missing row, and it is inverted for a
+      // failed delete, where a later write persists the restored one. So one tap on the still-dark
+      // Encrypt button expired the entry, sent the message, and wiped the notice in the same call.
+      //
+      // Nothing about a failed deletion makes sending unsafe: the contact, their key and their
+      // session are exactly as they were before the user asked.
+      setCautionBesideAnyWarning(INFO_DELETE_NOT_SAVED, contact);
     } else if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
       Toast.makeText(getContext(),
           String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)),
