@@ -6004,15 +6004,25 @@ an attacker's own identity verifies perfectly. It answers the narrower question 
 not: were these fields issued together. Wire version 2, because an optional signature is one an
 attacker omits.
 
-**It is on `revival-bundle-signature`, not here, and the reason is the interesting part.** The
-production change is small and works. Forty-seven tests then fail, all of them fixtures that build
-bundles by hand — and each one has to declare which adversary it models. A **relay edit** now carries
-the issuer's untouched signature over content it no longer covers, which is a more faithful model
-than these tests could express before. A **field-level check** — no Kyber key, a second device — is
-defence against the *issuer*, since only the issuer can sign what it emits, so those need a valid
-signature and keep testing exactly what they claimed. Five files are converted; the wire-format
-golden vectors have to be regenerated.
+**It went out on a branch, and the reason is the interesting part.** The production change is small
+and works. Forty-seven tests then failed, all of them fixtures that build bundles by hand — and each
+one had to declare which adversary it models. A **relay edit** now carries the issuer's untouched
+signature over content it no longer covers, which is a more faithful model than these fixtures could
+express before: a relay can copy an invite and edit a field, and cannot sign the result. A
+**field-level check** — no Kyber key, a second device, a stripped one-time key — is defence against
+the *issuer*, the only party that can sign what it emits, so those sign as the issuer and keep
+testing exactly what they claimed. Codec tests get bytes of the right shape from a fixture named so
+that nobody mistakes them for a valid signature, because the codec carries the signature and does
+not verify it.
+
+Three things were updated deliberately rather than absorbed. The **golden vector**'s version byte,
+written out by hand — that is what a golden vector is for, and it is the test that cannot be updated
+by accident. The **bundle size**, re-derived at 2572 characters against the 4096-character invite
+threshold, leaving a margin of 1524: the assertion demands re-derivation rather than adjustment, and
+the threshold does not need moving. And the **fuzz corpus**, raised from two thousand mutations to
+two and a half thousand, because a longer envelope reached the parser ninety-nine times against a
+floor of a hundred — lowering the floor would have been the same test proving less.
 
 Doing that quickly is how a suite gets quietly weakened, which is the failure this file records more
-often than any other. So the main line stays green and the work continues where it can be checked
-one file at a time.
+often than any other. So it was done on a branch, one file at a time, with the main line green
+throughout, and merged when the whole suite and the device suite were both back to green.
