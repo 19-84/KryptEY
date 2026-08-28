@@ -34,7 +34,7 @@ import java.io.IOException;
  *
  * <p>First, its model of the send path was wrong. Its javadoc said the send side "counts UTF-8
  * bytes of the plaintext wire text"; {@code checkMessageLengthForEncodingMethod} counts the USER'S
- * plaintext, which for a 500-byte message becomes 3068 wire characters - and 5500 when a signed
+ * plaintext, which for a 500-byte message becomes 3068 wire characters - and 5584 when a signed
  * pre-key rotation falls due and a full PQXDH bundle rides along. It asserted something six to
  * eleven times smaller than reality.
  *
@@ -118,6 +118,14 @@ public class SendableIsDecodableTest {
    * <p>Measured before the fix: wire 5500 characters, FairyTale-encoded to 8398, against a cap of
    * 8192 - sent successfully, undecodable on arrival. Reachable by any account older than 30 days
    * sending its first sizable message to a newly imported contact.
+   *
+   * <p>Re-measured after bundles gained an issuing signature, because the numbers above are what
+   * this file argues from: the rotation-due wire envelope is 5584 characters now, eighty-four more,
+   * and a 200-byte message encodes to 7904 against the same 8192 cap. So the headroom on that path
+   * is about 288 characters rather than about 370, and the refusal boundary moved down by roughly
+   * sixty bytes of plaintext. Nobody is sent an undecodable message by it - that is the property
+   * below, and it still holds - but a message that used to just fit is now refused, which is a cost
+   * worth writing down rather than discovering.
    */
   @Test
   public void arotationDueMessageIsRefusedRatherThanSentUndecodable() throws Exception {
@@ -193,7 +201,7 @@ public class SendableIsDecodableTest {
    * <p>The test this replaces compared {@code CHAR_THRESHOLD_RAW} (500) against
    * {@code MAX_DECODABLE_CHARS} and its comment said "the raw encoder is a pass-through, so its own
    * cap is what keeps it inside the door". False: RAW passes through the WIRE ENVELOPE, not the
-   * plaintext - measured 3068 characters for a 500-byte message and 5500 with a rotation-attached
+   * plaintext - measured 3068 characters for a 500-byte message and 5584 with a rotation-attached
    * bundle. Six to eleven times the number it was comparing. That is exactly the category error the
    * commit which wrote it says it is fixing, reintroduced in the replacement.
    */

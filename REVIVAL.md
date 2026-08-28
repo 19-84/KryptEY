@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and seven sections, written in the order things were found rather than by subject, so the
+One hundred and eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -163,6 +163,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Newest first, when it meant oldest first](#newest-first-when-it-meant-oldest-first)
 - [Fields that were never issued together](#fields-that-were-never-issued-together)
 - [What the signature does not close](#what-the-signature-does-not-close)
+- [Eighty-four characters, and where they landed](#eighty-four-characters-and-where-they-landed)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6072,3 +6073,39 @@ does not exist; it is pinned as a test because it is a property of the library, 
 the splice case at a fresh address is refused by libsignal before the new check is reached: the
 mutant says so, deleting the verification leaves that test green. The case stays as defence in depth
 with its sentence corrected, because the one the signature is genuinely alone on is its sibling.
+
+## Eighty-four characters, and where they landed
+
+**The bundle signature made the wire envelope longer, and one of the numbers this project argues
+from was measured before it.**
+
+`E2EEStrip.encode` refuses a message that would arrive undecodable, and its reasoning is written out
+in figures: a 500-byte message is 3068 wire characters, and 5500 when a signed pre-key rotation falls
+due and a full PQXDH bundle rides along; FairyTale expands that by about 1.5x; the recipient refuses
+past 8192. Those figures predate the signature by one commit, and nothing re-derives them — the test
+beside them asserts the *property* (anything sent is decodable, anything else is refused), which
+stays green whichever way the numbers move.
+
+Re-measured: **5584**, eighty-four more, and a 200-byte rotation-due message now encodes to 7904
+against the same 8192 cap. So the headroom on that path is about 288 characters rather than about
+370, and **the refusal boundary moved down by roughly sixty bytes of plaintext**. Nobody is sent an
+undecodable message by it — that property still holds and is still tested — but a message that used
+to just fit is now refused. That is a cost of the change, and the point of writing it down is that
+it was not visible from anything the suite says.
+
+**Three smaller things from the same round.** The claim that the decoder "refuses version one
+outright rather than accepting an unsigned bundle from an older build" had no test: the
+malformed-version case uses `0x7F`, which any unknown value satisfies, while the value that matters
+is specifically **one** — the version whose envelopes carry no signature at all, and the one a relay
+would actually try. It is pinned now, and the mutant that accepts version 1 alongside version 2 kills
+it.
+
+The fuzz floor was an absolute count against a corpus the test itself chooses, so raising the corpus
+was always available as a way to quiet it — which is exactly what was done to it last tick, for a
+defensible reason, but the availability is the problem. It is a rate now: four percent of whatever
+corpus is used, which cannot be bought by enlarging the corpus.
+
+And two comments explaining a refusal by libsignal's signed-pre-key check now describe a refusal that
+happens earlier and for a different reason. Corrected rather than deleted, because what those tests
+are about — that the refusal lands *after* the warning has been posted — is unchanged by which check
+gets there first.

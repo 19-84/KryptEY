@@ -100,7 +100,15 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     SignalProtocolMain.testIsRunning = false;
   }
 
-  /** The relay's edit: delete the one-time pre-key. Both signatures still verify. */
+  /**
+   * The relay's edit: delete the one-time pre-key.
+   *
+   * <p>Both of libsignal's own signatures still verify, because each covers only its own key. What
+   * refuses this now is the issuing signature, which covers the whole bundle and travels unchanged
+   * from the invite the relay copied - a relay can edit or sign, not both. The tests below are
+   * about what the app SAYS when a bundle is refused, and that is unchanged by which check refused
+   * it.
+   */
   private MessageEnvelope strippedInvite() throws Exception {
     final PreKeyResponse genuine =
         EnvelopeCodec.fromWire(genuineBundle).getPreKeyResponse();

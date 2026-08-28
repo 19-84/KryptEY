@@ -514,8 +514,11 @@ public class StripGuardsTest {
     SignalProtocolMain.rejectContactKey(bob());
     victim.setContactList(new ArrayList<>());
 
-    // The peer's real identity key over the attacker's signed pre-key: the signature no longer
-    // verifies, so session creation fails after the warning has already been posted.
+    // The peer's real identity key over the attacker's signed pre-key. Two things refuse it now,
+    // and the order is what this test is about: the issuing signature travels with the attacker's
+    // fields and does not verify against the peer's identity, and libsignal's own signed-pre-key
+    // check would refuse it too. Either way the refusal lands AFTER the warning has been posted,
+    // which is the property here - not which check got there first.
     final PreKeyResponse spliced = new PreKeyResponse(
         EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse().getIdentityKey(),
         EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse().getDevices());

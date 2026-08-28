@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.signalprotocol.encoding;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
@@ -87,6 +88,29 @@ public class WireFormatGoldenTest {
   public void theVersionByteIsPinned() throws Exception {
     assertEquals(0x02, BinaryEnvelope.encode(
         new MessageEnvelope(new byte[] {1}, 2, "abcd", 42))[0]);
+  }
+
+  /**
+   * And the previous version is refused rather than tolerated.
+   *
+   * <p>{@code VERSION}'s own javadoc says the decoder "refuses version one outright rather than
+   * accepting an unsigned bundle from an older build", and nothing tested it: the malformed-version
+   * test uses 0x7F, which any unknown value satisfies. The claim that matters is specifically about
+   * ONE, because that is the version whose envelopes carry no bundle signature - accepting it would
+   * be the downgrade the bump exists to prevent, and it is the one value a relay would try.
+   */
+  @Test
+  public void theversionBeforeThisOneIsRefused() throws Exception {
+    final byte[] current = BinaryEnvelope.encode(
+        new MessageEnvelope(new byte[] {1, 2, 3, 4, 5}, 3, "abcd", 42));
+    final byte[] downgraded = current.clone();
+    downgraded[0] = 0x01;
+
+    final java.io.IOException refused = assertThrows("version 1 carried no bundle signature, so "
+            + "accepting it is exactly the downgrade this format bump exists to refuse",
+        java.io.IOException.class, () -> BinaryEnvelope.decode(downgraded));
+    assertTrue("and the refusal must say what was wrong: " + refused.getMessage(),
+        refused.getMessage().contains("version"));
   }
 
   /** Flag bit values are part of the format: swapping them is invisible to a round trip. */

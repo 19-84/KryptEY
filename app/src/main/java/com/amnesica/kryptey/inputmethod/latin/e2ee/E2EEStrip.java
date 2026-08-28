@@ -166,8 +166,10 @@ public class E2EEStrip {
    *
    * <p>The send-side length checks run BEFORE this and measure the wrong thing. For a chat message
    * {@code checkMessageLengthForEncodingMethod} counts the user's plaintext - 500 bytes - while what
-   * travels is the wire envelope, measured at 3068 characters for a 500-byte message and 5500 when
-   * a signed pre-key rotation falls due and a full PQXDH bundle is attached. The FairyTale encoder
+   * travels is the wire envelope, measured at 3068 characters for a 500-byte message and 5584 when
+   * a signed pre-key rotation falls due and a full PQXDH bundle is attached. That second figure was
+   * 5500 before bundles carried an issuing signature; re-measured rather than left to drift,
+   * because it is the number this whole check is argued from. The FairyTale encoder
    * then expands that by about 1.5x plus a decoy sentence, and the recipient refuses anything past
    * {@link #MAX_DECODABLE_CHARS}.
    *
