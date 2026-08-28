@@ -309,9 +309,20 @@ public class Account {
    * How many addresses one retired name remembers.
    *
    * <p>The list is bounded by NAME, so a name's addresses cannot be the thing that fills it. This
-   * second bound only stops one name growing without limit, and dropping the oldest address is the
-   * safe direction: an address that is no longer remembered is an address the suppression no longer
-   * applies to, so what is lost is silence, not a warning.
+   * second bound only stops one name growing without limit.
+   *
+   * <p><b>The direction this trim drops in is not what makes it safe, and the first version of this
+   * comment had that backwards.</b> It said dropping an address "loses silence, not a warning". The
+   * reader settles it the other way: {@code everyAddressIs} refuses to suppress on the FIRST
+   * address that differs from the one being asked about, so every address in the set is a reason
+   * not to suppress, and removing one can only make suppression easier to satisfy.
+   *
+   * <p>What makes the trim safe is the SIZE it leaves. Suppression needs a set whose addresses are
+   * all the excluded one, and the merge de-duplicates, so a trimmed set holds eight DISTINCT
+   * addresses and cannot satisfy that. The de-duplication is load-bearing for this, not tidiness:
+   * without it a messenger could drive eight deletions at its own address, fill the set with eight
+   * copies of it, push the genuine address out and be suppressed permanently. Lowering this bound
+   * toward one is therefore the dangerous direction, and nothing else in the file says so.
    */
   public static final int RETIRED_ADDRESSES_PER_NAME = 8;
 
@@ -393,12 +404,20 @@ public class Account {
     } else {
       final java.util.LinkedList<String> addresses = new java.util.LinkedList<>();
       for (int i = 2; i < merged.length; i++) {
+        // De-duplicated, and this is the clause the whole thing rests on rather than a tidiness:
+        // repeats of one address are what would let a messenger fill the set with eight copies of
+        // its own, push everything else out, and be suppressed permanently. Deletions are
+        // attacker-drivable - replay a message, the decrypt fails, the app's own advice is delete
+        // and re-invite - so eight cycles at one address is a cheap sequence to drive.
         if (merged[i] != null && !merged[i].equals(address)) addresses.addLast(merged[i]);
       }
       addresses.addLast(address);
-      // Oldest address first, so the trim below drops the oldest. An entry written before the
-      // record held an address contributes an empty string, which matches no live address and is
-      // kept rather than dropped: it is what makes a legacy entry warn about everything.
+      // Oldest address first, so the trim drops the oldest. Nothing observable turns on which end
+      // it drops - see RETIRED_ADDRESSES_PER_NAME for why it is the size that matters - and an
+      // entry written before the record held an address contributes an empty element, which is the
+      // oldest thing in it and so the first thing a trim removes. That costs a legacy entry its
+      // "warn about everything" element, which the eight distinct addresses replacing it supply
+      // anyway.
       while (addresses.size() > RETIRED_ADDRESSES_PER_NAME) addresses.removeFirst();
 
       final String[] replacement = new String[2 + addresses.size()];

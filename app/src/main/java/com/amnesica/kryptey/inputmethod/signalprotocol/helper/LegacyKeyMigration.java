@@ -94,7 +94,7 @@ public final class LegacyKeyMigration {
     final java.util.LinkedList<String[]> retired = account.getRetiredDisplayNames();
     if (retired != null) {
       for (final String[] entry : retired) {
-        if (entry.length < 3 || entry[2] == null || entry[2].isEmpty()) continue;
+        if (entry.length < 3) continue;
         // Blanked, always - no attempt to identify the address from the name.
         //
         // Looking it up by contact row or by surviving pin was reachable: the messenger chooses its
@@ -110,7 +110,15 @@ public final class LegacyKeyMigration {
         // at which it does. Blanking costs a false alarm on a legitimate re-add of a contact
         // retired before the upgrade; the alternative is silence on an impersonation, and this
         // codebase has settled that trade in the same direction every time it has come up.
-        entry[2] = "";
+        // EVERY address element, not just the first. An entry carries the set of addresses its
+        // name was deleted from, and blanking element two while leaving three onwards would migrate
+        // most of the very thing this refuses to trust. Unreachable today - the migration is gated
+        // on a schema flag and runs on the first load after the upgrade, when no entry can hold a
+        // second address yet - but a migration written to a shape the record no longer has is one
+        // that comes back wrong the next time the shape changes.
+        for (int i = 2; i < entry.length; i++) {
+          if (entry[i] != null && !entry[i].isEmpty()) entry[i] = "";
+        }
       }
     }
   }

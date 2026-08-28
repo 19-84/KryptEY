@@ -130,6 +130,32 @@ public class LegacyKeyMigrationTest {
   }
 
   /**
+   * EVERY address on a retirement is blanked, not just the first.
+   *
+   * <p>Not reachable in production - the migration is gated on a schema flag and runs on the first
+   * load after the upgrade, when no entry can hold a second address yet. Written because the loop
+   * was indexed at element two while the record it walks now carries a set, and a migration written
+   * to a shape the record no longer has is one that comes back wrong the next time the shape
+   * changes. What it would have done if reached is migrate most of the very thing it refuses to
+   * trust: a bare name identifies no address, and that is as true of the third element as the
+   * first.
+   */
+  @Test
+  public void everyAddressOnAretirementIsBlanked() {
+    final LinkedList<String[]> retired = new LinkedList<>();
+    retired.add(new String[] {"Bob", "Jones", "first-address", "second-address", "third-address"});
+    account.setRetiredDisplayNames(retired);
+
+    LegacyKeyMigration.apply(account);
+
+    final String[] entry = account.getRetiredDisplayNames().get(0);
+    assertEquals("the entry keeps its shape", 5, entry.length);
+    for (int i = 2; i < entry.length; i++) {
+      assertEquals("address element " + i + " must be blanked too", "", entry[i]);
+    }
+  }
+
+  /**
    * A retirement is blanked even when a pin bearing its name survives.
    *
    * <p>This too asserted the opposite one round ago. Identifying the address from the name - by

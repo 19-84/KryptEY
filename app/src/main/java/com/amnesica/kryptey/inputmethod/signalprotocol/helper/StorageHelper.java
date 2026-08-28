@@ -276,11 +276,61 @@ public class StorageHelper {
           retired.add((String[]) entry);
         }
       }
-      account.setRetiredDisplayNames(retired);
+      account.setRetiredDisplayNames(mergeEntriesSharingAname(retired));
     }
 
     migrateLegacyKeys(account, contactsWereReadable);
     return account;
+  }
+
+  /**
+   * Folds entries that share a name into one, for a store written by an older build.
+   *
+   * <p>The record used to be one entry per (name, address); it is now one entry per name carrying
+   * its addresses. An upgrading store therefore legitimately holds several entries for one folded
+   * name, and the writer collapses at most one of them per deletion - so until the user deletes
+   * that name again, those entries each occupy a slot against the hundred-NAME bound, which is the
+   * residue of the exact attack the new shape closed.
+   *
+   * <p>The direction is safe either way: extra entries matching a name can only add warnings, never
+   * suppress one. What they cost is the bound, and the bound is the half an attacker can drive.
+   */
+  private static java.util.LinkedList<String[]> mergeEntriesSharingAname(
+      final java.util.LinkedList<String[]> loaded) {
+    final java.util.LinkedList<String[]> merged = new java.util.LinkedList<>();
+    for (final String[] entry : loaded) {
+      if (entry.length < 2) continue;
+      String[] existing = null;
+      for (final String[] candidate : merged) {
+        if (com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain.displayNamesMatch(
+            candidate[0], candidate[1], entry[0], entry[1])) {
+          existing = candidate;
+          break;
+        }
+      }
+      if (existing == null) {
+        merged.addLast(entry);
+        continue;
+      }
+
+      final java.util.LinkedList<String> addresses = new java.util.LinkedList<>();
+      for (int i = 2; i < existing.length; i++) addresses.addLast(existing[i]);
+      for (int i = 2; i < entry.length; i++) {
+        if (!addresses.contains(entry[i])) addresses.addLast(entry[i]);
+      }
+      while (addresses.size()
+          > com.amnesica.kryptey.inputmethod.signalprotocol.Account.RETIRED_ADDRESSES_PER_NAME) {
+        addresses.removeFirst();
+      }
+
+      final String[] replacement = new String[2 + addresses.size()];
+      replacement[0] = existing[0];
+      replacement[1] = existing[1];
+      int at = 2;
+      for (final String each : addresses) replacement[at++] = each;
+      merged.set(merged.indexOf(existing), replacement);
+    }
+    return merged;
   }
 
   /**

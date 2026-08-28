@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-nine sections, written in the order things were found rather than by subject, so the
+One hundred sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -155,6 +155,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Conditions and events, decided once](#conditions-and-events-decided-once)
 - [A fix that could not run, and a test that could not tell](#a-fix-that-could-not-run-and-a-test-that-could-not-tell)
 - [Two questions, one list](#two-questions-one-list)
+- [The clause the argument rested on, and did not mention](#the-clause-the-argument-rested-on-and-did-not-mention)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5720,3 +5721,43 @@ it is the reason the reload test exists rather than being assumed.
 Four mutants were run against this: the reader taking "contains" instead of "every", the loader
 keeping one address, and both earlier keyings. Each is killed by the test that claims that property,
 and by no other.
+
+## The clause the argument rested on, and did not mention
+
+**The set-of-addresses shape held. The written argument for it was wrong in a way that would have
+taken the next maintainer straight into the attack.**
+
+A review round could not reach silence against the code as committed, and said so. What it found
+instead: the property making the shape safe is **one un-asserted clause**, and every one of the five
+new tests passed with that clause deleted.
+
+The clause is the de-duplication inside the merge. Without it, the sequence is cheap: the messenger
+drives eight delete-and-re-invite cycles at its **own** address — one replayed message each, the
+app's own advice supplies the rest — the set fills with eight copies of that one address, the
+genuine address falls off the far end, and every address in the set is then the impostor's, so the
+impostor is suppressed **permanently** while the genuine contact warns forever. The test that came
+closest repeated a single address five times and asserted the set stayed quiet — which it does
+either way, because five identical addresses are still all-equal. **The mutant the whole change was
+about was the one mutant not run.**
+
+**And three comments stated the safety argument in a form that is false.** They said suppression
+"needs a set of exactly one address", which is true only of *distinct* addresses — a set of eight
+equal ones suppresses, and the trim produces sets of eight. A fourth, worse: the bound's javadoc said
+dropping an address "loses silence, not a warning". The reader settles it the other way. Every
+address in a set is a reason **not** to suppress, so removing one can only make suppression easier.
+The conclusion happened to be right; the reason given was inverted, and a maintainer who trusted it
+and lowered the bound toward one would have walked into the paragraph above.
+
+What actually makes the trim safe is the **size** it leaves, and that is now what the comment says.
+
+**Three smaller things, all in the same direction — the shape changed and its neighbours did not.**
+The legacy migration blanked element two of an entry that now holds a set, so it would have migrated
+most of the thing it exists to refuse; unreachable today, fixed and tested anyway, because a
+migration written to a shape the record no longer has comes back wrong the next time the shape
+changes. The loader folded nothing, so a store written by the previous build kept one entry per
+address and the hundred-name bound went on counting addresses until the user deleted that name
+again. And the reader indexed elements the writer guards against, which would have turned a shape
+neither can produce into a crash on a click listener.
+
+Four more mutants, each now killed by the test that claims it: the merge without de-duplication, the
+trim reversed, the loader without the fold, and the migration blanking one element.

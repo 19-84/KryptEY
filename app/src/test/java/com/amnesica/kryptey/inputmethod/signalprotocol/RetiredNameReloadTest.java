@@ -199,6 +199,38 @@ public class RetiredNameReloadTest {
         SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", peerAddress));
   }
 
+  /**
+   * A store written by the previous build holds one entry per address; the load folds them.
+   *
+   * <p>The record used to be one entry per (name, address). An upgrading store therefore holds
+   * several entries for one folded name, and the writer collapses at most one of them per deletion
+   * - so until the user deletes that name again they each occupy a slot against the hundred-NAME
+   * bound, which is the residue of the attack the new shape closed. The direction is safe (extra
+   * entries matching a name can only add warnings), but the bound is the half an attacker drives.
+   */
+  @Test
+  public void astoreWrittenPerAddressIsFoldedIntoOneEntryPerName() throws Exception {
+    pinAndThenDeleteBob();
+    final Account before = SignalProtocolMain.getInstance().getAccount();
+
+    final java.util.LinkedList<String[]> previousShape = new java.util.LinkedList<>();
+    previousShape.add(new String[] {"Bob", "Jones", ProtocolAddresses.key(peerAddress)});
+    previousShape.add(new String[] {"Bob", "Jones",
+        ProtocolAddresses.key(ProtocolAddresses.of("attacker-uuid", 9))});
+    previousShape.add(new String[] {"Carol", "Smith", ProtocolAddresses.key(peerAddress)});
+    before.setRetiredDisplayNames(previousShape);
+    storeTheAccount(before);
+
+    final Account after = reloaded();
+    assertEquals("two entries for one folded name must load as one, or the upgrade leaves the "
+            + "bound counting addresses the attacker picked", 2,
+        after.getRetiredDisplayNames().size());
+    assertEquals("and the folded entry keeps both addresses", 4,
+        after.getRetiredDisplayNames().getFirst().length);
+    assertTrue("a different name must not be folded into it",
+        SignalProtocolMain.hasRetiredDisplayName("Carol", "Smith"));
+  }
+
   /** Writes the account through a helper holding this test's key. */
   private void storeTheAccount(final Account account) {
     new StorageHelper(context, (c, hasExistingData) -> new GcmCryptoBox() {

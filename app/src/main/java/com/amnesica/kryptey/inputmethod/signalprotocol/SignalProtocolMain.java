@@ -1277,9 +1277,12 @@ public class SignalProtocolMain {
     final String excludedAddress = ProtocolAddresses.key(excluding);
 
     for (final String[] retired : sInstance.mAccount.getRetiredDisplayNames()) {
+      if (retired.length < 2) continue;
       if (!displayNamesMatch(retired[0], retired[1], firstName, lastName)) continue;
-      // Entries written before the address was recorded have length 2; treat those as matching
-      // nothing in particular rather than silently suppressing.
+      // A short entry is skipped rather than indexed. The loader gives every entry at least three
+      // elements and the writer emits at least three, so this is unreachable - but the writer
+      // SKIPS an entry shorter than two, and a reader that threw where the writer skipped would
+      // turn a shape neither can produce into a crash on the click-listener path.
       // The full address, and nothing looser. A migration arm here used to accept entries written
       // before the record held a rendered address, by comparing the bare address NAME - and it was
       // reachable: the attacker picks the deleted contact's address name for its own address, gets

@@ -191,27 +191,70 @@ public class RetiredNameBoundCountsNamesTest {
   }
 
   /**
-   * The trim keeps the newest addresses, and the one it drops still warns.
+   * Repeating one address cannot crowd the others out of a name's set.
    *
-   * <p>Stated as an assertion because the direction is the whole argument for allowing a trim: if
-   * it dropped the newest, an attacker could flood past the bound and leave its own address
-   * unlisted-but-suppressed nowhere, and if a dropped address went quiet the trim would be a way to
-   * buy silence.
+   * <p>The de-duplication in the merge is what this asserts, and a review round found it was the
+   * only thing standing between the user and the attack the whole shape was built to close, with
+   * nothing testing it. Without it: the messenger drives eight delete-and-re-invite cycles at its
+   * OWN address - one replayed message each, the app's advice does the rest - the set fills with
+   * eight copies of that one address, the genuine address is trimmed out of the far end, and every
+   * address in the set is then the impostor's, so the impostor is suppressed permanently.
+   *
+   * <p>Every other test here uses distinct addresses and so cannot see it, including the one that
+   * repeats a single address: a set of five identical addresses is still all-equal, so it is
+   * suppressed either way. This one needs a second address present to have something to lose.
    */
   @Test
-  public void anaddressPushedOutOfTheSetGoesBackToWarning() throws Exception {
+  public void repeatingOneAddressCannotCrowdOutAnother() throws Exception {
     acceptInviteFrom(genuineBob, genuineAddress);
     addAndDelete("Bob", "Jones", genuineAddress);
 
+    acceptInviteFrom(impostorBob, impostorAddress);
+    for (int i = 0; i < 10; i++) {
+      addAndDelete("Bob", "Jones", impostorAddress);
+    }
+
+    assertEquals("repeats of one address must not consume the set: two addresses were deleted "
+            + "from, so the entry holds two", 4,
+        victim.getRetiredDisplayNames().getFirst().length);
+    assertNotNull("precondition: the pin the suppression is justified by still stands at the "
+            + "impostor's address, so nothing but the set decides this",
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(impostorAddress));
+    assertTrue("driving deletions at one address must not buy silence at it",
+        SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", impostorAddress));
+  }
+
+  /**
+   * The trim keeps the newest addresses and drops the oldest.
+   *
+   * <p>Asserted on the entry rather than through the reader, because the reader cannot see it: a
+   * set holding two or more distinct addresses warns at every address, so a trim in either
+   * direction leaves the same answer to every question the reader can be asked. A test that read
+   * this through {@code hasContactWithSameDisplayName} passed with the trim reversed AND with the
+   * trim deleted, while its own message claimed to be pinning the direction.
+   *
+   * <p>Nothing security-relevant turns on the direction today - see
+   * {@code RETIRED_ADDRESSES_PER_NAME}, where it is the size the trim leaves that matters - so this
+   * pins the writer and the loader agreeing, which is a real property: they drop different ends and
+   * a reload changes which addresses a name is remembered at.
+   */
+  @Test
+  public void thetrimDropsTheOldestAddress() throws Exception {
+    victim.retireDisplayName("Bob", "Jones", ProtocolAddresses.key(genuineAddress));
     for (int i = 1; i <= Account.RETIRED_ADDRESSES_PER_NAME; i++) {
       victim.retireDisplayName("Bob", "Jones",
           ProtocolAddresses.key(ProtocolAddresses.of("attacker-" + i, 1)));
     }
 
-    assertNotNull("precondition: the pin at the pushed-out address still stands, so the only "
-            + "reason to warn is that the address is no longer listed",
-        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(genuineAddress));
-    assertTrue("an address the set no longer remembers must warn again",
-        SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", genuineAddress));
+    final String[] entry = victim.getRetiredDisplayNames().getFirst();
+    final java.util.List<String> addresses =
+        java.util.Arrays.asList(entry).subList(2, entry.length);
+
+    assertEquals("the set is full", Account.RETIRED_ADDRESSES_PER_NAME, addresses.size());
+    assertFalse("the oldest address is the one dropped",
+        addresses.contains(ProtocolAddresses.key(genuineAddress)));
+    assertTrue("...and the newest is kept",
+        addresses.contains(ProtocolAddresses.key(
+            ProtocolAddresses.of("attacker-" + Account.RETIRED_ADDRESSES_PER_NAME, 1))));
   }
 }
