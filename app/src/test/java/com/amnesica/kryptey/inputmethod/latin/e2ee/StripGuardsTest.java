@@ -518,8 +518,12 @@ public class StripGuardsTest {
     final PreKeyResponse spliced = new PreKeyResponse(
         EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse().getIdentityKey(),
         EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse().getDevices());
+    // The attacker's own signature travels with the fields it took: it verifies against the
+    // attacker's identity key and not against the peer's, which is what a splice looks like now.
     final MessageEnvelope envelope =
-        new MessageEnvelope(spliced, peerAddress.getName(), peerAddress.getDeviceId());
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(attackerBundle),
+            new MessageEnvelope(spliced, peerAddress.getName(), peerAddress.getDeviceId()));
 
     ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
         .setText("Bob");
@@ -568,8 +572,12 @@ public class StripGuardsTest {
     final PreKeyResponse spliced = new PreKeyResponse(
         EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse().getIdentityKey(),
         EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse().getDevices());
+    // The attacker's own signature travels with the fields it took: it verifies against the
+    // attacker's identity key and not against the peer's, which is what a splice looks like now.
     final MessageEnvelope envelope =
-        new MessageEnvelope(spliced, peerAddress.getName(), peerAddress.getDeviceId());
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(attackerBundle),
+            new MessageEnvelope(spliced, peerAddress.getName(), peerAddress.getDeviceId()));
 
     ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
         .setText("Bob");

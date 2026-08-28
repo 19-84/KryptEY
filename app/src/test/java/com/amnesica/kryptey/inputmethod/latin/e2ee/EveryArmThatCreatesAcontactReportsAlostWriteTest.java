@@ -129,9 +129,11 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     final List<PreKeyResponseItem> devices = new ArrayList<>();
     devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
         device.getSignedPreKey(), null, device.getKyberPreKey()));
-    return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(new MessageEnvelope(
-        new PreKeyResponse(genuine.getIdentityKey(), devices),
-        peerAddress.getName(), peerAddress.getDeviceId())));
+    return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(genuineBundle),
+            new MessageEnvelope(new PreKeyResponse(genuine.getIdentityKey(), devices),
+                peerAddress.getName(), peerAddress.getDeviceId()))));
   }
 
   /** A message with no bundle beside it — the arm that pins by trust-on-first-use. */

@@ -101,8 +101,10 @@ public class AsilentPinAtAkeylessRowIsCautionedTest {
     devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
         device.getSignedPreKey(), null, device.getKyberPreKey()));
     final MessageEnvelope stripped = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(
-        new MessageEnvelope(new PreKeyResponse(genuine.getIdentityKey(), devices),
-            aliceAddress.getName(), aliceAddress.getDeviceId())));
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(genuineBundle),
+            new MessageEnvelope(new PreKeyResponse(genuine.getIdentityKey(), devices),
+                aliceAddress.getName(), aliceAddress.getDeviceId()))));
 
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Alice");
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Smith");

@@ -31,6 +31,23 @@ public class MessageEnvelope implements Serializable {
   @JsonProperty
   int deviceId;
 
+  /**
+   * The inviter's signature over the whole bundle.
+   *
+   * <p>libsignal signs the signed pre-key and the Kyber pre-key individually, and signs nothing that
+   * ties the fields of a bundle to each other. Every field is otherwise checked only for presence,
+   * so a relay holding an earlier genuine invite from the same person can mix its fields into the
+   * current one and both libsignal signatures still verify - measured, and accepted. This binds
+   * them: it covers the canonical encoding of the whole bundle section, so a field taken from
+   * another invite by the same identity no longer fits.
+   *
+   * <p>It authenticates nothing about WHO the identity is - trust-on-first-use and the safety
+   * number are still the only answer to that. It answers a narrower question the format could not:
+   * were these fields issued together.
+   */
+  @JsonProperty
+  byte[] bundleSignature;
+
   public MessageEnvelope(final byte[] ciphertextMessage, final int ciphertextType, final String signalProtocolAddressName, final int deviceId) {
     this.ciphertextMessage = ciphertextMessage;
     this.ciphertextType = ciphertextType;
@@ -44,6 +61,14 @@ public class MessageEnvelope implements Serializable {
     this.signalProtocolAddressName = signalProtocolAddressName;
     this.deviceId = deviceId;
     this.timestamp = System.currentTimeMillis();
+  }
+
+  public byte[] getBundleSignature() {
+    return bundleSignature;
+  }
+
+  public void setBundleSignature(final byte[] bundleSignature) {
+    this.bundleSignature = bundleSignature;
   }
 
   public MessageEnvelope() {

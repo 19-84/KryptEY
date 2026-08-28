@@ -110,9 +110,11 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     final List<PreKeyResponseItem> devices = new ArrayList<>();
     devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
         device.getSignedPreKey(), null, device.getKyberPreKey()));
-    final MessageEnvelope stripped = new MessageEnvelope(
-        new PreKeyResponse(genuine.getIdentityKey(), devices),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    final MessageEnvelope stripped =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(genuineBundle),
+            new MessageEnvelope(new PreKeyResponse(genuine.getIdentityKey(), devices),
+                peerAddress.getName(), peerAddress.getDeviceId()));
 
     // Through the wire, so this is the object a relay's edit actually produces rather than one
     // assembled in memory that merely resembles it.
