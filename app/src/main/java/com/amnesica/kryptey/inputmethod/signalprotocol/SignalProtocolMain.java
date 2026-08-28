@@ -1780,7 +1780,12 @@ public class SignalProtocolMain {
       Log.d(TAG, "Attempting to save unencrypted message...");
       storeUnencryptedMessageInMap(mAccount, signalProtocolAddress, unencryptedMessage, Instant.ofEpochMilli(messageEnvelope.getTimestamp()), true);
 
-      storeAllAccountInformationInSharedPreferences();
+      // Recorded, like every other write in this family. A send advances the ratchet and may rotate
+    // the signed and Kyber pre-keys, attaching the new public halves to the outgoing message - so a
+    // lost write leaves the peer holding material whose private half is not on this device. The
+    // chat-log flag does not cover it: the log is a separate file that can commit while this one
+    // does not, and in that case nothing at all was reported.
+    mLastSessionWriteReachedDisk = storeAllAccountInformationInSharedPreferences();
       // The other half of the conversation. A sent message that fails to reach the log vanishes
       // from the user's history with the ciphertext already handed to the messenger - arguably more
       // visible than the receive case and just as unexplained. The flag was cleared at the top of
@@ -2244,7 +2249,16 @@ public class SignalProtocolMain {
    * @throws InvalidKeyIdException InvalidKeyIdException
    * @throws InvalidKeyException   InvalidKeyException
    */
+  /** Whether the last exported invite's private halves reached disk. */
+  private boolean mLastBundleExportReachedDisk = true;
+
+  public static boolean lastBundleExportReachedDisk() {
+    return sInstance.mLastBundleExportReachedDisk;
+  }
+
   private PreKeyBundle getPreKeyBundle() throws InvalidKeyIdException, InvalidKeyException {
+    // Cleared per attempt, so a caller asking about THIS invite is never told about a previous one.
+    mLastBundleExportReachedDisk = true;
     // check age of signedPreKey and generate new one if necessary (and delete old ones after archive age)
     KeyUtil.refreshSignedPreKeyIfNecessary(mAccount.getSignalProtocolStore(), mAccount.getMetadataStore());
 
@@ -2308,7 +2322,15 @@ public class SignalProtocolMain {
     // not need it: on the monthly rotation path rotateSignedPreKey has already stored the new Kyber
     // key, so containsKyberPreKey() is true, the branch is skipped, and the bundle carrying the
     // freshly rotated signed and Kyber keys went out with neither of them written down.
-    storeAllAccountInformationInSharedPreferences();
+    //
+    // Recorded rather than discarded. This write puts on disk the PRIVATE halves of material whose
+    // public halves are about to leave the device, and the comment above says why that matters: the
+    // invite is carried to a messenger by hand, so a reload always intervenes before the reply
+    // arrives. An invite exported while nothing can be written is therefore dead on arrival, and
+    // silently - the peer's first message cannot be decrypted, the app reports a generic decryption
+    // failure, and its standard advice for that is delete-and-re-invite: the key-substitution
+    // window, reached out of a storage fault nobody mentioned.
+    mLastBundleExportReachedDisk = storeAllAccountInformationInSharedPreferences();
 
     return preKeyBundle;
   }
@@ -2505,9 +2527,24 @@ public class SignalProtocolMain {
    */
   private long mAccountWritesLanded = 0;
 
+  /**
+   * How many message-log writes have landed, ever, in this process.
+   *
+   * <p>Held here rather than on the storage helper, and that is the whole of the fix it represents.
+   * {@code initializeStorageHelper} builds a NEW helper on every {@code reloadAccount}, so a counter
+   * living on the helper went back to zero on every configuration change - and the one thing that
+   * reads it, the notice saying a deletion left plaintext behind, clears itself when the count has
+   * advanced past where it was raised. Reset to zero, "advanced" is never true again, so that notice
+   * became permanent on the first rotation: it holds the banner, which suppresses every
+   * informational line for the life of the process.
+   *
+   * <p>The account counter beside it was already on the instance, which is why it did not have this
+   * problem. Two counters, one lifetime rule, and only one of them followed it.
+   */
+  private long mMessageLogWritesLanded = 0;
+
   public static long messageLogWritesLanded() {
-    return sInstance == null || sInstance.mStorageHelper == null ? 0
-        : sInstance.mStorageHelper.messageLogWritesLanded();
+    return sInstance == null ? 0 : sInstance.mMessageLogWritesLanded;
   }
 
   public static long accountWritesLanded() {
@@ -2525,6 +2562,20 @@ public class SignalProtocolMain {
     }
     final boolean landed = mStorageHelper.storeAllInformationInSharedPreferences(mAccount);
     if (landed) mAccountWritesLanded++;
+    // Counted separately, because they are separate files with separate commits: the log can land
+    // while the account does not and the other way round.
+    //
+    // And only when the log was actually WRITTEN. storeMessageLog returns true for "nothing to
+    // write", which includes every account whose log has not been loaded - and a reload defers the
+    // log by design, so the write-back inside reloadAccount reported a landed log write having
+    // touched nothing. The one thing that reads this counter is the notice saying a deletion left
+    // plaintext behind, which clears when the count advances; a no-op bump cleared it on the first
+    // theme change, at the exact moment the reload had re-read the un-pruned log from disk and the
+    // condition genuinely still held.
+    if (mAccount != null && mAccount.messageLogIsLoaded()
+        && mStorageHelper.lastMessageLogWriteSucceeded()) {
+      mMessageLogWritesLanded++;
+    }
     return landed;
   }
 
@@ -2584,6 +2635,7 @@ public class SignalProtocolMain {
     sInstance.mLastAttachedBundleRefused = false;
     sInstance.mLastChatLogWriteFailed = false;
     sInstance.mAccountWritesLanded = 0;
+    sInstance.mMessageLogWritesLanded = 0;
     // The third flag of this shape, and the one that was missed when the other two were listed.
     sInstance.mLastRejectionReachedDisk = true;
     sInstance.mLastContactWriteReachedDisk = true;

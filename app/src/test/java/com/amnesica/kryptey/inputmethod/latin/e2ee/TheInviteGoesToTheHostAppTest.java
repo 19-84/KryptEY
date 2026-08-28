@@ -52,6 +52,9 @@ public class TheInviteGoesToTheHostAppTest {
     SignalProtocolMain.testIsRunning = true;
     SignalProtocolMain.initialize(null);
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    // The invite is refused when its private halves cannot be written, so this fixture has to say
+    // its store writes. Without it the test measures the refusal rather than the delivery.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
 
     strip = new E2EEStripView(new ContextThemeWrapper(
         RuntimeEnvironment.getApplication(), R.style.KeyboardTheme_LXX_Pure_Day), null);

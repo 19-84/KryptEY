@@ -366,4 +366,56 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
     assertTrue("acting on a contact says nothing about whether the log still holds somebody else's "
             + "plaintext: " + banner(), banner().contains("could not be deleted"));
   }
+
+  /**
+   * And the notice is retired once a later message-log write has landed.
+   *
+   * <p>Without this test the clear can simply stop being called and nothing fails: a private method
+   * with no callers compiles, and a notice that is never retired looks exactly like a notice. That
+   * is not hypothetical — the call site was added, lost when a file was restored from an older
+   * snapshot, and the notice became permanent. It holds the banner, so every informational line in
+   * the app was suppressed for the life of the process.
+   *
+   * <p>The resolution is real rather than a timeout: the orphaned entries were already removed from
+   * the in-memory log by the deletion, so the next log write that lands persists the pruned log and
+   * the plaintext is gone.
+   */
+  @Test
+  public void thestoreNoticeIsRetiredOnceAlaterLogWriteLands() throws Exception {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return true;
+          }
+
+          @Override
+          public boolean lastMessageLogWriteSucceeded() {
+            return false;
+          }
+        });
+    strip.removeContact(bob);
+    assertTrue("precondition: the notice must be up: " + banner(),
+        banner().contains("could not be deleted"));
+
+    // Storage recovers, and a log write lands.
+    final long before = SignalProtocolMain.messageLogWritesLanded();
+    TestStores.writesLand();
+    SignalProtocolMain.getInstance().getAccount().getUnencryptedMessages();
+    // Adding somebody, rather than verifying Bob: Bob really was deleted in this scenario - the
+    // account write landed and only the log write failed - so there is nothing of his to verify.
+    SignalProtocolMain.addContact("Carol", "Smith", bob.getSignalProtocolAddressName(),
+        bob.getDeviceId() + 7);
+    assertTrue("precondition: a log write must actually have landed, or this test is asserting the "
+            + "notice goes away for no reason",
+        SignalProtocolMain.messageLogWritesLanded() > before);
+
+    // Any repaint asks.
+    strip.selectContact(bob);
+
+    assertTrue("the pruned log has reached disk, so the plaintext the notice is about is gone and "
+            + "the sentence must go with it - a notice that outlives its condition is the "
+            + "habituation failure this whole surface is built to avoid: " + banner(),
+        !banner().contains("could not be deleted"));
+  }
 }

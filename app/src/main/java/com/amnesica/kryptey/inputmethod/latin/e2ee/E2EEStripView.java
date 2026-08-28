@@ -466,6 +466,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   // Says which state this is, not just that something failed. The commonest cause is the one the
   // storage banner describes, and "try again" would be wrong advice for it.
   static final String INFO_INVITE_UNAVAILABLE = "No invite could be built. This usually means your saved identity cannot be unlocked on this device - check that before re-inviting anyone, because re-inviting replaces every key you have already verified.";
+  /**
+   * An invite whose private halves did not reach disk.
+   *
+   * <p>The invite carries public keys whose private halves this app must keep. It is handed to a
+   * messenger by hand, so the keyboard always restarts before the reply arrives - and if the write
+   * was lost, that reply cannot be decrypted. The app would then report a generic decryption
+   * failure, whose standard advice is to delete the contact and ask for a new invite: the
+   * key-substitution window, reached out of a storage fault nobody mentioned.
+   */
+  private final String INFO_INVITE_NOT_SAVED = "That invite was created, but the app could not write to its own storage - so it cannot keep the private half of the keys in it. Do not send this invite: replies to it will not be readable. Free up space or unlock the device, then make a new one.";
+
+  /** A message whose ratchet or rotated keys did not reach disk. */
+  private final String INFO_SEND_STATE_NOT_SAVED = "That message was sent, but the app could not save the key state that went with it - it could not write to its own storage. Later messages from %s may not be readable until this is fixed. Nothing here needs deleting or re-inviting; free up space or unlock the device.";
+
   /** The should-never-happen half; see the unchecked catch in sendPreKeyResponseMessageToApplication. */
   private final String INFO_INVITE_FAILED = "Could not build an invite.";
 
@@ -1529,7 +1543,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final String notSaved = String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact));
       setCautionBesideAnyWarning(
           sessionCreationFailed ? notSaved + " " + INFO_SESSION_CREATION_FAILED : notSaved,
-          chosenContact);
+          chosenContact, true);
     }
   }
 
@@ -1884,6 +1898,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * "about anyone", so verifying or deleting anybody cleared it as well. Both are trivially
    * reachable straight after the deletion that raises it.
    */
+  /**
+   * Whether the standing caution is one of the storage notices, rather than a security one.
+   *
+   * <p>Set beside the caution so the retirement above can ask a fact instead of searching the
+   * sentence for a phrase. Searching worked until a second storage notice was written that did not
+   * contain the phrase, and then failed silently in the direction that leaves a false sentence on
+   * the durable surface.
+   */
+  private boolean mStandingCautionIsAstorageNotice;
+
   private String mStandingStoreNotice;
 
   /** The message-log write count when that notice went up; see {@link #clearAstoreNoticeThatHasBeenResolved}. */
@@ -1894,6 +1918,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
     // here would be a line no test could ever reach.
     if (mInfoTextView == null) return;
+
+    // Both retirements run here, and both had lost their call site.
+    //
+    // Each of these clears something that a later successful write has made untrue - a send-refusal
+    // for a contact now on disk, and a notice about plaintext the log has since dropped. Each was
+    // wired here once and then lost when a file was restored from a snapshot taken before it, and
+    // nothing failed either time: a private method with no callers compiles, and a notice that is
+    // never retired simply stays on screen looking like a notice. The store one holds the banner,
+    // so its absence suppressed every informational line for the life of the process.
+    //
+    // Both repaint, and both are idempotent: the repaint re-enters this method through the banner
+    // watcher, by which point the entry or the notice is already gone and the second pass returns
+    // at once.
+    expireRefusalsSettledByAlaterWrite();
+    clearAstoreNoticeThatHasBeenResolved();
     // storageIsUnreadable() asked directly, as well as through the banner.
     //
     // The banner half is how "no contact chosen" reaches the buttons and it stays. But it is prose,
@@ -1992,10 +2031,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
     for (final String address : settled) {
       mContactsNotOnDisk.remove(address);
-      if (address.equals(mStandingCautionAddress) && mStandingCaution != null
-          && mStandingCaution.contains("could not be saved")) {
+      // Matched on a FLAG rather than on a phrase inside the sentence.
+      //
+      // It matched the substring "could not be saved", which INFO_CONTACT_NOT_SAVED contains and
+      // INFO_SESSION_NOT_SAVED - added later, and posted by the same code path that records the
+      // refusal - does not. So after a lost session write a later landed write removed the refusal
+      // while the sentence justifying it stayed on the banner, clearable only by verifying,
+      // rejecting or deleting that contact: a security action taken for a storage reason, which
+      // this file calls a false affordance. That is verbatim the defect this method exists to
+      // prevent, reintroduced by adding a second string that the phrase did not match.
+      if (address.equals(mStandingCautionAddress) && mStandingCautionIsAstorageNotice) {
         mStandingCaution = null;
         mStandingCautionAddress = null;
+        mStandingCautionIsAstorageNotice = false;
         setInfoTextViewMessage(mInfoTextView, mWarningStanding ? warningWithRecipient()
             : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
                 : INFO_NO_CONTACT_CHOSEN);
@@ -2103,6 +2151,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // arguably more visible to the user than the incoming case, and equally unexplained.
           if (mE2EEStrip.lastChatLogWriteFailed()) {
             Toast.makeText(getContext(), INFO_SENT_MESSAGE_NOT_SAVED, Toast.LENGTH_LONG).show();
+          }
+          // And the KEY state, which is a different fact from the history entry and was reported
+          // by nothing.
+          //
+          // A send advances the ratchet and may rotate the signed and Kyber pre-keys, attaching the
+          // new public halves to the outgoing message. The log lives in its own file and can commit
+          // while the account does not - and in exactly that case the chat-log flag above stays
+          // false, so the app said nothing at all while the peer walked away holding material whose
+          // private half never reached this device.
+          if (!mE2EEStrip.lastSessionWriteReachedDisk()) {
+            Toast.makeText(getContext(),
+                String.format(INFO_SEND_STATE_NOT_SAVED, labelFor(chosenContact)),
+                Toast.LENGTH_LONG).show();
+            setCautionBesideAnyWarning(
+                String.format(INFO_SEND_STATE_NOT_SAVED, labelFor(chosenContact)),
+                chosenContact, true);
           }
         } else {
           Toast.makeText(getContext(), INFO_MESSAGE_ENCRYPTION_FAILED, Toast.LENGTH_SHORT).show();
@@ -2360,6 +2424,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Log.e(TAG, "Building a key bundle raised an unchecked exception");
       return;
     }
+    // Refused rather than handed over, because an invite whose private halves are not on disk is
+    // worse than no invite: the reply to it cannot be read, and the advice the app then gives for a
+    // failed decrypt is the one that swaps keys.
+    if (!mE2EEStrip.lastBundleExportReachedDisk()) {
+      Toast.makeText(getContext(), INFO_INVITE_NOT_SAVED, Toast.LENGTH_LONG).show();
+      setCautionBesideAnyWarning(INFO_INVITE_NOT_SAVED, chosenContact, true);
+      Log.e(TAG, "the invite's private halves did not reach disk; refusing to hand it over");
+      return;
+    }
     mInputEditText.setText(encoded);
     sendEncryptedMessageToApplication(encoded);
   }
@@ -2571,7 +2644,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)),
         Toast.LENGTH_LONG).show();
     setCautionBesideAnyWarning(
-        String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)), chosenContact);
+        String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)), chosenContact, true);
     return true;
   }
 
@@ -2996,6 +3069,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return sendingIsRefusedForTheChosenContact();
   }
 
+  /** Posts the store notice, for tests that need the third standing item up. */
+  void setStoreNoticeForTest(final String notice) {
+    mStandingStoreNotice = notice;
+    mLogWritesLandedWhenNoticeRaised = mE2EEStrip.messageLogWritesLanded();
+    setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+  }
+
   /** Posts a caution, for tests that need one standing without a warning beside it. */
   void setCautionForTest(final String caution, final Contact about) {
     setCautionBesideAnyWarning(caution, about);
@@ -3136,6 +3216,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * from the warning alone rather than from what is on screen.
    */
   private void setCautionBesideAnyWarning(final String caution, final Contact about) {
+    setCautionBesideAnyWarning(caution, about, false);
+  }
+
+  /**
+   * @param isAstorageNotice whether this caution reports a storage failure rather than a key event.
+   *                         Passed in rather than inferred from the text, because inferring it from
+   *                         the text is what broke: the phrase searched for was in one storage
+   *                         notice and not in the one added later.
+   */
+  private void setCautionBesideAnyWarning(final String caution, final Contact about,
+      final boolean isAstorageNotice) {
+    mStandingCautionIsAstorageNotice = isAstorageNotice;
 
     // Stored in BOTH cases, then painted through the same builder every repaint uses.
     //
@@ -3498,6 +3590,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      * user's one chance to learn that a deletion left their plaintext behind would be spent on
      * whichever rotation happened first.
      */
+    /** Whether the carried caution is a storage notice; travels with it, for the same reason. */
+    private final boolean standingCautionIsAstorageNotice;
     private final String standingStoreNotice;
     private final long logWritesLandedWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
@@ -3508,6 +3602,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final String standingCautionAddress, final Map<String, Long> contactsNotOnDisk,
+        final boolean standingCautionIsAstorageNotice,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
@@ -3520,6 +3615,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingCaution = standingCaution;
       this.standingCautionAddress = standingCautionAddress;
       this.contactsNotOnDisk = contactsNotOnDisk;
+      this.standingCautionIsAstorageNotice = standingCautionIsAstorageNotice;
       this.standingStoreNotice = standingStoreNotice;
       this.logWritesLandedWhenNoticeRaised = logWritesLandedWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
@@ -3599,7 +3695,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
         mStandingCautionAddress, new HashMap<>(mContactsNotOnDisk),
-        mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
+        mStandingCautionIsAstorageNotice, mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
         mHostFieldIsPassword, encodingMethod);
   }
 
@@ -3683,6 +3779,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the host app can force.
     mContactsNotOnDisk.clear();
     if (carried.contactsNotOnDisk != null) mContactsNotOnDisk.putAll(carried.contactsNotOnDisk);
+    mStandingCautionIsAstorageNotice = carried.standingCautionIsAstorageNotice;
     mStandingStoreNotice = carried.standingStoreNotice;
     mLogWritesLandedWhenNoticeRaised = carried.logWritesLandedWhenNoticeRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the

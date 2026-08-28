@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-three sections, written in the order things were found rather than by subject, so the
+Eighty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -139,6 +139,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A bound that counted what the app does not distinguish](#a-bound-that-counted-what-the-app-does-not-distinguish)
 - [A sentence with no caller](#a-sentence-with-no-caller)
 - [The advice that must never be given for a storage error](#the-advice-that-must-never-be-given-for-a-storage-error)
+- [A method with no callers, and an invite dead on arrival](#a-method-with-no-callers-and-an-invite-dead-on-arrival)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5150,3 +5151,43 @@ explanation exists somewhere. It says what the condition is, that reading still 
 deletion deleted nothing, why the app stops saving rather than replacing what it cannot read, and —
 in as many words — not to swap keys over it. A second test pins that last sentence, because it is the
 one that matters and it is the one that would be dropped as verbose.
+
+## A method with no callers, and an invite dead on arrival
+
+**The store notice's retirement had zero call sites.** It was wired in, then lost when a file was
+restored from a snapshot taken before it — twice over, because the send-refusal's expiry went the
+same way in the same restore. Nothing failed either time: a private method with no callers compiles,
+and a notice that is never retired looks exactly like a notice. That one holds the banner, so its
+absence suppressed every informational line in the app for the life of the process, permanently,
+while its own advice ("try deleting another contact once the device has free space") actually worked
+and left the sentence standing and false.
+
+Both are wired again, and both now have a test that fails when the call site goes. That is the second
+lesson of the section: **restoring a file from a snapshot is an edit**, and the ones it silently
+reverts are the lines added since — which are exactly the lines nothing tests yet.
+
+**The counter that retirement waits on was on the wrong object.** `initializeStorageHelper` builds a
+*new* `StorageHelper` on every `reloadAccount`, so a count held there went back to zero on every
+configuration change and "a later write has landed" could never be true again. The account counter
+beside it was already on the singleton, which is why only one of the two had the problem: two
+counters, one lifetime rule, and one of them followed it. It also counted no-op writes —
+`storeMessageLog` returns true for "nothing to write", and a reload defers the log — so the reload's
+own write-back reported a landed log write having touched nothing, at the exact moment the reload had
+re-read the un-pruned log from disk.
+
+**A phrase match had rotted into a wrong answer.** The caution retirement asked whether the standing
+sentence contained "could not be saved". `INFO_CONTACT_NOT_SAVED` does; `INFO_SESSION_NOT_SAVED`,
+written later and posted by the same code path, does not. So after a lost session write the refusal
+expired while the sentence justifying it stayed — clearable only by verifying, rejecting or deleting
+that contact, which is a security action taken for a storage reason. It asks a flag set beside the
+caution now. *Searching a sentence for a phrase is a match on how something was worded, and wording
+is the thing this project changes most.*
+
+**And the invite was dead on arrival.** The export path writes the private halves of the keys whose
+public halves are about to leave the device, and its own comment explains why that write cannot be
+best-effort: the invite is carried to a messenger by hand, so a reload always intervenes before the
+reply. The result was discarded. An invite exported while nothing can be written therefore produced a
+reply this device could not decrypt — and the app's advice for an unreadable message is delete the
+contact and ask for a new invite, which is the key-substitution window, reached out of a storage
+fault nobody mentioned. The invite is refused now rather than handed over, and the send path reports
+its own lost key state, which was the last write in the family with no reader at all.

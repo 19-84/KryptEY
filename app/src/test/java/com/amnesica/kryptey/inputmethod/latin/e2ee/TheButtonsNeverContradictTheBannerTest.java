@@ -169,14 +169,16 @@ public class TheButtonsNeverContradictTheBannerTest {
     final boolean warningStanding;
     final boolean storageUnreadable;
     final boolean passwordField;
+    final boolean storeNoticeStanding;
     final Interference interference;
 
     Case(final boolean w, final boolean warn, final boolean unreadable, final boolean password,
-        final Interference interference) {
+        final boolean storeNotice, final Interference interference) {
       this.writeLands = w;
       this.warningStanding = warn;
       this.storageUnreadable = unreadable;
       this.passwordField = password;
+      this.storeNoticeStanding = storeNotice;
       this.interference = interference;
     }
 
@@ -186,6 +188,7 @@ public class TheButtonsNeverContradictTheBannerTest {
           + ", " + (warningStanding ? "warning standing" : "no warning")
           + ", store " + (storageUnreadable ? "unreadable" : "readable")
           + ", " + (passwordField ? "password field" : "ordinary field")
+          + (storeNoticeStanding ? ", store notice standing" : "")
           + ", then " + interference + "]";
     }
   }
@@ -196,8 +199,10 @@ public class TheButtonsNeverContradictTheBannerTest {
       for (final boolean warn : new boolean[] {true, false}) {
         for (final boolean unreadable : new boolean[] {true, false}) {
           for (final boolean password : new boolean[] {true, false}) {
-            for (final Interference i : Interference.values()) {
-              cases.add(new Case(write, warn, unreadable, password, i));
+            for (final boolean storeNotice : new boolean[] {true, false}) {
+              for (final Interference i : Interference.values()) {
+                cases.add(new Case(write, warn, unreadable, password, storeNotice, i));
+              }
             }
           }
         }
@@ -216,6 +221,14 @@ public class TheButtonsNeverContradictTheBannerTest {
     }
     if (c.storageUnreadable) {
       SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    }
+    if (c.storeNoticeStanding) {
+      // The third standing item, added after the sweep was written. It is address-less and is
+      // cleared only by a later message-log write, so nothing the user does to a contact takes it
+      // down - which is exactly why it has to be in here: it is the one item that can still be
+      // standing when everything else has been resolved.
+      strip.setStoreNoticeForTest("Bob Jones was removed, but their saved messages could not be "
+          + "deleted - the app could not write to its own storage.");
     }
     strip.setHostFieldIsPassword(c.passwordField);
 

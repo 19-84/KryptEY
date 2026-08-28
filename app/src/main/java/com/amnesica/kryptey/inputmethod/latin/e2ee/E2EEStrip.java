@@ -326,6 +326,11 @@ public class E2EEStrip {
     return SignalProtocolMain.lastDeletionLeftMessagesBehind();
   }
 
+  /** @see SignalProtocolMain#lastBundleExportReachedDisk */
+  public boolean lastBundleExportReachedDisk() {
+    return SignalProtocolMain.lastBundleExportReachedDisk();
+  }
+
   /** @see SignalProtocolMain#messageLogWritesLanded */
   public long messageLogWritesLanded() {
     return SignalProtocolMain.messageLogWritesLanded();
