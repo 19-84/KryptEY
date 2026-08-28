@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-eight sections, written in the order things were found rather than by subject, so the
+Sixty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -124,6 +124,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A claim about an event, made without checking the event](#a-claim-about-an-event-made-without-checking-the-event)
 - [The fail-open that made every fixture mean two things](#the-fail-open-that-made-every-fixture-mean-two-things)
 - [The refusal that locked the keyboard](#the-refusal-that-locked-the-keyboard)
+- [Stating the rule instead of fixing the case](#stating-the-rule-instead-of-fixing-the-case)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4590,3 +4591,37 @@ so those assertions passed whether or not the warning was cleared. They assert t
 clipboard test beside them proving the screen follows it. That lesson had been recorded twice before
 and still had to be learned a third time on first draft — which is the honest reason it is being
 written again rather than a new one.
+
+## Stating the rule instead of fixing the case
+
+**Four consecutive rounds each found the previous round's fix in one decision: which button is live,
+and what the banner says while it is.** Not the same defect each time — a gate matched against the
+start of a string that a warning could push it off; a refusal that disabled the very button needed to
+escape it; a claim gated on the wrong question — but the same decision, four times. Case-by-case
+tests kept passing because each was written for the case that had just been fixed.
+
+So the two things that kept breaking are now stated as properties over the cross product of states a
+hostile messenger can arrange, rather than as cases:
+
+**One — the app never offers what it forbids.** If Encrypt is live, nothing on the lasting surface is
+telling the user not to send. `encryptAndSendInputFieldContent` has no storage guard of its own, so
+an Encrypt that is live under a "do not send them anything" banner hands the messenger ciphertext for
+a session that may exist only in memory.
+
+**Two — there is always a way back in.** Decrypt may be dark for reasons about the whole app (an
+unreadable store, a password field, no contact chosen), never because one contact's row failed to
+save. That distinction is the difference between a refusal and a trap: the notice tells the user to
+add the contact again, adding means pasting, pasting needs Decrypt, and deleting first does not help
+because a deletion whose write also fails is not treated as done.
+
+Sixteen combinations, each built by driving real flows — a store that writes or does not, a real
+invite, the real password-field entry point — so a passing combination is one the app can be in. The
+two defects the previous rounds found are each caught by the invariant they violate: reinstating the
+prefix gate fails the first, disabling Decrypt on a per-contact reason fails the second. A third test
+asserts the sweep reaches both answers, because an invariant satisfied by never offering anything is
+satisfied vacuously.
+
+What it does not claim is that these are the only invariants worth having, or that every reachable
+state appears in the sweep. It fixes the two that four rounds of case-by-case work kept breaking, and
+that is the point: **when the same decision breaks repeatedly in different ways, the next test should
+be about the decision rather than about the newest way.**
