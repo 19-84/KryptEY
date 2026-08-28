@@ -59,11 +59,36 @@ public class EncoderGuardTest {
     assertTrue(e.getMessage().contains("no devices"));
   }
 
+  /**
+   * A bundle declaring zero devices must be refused BY THE DEVICE COUNT.
+   *
+   * <p>This was two kinds of vacuous. It hard-coded version 1, so after the format bumped it failed
+   * on the version byte; and even before that its {@code identityKeyLen} was zero, so
+   * {@code new IdentityKey(new byte[0], 0)} threw "malformed identity key" before the device count
+   * was ever read. The assertion was a bare {@code assertThrows(IOException)}, which cannot tell
+   * those apart - so the decoder-side zero-device refusal had no test at all while looking like it
+   * had one. The encoder-side one is covered above; this is the other half.
+   */
   @Test
-  public void aDecodedBundleClaimingZeroDevicesIsRefused() {
-    // version, flags=bundle, nameLen, "x", deviceId, identityKeyLen=0, deviceCount=0
-    assertThrows(IOException.class,
-        () -> BinaryEnvelope.decode(new byte[] {1, 0x01, 1, 'x', 42, 0, 0}));
+  public void aDecodedBundleClaimingZeroDevicesIsRefused() throws Exception {
+    final byte[] identity =
+        org.signal.libsignal.protocol.IdentityKeyPair.generate().getPublicKey().serialize();
+
+    final java.io.ByteArrayOutputStream frame = new java.io.ByteArrayOutputStream();
+    frame.write(BinaryEnvelope.VERSION);
+    frame.write(0x01);            // flags: bundle present
+    frame.write(1);               // name length
+    frame.write('x');
+    frame.write(42);              // device id
+    frame.write(identity.length); // a REAL identity key, so parsing reaches the device count
+    frame.write(identity, 0, identity.length);
+    frame.write(0);               // deviceCount = 0
+
+    final IOException refused = assertThrows(IOException.class,
+        () -> BinaryEnvelope.decode(frame.toByteArray()));
+    assertTrue("the refusal must be about the device count, not about something the fixture got "
+        + "wrong earlier in the frame: " + refused.getMessage(),
+        refused.getMessage().contains("no devices"));
   }
 
   /**

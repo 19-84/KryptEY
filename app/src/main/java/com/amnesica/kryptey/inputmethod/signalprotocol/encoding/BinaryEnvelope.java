@@ -50,7 +50,7 @@ import java.util.List;
  * <p>Layout — all integers big-endian, all variable-length fields length-prefixed:
  *
  * <pre>
- *   u8   version          = 1
+ *   u8   version          = 2
  *   u8   flags            bit0 = has pre-key response, bit1 = has ciphertext
  *   u8   senderNameLen    followed by that many UTF-8 bytes
  *   u8   deviceId         libsignal constrains this to [1,127]
@@ -61,7 +61,20 @@ import java.util.List;
  *                u32 signedPreKeyId, u8 len + key, u8 len + signature,
  *                u8 hasPreKey, [u32 preKeyId, u8 len + key],
  *                u8 hasKyber,  [u32 kyberId, u16 len + key, u8 len + signature]
+ *              u8 bundleSignatureLen, bundleSignature
  * </pre>
+ *
+ * <p>The bundle signature covers everything from {@code identityKeyLen} to the end of the device
+ * section - the whole bundle as written above, and nothing outside it. It is made with the identity
+ * key the bundle carries, and it exists because libsignal signs the signed pre-key and the Kyber
+ * pre-key individually and signs nothing tying a bundle's fields to each other. The sender address
+ * and the ciphertext are deliberately outside it: the address is what a substitution relabels, and
+ * the trust layer is what answers for that.
+ *
+ * <p>Each length-prefixed key field must contain exactly the key it decodes to. libsignal's
+ * deserialisers read from the front and ignore trailing bytes, so without that check the same
+ * envelope would have more than one wire spelling - and since the signature is verified over the
+ * canonical re-encoding, a padded field would verify.
  */
 public final class BinaryEnvelope {
 
@@ -295,7 +308,9 @@ public final class BinaryEnvelope {
   private static PreKeyResponse readBundle(final Cursor c) throws IOException {
     final IdentityKey identityKey;
     try {
-      identityKey = new IdentityKey(c.bytes(c.u8("identityKeyLen"), "identityKey"), 0);
+      final byte[] asRead = c.bytes(c.u8("identityKeyLen"), "identityKey");
+      identityKey = exactlyItsOwnEncoding(new IdentityKey(asRead, 0),
+          new IdentityKey(asRead, 0).serialize(), asRead, "identity key");
     } catch (InvalidKeyException e) {
       throw new IOException("malformed identity key", e);
     }
@@ -371,7 +386,11 @@ public final class BinaryEnvelope {
         final byte[] kyberKey = c.bytes(c.u16("kyberKeyLen"), "kyberPreKey");
         final byte[] kyberSig = c.bytes(c.u8("kyberSigLen"), "kyberPreKey.signature");
         try {
-          kyber = new KyberPreKeyEntity(kyberId, new KEMPublicKey(kyberKey), kyberSig);
+          final KEMPublicKey kyberPublic = new KEMPublicKey(kyberKey);
+          kyber = new KyberPreKeyEntity(kyberId,
+              exactlyItsOwnEncoding(kyberPublic, kyberPublic.serialize(), kyberKey,
+                  "Kyber public key"),
+              kyberSig);
         } catch (InvalidKeyException e) {
           throw new IOException("malformed kyber pre key", e);
         }
@@ -384,11 +403,44 @@ public final class BinaryEnvelope {
   }
 
   private static ECPublicKey ec(final byte[] serialized) throws IOException {
+    final ECPublicKey key;
     try {
-      return new ECPublicKey(serialized, 0);
+      key = new ECPublicKey(serialized, 0);
     } catch (InvalidKeyException e) {
       throw new IOException("malformed EC public key", e);
     }
+    return exactlyItsOwnEncoding(key, key.serialize(), serialized, "EC public key");
+  }
+
+  /**
+   * Refuses a key field carrying more bytes than the key it decodes to.
+   *
+   * <p>libsignal's deserialisers read a key from the FRONT of the array and ignore what follows -
+   * measured: a 33-byte EC key with eight bytes appended is accepted and re-serialises to the same
+   * 33 bytes. So a length-prefixed key field could carry arbitrary trailing bytes, and the parser
+   * then called itself exhausted. That is the same broken invariant the device-count refusal above
+   * was written for, in a field that field's fix does not reach.
+   *
+   * <p>It matters more now than it did: a bundle's signature is verified over the CANONICAL
+   * re-encoding of what was parsed, so padding does not break the signature - it re-encodes away.
+   * A genuine invite could therefore be padded by a relay and still verify, which makes the wire
+   * text malleable while leaving every downstream decision identical. Nothing renders those bytes,
+   * so this is a malleability primitive rather than a live attack; it is refused because the
+   * alternative is a written invariant that is false, which this project treats as a defect of its
+   * own.
+   *
+   * <p>By comparison rather than by a length constant: hard-coding 33 and 1569 would turn a
+   * libsignal upgrade that changes a serialisation into "every invite is refused".
+   */
+  private static <T> T exactlyItsOwnEncoding(final T key, final byte[] canonical,
+                                             final byte[] asRead, final String what)
+      throws IOException {
+    if (!java.util.Arrays.equals(canonical, asRead)) {
+      throw new IOException(what + " field is " + asRead.length + " bytes but the key it decodes "
+          + "to is " + canonical.length + ": trailing bytes ride past a parser that says nothing "
+          + "rides past it");
+    }
+    return key;
   }
 
   // ------------------------------------------------------------------- write

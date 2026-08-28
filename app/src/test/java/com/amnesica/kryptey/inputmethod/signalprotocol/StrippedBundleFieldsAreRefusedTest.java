@@ -310,9 +310,17 @@ public class StrippedBundleFieldsAreRefusedTest {
    */
   @Test
   public void astrippedBundleDoesNotProduceAsession() throws Exception {
+    // Signed as the ISSUER, per this file's own rule at the top of `without`. A missing field is
+    // defence against the party that emits the bundle, since only that party can sign one - and a
+    // relay's edit is refused earlier now, by the signature, which is a different test.
+    //
+    // It was left unsigned when everything around it was converted, and it kept passing: refused at
+    // the signature gate, never reaching the one-time-pre-key check it is named for. Two review
+    // rounds found it independently, which is what a suite of 1283 tests looks like when one of
+    // them stops measuring its own subject.
     final boolean accepted = SignalProtocolMain.processPreKeyResponseMessage(
-        new MessageEnvelope(without(true, false), peerAddress.getName(),
-            peerAddress.getDeviceId()), peerAddress);
+        BundleSigning.signedEnvelope(peer, without(true, false),
+            peerAddress.getName(), peerAddress.getDeviceId()), peerAddress);
 
     assertTrue("a stripped bundle must be reported as refused, not merely fail internally",
         !accepted);

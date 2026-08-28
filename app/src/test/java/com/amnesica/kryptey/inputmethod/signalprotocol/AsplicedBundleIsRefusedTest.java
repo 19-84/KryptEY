@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
@@ -118,11 +119,17 @@ public class AsplicedBundleIsRefusedTest {
   }
 
   /**
-   * A splice between two DIFFERENT people is refused as well, and not only by the pin.
+   * A splice between two DIFFERENT people is refused as well - by libsignal, before this check.
    *
-   * <p>Worth separating because the identity-change machinery would catch this one anyway at an
-   * address that already holds a key. At a fresh address it would not, and this is where the
-   * signature is the only thing standing.
+   * <p>The sentence here used to claim that at a fresh address "there is nothing else to catch
+   * this", which is wrong and the mutant says so: delete the issuing-signature check and this test
+   * stays green while its sibling goes red. libsignal verifies the signed pre-key's signature
+   * against the identity key the bundle carries, so device material issued by B under identity A
+   * fails inside {@code buildSession} regardless.
+   *
+   * <p>Kept as defence in depth, with the claim corrected. The case the issuing signature is
+   * genuinely alone on is the sibling above: one issuer, every libsignal signature intact, fields
+   * taken from two different invites.
    */
   @Test
   public void abundleMixingTwoIdentitiesIsRefusedAtAfreshAddress() throws Exception {
@@ -143,8 +150,46 @@ public class AsplicedBundleIsRefusedTest {
             strangerAddress.getName(), strangerAddress.getDeviceId()));
 
     SignalProtocolMain.initialize(null);   // a recipient who has never seen either of them
-    assertFalse("at an address with no pin there is nothing else to catch this",
+    assertFalse("a bundle assembled from two identities must be refused, whichever check gets "
+            + "there first",
         SignalProtocolMain.processPreKeyResponseMessage(
             EnvelopeCodec.fromWire(EnvelopeCodec.toWire(mixed)), strangerAddress));
+  }
+
+  /**
+   * What the signature does NOT close: replaying a whole earlier invite.
+   *
+   * <p>The splice is the expensive way to get one-time pre-key reuse. The cheap way needs no edit at
+   * all: the relay withholds the current invite and delivers an earlier, entirely genuine one that
+   * somebody else already has. Every signature verifies because nothing was touched, and two people
+   * negotiate against the same one-time key — which is the whole harm the splice was reported for.
+   *
+   * <p>So this is written down as a test rather than left implied by a commit message. REVIVAL.md
+   * records bundle replay as a deferred hazard and measures it for one recipient; the two-recipient
+   * consequence is the part that was not measured, and it is the part that matters, because the
+   * issuer's one-time record is consumed by whichever opening message arrives first.
+   */
+  @Test
+  public void replayingAwholeInviteStillPutsTwoPeersOnOneOneTimeKey() throws Exception {
+    final int idFirstRecipientGets = EnvelopeCodec.fromWire(secondInvite).getPreKeyResponse()
+        .getDevices().get(0).getPreKey().getKeyId();
+
+    SignalProtocolMain.initialize(null);
+    assertTrue("the first recipient accepts the genuine invite",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(secondInvite), inviterAddress));
+
+    SignalProtocolMain.initialize(null);
+    assertTrue("and so does a second recipient handed the very same bytes - nothing was edited, so "
+            + "the issuing signature has nothing to object to",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(secondInvite), inviterAddress));
+
+    assertEquals("both negotiated against the same one-time pre-key, which is the reuse the splice "
+            + "was reported for. The signature binds a bundle's fields together; it says nothing "
+            + "about whether this bundle has been handed out before",
+        idFirstRecipientGets,
+        EnvelopeCodec.fromWire(secondInvite).getPreKeyResponse().getDevices().get(0)
+            .getPreKey().getKeyId());
   }
 }

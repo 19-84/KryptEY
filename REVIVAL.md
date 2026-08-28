@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and six sections, written in the order things were found rather than by subject, so the
+One hundred and seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -162,6 +162,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two attacks that would work if the library were built differently](#two-attacks-that-would-work-if-the-library-were-built-differently)
 - [Newest first, when it meant oldest first](#newest-first-when-it-meant-oldest-first)
 - [Fields that were never issued together](#fields-that-were-never-issued-together)
+- [What the signature does not close](#what-the-signature-does-not-close)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6026,3 +6027,48 @@ floor of a hundred — lowering the floor would have been the same test proving 
 Doing that quickly is how a suite gets quietly weakened, which is the failure this file records more
 often than any other. So it was done on a branch, one file at a time, with the main line green
 throughout, and merged when the whole suite and the device suite were both back to green.
+
+## What the signature does not close
+
+**Two reviews of the bundle signature, and the most useful thing either said was that the claim
+written around it was too wide.**
+
+The splice is the *expensive* way to get one-time pre-key reuse. The cheap way needs no edit at all:
+the relay withholds the current invite and delivers an earlier, entirely genuine one that somebody
+else already holds. Every signature verifies, because nothing was touched — and two people then
+negotiate against the same one-time key, which is the whole harm the splice was reported for. The
+issuing signature binds a bundle's fields together; it says nothing about whether that bundle has
+been handed out before. REVIVAL.md already defers bundle replay as a known hazard and measures it for
+one recipient; the two-recipient consequence is the half that was not measured, and it is the half
+that matters. It is a test now.
+
+**A second measured hole, in the mechanism itself.** Verification re-encodes what the decoder parsed
+and checks the signature over *that*, which is sound only if one wire spelling decodes to one
+envelope. libsignal's key deserialisers read from the front of the array and ignore what follows —
+measured: a 33-byte EC key with eight bytes appended is accepted and re-serialises to the same 33
+bytes. So a padded key field re-encoded canonically and **the signature still verified**: a relay
+could pad a genuine invite and have it accepted. Nothing renders those bytes, so it is a malleability
+primitive rather than a live attack — and it made a written invariant false, which this file treats
+as a defect of its own. Each key field must now contain exactly the key it decodes to, checked by
+comparison rather than against a hard-coded length, so a libsignal upgrade that changes a
+serialisation does not turn every invite into a refusal.
+
+**One test was found by both reviews independently.** `astrippedBundleDoesNotProduceAsession` was
+left unsigned when the other thirty-six fixtures were converted, so it was refused at the signature
+gate and never reached the missing-field check it is named for — a genuine bundle in the same
+unsigned envelope would have passed it identically. Delete the field check and it stayed green. It
+now signs as the issuer, per the rule written twelve lines above it in its own file, and the mutant
+kills it.
+
+**Three more that had quietly stopped measuring their subject**, all collateral from the version
+bump rather than from the signature: a hand-built frame in the boundary tests, and one in the encoder
+guards that was *already* vacuous before the bump — its identity-key length was zero, so parsing
+threw before the device count it was written for was ever read, and a bare `assertThrows(IOException)`
+cannot tell those apart. Both are fixed to build the frame the test claims to be building.
+
+**And two claims of mine were simply wrong.** A wrong-length signature does not throw — measured,
+every length from 1 to 255 returns false — so the crash path that would have taken the keyboard down
+does not exist; it is pinned as a test because it is a property of the library, not of this code. And
+the splice case at a fresh address is refused by libsignal before the new check is reached: the
+mutant says so, deleting the verification leaves that test green. The case stays as defence in depth
+with its sentence corrected, because the one the signature is genuinely alone on is its sibling.

@@ -169,8 +169,12 @@ public class DecryptPathSubstitutionTest {
   public void aSubstitutedBundleOnlyReInviteIsRecorded() throws Exception {
     activate(attacker);
     final MessageEnvelope attackerBundle = SignalProtocolMain.getPreKeyResponseMessage();
-    final MessageEnvelope relabelled = new MessageEnvelope(
-        attackerBundle.getPreKeyResponse(), peerAddress.getName(), peerAddress.getDeviceId());
+    // Relabelled, not edited: the attacker's own bundle and its own signature, presented at the
+    // peer's address. The issuing signature deliberately does not cover the address, which is what
+    // keeps this a substitution the trust layer warns about rather than a parse failure.
+    final MessageEnvelope relabelled = BundleSigning.asEditedInTransit(attackerBundle,
+        new MessageEnvelope(attackerBundle.getPreKeyResponse(),
+            peerAddress.getName(), peerAddress.getDeviceId()));
 
     activate(victim);
     assertFalse(SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));

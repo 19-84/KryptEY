@@ -27,6 +27,13 @@ this** — that is what the test is for.
 **`loadPreKey` marks a one-time pre-key used on a decrypt that then fails.**
 Same path, same measurement: the used flags are identical before and after a failed decrypt.
 
+**A wrong-length bundle signature throws out of the decrypt click listener and kills the IME.**
+The decoder accepts a signature field of 1..255 bytes and the verifier checks only that it is
+non-empty, so an attacker-chosen length reaches `ECPublicKey.verifySignature` with only `IOException`
+caught on that path. The reasoning is right about the reach; the library does not throw.
+*Measured against libsignal 0.86.5: signature lengths 1, 63, 65, 100 and 255 all return `false`.*
+Held by `AwrongLengthSignatureIsRefusedRatherThanThrownTest`.
+
 ## Refuted — the code already does what the finding asks
 
 **The per-raise reachability guard is satisfied by the comment naming the safe call.**

@@ -188,7 +188,10 @@ public class WireBoundaryTest {
   @Test
   public void aHugeDeclaredLengthDoesNotOverflowTheBoundsCheck() throws IOException {
     final ByteArrayOutputStream out = new ByteArrayOutputStream();
-    out.write(1);          // version
+    // From the encoder's constant, not a literal: a version bump made this frame fail on the
+    // version byte, and the assertion below is a bare assertThrows(IOException) - so it went on
+    // passing while never reaching the length field it exists for.
+    out.write(BinaryEnvelope.VERSION);
     out.write(0x02);       // flags: ciphertext present
     out.write(4);          // name length
     out.write("peer".getBytes("US-ASCII"));
