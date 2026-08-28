@@ -2063,6 +2063,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Two fields make all of that unnecessary rather than careful.
    */
   private void postStorageCaution(final String notice, final Contact about) {
+    postStorageCaution(notice, about, false);
+  }
+
+  /**
+   * @param aboutAdeletion whether this reports a deletion that did not happen, which no later write
+   *                       settles - see {@link #mStandingStorageCautionIsAboutAdeletion}
+   */
+  private void postStorageCaution(final String notice, final Contact about,
+      final boolean aboutAdeletion) {
+    mStandingStorageCautionIsAboutAdeletion = aboutAdeletion;
     mStandingStorageCaution = notice;
     mStandingStorageCautionAddress = about == null ? null
         : String.valueOf(about.getSignalProtocolAddress());
@@ -2115,7 +2125,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // saying a messenger-supplied key had been pinned by trust-on-first-use was deleted by any
       // later write anywhere - and the messenger chooses when that happens, since relaying any
       // message is enough.
-      if (address.equals(mStandingStorageCautionAddress)) {
+      // Only the storage caution this refusal is about, which is not the same as "any storage
+      // caution at this address".
+      //
+      // The failed-delete arm deliberately records no refusal, because expiring one used to send
+      // the message on the first tap. But the expiry keyed on the ADDRESS, so a refusal recorded by
+      // an EARLIER failure at that address retired the delete notice anyway - and a failed deletion
+      // rolls the row back, so the entry survives the sweep that drops entries for contacts that no
+      // longer exist. Two storage failures in sequence, and a later landed write erased "that
+      // contact was not removed" while the contact, its pinned key and its plaintext were all still
+      // there. The screen then read "No contact chosen", which is what a healthy app looks like.
+      if (address.equals(mStandingStorageCautionAddress) && !mStandingStorageCautionIsAboutAdeletion) {
         mStandingStorageCaution = null;
         mStandingStorageCautionAddress = null;
         setInfoTextViewMessage(mInfoTextView,
@@ -2916,6 +2936,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private String mStandingStorageCautionAddress = null;
 
   /**
+   * Whether that storage caution is about a DELETION that did not happen.
+   *
+   * <p>A refusal recorded for an address means "this contact's row is not on disk", and a later
+   * landed write settles it. A failed deletion is the opposite claim about the same address - the
+   * row IS on disk and was meant to leave - and no later write settles that, because the deletion
+   * still has not been attempted again. Without the distinction, a refusal left over from an
+   * earlier failure at the same address retired the deletion notice on the next write anywhere.
+   */
+  private boolean mStandingStorageCautionIsAboutAdeletion = false;
+
+  /**
    * The contact that caution is about, so a response about someone else cannot take it down.
    *
    * <p>The first version scoped the caution to the standing WARNING and cleared it in
@@ -3524,6 +3555,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
       mStandingStorageCaution = null;
       mStandingStorageCautionAddress = null;
+      mStandingStorageCautionIsAboutAdeletion = false;
     }
   }
 
@@ -3856,6 +3888,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     /** The storage caution and the address it is about; a separate slot, carried separately. */
     private final String standingStorageCaution;
     private final String standingStorageCautionAddress;
+    /** Whether that caution is about a deletion, which no later write settles. */
+    private final boolean standingStorageCautionIsAboutAdeletion;
     private final String standingStoreNotice;
     private final long logWritesLandedWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
@@ -3867,6 +3901,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final String standingCautionAddress, final Map<String, Long> contactsNotOnDisk,
         final String standingStorageCaution, final String standingStorageCautionAddress,
+        final boolean standingStorageCautionIsAboutAdeletion,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
@@ -3881,6 +3916,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.contactsNotOnDisk = contactsNotOnDisk;
       this.standingStorageCaution = standingStorageCaution;
       this.standingStorageCautionAddress = standingStorageCautionAddress;
+      this.standingStorageCautionIsAboutAdeletion = standingStorageCautionIsAboutAdeletion;
       this.standingStoreNotice = standingStoreNotice;
       this.logWritesLandedWhenNoticeRaised = logWritesLandedWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
@@ -3961,6 +3997,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
         mStandingCautionAddress, new HashMap<>(mContactsNotOnDisk),
         mStandingStorageCaution, mStandingStorageCautionAddress,
+        mStandingStorageCautionIsAboutAdeletion,
         mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
         mHostFieldIsPassword, encodingMethod);
   }
@@ -4017,7 +4054,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     //
     // The previous round fixed exactly this collision for ordinary banners and introduced it again
     // in the branch it added for warnings.
-    if (carried.warningStanding && !mWarningStanding) {
+    // A condition warning is RE-DERIVED here rather than replayed, and that distinction is the whole
+    // of a fix that did not work.
+    //
+    // The lowering path added to refreshOpeningMessage is unreachable in production. That method has
+    // one production caller, LatinIME.setInputView, and the view it is given is always freshly
+    // inflated - so mWarningStanding is always false there and the lowering never runs. Worse, the
+    // order is refreshOpeningMessage first and adoptState second, so this block then re-posted the
+    // stale warning the lowering was meant to remove. The test pinning that lowering called
+    // refreshOpeningMessage twice on ONE strip and described it as "what LatinIME does on every
+    // setInputView"; LatinIME does not do that, and the control was hollow.
+    //
+    // Replaying a warning about a CONDITION is the same mistake as never lowering it: it asserts on
+    // the new strip something that was true on the old one. So the two condition warnings are asked
+    // again instead of copied, and the answer decides. Everything else here is about an event, and
+    // an event still happened, so it is replayed as before.
+    final boolean carriedIsAconditionWarning =
+        INFO_STORAGE_UNREADABLE.equals(carried.standingWarningText)
+            || INFO_CONTACTS_UNREADABLE.equals(carried.standingWarningText);
+    if (carried.warningStanding && !mWarningStanding && carriedIsAconditionWarning) {
+      // Re-derived: refreshOpeningMessage raises it again if and only if it is still true.
+      refreshOpeningMessage();
+    } else if (carried.warningStanding && !mWarningStanding) {
       // The warning's own text, not the banner: the banner may already carry a "Sending to: X"
       // line, and re-warning with that would append the recipient twice on the next selection.
       // Falling back to the banner keeps a strip carried from before this field existed readable.
@@ -4047,6 +4105,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (carried.contactsNotOnDisk != null) mContactsNotOnDisk.putAll(carried.contactsNotOnDisk);
     mStandingStorageCaution = carried.standingStorageCaution;
     mStandingStorageCautionAddress = carried.standingStorageCautionAddress;
+    mStandingStorageCautionIsAboutAdeletion = carried.standingStorageCautionIsAboutAdeletion;
     mStandingStoreNotice = carried.standingStoreNotice;
     mLogWritesLandedWhenNoticeRaised = carried.logWritesLandedWhenNoticeRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the
@@ -4367,7 +4426,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // for a phrase - that was the whole reason the flag was introduced - and this call was still
       // using the two-argument overload, which says "not a storage notice" about a sentence whose
       // subject is the app failing to write to its own storage.
-      postStorageCaution(INFO_DELETE_NOT_SAVED, contact);
+      postStorageCaution(INFO_DELETE_NOT_SAVED, contact, true);
     } else if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
       Toast.makeText(getContext(),
           String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)),

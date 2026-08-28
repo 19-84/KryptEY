@@ -54,6 +54,7 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
   private E2EEStripView strip;
   private Contact bob;
   private static final String WARNING = "Careful: someone offered a different key for Bob.";
+  private String peerBundle;
 
   @Before
   public void setUp() throws Exception {
@@ -66,7 +67,7 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
     final Account peer = SignalProtocolMain.getInstance().getAccount();
     final SignalProtocolAddress peerAddress = ProtocolAddresses.of(
         peer.getSignalProtocolAddress().getName(), peer.getDeviceId());
-    final String peerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    peerBundle = SignalProtocolMain.exportOwnKeyBundle();
 
     SignalProtocolMain.initialize(null);
     final Account victim = SignalProtocolMain.getInstance().getAccount();
@@ -113,6 +114,11 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
   }
 
   /** The log reads fine, so the deletion is performed; only the write fails. */
+  /** Bob's own bundle, so a rotation for him records a refusal at HIS address. */
+  private String peerBundleForTest() {
+    return peerBundle;
+  }
+
   private void makeTheWriteFail() {
     SignalProtocolMain.getInstance().setStorageHelperForTest(
         new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
@@ -417,5 +423,48 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
             + "the sentence must go with it - a notice that outlives its condition is the "
             + "habituation failure this whole surface is built to avoid: " + banner(),
         !banner().contains("could not be deleted"));
+  }
+
+  /**
+   * A landed write settles a refusal, not a deletion that never happened.
+   *
+   * <p>The failed-delete arm deliberately records no send-refusal, because expiring one used to send
+   * the message on the first tap of the still-dark button. But the expiry keyed on the ADDRESS, so a
+   * refusal recorded by an <em>earlier</em> failure at that address retired the deletion notice
+   * anyway — and a failed deletion rolls the row back into the list, so the entry survives the sweep
+   * that drops entries for contacts that no longer exist.
+   *
+   * <p>Two storage failures in sequence and the user is left believing the deletion succeeded, while
+   * the contact, its pinned key and its stored plaintext are all still there and the screen is
+   * byte-identical to a healthy one.
+   */
+  @Test
+  public void alandedWriteDoesNotEraseThedeletionNotice() throws Exception {
+    // First failure: a rotation for BOB whose write does not land, which records a refusal at
+    // Bob's address. The address is the whole point - an earlier version of this test recorded one
+    // at a different address, so the expiry never matched it and the test passed with the defect in
+    // place.
+    strip.selectContact(bob);
+    makeTheWriteFail();
+    strip.processPreKeyResponseForTest(EnvelopeCodec.fromWire(peerBundleForTest()), bob);
+    assertTrue("precondition: a refusal must be recorded for this contact",
+        strip.refusalCountForTest() == 1);
+
+    // Second failure: the deletion does not reach disk either.
+    strip.removeContact(bob);
+    assertTrue("precondition: the deletion notice must be up: " + banner(),
+        banner().contains("was not removed"));
+
+    // Storage recovers and any write lands.
+    TestStores.writesLand();
+    SignalProtocolMain.addContact("Carol", "Smith", bob.getSignalProtocolAddressName(),
+        bob.getDeviceId() + 31);
+    strip.selectContact(bob);
+
+    assertTrue("a landed write settles 'this row is not on disk'. It says nothing about a deletion "
+            + "that was never attempted again - and erasing that notice leaves the user believing "
+            + "the deletion succeeded while the contact, its key and its plaintext are all still "
+            + "here: " + banner(),
+        banner().contains("was not removed"));
   }
 }

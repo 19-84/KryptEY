@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-seven sections, written in the order things were found rather than by subject, so the
+Ninety-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -153,6 +153,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A warning raised from a condition has to come down with it](#a-warning-raised-from-a-condition-has-to-come-down-with-it)
 - [The warning that needed a way to be answered](#the-warning-that-needed-a-way-to-be-answered)
 - [Conditions and events, decided once](#conditions-and-events-decided-once)
+- [A fix that could not run, and a test that could not tell](#a-fix-that-could-not-run-and-a-test-that-could-not-tell)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5637,3 +5638,39 @@ path, and an event raiser must contain none. Both mutants kill: remove the lower
 raiser and one test fails; add one to an event raiser and the other does. **The classification is the
 point rather than the list** — a new raiser fails the build until somebody decides which kind it is,
 which is the question that was skipped three times.
+
+## A fix that could not run, and a test that could not tell
+
+**The lowering path added for condition warnings was unreachable in production, and the test pinning
+it described something `LatinIME` does not do.**
+
+`refreshOpeningMessage` has one production caller, and the view it is given is always freshly
+inflated — so `mWarningStanding` is always false there and the lowering never ran. Worse, the real
+order is `refreshOpeningMessage` and *then* `adoptState`, and `adoptState` re-posted the very warning
+the lowering was meant to remove. The test called `refreshOpeningMessage` twice on one strip and
+called that "what LatinIME does on every setInputView". It does not, and the control was hollow —
+green while the defect stood.
+
+The cost of that was three permanent harms after storage recovered: a banner asserting something
+false about the store including the clause naming its own exit; `mWarningStanding` held, so every
+other notice suppressed for the life of the process; and **Encrypt and Decrypt left dark on an
+install whose storage works**, with no user action that clears it.
+
+Condition warnings are now **re-derived** across a rebuild rather than replayed — asked again, with
+the answer deciding — while event warnings are still replayed, because the event still happened. The
+test drives the real order: surrender, inflate a new strip, refresh, adopt.
+
+**And a landed write was erasing a notice about a different failure.** The failed-delete arm
+deliberately records no send-refusal; but the expiry keyed on the *address*, so a refusal left by an
+earlier failure at that address retired the deletion notice anyway — and a failed deletion rolls the
+row back, so the entry survives the sweep for contacts that no longer exist. Two storage failures in
+sequence and the user was left believing a deletion succeeded while the contact, its pinned key and
+its plaintext were all still there, on a screen byte-identical to a healthy one. A refusal means
+"this row is not on disk" and a later write settles it; a failed deletion is the opposite claim about
+the same address and no write settles it. They are told apart now.
+
+**Two process failures worth recording.** A `git add -A` swept a review agent's temporary probe file
+into a commit — it is removed, and the lesson is that a broad add is not safe while anything else is
+writing to the tree. And the first version of the test above recorded its refusal at the wrong
+address, so the mutant survived: the test passed with the defect reinstated. **The mutant is the
+only reason either was noticed.**

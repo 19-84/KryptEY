@@ -65,14 +65,11 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
       "warnIfKeyWasRejected",        // a key was pinned where the user had reported a mismatch
       "addContact",                  // the duplicate-name and same-address refusals, at add time
       "decryptMessageAndShowMessageInMainInputField",  // the invite-refusal outcomes
-      "processPreKeyResponse",       // post-rejection warning on the bundle arm
-      "processUpdatedPreKeyResponse",
-      "processSignalMessage",
       "adoptState"));                // restores what the outgoing view was already showing
 
   /** Methods that only pass a warning through, and so classify as neither. */
   private static final Set<String> PLUMBING = new LinkedHashSet<>(Arrays.asList(
-      "setWarningMessage", "setInviteRefusalWarning", "selectContact",
+      "setInviteRefusalWarning",
       "setWarningMessageForTest", "setWarningMessageAboutForTest"));
 
   private static String source() throws IOException {
@@ -173,5 +170,46 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
         + "disk emptying or a store becoming readable, and a warning that a refresh can forget is "
         + "one the messenger can arrange to have forgotten:\n" + String.join("\n", offenders),
         0, offenders.size());
+  }
+
+  /**
+   * And the classification cannot name methods that no longer raise a warning.
+   *
+   * <p>Every other classification list in this project is guarded against this rot, and this one was
+   * written without it — and the moment it was added it failed, naming five entries that raise
+   * nothing. Three of them (`processPreKeyResponse`, `processUpdatedPreKeyResponse`,
+   * `processSignalMessage`) call the warn helpers rather than the writer, and two
+   * (`setWarningMessage`, `selectContact`) were listed from memory of what the file does. That is
+   * the criticism a review round made of this whole effort — the reasoning written faster than it is
+   * checked against the body — caught here by a check written for a different reason. Without the check the lists fill quietly with names of methods that have
+   * been renamed or that no longer raise anything, and a reader counting them believes more has been
+   * decided than actually was — which is the failure the lists exist to prevent, applied to the
+   * lists themselves.
+   */
+  @Test
+  public void theclassificationNamesOnlyMethodsThatStillRaiseAwarning() throws IOException {
+    final java.util.Map<String, String> bodies = methods();
+    final Set<String> raisers = new LinkedHashSet<>();
+    for (final java.util.Map.Entry<String, String> method : bodies.entrySet()) {
+      if (Pattern.compile("\\b(setWarningMessage|setInviteRefusalWarning)\\s*\\(")
+          .matcher(method.getValue()).find()) {
+        raisers.add(method.getKey());
+      }
+    }
+
+    final List<String> stale = new ArrayList<>();
+    for (final String name : CONDITION_RAISERS) {
+      if (!raisers.contains(name)) stale.add("CONDITION_RAISERS: " + name);
+    }
+    for (final String name : EVENT_RAISERS) {
+      if (!raisers.contains(name)) stale.add("EVENT_RAISERS: " + name);
+    }
+    for (final String name : PLUMBING) {
+      if (!raisers.contains(name)) stale.add("PLUMBING: " + name);
+    }
+
+    assertEquals("the classification names something that no longer raises a warning. Remove it "
+        + "rather than leave it suggesting a decision with no subject:\n" + String.join("\n", stale),
+        0, stale.size());
   }
 }

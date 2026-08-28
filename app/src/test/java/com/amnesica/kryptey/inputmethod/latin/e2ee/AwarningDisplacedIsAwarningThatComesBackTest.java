@@ -175,4 +175,68 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
             + "having happened because the store is readable: " + banner(),
         banner().contains("different key for Bob"));
   }
+
+  /**
+   * The rebuild, in the order LatinIME actually performs it.
+   *
+   * <p>The previous test for this called {@code refreshOpeningMessage} twice on one strip and
+   * described that as "what LatinIME does on every setInputView". It is not. {@code setInputView} is
+   * always given a freshly inflated view, so the lowering path — which only runs when a warning is
+   * already standing — could never execute in production; and the real order is
+   * {@code refreshOpeningMessage} <em>then</em> {@code adoptState}, so the stale warning was
+   * re-posted immediately after the lowering was skipped.
+   *
+   * <p>This drives that order: raise the warning, let storage recover, surrender, build a NEW strip,
+   * refresh, adopt. A condition warning must not survive it; an event warning must.
+   */
+  @Test
+  public void aconditionWarningDoesNotSurviveArebuildOnceItsConditionIsGone() {
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+    assertTrue("precondition: the storage warning must be standing: " + banner(),
+        banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+
+    final E2EEStripView rebuilt = rebuildInTheOrderLatinImeUses();
+
+    final String shown = String.valueOf(((TextView)
+        rebuilt.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("a warning about the store must be re-derived across a rebuild, not replayed. "
+            + "Replayed, it asserts something false, holds the warning flag so every other notice "
+            + "is suppressed, and keeps Encrypt and Decrypt dark on an install whose storage has "
+            + "recovered - with no user action that clears it: " + shown,
+        !shown.contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
+    assertTrue("and the flag must be down, or the buttons stay dark",
+        !rebuilt.warningIsStandingForTest());
+  }
+
+  /** And an EVENT warning does survive the same rebuild, because the event still happened. */
+  @Test
+  public void aneventWarningSurvivesTheSameRebuild() {
+    strip.setWarningMessageAboutForTest("Careful: someone offered a different key for Bob.", bob);
+
+    final E2EEStripView rebuilt = rebuildInTheOrderLatinImeUses();
+
+    final String shown = String.valueOf(((TextView)
+        rebuilt.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("re-deriving the condition warnings must not have made every warning disposable: a "
+            + "detected key substitution is not undone by a rotation, and a warning a rebuild can "
+            + "forget is one the host app can force away: " + shown,
+        shown.contains("different key for Bob"));
+  }
+
+  /** Surrender, inflate a fresh strip, refresh, adopt - the order in LatinIME.setInputView. */
+  private E2EEStripView rebuildInTheOrderLatinImeUses() {
+    final E2EEStripView.CarriedState carried = strip.surrenderState();
+    final E2EEStripView rebuilt = new E2EEStripView(new ContextThemeWrapper(
+        RuntimeEnvironment.getApplication(), R.style.KeyboardTheme_LXX_Pure_Day), null);
+    rebuilt.setListener(new E2EEStripView.Listener() {
+      @Override public void onTextInput(final String rawText) { }
+      @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
+    }, rebuilt);
+    rebuilt.refreshOpeningMessage();
+    rebuilt.adoptState(carried);
+    return rebuilt;
+  }
 }
