@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and five sections, written in the order things were found rather than by subject, so the
+One hundred and six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -161,6 +161,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A return value that meant something else](#a-return-value-that-meant-something-else)
 - [Two attacks that would work if the library were built differently](#two-attacks-that-would-work-if-the-library-were-built-differently)
 - [Newest first, when it meant oldest first](#newest-first-when-it-meant-oldest-first)
+- [Fields that were never issued together](#fields-that-were-never-issued-together)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5976,3 +5977,42 @@ sorts it oldest: correct, since it was consumed before the field existed.
 Two mutants: pruning by id again, and a sequence that never advances. Both are killed by the
 measured case, and the bound itself is pinned separately so the fix cannot quietly become "keep
 everything".
+
+## Fields that were never issued together
+
+**A relay holding an earlier genuine invite from the same person can mix its fields into the current
+one, and the result is accepted. Measured, reproduced, and being fixed on a branch rather than
+half-landed here.**
+
+libsignal signs the signed pre-key and the Kyber pre-key individually and signs **nothing that ties
+a bundle's fields to each other**. Everything else is checked for presence alone. So the relay keeps
+the current bundle, swaps in the one-time pre-key from an invite the same person issued last week,
+and both libsignal signatures still verify. Measured: accepted.
+
+What that buys is not impersonation — the identity key is unchanged and the pin still refuses a
+substitution. It is **one-time pre-key reuse**. Two peers negotiate against the same one-time key, so
+a single record covers both their opening messages and one device seizure inside its lifetime reads
+both; and whichever peer's first message arrives second can never be decrypted, because the record
+is consumed and regenerated. Splicing the previous rotation's signed or Kyber key is the same move
+against forward secrecy, the post-quantum half included.
+
+The fix is an **issuing signature**: one signature over the canonical encoding of the whole bundle,
+made with the identity key the bundle already carries, verified before the bundle is processed and
+after an identity change has been recorded — so a bundle refused here is still not a way to stop a
+substitution being written down. It authenticates nothing about *who* the identity is; a bundle from
+an attacker's own identity verifies perfectly. It answers the narrower question the format could
+not: were these fields issued together. Wire version 2, because an optional signature is one an
+attacker omits.
+
+**It is on `revival-bundle-signature`, not here, and the reason is the interesting part.** The
+production change is small and works. Forty-seven tests then fail, all of them fixtures that build
+bundles by hand — and each one has to declare which adversary it models. A **relay edit** now carries
+the issuer's untouched signature over content it no longer covers, which is a more faithful model
+than these tests could express before. A **field-level check** — no Kyber key, a second device — is
+defence against the *issuer*, since only the issuer can sign what it emits, so those need a valid
+signature and keep testing exactly what they claimed. Five files are converted; the wire-format
+golden vectors have to be regenerated.
+
+Doing that quickly is how a suite gets quietly weakened, which is the failure this file records more
+often than any other. So the main line stays green and the work continues where it can be checked
+one file at a time.
