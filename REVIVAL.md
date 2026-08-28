@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-five sections, written in the order things were found rather than by subject, so the
+Seventy-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -131,6 +131,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Keeping a fact where nothing else owns it](#keeping-a-fact-where-nothing-else-owns-it)
 - [Two mutants that survived, and what they were hiding](#two-mutants-that-survived-and-what-they-were-hiding)
 - [The file the deletion did not check](#the-file-the-deletion-did-not-check)
+- [A decision, rather than a third flip](#a-decision-rather-than-a-third-flip)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4893,3 +4894,39 @@ now.
 That is the fourth time a control in this file reached one of two or three places that needed it. The
 pattern is specific enough to state as a rule: **when the messenger picks which branch handles its
 input, a control on one branch is not a control.**
+
+## A decision, rather than a third flip
+
+**`FLAG_SECURE` has been widened once and narrowed once, and round twenty-five was right that the
+narrowing left an inconsistency: the reason given for excluding cautions — device-wide screenshot
+loss — applies to warnings too, and a warning is something a relay can raise on command by stripping
+one unsigned byte from an invite.** So this is settled as a decision with its cost written down,
+rather than moved again.
+
+The line is drawn on what the state **means**, not on how sensitive the text is.
+
+A caution is the app's report of *ordinary successful use*: one goes up after every contact added,
+and comes down only when the user verifies, rejects or deletes that contact. Counting those puts the
+flag up whenever the keyboard is, from the first contact onward — and a `FLAG_SECURE` window blanks
+the whole system screenshot, so screenshots break in every app during normal typing, for as long as
+the app is used normally. That is not a state anyone is being asked to leave.
+
+A warning means something is wrong and the user is being asked to act. The flag is up while that is
+true and comes down when they act.
+
+**The accepted cost, stated rather than hidden:** a relay can raise a warning unilaterally, so it can
+force screenshots off until the user responds. Weighed against it — the messenger this app treats as
+the adversary *cannot capture the screen at all*, so the disclosure being defended here is against a
+screen recorder, and what it would capture is a security warning naming a contact. The nuisance is
+inflicted by an app already telling the user something about their keys is wrong, the user can end
+it, and dismissing the keyboard restores screenshots meanwhile.
+
+**The residue is real and recorded:** a caution naming a contact is capturable once the recipient has
+been forgotten.
+
+**And the refusal map no longer keeps entries for contacts that do not exist.** When the failure was
+the row's own write the row was never on disk, so a later reload drops it from memory too — the
+contact becomes unselectable and undeletable, and both other removal routes run only for a contact
+the user can reach. It could not produce a false refusal, which is why it was a leak rather than a
+hazard; it is closed because reasoning about it a second time cost more than the four lines. Both
+directions are pinned: not sweeping fails one test, sweeping everything fails three.

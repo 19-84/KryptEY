@@ -557,4 +557,42 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
         banner.contains("could not be saved"));
     assertTrue("and sending must be refused until it is saved", strip.sendingIsRefusedForTest());
   }
+
+  /**
+   * A refusal for a contact that no longer exists is dropped rather than kept forever.
+   *
+   * <p>When the failure was the row's own write, the row was never on disk — so a later reload drops
+   * it from memory too, and the contact becomes unselectable and undeletable. Both of the other
+   * removal routes run only for a contact the user can reach, so the entry would be copied into
+   * every carried state for the life of the process. It cannot produce a false refusal, which is why
+   * this is a leak rather than a hazard; it is closed because reasoning about it again costs more
+   * than the four lines.
+   */
+  @Test
+  public void arefusalForAcontactThatIsGoneIsDropped() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    assertTrue("precondition: one contact must be recorded as unsaved",
+        strip.refusalCountForTest() == 1);
+
+    // What a reload does to a row that never reached disk: it is simply not there any more.
+    SignalProtocolMain.getInstance().getAccount().setContactList(new ArrayList<>());
+
+    assertTrue("the entry names an address no contact has; keeping it means carrying it forever",
+        strip.refusalCountForTest() == 0);
+  }
+
+  /** And a refusal for a contact who IS still there survives that sweep. */
+  @Test
+  public void arefusalForAliveContactSurvivesTheSweep() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("dropping entries for contacts that are gone must not drop the ones that are not - "
+            + "that would silently cancel every refusal the moment the sweep was added",
+        strip.refusalCountForTest() == 1);
+    assertTrue("and sending must still be refused", strip.sendingIsRefusedForTest());
+  }
 }

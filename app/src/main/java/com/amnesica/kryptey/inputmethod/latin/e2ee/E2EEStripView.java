@@ -668,22 +668,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // asked as one.
         || (isUp(mLayoutE2EEMainView)
             && (chosenContact != null
-                // A standing WARNING, not any standing item, and the difference is a product
-                // decision rather than an oversight.
+                // A standing WARNING, not any standing item. This is a decision with a cost on
+                // both sides, and the line is drawn on what the state MEANS rather than on how
+                // sensitive the text is.
                 //
-                // Counting cautions too covered the same disclosure and cost far more than it was
-                // worth: a caution goes up after EVERY successful contact add, and cautions come
-                // down only when the user verifies, rejects or deletes that contact. So from the
-                // first contact onward the flag would be up whenever the keyboard is, and a
-                // FLAG_SECURE window blanks the whole system screenshot - silently breaking
-                // screenshots device-wide during ordinary typing in every app, which is exactly the
-                // decision this method's javadoc records the other way.
+                // A caution is the app's report of ordinary successful use: one goes up after every
+                // contact added, and comes down only when the user verifies, rejects or deletes
+                // that contact. Counting those would put the flag up whenever the keyboard is, from
+                // the first contact onward - and a FLAG_SECURE window blanks the whole system
+                // screenshot, so it would silently break screenshots in every app during ordinary
+                // typing, for as long as the app is used normally. That is not a state the user is
+                // being asked to leave.
                 //
-                // Warnings are the rarer and sharper case, and they are the one the gap was found
-                // in: they name a contact, they survive the hide and the rebuild that clear the
-                // recipient, and they mean something is actually wrong. The residue is stated
-                // rather than hidden - a caution naming a contact is capturable once the recipient
-                // has been forgotten - and it is recorded in REVIVAL.md.
+                // A warning means something is wrong and the user is being asked to act; the flag
+                // is up while that is true and comes down when they act. The accepted cost, stated
+                // rather than hidden: a relay can raise one unilaterally - stripping the one-time
+                // pre-key from an invite is one unsigned byte - so it can force screenshots off
+                // until the user responds. That is a nuisance the user can end, and it is inflicted
+                // by an app that is already telling them something about their keys is wrong;
+                // dismissing the keyboard also restores screenshots meanwhile. Weighed against it:
+                // the messenger this app treats as the adversary cannot capture the screen at all,
+                // so the disclosure being defended here is against a screen recorder, and what it
+                // would capture is a security warning naming a contact.
+                //
+                // The residue is real and recorded: a caution naming a contact is capturable once
+                // the recipient has been forgotten.
                 || mWarningStanding
                 || (mInputEditText != null && mInputEditText.getText().length() > 0)));
   }
@@ -1925,6 +1934,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private void expireRefusalsSettledByAlaterWrite() {
     if (mContactsNotOnDisk.isEmpty()) return;
+    // Entries whose contact no longer exists are dropped here rather than left to accumulate.
+    //
+    // The only other removals run for the contact currently chosen, or on a landed deletion. When
+    // the failure was the row's own write the row was never on disk, so a later reload drops it
+    // from memory too - the contact is then unselectable and undeletable, and the entry would be
+    // copied into every CarriedState for the life of the process. It cannot produce a false refusal
+    // (a genuinely new contact at that address finds the counter far above the stale value), so
+    // this is a leak rather than a hazard, and it is cheaper to close than to reason about again.
+    final ArrayList<Contact> known = mE2EEStrip.getContacts();
+    if (known != null) {
+      final java.util.Set<String> live = new java.util.HashSet<>();
+      for (final Contact contact : known) {
+        live.add(String.valueOf(contact.getSignalProtocolAddress()));
+      }
+      mContactsNotOnDisk.keySet().retainAll(live);
+      if (mContactsNotOnDisk.isEmpty()) return;
+    }
     final long landed = mE2EEStrip.accountWritesLanded();
     final List<String> settled = new ArrayList<>();
     for (final Map.Entry<String, Long> entry : mContactsNotOnDisk.entrySet()) {
@@ -2886,6 +2912,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** Drives the known-contact bundle path, for tests. */
   void processPreKeyResponseForTest(final MessageEnvelope envelope, final Contact sender) {
     processPreKeyResponse(envelope, sender);
+  }
+
+  /** How many contacts are recorded as not on disk, for tests. */
+  int refusalCountForTest() {
+    expireRefusalsSettledByAlaterWrite();
+    return mContactsNotOnDisk.size();
   }
 
   /** Whether sending is refused for the chosen contact, for tests. */
