@@ -117,6 +117,12 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
    */
   @Test
   public void theloweringHasAcallerThatRunsOnEveryKeyboardRaise() throws IOException {
+    // sourceOf strips comments, and this scan depends on that more than any other in the file:
+    // LatinIME names the safe call in the prose beside it, so a body read with comments intact
+    // would be satisfied by the explanation of the fix rather than by the fix. A review round read
+    // this as a live defect; it is not, and the mutant says so - deleting the call while keeping
+    // its comment fails this test. The dependency is real even though the defect was not, which is
+    // why it is written down here rather than left to be re-derived.
     final String latinIme = sourceOf(repositoryRoot(),
         "app/src/main/java/com/amnesica/kryptey/inputmethod/latin/LatinIME.java");
     final int start = latinIme.indexOf("void onStartInputViewInternal");
@@ -151,10 +157,19 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
     final int reconsider = body.indexOf("hasStandingConditionWarning");
     final int firstEarlyReturn = body.indexOf("Null EditorInfo");
     assertTrue("the per-raise entry point must be found to contain both", reconsider > 0);
+    // Not "or the marker is missing". A review round pointed out that reading the ordering off a
+    // log string and then excusing its absence makes the assertion vacuous on an ordinary
+    // rewording - the guard would go quiet at exactly the moment the method was being edited.
+    assertTrue("onStartInputViewInternal's early return for a null EditorInfo is the landmark this "
+            + "ordering is measured against; if that log line was reworded, re-point this at the "
+            + "new one rather than letting the check pass because it cannot find it",
+        firstEarlyReturn > 0);
     assertTrue("the re-derivation must run before onStartInputViewInternal's first early return, "
             + "or a raise the host app shapes to hit that return skips it and the warning with no "
             + "other way down stays up",
-        firstEarlyReturn < 0 || reconsider < firstEarlyReturn);
+        reconsider < firstEarlyReturn);
+    // What this still cannot see, stated rather than implied: the block being wrapped in a new
+    // condition. A scan reads presence and order, not reachability under a guard somebody adds.
   }
 
   /** Method name → its body, for every method in the file. */

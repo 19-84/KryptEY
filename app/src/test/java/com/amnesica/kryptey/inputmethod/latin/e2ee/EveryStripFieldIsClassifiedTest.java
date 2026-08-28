@@ -116,7 +116,12 @@ public class EveryStripFieldIsClassifiedTest {
       // clearFingerprintViews, and that is load-bearing rather than tidy.
       "mCodes",
       // A holder for the strip's own child views; carries no state of its own.
-      "mE2EEStripVisibilityGroup"));
+      "mE2EEStripVisibilityGroup",
+      // Whether the last decrypt attempt put a message on screen. Per-operation: cleared at the top
+      // of every attempt and read once, a few lines later, by the arm that decides whether there is
+      // anything to undo. It describes one press, and a press does not survive the view it was made
+      // on - carrying it would mean a rebuild answering a question about an attempt that is over.
+      "mLastDecryptShowedAmessage"));
 
   /** Types whose contents cannot change, so a final field of that type cannot hold state. */
   private static boolean isImmutable(final Class<?> type) {

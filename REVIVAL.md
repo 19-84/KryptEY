@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and two sections, written in the order things were found rather than by subject, so the
+One hundred and three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -158,6 +158,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The clause the argument rested on, and did not mention](#the-clause-the-argument-rested-on-and-did-not-mention)
 - [Once per process is not "every time the keyboard comes up"](#once-per-process-is-not-every-time-the-keyboard-comes-up)
 - [A control on one branch is not a control](#a-control-on-one-branch-is-not-a-control)
+- [A return value that meant something else](#a-return-value-that-meant-something-else)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5866,3 +5867,49 @@ asserting on the substring `reloadAccount` alone did not catch swapping it back 
 contains it.
 
 Seven mutants this round, each killed by the test that claims it.
+
+## A return value that meant something else
+
+**The recipient undo added last round read a boolean as "nothing decrypted". It does not mean that,
+and the cost was the user's message.**
+
+`decryptMessageAndShowMessageInMainInputField` answers "was this envelope wholly good". Its refusal
+branch **displays the plaintext and then returns false**, deliberately — the message is authenticated
+by the existing session and has nothing to do with a bundle stapled to it. So on the combined arm,
+"the bundle was refused" collapsed the return value to false whether or not a message had been shown,
+and the undo fired: `setChosenContact(null)` empties the compose box, so the message the user had
+just been handed was wiped in the same call.
+
+That is not exotic. The combined arm is the **ordinary** shape for a signed-pre-key rotation, and
+stripping the one-time pre-key — one unsigned byte a relay removes — makes the bundle refused while
+the message beside it still decrypts. Staple that to every relayed message and the app's main
+function is suppressed per message, with no crypto and nothing on screen to explain it.
+
+Two changes, and the tests had to be built so that **each is load-bearing on its own**. The strip now
+records whether it displayed a message rather than inferring it. And the undo gives the recipient
+back **to what it was** rather than to nobody: nulling is a further change, not an undo, and it
+empties the compose box on the way past. The first pair of tests killed neither mutant, because with
+a recipient already chosen the restore alone is enough, and with the fact recorded the restore is
+never reached — each fix masked the other. Two more cases split them: a raise with no recipient
+chosen, where the undo really moves something, and an envelope where neither half is any good.
+
+**All three arms now call one undo**, and the arm-parity scan can see it. It could not before —
+the scan matches controls by naming convention, so it reported parity it did not have, which is how
+the one-arm-only version survived three rounds. That was the reviewer's point, and it applied to the
+scan's own blindness as much as to the code.
+
+**Two more from the same round.** Moving the shared-name re-derivation into the recipient setter had
+a consequence I did not trace: the invite-refusal warning is posted only when nothing is already
+standing, so for any contact whose name folds onto another, "that invite was changed on the way
+here" became a three-second toast — silence bought for one unsigned byte, handed back by a fix for
+something else. The refusal is about *this envelope* and now outranks a warning derived from the
+contact list. And the lowering's final paint still wrote "No contact chosen" over a strip that has
+one, which `disablesActionButtons` matches by prefix — so it darkened Encrypt and Decrypt on an
+install whose storage had just recovered. It goes through the chooser that knows about the recipient.
+
+**One reported defect that was not one.** The reachability guard was said to be satisfied by the
+comment naming the safe call. It is not — the scan strips comments — and the mutant says so:
+deleting the call while keeping its comment fails. The dependency is real even though the defect was
+not, so it is written down rather than left to be re-derived. What the same finding got right is
+smaller and was fixed: the ordering check excused a missing landmark, so an ordinary rewording of a
+log line would have made it pass vacuously.

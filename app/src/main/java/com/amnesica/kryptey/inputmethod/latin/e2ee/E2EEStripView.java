@@ -2614,6 +2614,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), INFO_SIGNAL_MESSAGE_NO_CONTACT_FOUND, Toast.LENGTH_SHORT).show();
       showAddContactView(messageEnvelope);
     } else {
+      final Contact previousRecipient = chosenContact;
       setChosenContact(sender);
       // This arm pins too, and the sender decides which arm the envelope takes.
       //
@@ -2675,7 +2676,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (delivered) {
         setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
       } else {
-        // Nothing decrypted, so give the recipient back.
+        // Nothing decrypted, so give the recipient back - to what it WAS, through the one helper
+        // all three arms use. Nulling it is a further change rather than an undo, and it empties
+        // the compose box on the way past.
         //
         // The contact has to be adopted BEFORE the decrypt - setChosenContact clears the staged
         // message when the recipient changes, so adopting afterwards wipes the plaintext that was
@@ -2686,7 +2689,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // this returns, which paints "Chosen contact: Bob" on the same banner from the same
         // unsigned header. Only the verb changed. It also left Encrypt aimed at a recipient an
         // envelope that decrypted to nothing had chosen.
-        forgetChosenRecipient();
+        giveTheRecipientBack(previousRecipient);
       }
     }
   }
@@ -2698,6 +2701,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       showAddContactView(messageEnvelope);
     } else {
       // update contact with preKey information
+      final Contact previousRecipient = chosenContact;
       setChosenContact(sender);
       // A bundle arriving where the user reported a mismatch is not a first sighting, whatever the
       // empty store suggests - and this is the arm it arrives on. Rejecting KEEPS the contact row,
@@ -2718,12 +2722,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // Nothing came of it, so give the recipient back - the same undo the plain-message arm
         // performs, for the same reason and against the same input.
         //
+        // Back to what it WAS, not to nobody. Nulling it destroys the user's draft through
+        // setChosenContact's recipient-changed path, and a tampered re-invite relayed from the very
+        // contact they are writing to is a cheap way to make that happen on demand. Restoring the
+        // previous recipient is a no-op when this envelope did not move it, which is exactly the
+        // case where there is nothing to undo.
+        //
         // The address that moved the recipient is an unsigned header the relay copies out of any
         // envelope that contact ever sent, and which arm handles an envelope is decided by field
         // presence alone. So this asymmetry cost one appended field: staple any bundle - including
         // one built to be refused - to any ciphertext, and the recipient moves on an envelope where
         // nothing was accepted and nothing decrypted, on an arm that did not undo it.
-        forgetChosenRecipient();
+        giveTheRecipientBack(previousRecipient);
       }
     }
   }
@@ -2806,6 +2816,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       processPreKeyResponse(messageEnvelope, sender);
     } else {
       // update contact with preKey information
+      final Contact previousRecipient = chosenContact;
       setChosenContact(sender);
       // Same reason as the sibling arm above: this envelope carries a bundle too, and the warning
       // runs after the attempt so a refused bundle cannot be reported as a new key.
@@ -2814,8 +2825,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // that and the bundle is refused, the ciphertext still decrypts under the existing session,
       // and this line used to assert an update that never happened - unconditionally, because
       // isSessionCreation is false here so nothing else on this arm ever asked.
-      final boolean decrypted =
-          decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
+      decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       warnIfKeyWasRejected(sender);
       // The same reader the sibling arm has. One appended field moves an envelope here, and this
       // arm is the ordinary shape for a rotation, so it was the common one with no reader at all.
@@ -2830,12 +2840,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // condition it no longer computed.
       if (!mE2EEStrip.lastAttachedBundleWasRefused()) {
         setInfoUnlessWarned("Detected contact with updated keybundle: " + labelFor(chosenContact));
-      } else if (!decrypted) {
+      } else if (!mLastDecryptShowedAmessage) {
         // Neither half of the envelope was good for anything, so the recipient goes back. Asked of
         // both halves because this arm carries both: a rotation that landed is a reason to keep the
         // recipient even when the accompanying message was a replay, and a message that decrypted
         // is a reason to keep it even when the bundle was refused.
-        forgetChosenRecipient();
+        //
+        // The second half is asked of the FACT, not of the decrypt method's return value. That
+        // value collapses to false whenever the bundle was refused - its refusal branch displays
+        // the plaintext and then returns false - so reading it here wiped the message the user had
+        // just been shown, on the envelope shape that is ordinary for a signed-pre-key rotation.
+        giveTheRecipientBack(previousRecipient);
       }
     }
   }
@@ -2901,6 +2916,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * about another contact, or about storage, it is unrelated to it. Nothing the messenger can cause
    * clears it.
    */
+  /**
+   * Whether the last decrypt attempt put a message on screen.
+   *
+   * <p>A fact rather than an inference, because the inference was wrong: the method's return value
+   * means "was this envelope wholly good", and its refusal branch displays the plaintext and then
+   * returns false. Per-operation, cleared at the top of every attempt, and deliberately not carried
+   * across a rebuild - it describes one press.
+   */
+  private boolean mLastDecryptShowedAmessage = false;
+
   private boolean mWarningStanding = false;
 
   /**
@@ -3179,9 +3204,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // line. setInfoUnlessWarned refuses to write it while a warning stands, which is correct; but
       // then this method takes that warning down, and writing "No contact chosen" over a password
       // field loses the notice with no later transition to bring it back.
-      setInfoTextViewMessage(mInfoTextView,
-          aStandingItemHoldsTheBanner() ? warningWithRecipient()
-              : (mHostFieldIsPassword ? INFO_PASSWORD_FIELD : opening));
+      if (aStandingItemHoldsTheBanner()) {
+        setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+      } else if (mHostFieldIsPassword) {
+        setInfoTextViewMessage(mInfoTextView, INFO_PASSWORD_FIELD);
+      } else {
+        // Through the chooser that knows about the recipient, not the opening constant.
+        //
+        // Writing the opening line raw says "No contact chosen" on a strip that HAS one - and
+        // disablesActionButtons matches that sentence by prefix, so it also darkens Encrypt and
+        // Decrypt on a working install. A keyboard raise reaches this now, and a raise arrives with
+        // the recipient still set: the window is still up, so onKeyboardHidden has not run. Three
+        // separate defects in this file were this same sentence painted over a live state; the
+        // enumeration written last round covered two of the three.
+        showChosenContactInMainInfoField();
+      }
     }
   }
 
@@ -3257,6 +3294,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * warning stands. That residue is accepted: the adversary in this threat model is the messenger,
    * which cannot capture the IME window at all.
    */
+  /**
+   * Undoes a recipient this envelope moved, without punishing the user for the envelope.
+   *
+   * <p>Nulling it instead was the first shape, and it destroys the user's draft: {@code
+   * setChosenContact} empties the compose box whenever the recipient changes, so a tampered
+   * envelope relayed from the contact they are currently writing to costs them what they typed,
+   * on demand and repeatably. Restoring what was there is a no-op when this envelope moved nothing.
+   */
+  private void giveTheRecipientBack(final Contact previous) {
+    if (previous == null) {
+      forgetChosenRecipient();
+      return;
+    }
+    setChosenContact(previous);
+  }
+
   public void forgetChosenRecipient() {
     setChosenContact(null);
     // No standing-warning check here: showChosenContactInMainInfoField refuses over one itself, and
@@ -3572,6 +3625,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Scoped to this contact's address, so deleting either of the two rows puts it down - which is
    * the resolution the warning is asking for, and the reason the original was addressed.
    */
+  /**
+   * Whether the banner is holding one of the two shared-name warnings.
+   *
+   * <p>Derived from the sentences themselves rather than from copies of their opening words. The
+   * copies were recorded as fragility by a review round and then needed a second reader, which is
+   * the moment a duplicated literal becomes a real defect rather than an aesthetic one: two readers
+   * disagreeing about which warning is standing is how a warning gets silenced by the wrong rule.
+   */
+  private boolean standingWarningIsAboutAsharedName() {
+    if (mStandingWarningText == null) return false;
+    return mStandingWarningText.startsWith(literalPrefixOf(INFO_DUPLICATE_CONTACT_NAME))
+        || mStandingWarningText.startsWith(literalPrefixOf(INFO_RETIRED_CONTACT_NAME));
+  }
+
+  /** The fixed opening of a format string, up to its first placeholder. */
+  private static String literalPrefixOf(final String template) {
+    final int placeholder = template.indexOf('%');
+    return placeholder < 0 ? template : template.substring(0, placeholder);
+  }
+
   private boolean warnIfNameIsShared(final Contact contact) {
     if (contact == null) return false;
     // Both halves now, because both are resolvable.
@@ -3600,10 +3673,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       //
       // Scoped to this contact's own address and to this warning's own text, so it cannot take down
       // an identity change or a rejection that happens to be standing about the same person.
-      if (mWarningStanding && mStandingWarningText != null
+      if (mWarningStanding
           && String.valueOf(contact.getSignalProtocolAddress()).equals(mStandingWarningAddress)
-          && (mStandingWarningText.startsWith("You already have a contact called")
-              || mStandingWarningText.startsWith("You deleted a contact called"))) {
+          && standingWarningIsAboutAsharedName()) {
         clearStandingWarning();
         setInfoTextViewMessage(mInfoTextView, aStandingItemHoldsTheBanner()
             ? warningWithRecipient() : "Chosen contact: " + labelFor(contact));
@@ -3714,6 +3786,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *     meant "the bundle was not refused".
    */
   private boolean decryptMessageAndShowMessageInMainInputField(final MessageEnvelope messageEnvelope, final Contact sender, boolean isSessionCreation) {
+    // Cleared per attempt, and recorded rather than inferred.
+    //
+    // This method's RETURN VALUE cannot answer "did the user get their message": the refusal branch
+    // writes the plaintext on screen and then returns false, because its boolean means "was this
+    // envelope wholly good". A caller that read it as "nothing decrypted" therefore threw away a
+    // message it had just displayed - which is what the recipient undo added last round did, on the
+    // envelope shape this file itself calls the ordinary one for a signed-pre-key rotation. Staple
+    // a bundle with its one-time pre-key stripped to every relayed message and every decrypt wiped
+    // the compose box: a per-message, zero-crypto suppression of the app's main function.
+    mLastDecryptShowedAmessage = false;
     // BEFORE the decrypt, because the decrypt itself can create one. decryptMessage's PREKEY_TYPE
     // arm pins by trust-on-first-use whenever the address holds no key, and a refused attached
     // bundle does not stop it - the PreKeySignalMessage carries its own identity key. Asking
@@ -3803,7 +3885,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(),
           String.format(INFO_INVITE_REFUSED, labelFor(sender)), Toast.LENGTH_LONG).show();
 
-      if (!identityChanged && !mWarningStanding) {
+      // A standing shared-name warning does not silence this one.
+      //
+      // The refusal is about THIS envelope and outranks a warning derived from the contact list -
+      // the same reverse-severity order selectContact uses. It became reachable when the shared-name
+      // re-derivation moved into setChosenContact, which runs before this on all three arms: for
+      // any contact whose name folds onto another, the "that invite was changed on the way here"
+      // warning was reduced to a three-second toast, which is precisely the silence-for-one-unsigned
+      // -byte the refusal warning exists to close.
+      if (!identityChanged && (!mWarningStanding || standingWarningIsAboutAsharedName())) {
         // Three states, and each needs its own sentence. Two of them were collapsed into one and
         // the collapse pointed the wrong way: the reassuring wording landed on the first-pin case.
         // A key pinned by this paste is the only state INFO_INVITE_REFUSED_BUT_KEY_PINNED
@@ -3820,6 +3910,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // ciphertext is authenticated by the existing session and has nothing to do with the bundle
       // that was stapled to it.
       if (!isSessionCreation && decryptedMessage != null) {
+        mLastDecryptShowedAmessage = true;
         mInputEditText.setText(decryptedMessage);
         changeVisibilityInputFieldButtons(true);
         // The same question the ordinary branch asks. Without it a relay suppresses this notice at
@@ -3843,6 +3934,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
 
     if (!isSessionCreation && decryptedMessage != null) {
+      mLastDecryptShowedAmessage = true;
       mInputEditText.setText(decryptedMessage);
       changeVisibilityInputFieldButtons(true);
       // The message arrived; only filing it failed. Said out loud, and said as itself.

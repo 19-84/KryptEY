@@ -15,6 +15,8 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse;
+import com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem;
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 
@@ -26,6 +28,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 
+import java.util.List;
 import java.util.ArrayList;
 
 /**
@@ -155,6 +158,43 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
             + "not a control: the row the user never tapped is now the Encrypt recipient, and the "
             + "banner reads like a healthy contact: " + banner(),
         banner().contains("You already have a contact called"));
+  }
+
+  /**
+   * A tampered invite must still be said out loud when a shared-name warning is standing.
+   *
+   * <p>The shared-name re-derivation moved into {@code setChosenContact}, which runs before the
+   * decrypt on all three arms. The refusal warning is posted only when nothing is already standing,
+   * so for any contact whose name folds onto another the "that invite was changed on the way here"
+   * sentence was reduced to a three-second toast — which is exactly the silence-for-one-unsigned-
+   * byte the refusal warning was written to close, handed back by a fix for something else.
+   *
+   * <p>The refusal is about THIS envelope and outranks a warning derived from the contact list, so
+   * it is allowed to take the slot. The shared-name warning is re-derivable and comes back the next
+   * time that row is looked at; the refusal is about a moment that will not repeat.
+   */
+  @Test
+  public void arefusedInviteIsStillWarnedAboutOverAsharedNameWarning() throws Exception {
+    strip.processPreKeyResponseForTest(EnvelopeCodec.fromWire(impostorBundle), impostor);
+    assertTrue("precondition: the shared-name warning must be standing after that selection: "
+        + banner(), banner().contains("You already have a contact called"));
+
+    // The same invite with its one-time pre-key removed: one unsigned byte, and it is refused.
+    final PreKeyResponse genuine = EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse();
+    final PreKeyResponseItem device = genuine.getDevices().get(0);
+    final List<PreKeyResponseItem> stripped = new ArrayList<>();
+    stripped.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
+        device.getSignedPreKey(), null, device.getKyberPreKey()));
+    final MessageEnvelope tampered = EnvelopeCodec.fromWire(impostorBundle);
+    tampered.setPreKeyResponse(new PreKeyResponse(genuine.getIdentityKey(), stripped));
+
+    strip.processPreKeyResponseForTest(
+        EnvelopeCodec.fromWire(EnvelopeCodec.toWire(tampered)), impostor);
+
+    assertTrue("a tampered invite must reach the banner, not just a toast that vanishes in three "
+            + "and a half seconds. Suppressed by a warning the app derives for itself, it is "
+            + "silence bought for one unsigned byte: " + banner(),
+        banner().contains("could not be used"));
   }
 
   /**

@@ -229,6 +229,35 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
   }
 
   /**
+   * Lowering the warning must not tell a strip with a recipient that it has none.
+   *
+   * <p>The lowering ends by painting the opening line, and the opening line is "No contact chosen".
+   * {@code disablesActionButtons} matches that sentence by prefix, so writing it on a strip that
+   * has a recipient does not merely misdescribe the state - it darkens Encrypt and Decrypt on an
+   * install whose storage has just recovered.
+   *
+   * <p>Reachable because a keyboard raise runs this now, and a raise arrives with the recipient
+   * still set: the window is still up, so nothing has forgotten it. Three separate defects in this
+   * file were this same sentence painted over a live state, and the enumeration written for the
+   * previous round covered two of the three.
+   */
+  @Test
+  public void aloweringDoesNotClaimThereIsNoRecipientWhenThereIsOne() {
+    strip.selectContact(bob);
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+    assertTrue("precondition: the storage warning must be standing: " + banner(),
+        banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.refreshOpeningMessage();
+
+    assertTrue("the strip has a recipient, so it must not say there is none - that sentence also "
+            + "darkens both action buttons, on an install whose storage just recovered: " + banner(),
+        banner().contains("Chosen contact"));
+  }
+
+  /**
    * And the contacts arm is offered to the per-raise path too, not only the storage one.
    *
    * <p>Written because dropping the second half of {@code hasStandingConditionWarning}'s test

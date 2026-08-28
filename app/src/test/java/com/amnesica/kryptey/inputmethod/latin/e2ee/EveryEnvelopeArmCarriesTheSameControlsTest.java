@@ -91,10 +91,19 @@ public class EveryEnvelopeArmCarriesTheSameControlsTest {
    * this surface is named {@code warnIf…}, {@code reportIf…} or {@code cautionThat…}. A new one
    * following the convention is compared automatically; one that does not is invisible here, which
    * is the honest limit of a scan like this.
+   *
+   * <p><b>And one that is named by hand, because the convention could not see it.</b> A review round
+   * found the plain-message arm giving the recipient back when nothing decrypted while the two
+   * bundle arms did not — and pointed out that this scan was structurally blind to it, since
+   * the undo matches no prefix. The union was therefore even and the file
+   * reported parity it did not have. The naming convention is a heuristic for finding controls, not
+   * a definition of one: a control the scan cannot see is exactly the asymmetry an attacker gets to
+   * keep, and which arm handles an envelope costs it one appended field to choose.
    */
   private static Set<String> controlsIn(final String body) {
     final Set<String> found = new TreeSet<>();
-    final Matcher m = Pattern.compile("\\b(warnIf\\w+|reportIf\\w+|cautionThat\\w+)\\s*\\(")
+    final Matcher m = Pattern.compile(
+        "\\b(warnIf\\w+|reportIf\\w+|cautionThat\\w+|giveTheRecipientBack)\\s*\\(")
         .matcher(stripComments(body));
     while (m.find()) found.add(m.group(1));
     return found;
