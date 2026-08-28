@@ -190,6 +190,15 @@
 				<li>For this purpose, a special message is sent, which consists of your renewed key information and your encrypted message.</li>
 				<li>For you and your chat partner this means no additional effort, because the message will be generated automatically when you send the next encrypted message.</li>
 			</ul>
+
+			<h3>The app says something could not be saved. What does that mean?</h3>
+			<ul>
+				<li>It means the app could not write to its own storage - usually because the device has no free space, or because storage is locked and has not been unlocked since the phone started. Nothing about your keys or your chat partner has gone wrong.</li>
+				<li><b>Do not delete the contact and ask for a new invite.</b> That is the right answer to some problems and the wrong one here: swapping keys is the moment someone could substitute their own, so it is not worth doing over a storage error that will pass. Free up space, or unlock the device, and try the same thing again.</li>
+				<li>If the message named a contact you had just added, the app will not encrypt to them until it can save them, because they would not be there after this keyboard restarts. Reading messages still works.</li>
+				<li>If it said a deletion could not be saved, nothing was deleted - the contact, their key and their messages are all still here, and you can try again.</li>
+				<li>If the app says it cannot open your stored contacts, it stops saving anything at all rather than replacing what it cannot read. Everything you do will report that it could not be saved until storage can be read again. That is deliberate: writing at that point would replace your contacts with an empty list.</li>
+			</ul>
 		</main>
 	</body>
 </html>]]></string>

@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-two sections, written in the order things were found rather than by subject, so the
+Eighty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -138,6 +138,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two facts, one slot, again](#two-facts-one-slot-again)
 - [A bound that counted what the app does not distinguish](#a-bound-that-counted-what-the-app-does-not-distinguish)
 - [A sentence with no caller](#a-sentence-with-no-caller)
+- [The advice that must never be given for a storage error](#the-advice-that-must-never-be-given-for-a-storage-error)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5123,3 +5124,29 @@ tidiness question.
 Fifty-two notices, all of them called. The exemption list is empty on purpose: a notice with no
 caller should be deleted, not parked — and a second test stops the list naming constants that no
 longer exist, which is the same rot every classification list here is guarded against.
+
+## The advice that must never be given for a storage error
+
+**This document's most-repeated finding is that "delete the contact and ask for a new invite" is a
+key-substitution window, and that a messenger can provoke it at will by replaying a message or
+flipping a bit.** Storage failures look the same from the user's side — something did not work — and
+are completely different underneath: nothing about the keys is wrong, and the remedy is free space or
+an unlock. A storage notice that reaches for that advice hands the attacker a second route to the
+exchange, out of a condition they do not even have to cause.
+
+It has been reached for twice. The receive-side lost-write notice was written on top of the generic
+decryption-failure message; the lost-session notice reused the failed-add sentence, whose instruction
+is "add them again successfully". Both were corrected in earlier sections. A scan over the seven
+storage notices now fails the build if a third one does it, and its limit is stated in the file: it
+matches the phrases this app actually uses and cannot catch advice worded in a way nobody has used
+yet.
+
+**And the help now explains the storage failures at all**, which it did not. The app grew several of
+them — a contact that will not save, a session write lost, a deletion that did not happen, plaintext
+the log could not drop, and a read-only mode when the contact list cannot be read — and the help had
+one sentence about any of it. A user who has just been told something could not be saved goes looking
+for what to do, so the notices deliberately not carrying the explanation only works if the
+explanation exists somewhere. It says what the condition is, that reading still works, that a failed
+deletion deleted nothing, why the app stops saving rather than replacing what it cannot read, and —
+in as many words — not to swap keys over it. A second test pins that last sentence, because it is the
+one that matters and it is the one that would be dropped as verbose.
