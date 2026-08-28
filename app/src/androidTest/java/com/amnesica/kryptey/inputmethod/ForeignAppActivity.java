@@ -144,10 +144,14 @@ public class ForeignAppActivity extends Activity {
     // The platform flag directly rather than ContextCompat: androidx.core is not on the
     // androidTest classpath, and adding it would mean new hashes in the dependency verification
     // metadata for a two-line guard.
+    // Suppressed on the branch, not in the baseline. Lint asks for an export flag on the
+    // unguarded call; below TIRAMISU there is no such flag to pass, and the platform does not
+    // require one - the requirement and the constant arrived together. A baseline entry would hide
+    // the next genuine instance of this check somewhere that does matter.
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
       registerReceiver(finisher, new IntentFilter(ACTION_FINISH), RECEIVER_EXPORTED);
     } else {
-      registerReceiver(finisher, new IntentFilter(ACTION_FINISH));
+      registerLegacyFinisher(finisher);
     }
 
     final long finishAfter = getIntent() == null ? 0L
@@ -172,5 +176,11 @@ public class ForeignAppActivity extends Activity {
             + " containsSecret=" + (secret != null && text.contains(secret)));
       }
     });
+  }
+
+  /** Pre-TIRAMISU registration, where no export flag exists; see the call site. */
+  @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
+  private void registerLegacyFinisher(final BroadcastReceiver finisher) {
+    registerReceiver(finisher, new IntentFilter(ACTION_FINISH));
   }
 }
