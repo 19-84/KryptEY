@@ -408,7 +408,10 @@ public class BinaryEnvelopeTest {
     assertEquals("layout changed; this test is no longer poking the name length",
         messageEnvelope().getSignalProtocolAddressName().length(), encoded[nameLenOffset]);
     encoded[nameLenOffset] = (byte) 0xFF;
-    assertThrows(IOException.class, () -> BinaryEnvelope.decode(encoded));
+    final IOException refused =
+        assertThrows(IOException.class, () -> BinaryEnvelope.decode(encoded));
+    assertTrue("the refusal must be about the name length that was poked: " + refused.getMessage(),
+        refused.getMessage().contains("senderName"));
   }
 
   @Test

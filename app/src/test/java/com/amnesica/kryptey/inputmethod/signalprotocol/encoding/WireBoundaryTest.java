@@ -200,8 +200,14 @@ public class WireBoundaryTest {
     out.write(0xFF);       // ciphertext length high byte
     out.write(0xFF);       // ciphertext length low byte  -> declares 65535, supplies none
 
-    assertThrows("a length far beyond the buffer must be refused, not wrapped",
-        IOException.class, () -> BinaryEnvelope.decode(out.toByteArray()));
+    // The message is checked, not just the type. This frame is hand-built, so it has several ways
+    // to be refused - and it spent a while being refused for its version byte instead of its
+    // length, passing the whole time, because a bare assertThrows cannot tell those apart.
+    final IOException refused = assertThrows("a length far beyond the buffer must be refused, not "
+        + "wrapped", IOException.class, () -> BinaryEnvelope.decode(out.toByteArray()));
+    assertTrue("the refusal must be about the length this frame declares, not about something the "
+            + "fixture got wrong earlier: " + refused.getMessage(),
+        refused.getMessage().contains("ciphertext"));
   }
 
   // ------------------------------------------------- bundle collection bounds
