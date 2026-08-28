@@ -250,7 +250,11 @@ public class ClipboardFuzzTest {
     final Random random = new Random(seed);
     int reachedTheParser = 0;
 
-    for (final String mutated : mutatedValid(random, realBundle, 2000)) {
+    // Two and a half thousand rather than two: the envelope grew by an issuing signature, so a
+    // single-byte mutation of the same corpus size reaches the parser slightly less often - it came
+    // in at ninety-nine against a floor of a hundred. Raising the corpus keeps the floor's meaning;
+    // lowering the floor would have been the same test proving less.
+    for (final String mutated : mutatedValid(random, realBundle, 2500)) {
       final int before = parsed;
       feed(RawEncoder.encode(mutated), "a mutated wire envelope (seed " + seed + ")");
       if (parsed > before) reachedTheParser++;

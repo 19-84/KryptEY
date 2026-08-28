@@ -43,7 +43,7 @@ public class WireFormatGoldenTest {
    * byte for byte.
    *
    * <pre>
-   *   01        version 1
+   *   02        version 2
    *   02        flags: FLAG_CIPHERTEXT only
    *   04        sender name length
    *   61626364  "abcd"
@@ -53,7 +53,7 @@ public class WireFormatGoldenTest {
    *   0102030405
    * </pre>
    */
-  private static final String GOLDEN_MESSAGE = "010204616263642a0300050102030405";
+  private static final String GOLDEN_MESSAGE = "020204616263642a0300050102030405";
 
   @Test
   public void aMessageEnvelopeEncodesToExactlyTheseBytes() throws Exception {
@@ -74,10 +74,18 @@ public class WireFormatGoldenTest {
     assertArrayEquals(new byte[] {1, 2, 3, 4, 5}, decoded.getCiphertextMessage());
   }
 
-  /** The version byte must be 1. Changing it is a protocol break, not a refactor. */
+  /**
+   * The version byte must be 2. Changing it is a protocol break, not a refactor.
+   *
+   * <p>It became 2 when bundles gained an issuing signature binding their fields to each other. That
+   * was a deliberate break: an optional signature is one an attacker omits, so the decoder refuses
+   * version 1 outright rather than accepting an unsigned bundle. This vector is the one place the
+   * change had to be written out by hand rather than absorbed, which is the point of a golden
+   * vector - it is the test that cannot be updated by accident.
+   */
   @Test
   public void theVersionByteIsPinned() throws Exception {
-    assertEquals(0x01, BinaryEnvelope.encode(
+    assertEquals(0x02, BinaryEnvelope.encode(
         new MessageEnvelope(new byte[] {1}, 2, "abcd", 42))[0]);
   }
 
@@ -115,7 +123,7 @@ public class WireFormatGoldenTest {
     final byte[] encoded =
         BinaryEnvelope.encode(new MessageEnvelope(new byte[] {9}, 7, "abcd", 42));
 
-    assertEquals("version", 0x01, encoded[0] & 0xFF);
+    assertEquals("version", 0x02, encoded[0] & 0xFF);
     assertEquals("flags", 0x02, encoded[1] & 0xFF);
     assertEquals("name length", 0x04, encoded[2] & 0xFF);
     assertEquals("name", "abcd", new String(encoded, 3, 4, java.nio.charset.StandardCharsets.UTF_8));

@@ -447,9 +447,10 @@ public class StripGuardsTest {
     SignalProtocolMain.rejectContactKey(bob());
     victim.setContactList(new ArrayList<>());
 
-    final MessageEnvelope replayed = new MessageEnvelope(
-        EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse(),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    final MessageEnvelope replayed = com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning
+        .asEditedInTransit(EnvelopeCodec.fromWire(attackerBundle), new MessageEnvelope(
+            EnvelopeCodec.fromWire(attackerBundle).getPreKeyResponse(),
+            peerAddress.getName(), peerAddress.getDeviceId()));
 
     ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
         .setText("Bob");

@@ -23,7 +23,7 @@ import java.nio.charset.StandardCharsets;
  * checking a representation the app does not produce. Its length is not even stable - the JSON
  * embeds registrationId and keyId as decimal integers, so it varies run to run (2515, 2517 and 2521
  * have all been recorded), which is why quoting it to the character was meaningless. The binary
- * envelope is fixed-width at 2484. The javadoc also named the limit as {@code CHAR_THRESHOLD_RAW} (500) when the
+ * envelope is fixed-width at 2572. The javadoc also named the limit as {@code CHAR_THRESHOLD_RAW} (500) when the
  * enforced one is 4096.
  */
 public class PreKeyBundleSizeTest {
@@ -75,7 +75,13 @@ public class PreKeyBundleSizeTest {
   }
 
   /**
-   * The bundle is a fixed 2484 bytes, and the margin under the invite threshold is 1612.
+   * The bundle is a fixed 2572 bytes, and the margin under the invite threshold is 1524.
+   *
+   * <p>It was 2484 until bundles gained an issuing signature binding their fields together: an
+   * Ed25519 signature and its length byte, plus the length prefix, is eighty-eight characters once
+   * the envelope is text. Re-derived rather than adjusted, as the assertion below demands - the
+   * margin is what matters and it is still more than half the threshold again, so the 4096 limit
+   * does not need moving. What would need re-deriving is the threshold itself, and it does not.
    *
    * <p>REVIVAL.md has carried that figure since the threshold was chosen, and until now it was the
    * one number in that document nobody had re-measured — it was explicitly recorded as "carried on
@@ -101,8 +107,8 @@ public class PreKeyBundleSizeTest {
         + "size; a disagreement means something variable got in: " + sizes, 1, sizes.size());
     assertEquals("the bundle size is what the 4096-character invite threshold was chosen against. "
             + "If this changed, re-derive the threshold rather than adjusting this number",
-        2484, sizes.iterator().next().intValue());
+        2572, sizes.iterator().next().intValue());
     assertEquals("and the margin under the threshold, stated so shrinkage is visible",
-        1612, UI_CHAR_THRESHOLD - 2484);
+        1524, UI_CHAR_THRESHOLD - 2572);
   }
 }

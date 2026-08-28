@@ -52,8 +52,8 @@ public class NoSecondWireTextDecodesTheSameTest {
         new SignedPreKeyEntity(11, signed.getPublicKey(), signature),
         new PreKeyEntity(12, oneTime.getPublicKey()),
         null));
-    return new MessageEnvelope(
-        new PreKeyResponse(identity.getPublicKey(), devices), "peer", 3);
+    return WireFixtures.carryingSignatureShapedBytes(new MessageEnvelope(
+        new PreKeyResponse(identity.getPublicKey(), devices), "peer", 3));
   }
 
   @Test

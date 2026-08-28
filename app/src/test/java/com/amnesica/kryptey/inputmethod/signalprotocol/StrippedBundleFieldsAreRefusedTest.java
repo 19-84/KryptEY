@@ -49,6 +49,12 @@ import java.util.List;
 public class StrippedBundleFieldsAreRefusedTest {
 
   private PreKeyResponse genuine;
+
+  /** The wire text that bundle came from, so an edit can carry its untouched signature. */
+
+  private String peerBundleWire;
+  /** The issuer of {@code genuine}, so a test can sign a bundle the way that issuer would. */
+  private Account peer;
   private SignalProtocolAddress peerAddress;
   private Account victim;
 
@@ -58,10 +64,12 @@ public class StrippedBundleFieldsAreRefusedTest {
     SignalProtocolMain.testIsRunning = true;
 
     SignalProtocolMain.initialize(null);
-    final Account peer = SignalProtocolMain.getInstance().getAccount();
+    peer = SignalProtocolMain.getInstance().getAccount();
+    final Account peerAccount = peer;
     peerAddress = ProtocolAddresses.of(peer.getSignalProtocolAddress().getName(),
         peer.getDeviceId());
-    genuine = EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()).getPreKeyResponse();
+    peerBundleWire = SignalProtocolMain.exportOwnKeyBundle();
+    genuine = EnvelopeCodec.fromWire(peerBundleWire).getPreKeyResponse();
 
     // The recipient.
     SignalProtocolMain.initialize(null);
@@ -116,8 +124,15 @@ public class StrippedBundleFieldsAreRefusedTest {
       // assembled in memory that merely resembles it. It also pins the wire format's own optional
       // markers: if `hasPreKey` stopped being expressible, the stripped bundle would not survive
       // the round trip and this would fail rather than quietly testing something else.
-      return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(new MessageEnvelope(rebuilt,
-          peerAddress.getName(), peerAddress.getDeviceId()))).getPreKeyResponse();
+      // Carrying the issuer's untouched signature, because that is what a relay's edit produces:
+      // it can copy an invite and remove a field, and it cannot sign the result. The bundle is now
+      // refused by that signature before the field checks below are reached - which is a stronger
+      // refusal, not a weaker one - and those checks remain as the answer to a malformed bundle
+      // from the ISSUER, which is the only party that can sign one.
+      return EnvelopeCodec.fromWire(EnvelopeCodec.toWire(
+          BundleSigning.asEditedInTransit(EnvelopeCodec.fromWire(peerBundleWire),
+              new MessageEnvelope(rebuilt, peerAddress.getName(), peerAddress.getDeviceId()))))
+          .getPreKeyResponse();
     } catch (final Exception e) {
       throw new AssertionError("the stripped bundle must survive a wire round trip - that is what "
           + "makes it a relay's edit rather than a hand-built object", e);
@@ -186,13 +201,14 @@ public class StrippedBundleFieldsAreRefusedTest {
   public void arefusedBundleStillRecordsTheSubstitutionItCarried() throws Exception {
     assertTrue("precondition: the genuine peer must be pinned first",
         SignalProtocolMain.processPreKeyResponseMessage(
-            new MessageEnvelope(genuine, peerAddress.getName(), peerAddress.getDeviceId()),
+            BundleSigning.signedEnvelope(peer, genuine,
+                peerAddress.getName(), peerAddress.getDeviceId()),
             peerAddress));
 
     // A third party's bundle, relabelled with the peer's address and stripped of its one-time key.
     SignalProtocolMain.initialize(null);
-    final PreKeyResponse impostor =
-        EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()).getPreKeyResponse();
+    final String impostorWire = SignalProtocolMain.exportOwnKeyBundle();
+    final PreKeyResponse impostor = EnvelopeCodec.fromWire(impostorWire).getPreKeyResponse();
     SignalProtocolMain.getInstance().setAccount(victim);
 
     final PreKeyResponseItem device = impostor.getDevices().get(0);
@@ -203,8 +219,11 @@ public class StrippedBundleFieldsAreRefusedTest {
         new PreKeyResponse(impostor.getIdentityKey(), devices);
 
     assertFalse("precondition: the stripped bundle must be refused",
-        SignalProtocolMain.processPreKeyResponseMessage(new MessageEnvelope(strippedSubstitution,
-            peerAddress.getName(), peerAddress.getDeviceId()), peerAddress));
+        SignalProtocolMain.processPreKeyResponseMessage(
+            BundleSigning.asEditedInTransit(EnvelopeCodec.fromWire(impostorWire),
+                new MessageEnvelope(strippedSubstitution,
+                    peerAddress.getName(), peerAddress.getDeviceId())),
+            peerAddress));
 
     assertTrue("a substitution must be recorded even when the bundle carrying it is refused. "
             + "Otherwise a relay deletes one unsigned byte from every re-invite the real contact "
@@ -225,7 +244,8 @@ public class StrippedBundleFieldsAreRefusedTest {
   @Test
   public void arefusedSubstitutionAlsoTakesTheVerifiedBadge() throws Exception {
     assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
-        new MessageEnvelope(genuine, peerAddress.getName(), peerAddress.getDeviceId()),
+        BundleSigning.signedEnvelope(peer, genuine,
+            peerAddress.getName(), peerAddress.getDeviceId()),
         peerAddress));
     final Contact bob = new Contact("Bob", "Jones", peerAddress.getName(),
         peerAddress.getDeviceId(), false);
@@ -237,8 +257,8 @@ public class StrippedBundleFieldsAreRefusedTest {
         SignalProtocolMain.isContactKeyTrustworthy(victim.getContactList().get(0)));
 
     SignalProtocolMain.initialize(null);
-    final PreKeyResponse impostor =
-        EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle()).getPreKeyResponse();
+    final String impostorWire = SignalProtocolMain.exportOwnKeyBundle();
+    final PreKeyResponse impostor = EnvelopeCodec.fromWire(impostorWire).getPreKeyResponse();
     SignalProtocolMain.getInstance().setAccount(victim);
 
     final PreKeyResponseItem device = impostor.getDevices().get(0);
@@ -248,8 +268,10 @@ public class StrippedBundleFieldsAreRefusedTest {
 
     assertFalse("precondition: the stripped substitution must be refused",
         SignalProtocolMain.processPreKeyResponseMessage(
-            new MessageEnvelope(new PreKeyResponse(impostor.getIdentityKey(), devices),
-                peerAddress.getName(), peerAddress.getDeviceId()), peerAddress));
+            BundleSigning.asEditedInTransit(EnvelopeCodec.fromWire(impostorWire),
+                new MessageEnvelope(new PreKeyResponse(impostor.getIdentityKey(), devices),
+                    peerAddress.getName(), peerAddress.getDeviceId())),
+            peerAddress));
 
     // Asserted AFTER dismissing the change, which is what makes this test discriminate at all.
     // While the change is pending, isContactKeyTrustworthy answers false on the strength of the

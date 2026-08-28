@@ -219,10 +219,11 @@ public class WireBoundaryTest {
           devices) {
     final var identity = new org.signal.libsignal.protocol.IdentityKey(
         org.signal.libsignal.protocol.ecc.ECKeyPair.generate().getPublicKey());
-    return new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
-        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-            identity, devices),
-        "peer", 42);
+    return WireFixtures.carryingSignatureShapedBytes(
+        new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                identity, devices),
+            "peer", 42));
   }
 
   /**

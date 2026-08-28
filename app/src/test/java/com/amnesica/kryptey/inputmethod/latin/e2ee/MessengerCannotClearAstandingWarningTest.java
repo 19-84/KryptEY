@@ -169,10 +169,14 @@ public class MessengerCannotClearAstandingWarningTest {
         SignalProtocolMain.initialize(null);
         final String impostor = SignalProtocolMain.exportOwnKeyBundle();
         SignalProtocolMain.getInstance().setAccount(victim);
+        // Only the address is relabelled; the impostor's bundle and its own signature are intact,
+        // which is what makes this a substitution rather than an edit the signature would catch.
         final com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope substituted =
-            new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
-                EnvelopeCodec.fromWire(impostor).getPreKeyResponse(),
-                peerAddress.getName(), peerAddress.getDeviceId());
+            com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+                EnvelopeCodec.fromWire(impostor),
+                new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+                    EnvelopeCodec.fromWire(impostor).getPreKeyResponse(),
+                    peerAddress.getName(), peerAddress.getDeviceId()));
         pasteAndDecrypt(substituted);
       }
     });
@@ -186,9 +190,11 @@ public class MessengerCannotClearAstandingWarningTest {
         final String fresh = SignalProtocolMain.exportOwnKeyBundle();
         SignalProtocolMain.getInstance().setAccount(victim);
         final com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope rePin =
-            new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
-                EnvelopeCodec.fromWire(fresh).getPreKeyResponse(),
-                peerAddress.getName(), peerAddress.getDeviceId());
+            com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+                EnvelopeCodec.fromWire(fresh),
+                new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+                    EnvelopeCodec.fromWire(fresh).getPreKeyResponse(),
+                    peerAddress.getName(), peerAddress.getDeviceId()));
         pasteAndDecrypt(rePin);
       }
     });
@@ -250,10 +256,14 @@ public class MessengerCannotClearAstandingWarningTest {
     devices.add(new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponseItem(
         device.getDeviceId(), device.getRegistrationId(), device.getSignedPreKey(), null,
         device.getKyberPreKey()));
-    return new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
-        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-            genuine.getIdentityKey(), devices),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    // The issuer's own signature over content it no longer covers: a relay can copy an invite and
+    // edit a field, and cannot sign the result.
+    return com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+        EnvelopeCodec.fromWire(peerBundle),
+        new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                genuine.getIdentityKey(), devices),
+            peerAddress.getName(), peerAddress.getDeviceId()));
   }
 
   private void pasteAndDecrypt(
@@ -441,10 +451,14 @@ public class MessengerCannotClearAstandingWarningTest {
         EnvelopeCodec.fromWire(peerBundle).getPreKeyResponse();
     final com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope stranger =
         unrelatedInvite();
-    return new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
-        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-            genuine.getIdentityKey(), stranger.getPreKeyResponse().getDevices()),
-        stranger.getSignalProtocolAddressName(), stranger.getDeviceId());
+    // The stranger's own signature travels with the fields taken from their invite: it verifies
+    // against the stranger's identity key, and this bundle claims the peer's - which is exactly
+    // what a splice between two identities now looks like on the wire.
+    return com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(stranger,
+        new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                genuine.getIdentityKey(), stranger.getPreKeyResponse().getDevices()),
+            stranger.getSignalProtocolAddressName(), stranger.getDeviceId()));
   }
 
   @Test

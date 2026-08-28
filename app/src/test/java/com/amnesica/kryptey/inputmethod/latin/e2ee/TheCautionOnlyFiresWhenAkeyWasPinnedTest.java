@@ -152,10 +152,12 @@ public class TheCautionOnlyFiresWhenAkeyWasPinnedTest {
         device.getDeviceId(), device.getRegistrationId(), device.getSignedPreKey(), null,
         device.getKyberPreKey()));
     final MessageEnvelope both = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(
-        new MessageEnvelope(
-            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-                genuine.getIdentityKey(), devices),
-            peerAddress.getName(), peerAddress.getDeviceId())));
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(genuineBundle),
+            new MessageEnvelope(
+                new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                    genuine.getIdentityKey(), devices),
+                peerAddress.getName(), peerAddress.getDeviceId()))));
     both.setCiphertextMessage(new byte[] {3, 9, 9, 9, 9, 9, 9, 9});
     both.setCiphertextType(2);
 

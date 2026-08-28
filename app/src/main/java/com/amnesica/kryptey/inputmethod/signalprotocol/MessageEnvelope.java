@@ -128,13 +128,14 @@ public class MessageEnvelope implements Serializable {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     MessageEnvelope that = (MessageEnvelope) o;
-    return ciphertextType == that.ciphertextType && timestamp == that.timestamp && deviceId == that.deviceId && Objects.equals(preKeyResponse, that.preKeyResponse) && Arrays.equals(ciphertextMessage, that.ciphertextMessage) && Objects.equals(signalProtocolAddressName, that.signalProtocolAddressName);
+    return ciphertextType == that.ciphertextType && timestamp == that.timestamp && deviceId == that.deviceId && Objects.equals(preKeyResponse, that.preKeyResponse) && Arrays.equals(ciphertextMessage, that.ciphertextMessage) && Objects.equals(signalProtocolAddressName, that.signalProtocolAddressName) && Arrays.equals(bundleSignature, that.bundleSignature);
   }
 
   @Override
   public int hashCode() {
     int result = Objects.hash(preKeyResponse, ciphertextType, timestamp, signalProtocolAddressName, deviceId);
     result = 31 * result + Arrays.hashCode(ciphertextMessage);
+    result = 31 * result + Arrays.hashCode(bundleSignature);
     return result;
   }
 
@@ -146,6 +147,7 @@ public class MessageEnvelope implements Serializable {
         ", ciphertextType=" + ciphertextType +
         ", timestamp=" + timestamp +
         ", signalProtocolAddressName='" + signalProtocolAddressName + '\'' +
+        ", bundleSignature=" + Arrays.toString(bundleSignature) +
         ", deviceId=" + deviceId +
         '}';
   }

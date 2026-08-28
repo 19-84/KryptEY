@@ -28,9 +28,17 @@ public class HostileEnvelopeTest {
     return Base64.encodeBytes(raw);
   }
 
-  /** version, flags=ciphertext, name "x", deviceId, type, len, body */
+  /**
+   * version, flags=ciphertext, name "x", deviceId, type, len, body.
+   *
+   * <p>The version comes from the encoder's own constant rather than a literal. These fixtures test
+   * what the parser does with hostile CONTENT, and a literal version byte makes them all fail on a
+   * version bump with an error about the version - which is what happened, and it hides whatever the
+   * fixture was really about. The golden-vector test keeps its literals, because pinning the exact
+   * bytes is its whole job.
+   */
   private static byte[] messageWithDeviceId(final int deviceId) {
-    return new byte[] {1, 0x02, 1, 'x', (byte) deviceId, 3, 0, 2, 9, 9};
+    return new byte[] {BinaryEnvelope.VERSION, 0x02, 1, 'x', (byte) deviceId, 3, 0, 2, 9, 9};
   }
 
   @Test
@@ -65,14 +73,14 @@ public class HostileEnvelopeTest {
   @Test
   public void anEmptyFlagsEnvelopeIsRejected() {
     final IOException e = assertThrows(IOException.class,
-        () -> BinaryEnvelope.decode(new byte[] {1, 0x00, 1, 'x', 42}));
+        () -> BinaryEnvelope.decode(new byte[] {BinaryEnvelope.VERSION, 0x00, 1, 'x', 42}));
     assertTrue(e.getMessage().contains("carries nothing"));
   }
 
   @Test
   public void aZeroLengthCiphertextIsRejected() {
     final IOException e = assertThrows(IOException.class,
-        () -> BinaryEnvelope.decode(new byte[] {1, 0x02, 1, 'x', 42, 3, 0, 0}));
+        () -> BinaryEnvelope.decode(new byte[] {BinaryEnvelope.VERSION, 0x02, 1, 'x', 42, 3, 0, 0}));
     assertTrue(e.getMessage().contains("length is zero"));
   }
 

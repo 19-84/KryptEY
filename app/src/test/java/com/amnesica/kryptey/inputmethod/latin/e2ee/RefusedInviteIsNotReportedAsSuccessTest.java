@@ -264,7 +264,10 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     // constructor for that pair, so it is assembled through the setters the codec itself uses.
     final MessageEnvelope rotation = new MessageEnvelope(withMessage.getCiphertextMessage(),
         withMessage.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
-    rotation.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+    final MessageEnvelope strippedForRotation = strippedInvite();
+    rotation.setPreKeyResponse(strippedForRotation.getPreKeyResponse());
+    // The signature travels with the bundle it was made over, exactly as it does on the wire.
+    rotation.setBundleSignature(strippedForRotation.getBundleSignature());
 
     paste(rotation);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
@@ -412,7 +415,10 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
 
     final MessageEnvelope rotation = new MessageEnvelope(withMessage.getCiphertextMessage(),
         withMessage.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
-    rotation.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+    final MessageEnvelope strippedForRotation = strippedInvite();
+    rotation.setPreKeyResponse(strippedForRotation.getPreKeyResponse());
+    // The signature travels with the bundle it was made over, exactly as it does on the wire.
+    rotation.setBundleSignature(strippedForRotation.getBundleSignature());
 
     paste(rotation);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
@@ -442,9 +448,11 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     SignalProtocolMain.initialize(null);
     final String impostorBundle = SignalProtocolMain.exportOwnKeyBundle();
     activate(victim);
-    final MessageEnvelope substituted = new MessageEnvelope(
-        EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    final MessageEnvelope substituted =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(impostorBundle),
+            new MessageEnvelope(EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
+                peerAddress.getName(), peerAddress.getDeviceId()));
 
     paste(substituted);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
@@ -499,7 +507,9 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     // Stripped bundle stapled to that opening message.
     final MessageEnvelope both = new MessageEnvelope(opening.getCiphertextMessage(),
         opening.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
-    both.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+    final MessageEnvelope strippedForBoth = strippedInvite();
+    both.setPreKeyResponse(strippedForBoth.getPreKeyResponse());
+    both.setBundleSignature(strippedForBoth.getBundleSignature());
 
     paste(both);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
@@ -591,7 +601,9 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
 
     final MessageEnvelope both = new MessageEnvelope(reply.getCiphertextMessage(),
         reply.getCiphertextType(), peerAddress.getName(), peerAddress.getDeviceId());
-    both.setPreKeyResponse(strippedInvite().getPreKeyResponse());
+    final MessageEnvelope strippedForBoth = strippedInvite();
+    both.setPreKeyResponse(strippedForBoth.getPreKeyResponse());
+    both.setBundleSignature(strippedForBoth.getBundleSignature());
 
     ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
         .setText("Bob");
@@ -640,9 +652,11 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     SignalProtocolMain.initialize(null);
     final String impostorBundle = SignalProtocolMain.exportOwnKeyBundle();
     activate(victim);
-    final MessageEnvelope substituted = new MessageEnvelope(
-        EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    final MessageEnvelope substituted =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            EnvelopeCodec.fromWire(impostorBundle),
+            new MessageEnvelope(EnvelopeCodec.fromWire(impostorBundle).getPreKeyResponse(),
+                peerAddress.getName(), peerAddress.getDeviceId()));
     paste(substituted);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
     assertFalse("precondition: a warning about Bob must be standing",
@@ -846,6 +860,8 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
         org.signal.libsignal.protocol.message.CiphertextMessage.WHISPER_TYPE,
         peerAddress.getName(), peerAddress.getDeviceId());
     rotation.setPreKeyResponse(EnvelopeCodec.fromWire(freshBundle).getPreKeyResponse());
+    // A GENUINE rotation: the issuer's bundle and its own signature, unedited.
+    rotation.setBundleSignature(EnvelopeCodec.fromWire(freshBundle).getBundleSignature());
 
     paste(rotation);
     strip.findViewById(R.id.e2ee_button_decrypt).performClick();
