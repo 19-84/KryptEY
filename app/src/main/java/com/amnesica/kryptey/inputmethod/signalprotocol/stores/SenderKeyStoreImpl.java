@@ -60,7 +60,8 @@ public class SenderKeyStoreImpl implements SenderKeyStore {
         return new SenderKeyRecord(serialized);
       }
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored senderkey record could not be read back", e);
     }
   }
 }

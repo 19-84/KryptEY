@@ -34,7 +34,8 @@ public class SessionStoreImpl implements SessionStore {
         return new SessionRecord();
       }
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored session record could not be read back", e);
     }
   }
 
@@ -52,7 +53,8 @@ public class SessionStoreImpl implements SessionStore {
       try {
         resultSessions.add(new SessionRecord(serialized));
       } catch (InvalidMessageException e) {
-        throw new AssertionError(e);
+        throw new StoredRecordUnreadableException(
+          "a stored session record could not be read back", e);
       }
     }
     return resultSessions;
@@ -128,7 +130,8 @@ public class SessionStoreImpl implements SessionStore {
         return null;
       }
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored session record could not be read back", e);
     }
   }
 }

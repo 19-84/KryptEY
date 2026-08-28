@@ -56,7 +56,8 @@ public class KyberPreKeyStoreImpl implements KyberPreKeyStore {
       }
       return new KyberPreKeyRecord(store.get(kyberPreKeyId));
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored kyberprekey record could not be read back", e);
     }
   }
 
@@ -70,7 +71,8 @@ public class KyberPreKeyStoreImpl implements KyberPreKeyStore {
       }
       return results;
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored kyberprekey record could not be read back", e);
     }
   }
 

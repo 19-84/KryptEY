@@ -33,7 +33,8 @@ public class SignedPreKeyStoreImpl implements SignedPreKeyStore {
 
       return new SignedPreKeyRecord(store.get(signedPreKeyId));
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored signedprekey record could not be read back", e);
     }
   }
 
@@ -49,7 +50,8 @@ public class SignedPreKeyStoreImpl implements SignedPreKeyStore {
 
       return results;
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored signedprekey record could not be read back", e);
     }
   }
 

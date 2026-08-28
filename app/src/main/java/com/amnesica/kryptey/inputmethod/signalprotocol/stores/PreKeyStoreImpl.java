@@ -36,7 +36,8 @@ public class PreKeyStoreImpl implements PreKeyStore {
 
       return new PreKeyRecord(Objects.requireNonNull(store.get(preKeyId)).getSerializedPreKeyRecord());
     } catch (InvalidMessageException e) {
-      throw new AssertionError(e);
+      throw new StoredRecordUnreadableException(
+          "a stored prekey record could not be read back", e);
     }
   }
 

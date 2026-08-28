@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-two sections, written in the order things were found rather than by subject, so the
+Ninety-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -148,6 +148,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The failure the app had no words for](#the-failure-the-app-had-no-words-for)
 - [A displaced warning is one that comes back](#a-displaced-warning-is-one-that-comes-back)
 - [Twenty-eight seams and no way in](#twenty-eight-seams-and-no-way-in)
+- [Nine Errors nobody could catch](#nine-errors-nobody-could-catch)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5476,3 +5477,31 @@ Its limits are in the file, as they should be: it matches the naming convention,
 `…ForTest` is invisible to it, and it cannot see reflection. What it does check is the shape that has
 gone wrong elsewhere in this project more than once — **a thing that exists only for tests acquiring a
 caller that is not a test.**
+
+## Nine Errors nobody could catch
+
+**Found by asking which production classes no test names at all — three, and one of them answered a
+corrupt record with `throw new AssertionError(e)`. So did eight of its neighbours.**
+
+It is libsignal's own idiom, and it encodes an assumption this project has already disproved: that
+bytes the app wrote itself cannot come back corrupt. They can — the store is sealed per value, one
+flipped byte makes GCM refuse, and the chat log has had an unreadable-path for exactly that for many
+rounds.
+
+**The type is what made it dangerous.** `AssertionError` is an `Error`, and every guard on the paths
+that reach these stores catches `RuntimeException` or `Exception`. This file already says so, in as
+many words, about `OutOfMemoryError`: *"an Error that neither this method's catch (RuntimeException)
+nor the clipboard listener's catch (Exception) stops"*. The stores are called by libsignal from
+inside `decrypt`, which runs from a click listener — so a corrupt record killed the input method in
+whatever app the user was typing in, and the condition is persistent, which makes it crash-on-tap
+until reinstall. The same sentence that identified the hazard sat nine files away from nine instances
+of it.
+
+They throw an unchecked exception the existing guards catch, so a corrupt record becomes a decryption
+failure the user is told about rather than a keyboard that disappears.
+
+**The test asserts the type family, not our class.** The first version required our own exception and
+failed on the session store, which fails inside libsignal with its own unchecked type — caught by the
+same guards, and therefore fine. Requiring our class would have been asserting the implementation
+rather than the property that keeps the keyboard alive. A source scan sits beside the four
+behavioural cases, because what is being forbidden is the idiom rather than any one instance.
