@@ -3462,22 +3462,40 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean warnIfNameIsShared(final Contact contact) {
     if (contact == null) return false;
-    // The LIVE half only, and the difference is the whole correctness of re-asserting at all.
+    // Both halves now, because both are resolvable.
     //
-    // A warning may be re-raised on every selection only if the user can resolve it. Two live rows
-    // sharing a folded name is resolvable: delete one, which is what the warning asks for and what
-    // its address scoping exists to support. A RETIRED name is not. Nothing prunes
-    // retiredDisplayNames, so the condition holds forever - and it holds on the ordinary honest
-    // flow, because a reinstall mints a fresh address, which is exactly the case the retired
-    // half's own suppression cannot cover.
+    // This asked the live half only, and the reasoning was right at the time: a warning may be
+    // re-asserted on every selection only if the user can end it, and a retired name had no action
+    // that ended it - nothing prunes the retired list, so re-raising it meant a sentence on every
+    // send for the life of the install.
     //
-    // Re-asserting that half turned the app's only same-name control into a sentence shown on every
-    // single send, for the life of the install, with no action that ends it. It also pinned
-    // mWarningStanding true forever - suppressing every routine notice and holding FLAG_SECURE on -
-    // and habituation is the documented failure mode this control's own javadoc is written to
-    // avoid. The retired case stays a one-shot at add time, where it is news.
-    if (!mE2EEStrip.hasLiveContactWithSameDisplayName(contact.getFirstName(),
+    // The cost of leaving it out was the mirror image: raised once at add time and never
+    // re-derived, so an attacker displaced it with any cheap warning, the user resolved that one,
+    // and the impostor row was indistinguishable from a healthy contact from then on.
+    //
+    // Verifying is the resolution, and hasRetiredDisplayName now honours it. The warning's own text
+    // says the app "cannot confirm that this is the same person coming back"; comparing the number
+    // by voice is how the user confirms it. So the question can be asked in full, on every
+    // selection, and it stops the moment the user does the thing it is asking for.
+    if (!mE2EEStrip.hasContactWithSameDisplayName(contact.getFirstName(),
         contact.getLastName(), contact.getSignalProtocolAddress())) {
+      // Lowered when the condition goes, which is the other half of being re-derivable.
+      //
+      // Raising from a condition and never lowering is a defect this file has now made twice: the
+      // storage warnings kept asserting an unreadable store after it recovered, and this one kept
+      // asserting a shared name after the user had resolved it by comparing the number. Recomputing
+      // the answer is only useful if BOTH answers are acted on.
+      //
+      // Scoped to this contact's own address and to this warning's own text, so it cannot take down
+      // an identity change or a rejection that happens to be standing about the same person.
+      if (mWarningStanding && mStandingWarningText != null
+          && String.valueOf(contact.getSignalProtocolAddress()).equals(mStandingWarningAddress)
+          && (mStandingWarningText.startsWith("You already have a contact called")
+              || mStandingWarningText.startsWith("You deleted a contact called"))) {
+        clearStandingWarning();
+        setInfoTextViewMessage(mInfoTextView, aStandingItemHoldsTheBanner()
+            ? warningWithRecipient() : "Chosen contact: " + labelFor(contact));
+      }
       return false;
     }
     // Deliberately does NOT yield to a warning standing about something else.

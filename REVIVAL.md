@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-five sections, written in the order things were found rather than by subject, so the
+Ninety-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -151,6 +151,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Nine Errors nobody could catch](#nine-errors-nobody-could-catch)
 - [One slot, two facts, four defects](#one-slot-two-facts-four-defects)
 - [A warning raised from a condition has to come down with it](#a-warning-raised-from-a-condition-has-to-come-down-with-it)
+- [The warning that needed a way to be answered](#the-warning-that-needed-a-way-to-be-answered)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5581,3 +5582,32 @@ from the code; only counting who pays for each cycle decides between them.**
 entirely — a comment replacement swallowed it — and three tests failed at once saying a hundred
 entries had accumulated where two were expected. That is what those tests are for, and it is the
 second time this session that a mechanical guard has caught a bad edit rather than a bad design.
+
+## The warning that needed a way to be answered
+
+**The retired-name warning could be raised and never re-derived, and both fixes tried for it were half
+right.** Re-asserting it on every selection put a sentence on every send for the life of the install,
+because nothing prunes the retired list — habituation, which is what this control's own javadoc is
+written against. Not re-asserting it meant an attacker displaced it with any cheap warning, the user
+resolved that one, and the impostor row was indistinguishable from a healthy contact from then on.
+
+What was missing was not a policy but **a resolution**. The warning's own text says the app "cannot
+confirm that this is the same person coming back" — and comparing the safety number by voice is
+exactly how the user confirms it, and the only way anyone can. So a contact whose number has been
+compared is no longer warned about, the question is asked in full on every selection, and the warning
+ends the moment the user does the thing it is asking for.
+
+The retired entry itself stays. The suppression is scoped to the one address whose number was
+compared, so a **later** contact reusing that name is still warned about — which is the whole reason
+the entry exists.
+
+**And the same "raise but never lower" defect was here too.** Recomputing the answer is only useful
+if both answers are acted on: verifying made the condition false and nothing took the sentence down,
+so the first attempt at this fix passed its first assertion and failed its second. That is now the
+third instance of this shape in the file — the storage warnings, the contacts-unreadable warning, and
+this — and all three are lowered by the same rule: **a warning raised from a condition is lowered
+when the condition goes; a warning raised from an event is not, because the event still happened.**
+
+That closes the last finding from the last general sweep. The round that produced it judged the
+surface to be converging and recommended one more pass scoped to the caution slot, then stopping;
+that pass is done, and its four symptoms turned out to be the one missing abstraction it predicted.

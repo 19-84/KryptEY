@@ -149,36 +149,45 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
   }
 
   /**
-   * A retired name must NOT be re-asserted on every selection.
+   * A retired name IS re-asserted — and comparing the number ends it.
    *
-   * <p>Re-asserting a warning is only correct when the user can resolve it. Two live rows sharing a
-   * folded name is resolvable — delete one, which is what the warning asks for. A retired name is
-   * not: nothing prunes the retired list, so the condition holds forever, and it holds on the
-   * ordinary honest flow, because a reinstall mints a fresh address and the retired half's
-   * suppression only covers a re-add at the <em>same</em> address.
+   * <p>This test asserted the opposite for one round, and both positions were half right. Raising it
+   * on every selection with no action that ends it is a sentence on every send for the life of the
+   * install, which is habituation and is what the control's own javadoc is written against. Raising
+   * it once and never re-deriving it is an eviction: an attacker displaces it with any cheap
+   * warning, the user resolves that one, and the impostor row is indistinguishable from a healthy
+   * contact from then on.
    *
-   * <p>So re-asserting it turned the app's only same-name control into a sentence shown on every
-   * single send, for the life of the install, with no action that ends it — while pinning
-   * {@code mWarningStanding} true, which suppresses every routine notice and holds FLAG_SECURE on.
-   * Habituation is the documented failure mode this control's own javadoc is written to avoid.
+   * <p>What was missing was a resolution. The warning's own text says the app "cannot confirm that
+   * this is the same person coming back", and comparing the safety number by voice is exactly how
+   * the user confirms it — the only way anyone can. So the question is asked in full on every
+   * selection, and verifying the contact ends it. The retired entry itself stays, so a LATER contact
+   * reusing that name is still warned about: the suppression is scoped to the one address whose
+   * number was compared.
    */
   @Test
-  public void aretiredNameIsNotReRaisedOnEverySelection() throws Exception {
+  public void aretiredNameIsReRaisedUntilTheNumberIsCompared() throws Exception {
     final Account victim = SignalProtocolMain.getInstance().getAccount();
-    // One row only, so nothing LIVE shares its name.
     final ArrayList<Contact> single = new ArrayList<>();
     single.add(genuineBob);
     victim.setContactList(single);
 
-    // Bob reinstalled: the old name is retired at the OLD address, the new row is at a new one.
+    // Bob reinstalled: the old name is retired at the OLD address, the live row is at a new one.
     victim.retireDisplayName("Bob", "Jones", com.amnesica.kryptey.inputmethod.signalprotocol.util
         .ProtocolAddresses.key(impostor.getSignalProtocolAddress()));
 
     strip.selectContact(genuineBob);
+    assertTrue("a name the user deleted, reappearing, must be said - and said again on the next "
+            + "selection, or one cheap warning displaces it for good. Banner: " + banner(),
+        banner().contains("deleted a contact called"));
 
-    assertTrue("a retired name has no second row to delete, so nothing the user does ends it - "
-            + "re-raising it on every selection is a warning that carries no information, which is "
-            + "the habituation this control exists to avoid. Banner: " + banner(),
+    // The user does what the warning asks: compares the number by voice, and confirms.
+    SignalProtocolMain.verifyContact(genuineBob);
+    strip.selectContact(genuineBob);
+
+    assertTrue("comparing the number is how the user confirms this IS the same person coming back, "
+            + "which is what the warning asks for - so it must stop. A warning that outlives its "
+            + "own resolution is one shown on every send forever: " + banner(),
         !banner().contains("deleted a contact called"));
   }
 }

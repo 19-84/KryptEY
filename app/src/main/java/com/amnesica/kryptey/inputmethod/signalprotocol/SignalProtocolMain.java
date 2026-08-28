@@ -1291,7 +1291,34 @@ public class SignalProtocolMain {
           && excludedAddress.equals(retired[2])) {
         continue;
       }
+      // And a contact whose number the user has actually compared.
+      //
+      // This is what makes the retired-name warning re-assertable, and re-assertable is what stops
+      // it being evicted. It could only ever be raised once, at add time, because there was no
+      // action that ended it: nothing prunes the retired list, so re-raising it on every selection
+      // meant a sentence on every send forever - and NOT re-raising it meant an attacker displaced
+      // it with any cheap warning, the user resolved that one, and the impostor row became
+      // indistinguishable from a healthy contact.
+      //
+      // Verifying is the resolution the warning is asking for. Its own text says the app "cannot
+      // confirm that this is the same person coming back"; comparing the safety number by voice is
+      // exactly how the user confirms it, and it is the only way anyone can. So a verified contact
+      // is not warned about, the warning can be re-derived for everyone else, and the retired entry
+      // stays where it is - a LATER contact reusing that name is still warned about, because this
+      // suppression is scoped to the one address whose number was compared.
+      if (excluding != null && contactAtAddressIsVerified(excluding)) continue;
       return true;
+    }
+    return false;
+  }
+
+  /** Whether the contact at this address has had its safety number compared and confirmed. */
+  private static boolean contactAtAddressIsVerified(final SignalProtocolAddress address) {
+    if (sInstance.mAccount == null || sInstance.mAccount.getContactList() == null) return false;
+    for (final Contact contact : sInstance.mAccount.getContactList()) {
+      if (contact.getSignalProtocolAddress().equals(address)) {
+        return isContactKeyTrustworthy(contact);
+      }
     }
     return false;
   }
