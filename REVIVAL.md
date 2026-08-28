@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-one sections, written in the order things were found rather than by subject, so the
+Ninety-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -147,6 +147,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Three call sites, three answers to one question](#three-call-sites-three-answers-to-one-question)
 - [The failure the app had no words for](#the-failure-the-app-had-no-words-for)
 - [A displaced warning is one that comes back](#a-displaced-warning-is-one-that-comes-back)
+- [Twenty-eight seams and no way in](#twenty-eight-seams-and-no-way-in)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5453,3 +5454,25 @@ different addresses fill a hundred slots under one name. It counts names now, wh
 reader matches on. What is given up is in the safe direction — the stored address only suppresses the
 warning for a re-add at that same address, so collapsing to the most recent one costs a warning the
 user did not need rather than one they did.
+
+## Twenty-eight seams and no way in
+
+**The seams that let tests drive this surface have grown to twenty-eight, and several of them
+fabricate standing items.**
+
+Most are inert if they leak — `showContactListForTest` shows a screen the user could reach anyway,
+which is why the existing guard covers only `testIsRunning`, the one whose leak changes protocol
+behaviour. But `setWarningMessageForTest`, `setCautionForTest` and `setStoreNoticeForTest` write
+directly into the warning, caution and store-notice slots, and those slots are the app's entire trust
+surface. A production path into one of them could put a security sentence on screen that describes
+nothing — or, worse, hold the banner with a fake so a real warning cannot be written, which is the
+wedge several sections of this document are about.
+
+Nothing enforced that they had no production caller. They do not: twenty-eight seams, one
+seam-to-seam call, and no other. That is now checked rather than true by luck, and wiring any of them
+into a production method fails the build.
+
+Its limits are in the file, as they should be: it matches the naming convention, so a seam not called
+`…ForTest` is invisible to it, and it cannot see reflection. What it does check is the shape that has
+gone wrong elsewhere in this project more than once — **a thing that exists only for tests acquiring a
+caller that is not a test.**
