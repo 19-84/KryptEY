@@ -34,6 +34,21 @@ caught on that path. The reasoning is right about the reach; the library does no
 *Measured against libsignal 0.86.5: signature lengths 1, 63, 65, 100 and 255 all return `false`.*
 Held by `AwrongLengthSignatureIsRefusedRatherThanThrownTest`.
 
+**Removing the screen lock destroys the storage key, silently and unrecoverably.**
+The master key is generated with `setUnlockedDeviceRequired` on any device with a secure lock, and a
+comment in `StorageHelper` listed "a Keystore key invalidated by a credential change" among the
+causes of an unresolvable store. If that applied to this key, then removing a PIN — an ordinary thing
+a person does — would turn the identity key, every session and the whole history into unreadable
+ciphertext on a build with no RESET path.
+*Measured on the emulator at API 28: a lock-bound key sealed before the PIN was removed opened
+normally afterwards.* The flag binds use to the device being unlocked, not to the credential
+existing; `setUserAuthenticationRequired` and `setInvalidatedByBiometricEnrollment`, which do carry
+invalidation semantics, are not used.
+Held by `AlockBoundKeyAcrossLockRemovalTest`, which sets the PIN, generates, seals, clears the PIN
+and opens. **This is API-level-dependent** — the measurement is API 28, the minimum this project
+supports — and the test asserts the survival, so a platform that changes it fails loudly rather than
+losing a user's history quietly.
+
 ## Refuted — the code already does what the finding asks
 
 **The per-raise reachability guard is satisfied by the comment naming the safe call.**

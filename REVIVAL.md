@@ -6220,7 +6220,20 @@ a subclass can "invalidate and re-resolve", when no re-resolve exists anywhere. 
 two bare-name comparison arms when only one is left — its conclusion still holds, but a reader
 deciding whether the separator must stay non-printable should be counting the real arms.
 
-**What remains open on this surface, and needs a device rather than an argument:** which rung a given
-install actually took is still recorded nowhere a user or a test can see, and whether an
-unlocked-device-required key survives removal of the screen lock is a version-dependent question that
-a comment currently answers by assumption.
+**One of the two open questions was then asked of a device rather than argued.** Whether an
+unlocked-device-required key survives the screen lock being *removed* decides between two very
+different apps: if it does not, then removing a PIN silently turns the identity key, every session
+and the whole history into unreadable ciphertext, on a build with no RESET path. A comment answered
+it by assumption, listing "a Keystore key invalidated by a credential change" among the causes of an
+unresolvable store.
+
+**Measured at API 28: it survives.** The test sets a PIN, generates the key, seals, clears the PIN
+and opens — and the ciphertext opens normally. The flag binds *use* to the device being unlocked, not
+to the credential existing, and the two options that do carry invalidation semantics are not used
+here. The comment is corrected, the measurement is in `REVIEW-SETTLED.md` with its API level beside
+it, and the test asserts the survival — so a platform that changes this fails loudly instead of
+losing a user's history quietly.
+
+That leaves one thing genuinely open on this surface: **which rung a given install actually took is
+recorded nowhere a user or a test can see.** Where to put it is a product question — a diagnostic
+screen, a one-time notice, nothing at all — and not one to invent while fixing something else.

@@ -689,7 +689,7 @@ public class StorageHelper {
     if (store == null) {
       // Nothing is written here, INCLUDING the log - so the log flag must not keep saying the last
       // write succeeded. It is only ever assigned further down, and its initialiser is true, so a
-      // device whose secureStore never resolves (a Keystore key invalidated by a credential change,
+      // device whose secureStore never resolves (a Keystore key the platform has invalidated,
       // a migration that threw) reported a healthy log write forever while writing nothing at all.
       mLastMessageLogWriteSucceeded = false;
       return false;
