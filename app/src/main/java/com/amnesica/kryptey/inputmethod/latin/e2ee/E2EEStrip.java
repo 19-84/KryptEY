@@ -391,6 +391,12 @@ public class E2EEStrip {
   }
 
   /** @see SignalProtocolMain#hasContactWithSameDisplayName */
+  /** @see SignalProtocolMain#hasLiveContactWithSameDisplayName */
+  public boolean hasLiveContactWithSameDisplayName(final String firstName, final String lastName,
+      final org.signal.libsignal.protocol.SignalProtocolAddress excluding) {
+    return SignalProtocolMain.hasLiveContactWithSameDisplayName(firstName, lastName, excluding);
+  }
+
   public boolean hasContactWithSameDisplayName(final String firstName, final String lastName,
       final org.signal.libsignal.protocol.SignalProtocolAddress excluding) {
     return SignalProtocolMain.hasContactWithSameDisplayName(firstName, lastName, excluding);

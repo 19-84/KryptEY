@@ -2070,6 +2070,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // rejecting or deleting that contact: a security action taken for a storage reason, which
       // this file calls a false affordance. That is verbatim the defect this method exists to
       // prevent, reintroduced by adding a second string that the phrase did not match.
+      // A composed caution counts: it is stored with the storage flag set, so this finds it, and
+      // retiring it takes the pin sentence with it - which is correct, because the pin caution is
+      // re-posted by the next paste that pins and the storage half is what has just been resolved.
       if (address.equals(mStandingCautionAddress) && mStandingCautionIsAstorageNotice) {
         mStandingCaution = null;
         mStandingCautionAddress = null;
@@ -2686,11 +2689,37 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // sentence says nothing about comparing a number, and the thing being lost is the notice that
     // fires because nothing was noticed. So the pin caution is kept and the storage one appended.
     final String storageNotice = String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact));
-    final boolean apinCautionStands = mStandingCaution != null && !mStandingCautionIsAstorageNotice
-        && mStandingCaution.contains("compare the security number");
+
+    // Composed once, about this contact, and still retirable. The first version of this append got
+    // all three of those wrong.
+    //
+    // It grew without bound: after one append the stored caution contained "compare the security
+    // number", so the next paste appended the storage sentence again - one copy per incoming
+    // message, and the messenger decides how many arrive. The banner has no maxLines, so twenty
+    // messages on a full disk push the warning composed above it, and the recipient line composed
+    // below it, off the screen.
+    //
+    // It re-scoped the address: the standing pin caution may be about somebody else entirely, and
+    // re-storing the composed string with THIS contact meant verifying or deleting this contact
+    // cleared a caution about that one - the exact cross-contact erase mStandingCautionAddress
+    // exists to prevent.
+    //
+    // And it disabled its own retirement, by storing the composed caution with the storage flag
+    // false: a later landed write then removed the refusal and re-enabled Encrypt while the banner
+    // still said messages might not be readable. Two halves of one fact, two lifetimes again.
+    //
+    // Storing it with the flag TRUE is also what bounds the growth, which is worth saying because
+    // it is not obvious: the composed caution is then a storage notice, so the next paste does not
+    // treat it as a pin caution to append to, and replaces it instead. One sentence, however many
+    // messages arrive. A separate "have I already said this" check was tried here and turned out to
+    // be dead code once the flag was right - the mutant that proves this is the flag, not a guard.
+    final boolean apinCautionStandsAboutThisContact = mStandingCaution != null
+        && !mStandingCautionIsAstorageNotice
+        && mStandingCaution.contains("compare the security number")
+        && String.valueOf(chosenContact.getSignalProtocolAddress()).equals(mStandingCautionAddress);
     setCautionBesideAnyWarning(
-        apinCautionStands ? mStandingCaution + " " + storageNotice : storageNotice,
-        chosenContact, !apinCautionStands);
+        apinCautionStandsAboutThisContact ? mStandingCaution + " " + storageNotice : storageNotice,
+        chosenContact, true);
     return true;
   }
 
@@ -3353,8 +3382,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean warnIfNameIsShared(final Contact contact) {
     if (contact == null) return false;
-    if (!mE2EEStrip.hasContactWithSameDisplayName(contact.getFirstName(), contact.getLastName(),
-        contact.getSignalProtocolAddress())) {
+    // The LIVE half only, and the difference is the whole correctness of re-asserting at all.
+    //
+    // A warning may be re-raised on every selection only if the user can resolve it. Two live rows
+    // sharing a folded name is resolvable: delete one, which is what the warning asks for and what
+    // its address scoping exists to support. A RETIRED name is not. Nothing prunes
+    // retiredDisplayNames, so the condition holds forever - and it holds on the ordinary honest
+    // flow, because a reinstall mints a fresh address, which is exactly the case the retired
+    // half's own suppression cannot cover.
+    //
+    // Re-asserting that half turned the app's only same-name control into a sentence shown on every
+    // single send, for the life of the install, with no action that ends it. It also pinned
+    // mWarningStanding true forever - suppressing every routine notice and holding FLAG_SECURE on -
+    // and habituation is the documented failure mode this control's own javadoc is written to
+    // avoid. The retired case stays a one-shot at add time, where it is news.
+    if (!mE2EEStrip.hasLiveContactWithSameDisplayName(contact.getFirstName(),
+        contact.getLastName(), contact.getSignalProtocolAddress())) {
       return false;
     }
     final String duplicate = String.format(duplicateNameMessage(contact), labelFor(contact));

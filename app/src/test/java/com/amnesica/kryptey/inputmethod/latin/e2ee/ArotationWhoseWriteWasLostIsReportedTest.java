@@ -219,4 +219,41 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
             + "nothing to lose. Banner: " + banner(),
         banner().contains("could not save the change"));
   }
+
+  /**
+   * The storage sentence is said once, however many messages arrive.
+   *
+   * <p>Composing it onto a standing pin caution left the composed string containing "compare the
+   * security number", so the next paste appended the storage sentence again — one copy per incoming
+   * message, and the messenger decides how many arrive. The banner has no maximum line count, so the
+   * warning composed above it and the recipient line composed below it are pushed off the screen by
+   * repetition alone.
+   */
+  @Test
+  public void thestorageSentenceIsNotRepeatedPerMessage() throws Exception {
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+
+    // A pin caution about this same contact must be standing first, or the append branch is never
+    // taken and this test measures the replace branch - which does not grow and never did.
+    strip.selectContact(bob);
+    strip.setCautionForTest("A key for Bob Jones has been stored. This key reached you through the "
+        + "messenger and the app cannot tell whose it is - compare the security number by voice "
+        + "before sending anything private.", bob);
+
+    for (int i = 0; i < 5; i++) {
+      strip.processPreKeyResponseForTest(EnvelopeCodec.fromWire(rotatedBundle), bob);
+    }
+
+    final String shown = banner();
+    final int copies = shown.split("could not save the change", -1).length - 1;
+    assertTrue("the storage sentence must appear once however many messages arrive; five pastes "
+            + "produced " + copies + " copies, and the messenger chooses how many arrive. Banner "
+            + "length " + shown.length(), copies <= 1);
+  }
 }

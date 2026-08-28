@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-seven sections, written in the order things were found rather than by subject, so the
+Eighty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -143,6 +143,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [One warning slot, and what fits in it](#one-warning-slot-and-what-fits-in-it)
 - [A sentence that travelled further than its meaning](#a-sentence-that-travelled-further-than-its-meaning)
 - [An invariant that was written down and false](#an-invariant-that-was-written-down-and-false)
+- [A warning nobody can answer](#a-warning-nobody-can-answer)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5308,3 +5309,41 @@ unchecked failures to `IOException`; this one dereferenced two nodes and cast on
 — that path no longer goes through a general-purpose deserializer — which is why it is discipline
 rather than a defect, and why it is worth keeping: discipline is what stops the next caller being the
 one that makes it reachable.
+
+## A warning nobody can answer
+
+**Making the duplicate-name warning re-assertable closed a real eviction hole and opened a worse one:
+a warning shown on every single send, for the life of the install, that no action ends.**
+
+The predicate asks *live or retired*, and the retired half is suppressed only for a re-add at the
+same address. This file says elsewhere, repeatedly, that a genuine reinstall **mints a fresh
+address** — so the ordinary honest flow (delete a contact, they reinstall, add them again) matches
+the retired half forever and the suppression never fires. Nothing prunes the retired list, so no
+verification, deletion or comparison ends it: there is no second row to delete.
+
+The cost is not just noise. `mWarningStanding` was then true on every selection, and selection
+precedes every send — so every routine notice was suppressed for the life of the install and
+`FLAG_SECURE` was pinned on. And a warning shown on every send carries no information, which is the
+habituation this control's own javadoc is written to avoid. A messenger can drive the deletion loop
+(replay a message, the decrypt fails, the app's advice is delete-and-re-invite), so it can put
+contacts into that state deliberately and then run the real same-name substitution against a user
+trained that this exact sentence means nothing.
+
+**The rule that separates the two halves: a warning may be re-asserted only if the user can resolve
+it.** Two live rows sharing a folded name is resolvable — delete one, which is what the warning asks
+for and what its address scoping exists to support. A retired name is not. So the live half is
+recomputed and the retired half stays a one-shot at add time, where it is news.
+
+**And the composed caution was growing once per incoming message.** Appending the storage sentence to
+a standing pin caution left the result containing "compare the security number", so the next paste
+appended it again — and the messenger decides how many messages arrive. The banner has no maximum
+line count, so repetition alone pushes the warning composed above it and the recipient line composed
+below it off the screen. It also re-scoped the caution's address to whoever was chosen, which is the
+cross-contact erase that field exists to prevent, and stored it with the storage flag false, which
+disabled its own retirement.
+
+All three are fixed by storing the composition **as a storage notice, about the contact it is
+already about**. That the flag is what bounds the growth is not obvious, and is worth recording: a
+separate "have I already said this" guard was written, and the mutant proved it dead — the flag alone
+does the work, because a composed caution marked as a storage notice is no longer something the next
+paste appends to.
