@@ -166,5 +166,67 @@ public class AsilentPinAtAkeylessRowIsCautionedTest {
             + "most important outcome, and it fires because nothing was noticed - which is what a "
             + "successful substitution looks like from inside the app. Banner: " + banner(),
         banner().contains("compare the security number"));
+
+    // And it must not claim a contact was created. The row has existed since the refused invite;
+    // this paste pinned a key at it. The sentence was written for the two addContact arms, where a
+    // row had just been made, and moving the caution onto the decrypt path took the wording with
+    // it to states where nothing was created - reachable most clearly through the app's own
+    // recovery flow, where the banner then read the post-rejection warning above "Contact X
+    // created", two sentences contradicting each other about the same event.
+    assertTrue("no contact was created by this paste, so the caution must not say one was: "
+            + banner(), !banner().contains("created"));
+  }
+
+  /**
+   * The pin caution is not destroyed by a storage notice on the same paste.
+   *
+   * <p>Both are true of one paste and there is one caution slot. The rotation reader replaced the
+   * caution with {@code INFO_SESSION_NOT_SAVED}, whose advice is "nothing here needs deleting or
+   * re-inviting, wait until the device has free space" — which does not contain "compare the
+   * security number". So in the state where a messenger-supplied key had just been pinned by
+   * trust-on-first-use <em>and</em> the write failed, the only sentence saying a key had arrived was
+   * the one removed.
+   *
+   * <p>{@code addContact} met the same collision and argued the storage sentence should win because
+   * its advice contains the other's. That containment does not hold here — this storage sentence
+   * says nothing about comparing a number — so the pin caution is kept and the storage one appended.
+   */
+  @Test
+  public void thepinCautionSurvivesAstorageFailureOnTheSamePaste() throws Exception {
+    final Account victim = SignalProtocolMain.getInstance().getAccount();
+    final SignalProtocolAddress victimAddress = ProtocolAddresses.of(
+        victim.getSignalProtocolAddress().getName(), victim.getDeviceId());
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    SignalProtocolMain.getInstance().setAccount(impostor);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), victimAddress));
+    final MessageEnvelope fromImpostor =
+        SignalProtocolMain.encryptMessage("it's me, my phone died", victimAddress);
+    assertNotNull(fromImpostor);
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    final MessageEnvelope relayed = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(
+        new MessageEnvelope(fromImpostor.getCiphertextMessage(), fromImpostor.getCiphertextType(),
+            aliceAddress.getName(), aliceAddress.getDeviceId())));
+
+    // The write fails on the same paste that pins.
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+
+    strip.processSignalMessageForTest(relayed, alice);
+
+    assertTrue("precondition: the storage failure must be reported: " + banner(),
+        banner().contains("could not save the change"));
+    assertTrue("and the pin must still be said. A key the messenger supplied was just pinned by "
+            + "trust-on-first-use; the storage sentence says nothing about comparing a number, so "
+            + "replacing the caution with it removes the only notice of the more serious event: "
+            + banner(),
+        banner().contains("compare the security number"));
   }
 }

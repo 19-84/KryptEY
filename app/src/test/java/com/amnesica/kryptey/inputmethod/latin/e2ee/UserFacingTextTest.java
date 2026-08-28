@@ -51,6 +51,9 @@ public class UserFacingTextTest {
         constant(source, "INFO_DUPLICATE_CONTACT_NAME"));
     outcomes.put("a contact reusing the name of a deleted one",
         constant(source, "INFO_RETIRED_CONTACT_NAME"));
+    // One entry, and it covers both wordings: the method's body holds "Contact X created" and "A
+    // key for X has been stored", and the instruction they share is the thing being asserted. If a
+    // later edit gave one of them its own instruction, this would still read both.
     outcomes.put("an ordinary first contact - the only outcome that pins a messenger-supplied key "
         + "with nothing else standing behind it", createdContactMessage(source));
 
@@ -161,12 +164,22 @@ public class UserFacingTextTest {
 
   /** The literal shown when an invite is accepted and nothing else fired. */
   private static String createdContactMessage(final String source) {
-    // Anchored on the call that posts it, which is no longer setInfoUnlessWarned: the caution is
-    // now shown BESIDE any standing warning rather than suppressed by one, because a relay can
-    // raise a standing warning unilaterally and was thereby able to silence this message entirely.
-    final int at = source.indexOf("setCautionBesideAnyWarning(\"Contact \"");
-    assertTrue("the created-contact message must still exist", at > 0);
-    return source.substring(at, source.indexOf(");", at));
+    // Anchored on the METHOD that posts it rather than on the literal it used to start with.
+    //
+    // Two things have moved this anchor. First the call changed from setInfoUnlessWarned, because
+    // the caution is shown beside a standing warning rather than suppressed by one - a relay can
+    // raise a warning unilaterally and was thereby able to silence this message entirely. Then the
+    // sentence itself became a choice of two: "Contact X created" where a row was made, and "A key
+    // for X has been stored" where the pin happened to an existing contact, which is where the
+    // decrypt path posts it. Anchoring on the literal meant this extractor broke the moment the
+    // wording it hard-coded stopped being the only one - and a test that cannot find its subject
+    // fails loudly, which is the right failure, but the fix is to anchor on something that does not
+    // depend on the wording.
+    final int at = source.indexOf("private void cautionThatAkeyWasPinned(final boolean pinnedBefore,");
+    assertTrue("the pin caution must still exist", at > 0);
+    final int end = source.indexOf("\n  }", at);
+    assertTrue("the pin caution's body must be findable", end > at);
+    return source.substring(at, end);
   }
 
   private static String constant(final String source, final String name) {

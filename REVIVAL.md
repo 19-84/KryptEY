@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty-five sections, written in the order things were found rather than by subject, so the
+Eighty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -141,6 +141,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The advice that must never be given for a storage error](#the-advice-that-must-never-be-given-for-a-storage-error)
 - [A method with no callers, and an invite dead on arrival](#a-method-with-no-callers-and-an-invite-dead-on-arrival)
 - [One warning slot, and what fits in it](#one-warning-slot-and-what-fits-in-it)
+- [A sentence that travelled further than its meaning](#a-sentence-that-travelled-further-than-its-meaning)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5229,3 +5230,36 @@ which is a poor surface for it and strictly better than the nothing that was the
 
 That is the third time this exact separation has been needed — record the fact, decide separately
 whether to paint it — and each time the suppression was correct and taking the fact with it was not.
+
+## A sentence that travelled further than its meaning
+
+**Moving the pin caution onto the decrypt path was right, and it took its wording somewhere the
+wording was false.** The sentence began "Contact X created", because it was written for the two
+`addContact` arms, where a row had just been made. On the decrypt path nothing is created — the pin
+simply lands at a row that already exists.
+
+The clearest reachable case is the app's own recovery flow. The user compares safety numbers, they do
+not match, they press Reject; the app tells them *"nothing can be sent to them until they send a new
+invite"*. The peer sends one, the pin transitions from absent to present, and the banner then reads
+the post-rejection warning above **"Contact X created"** — two sentences contradicting each other
+about the same event, on the screen whose entire job is to be believed. It now says "A key for X has
+been stored" where nothing was created, with the same instruction after it.
+
+**And the caution was being destroyed on the same paste that posted it.** Both facts are true of one
+paste and there is one caution slot: the rotation reader replaced the pin caution with the
+lost-session notice, whose advice is *"nothing here needs deleting or re-inviting, wait until the
+device has free space"* — which does not contain "compare the security number". So in the state where
+a messenger-supplied key had just been pinned by trust-on-first-use **and** the write failed, the only
+sentence saying a key had arrived was the one removed.
+
+`addContact` met this collision and settled it the other way, arguing the storage sentence should win
+*because its advice contains the other's*. That argument was sound there and does not transfer: this
+storage sentence says nothing about comparing a number. The pin caution is kept and the storage one
+appended. **The reasoning, not the outcome, is what had to be carried across** — copying the
+conclusion would have lost the notice that fires because nothing was noticed.
+
+**A test broke for the right reason and was fixed the right way.** The extractor that pulls this
+sentence out of the source anchored on the literal `setCautionBesideAnyWarning("Contact "`, so it
+failed the moment the wording became a choice of two. Loudly, which is correct. It anchors on the
+method now, and reads the whole body — so both wordings are covered, and a later edit that gave one
+of them its own instruction would still be checked.

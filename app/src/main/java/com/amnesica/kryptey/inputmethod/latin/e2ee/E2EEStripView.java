@@ -1578,11 +1578,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * pinning.
    */
   private void cautionThatAkeyWasPinned(final boolean pinnedBefore) {
+    cautionThatAkeyWasPinned(pinnedBefore, true);
+  }
+
+  /**
+   * @param contactWasCreated whether a contact row was created by the same action. When it was not,
+   *                          the sentence must not say one was.
+   */
+  private void cautionThatAkeyWasPinned(final boolean pinnedBefore,
+      final boolean contactWasCreated) {
     if (chosenContact == null || pinnedBefore) return;
     if (!mE2EEStrip.hasPinnedKey(chosenContact.getSignalProtocolAddress())) return;
 
-    setCautionBesideAnyWarning("Contact " + labelFor(chosenContact)
-        + " created. This key reached you through the messenger and the app cannot tell whose it is"
+    // "created" only where something was created.
+    //
+    // The sentence was written for the two addContact arms, where a row had just been made. Moving
+    // the caution onto the decrypt path - correctly, since that is where every arm's pin passes -
+    // took the wording with it to states where no contact was created at all. The clearest is the
+    // app's own recovery flow: the user rejects a key, is told "nothing can be sent to them until
+    // they send a new invite", the peer sends one, and the banner then read the post-rejection
+    // warning above "Contact X created" below. Two sentences contradicting each other about the
+    // same event, on the screen whose entire job is to be believed.
+    setCautionBesideAnyWarning((contactWasCreated
+        ? "Contact " + labelFor(chosenContact) + " created. "
+        : "A key for " + labelFor(chosenContact) + " has been stored. ")
+        + "This key reached you through the messenger and the app cannot tell whose it is"
         + " - compare the security number by voice before sending anything private.", chosenContact);
   }
 
@@ -2653,8 +2673,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     Toast.makeText(getContext(),
         String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)),
         Toast.LENGTH_LONG).show();
+    // Composed with the pin caution when that is what is standing, rather than replacing it.
+    //
+    // Both are true of the same paste and there is one caution slot. Replacing lost the more
+    // important half: a messenger-supplied key had just been pinned by trust-on-first-use, and the
+    // ONLY sentence saying so was overwritten by a storage message whose advice is "nothing here
+    // needs deleting or re-inviting, wait until the device has free space" - which does not contain
+    // "compare the security number", the whole point of the caution.
+    //
+    // addContact solved this collision by appending and argued the storage sentence should win
+    // because its advice contains the other's. That containment is not true here: this storage
+    // sentence says nothing about comparing a number, and the thing being lost is the notice that
+    // fires because nothing was noticed. So the pin caution is kept and the storage one appended.
+    final String storageNotice = String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact));
+    final boolean apinCautionStands = mStandingCaution != null && !mStandingCautionIsAstorageNotice
+        && mStandingCaution.contains("compare the security number");
     setCautionBesideAnyWarning(
-        String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact)), chosenContact, true);
+        apinCautionStands ? mStandingCaution + " " + storageNotice : storageNotice,
+        chosenContact, !apinCautionStands);
     return true;
   }
 
@@ -3456,7 +3492,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // transition was being measured and used for one sentence only.
     if (!keyPinnedBefore && sender != null
         && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress())) {
-      cautionThatAkeyWasPinned(false);
+      cautionThatAkeyWasPinned(false, false);
     }
 
     if (bundleRefused) {
