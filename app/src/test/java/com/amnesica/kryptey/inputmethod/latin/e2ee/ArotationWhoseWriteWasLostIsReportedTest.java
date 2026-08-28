@@ -46,6 +46,7 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
 
   private E2EEStripView strip;
   private Contact bob;
+  private Account peerAccount;
   private SignalProtocolAddress peerAddress;
   private String rotatedBundle;
 
@@ -58,6 +59,7 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
 
     SignalProtocolMain.initialize(null);
     final Account peer = SignalProtocolMain.getInstance().getAccount();
+    peerAccount = peer;
     peer.setMessageLogLoader(ArrayList::new);
     peerAddress = ProtocolAddresses.of(peer.getSignalProtocolAddress().getName(),
         peer.getDeviceId());
@@ -93,6 +95,10 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
   public void tearDown() {
     SignalProtocolMain.resetForTest();
     SignalProtocolMain.testIsRunning = false;
+  }
+
+  private Account peerAccountForTest() {
+    return peerAccount;
   }
 
   private String banner() {
@@ -161,6 +167,50 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
     assertTrue("the notice must not depend on which arm the messenger routed the envelope to. "
             + "Appending one field moved it to the arm with no reader, and that arm is the "
             + "ordinary shape for a rotation. Banner: " + banner(),
+        banner().contains("could not be saved"));
+  }
+
+  /**
+   * And the plain message arm reports it too, though it carries no bundle at all.
+   *
+   * <p>The gap that comparing the arms found rather than a review round. This arm looked like it had
+   * nothing to lose — no bundle, so no rotation — but {@code decrypt} writes at the end of every
+   * successful decryption: the advanced ratchet, and on a PreKey message the key it has just pinned
+   * by trust-on-first-use. Losing that write means the message is delivered and the session state is
+   * not, so the peer's next message fails to decrypt, and this app's standard advice for a failed
+   * decrypt is delete-and-re-invite — the key-substitution window.
+   */
+  @Test
+  public void theplainMessageArmReportsAlostSessionWriteToo() throws Exception {
+    // A real message from Bob under the established session.
+    final SignalProtocolAddress victimAddress =
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.of(
+            SignalProtocolMain.getInstance().getAccount().getSignalProtocolAddress().getName(),
+            SignalProtocolMain.getInstance().getAccount().getDeviceId());
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+    final Account victim = SignalProtocolMain.getInstance().getAccount();
+
+    SignalProtocolMain.getInstance().setAccount(peerAccountForTest());
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), victimAddress));
+    final MessageEnvelope fromBob =
+        SignalProtocolMain.encryptMessage("an ordinary message", victimAddress);
+    assertNotNull(fromBob);
+    SignalProtocolMain.getInstance().setAccount(victim);
+
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+
+    strip.processSignalMessageForTest(fromBob, bob);
+
+    assertTrue("a message arm that writes session state must report a lost write, exactly as the "
+            + "two bundle arms do. It carries no bundle, which is why it looked like it had "
+            + "nothing to lose. Banner: " + banner(),
         banner().contains("could not be saved"));
   }
 }

@@ -2424,6 +2424,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           == org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE) {
         warnIfKeyWasRejected(sender);
       }
+      // The third arm gets the same reader, because the same write can be lost here.
+      //
+      // This arm carries no bundle, but decrypt writes at the end of every successful decryption -
+      // the advanced ratchet, and on a PREKEY message the key it just pinned by trust-on-first-use.
+      // If that write is lost the message is delivered and the session state is not, so the next
+      // message from that peer fails to decrypt, and this app's standard advice for a failed
+      // decrypt is delete-and-re-invite: the key-substitution window. Reported here for the same
+      // reason it is reported on the other two, and the fact that only two of three arms had it was
+      // found by comparing the arms rather than by another review round.
+      // Called unconditionally into a local, not on the right of an &&.
+      //
+      // It writes - a caution and a refusal - and a writer Java may skip is how the identity-change
+      // warning stopped being raised. Safe to call when nothing decrypted: decrypt sets the flag to
+      // true at entry and only a write can make it false, so a decrypt that failed before writing
+      // reports nothing.
+      final boolean rotationWasNotSaved = reportIfTheRotationWasNotSaved();
+      if (delivered && rotationWasNotSaved) return;
       if (delivered) {
         setInfoUnlessWarned("Detected contact: " + labelFor(chosenContact));
       } else {
@@ -2902,6 +2919,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** The reset an undecodable paste and a cancelled add both reach, for tests. */
   void resetChosenContactAndInfoTextForTest() {
     resetChosenContactAndInfoText();
+  }
+
+  /** Drives the plain message path, for tests. */
+  void processSignalMessageForTest(final MessageEnvelope envelope, final Contact sender) {
+    processSignalMessage(envelope, sender);
   }
 
   /** Drives the combined bundle-and-message path, for tests. */

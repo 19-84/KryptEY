@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-six sections, written in the order things were found rather than by subject, so the
+Seventy-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -132,6 +132,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two mutants that survived, and what they were hiding](#two-mutants-that-survived-and-what-they-were-hiding)
 - [The file the deletion did not check](#the-file-the-deletion-did-not-check)
 - [A decision, rather than a third flip](#a-decision-rather-than-a-third-flip)
+- [Comparing the arms instead of remembering them](#comparing-the-arms-instead-of-remembering-them)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4930,3 +4931,33 @@ contact becomes unselectable and undeletable, and both other removal routes run 
 the user can reach. It could not produce a false refusal, which is why it was a leak rather than a
 hazard; it is closed because reasoning about it a second time cost more than the four lines. Both
 directions are pinned: not sweeping fails one test, sweeping everything fails three.
+
+## Comparing the arms instead of remembering them
+
+**Four times a control has been added to one of the three arms an envelope can take, and four times a
+review round found it. `getMessageType` dispatches on field presence alone, so the sender picks the
+arm — appending arbitrary bytes as a ciphertext moves an envelope from one to another at no cost and
+with nothing to forge. A control on one arm is not a control.**
+
+`EveryEnvelopeArmCarriesTheSameControlsTest` compares the three arms to each other rather than to a
+list somebody maintains: every notice helper on this surface is named `warnIf…`, `reportIf…` or
+`cautionThat…`, so a control present on some arms and absent from others fails and names the ones
+that lack it. Anything genuinely arm-specific goes in an exemption list with the argument, and a
+second test stops that list naming arms or controls that no longer exist. The honest limit is stated
+in the file: a helper that does not follow the convention is invisible to it.
+
+**Writing it immediately turned up a fifth instance**, which is the point of it existing. The plain
+signal-message arm had no rotation report, because that arm carries no bundle and so did not look
+like a rotation. It writes the same session state: `decrypt` writes at the end of every successful
+decryption — the advanced ratchet, and on a PreKey message the key it has just pinned by
+trust-on-first-use. Losing that write means the message is delivered and the session state is not, so
+the peer's next message fails to decrypt — and this app's standard advice for a failed decrypt is
+delete-and-re-invite, the key-substitution window. This is the first defect in this document found by
+a guard rather than by a review round or by a reader.
+
+**And the short-circuit guard caught the fix.** `delivered && reportIfTheRotationWasNotSaved()` puts
+a writer where Java may skip it, which is exactly how the identity-change warning stopped being
+raised several rounds ago. It is called unconditionally into a local now — safe, because `decrypt`
+sets the flag true at entry and only a write can make it false, so a decrypt that failed before
+writing reports nothing. That is the second time in two ticks a mechanical guard has corrected the
+work in progress rather than a review round correcting it afterwards.
