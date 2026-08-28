@@ -58,6 +58,22 @@ public final class LegacyKeyMigration {
           each.remove();
           continue;
         }
+        // Asked once per entry, and the answer is recorded on the entry.
+        //
+        // Not from the key's shape - that is the smuggling hole below - and not from the schema
+        // marker either, because the marker travels in the account batch while the log is committed
+        // first, so "log re-keyed, marker missing" is a state the write order deliberately
+        // produces. A second pass then re-evaluates a RENDERED key against the current contact
+        // list, and a rendered key is exactly what an attacker's pre-upgrade address name can be.
+        // Measured: an entry correctly attributed to Bob on pass one was re-filed into the
+        // attacker's row on pass two, and stopped belonging to Bob at all.
+        //
+        // The flag is written in the same file and the same commit as the re-keying it describes,
+        // so the two cannot disagree - the failure that produced this defect is a log write landing
+        // without the account batch, and the flag rides with the log.
+        if (message.isLegacyKeyResolved()) continue;
+        message.setLegacyKeyResolved(true);
+
         // No "is this already re-keyed?" test.
         //
         // There was one - skip any key containing the separator - and it was a hole. The separator

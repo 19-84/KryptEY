@@ -108,7 +108,7 @@ public class LegacyChatLogInheritanceTest {
   /** A message as the pre-upgrade code wrote it: filed under the address NAME alone. */
   private void writeLegacyMessage(final String text) {
     victim.getUnencryptedMessages().add(new StorageMessage(peerName, peerName,
-        victim.getSignalProtocolAddress().getName(), Instant.now(), text));
+        victim.getSignalProtocolAddress().getName(), Instant.now(), text, false));
   }
 
   private static boolean logContains(final List<StorageMessage> log, final String text) {

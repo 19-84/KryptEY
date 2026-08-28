@@ -65,7 +65,7 @@ public class MigrationOnPartialLoadTest {
     // The pre-upgrade chat log: keyed by the bare address name.
     account.getUnencryptedMessages().add(new StorageMessage("bob-uuid", "bob-uuid",
         account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
-        HISTORY));
+        HISTORY, false));
   }
 
   /**

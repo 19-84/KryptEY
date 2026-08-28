@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and nine sections, written in the order things were found rather than by subject, so the
+One hundred and ten sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -165,6 +165,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [What the signature does not close](#what-the-signature-does-not-close)
 - [Eighty-four characters, and where they landed](#eighty-four-characters-and-where-they-landed)
 - [The half of the deletion that did happen](#the-half-of-the-deletion-that-did-happen)
+- [Asked once, and the answer written down](#asked-once-and-the-answer-written-down)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6145,3 +6146,39 @@ The test pins both directions: a deletion that did not land leaves the messages 
 did still takes them. Without the second, the first passes against a build that never prunes at all —
 which breaks the same promise from the other side, for a user deleting a contact precisely to be rid
 of the conversation.
+
+## Asked once, and the answer written down
+
+**The legacy migration was not idempotent in content, and the state that exposes it is one the write
+order deliberately produces.**
+
+Re-keying the 0.1.5 chat log asks, per entry, "which single contact bears this address name?" That
+question must be asked **once**, at the first load after the upgrade — the moment the answer is one
+the messenger has not had time to arrange. "Once" was enforced by the schema marker. But the marker
+travels in the account batch, and the log is committed first, so **log re-keyed, marker missing** is
+exactly the state the ordering was chosen to produce; three separate comments call re-running safe.
+
+It is not. On a second pass the key being examined is a **rendered** one — and a pre-upgrade address
+name can be byte-for-byte a rendered key, which is the whole subject of the smuggling test already in
+this file. **Measured**: pass one placed the entry with the genuine contact; pass two moved it into
+the attacker's row, and `belongsTo(Bob)` went false. The user's pre-upgrade history, re-filed into an
+impostor's conversation, under their name and tag.
+
+Neither obvious fix was available. Deciding "already re-keyed" from the key's **shape** is the hole
+`LegacySeparatorSmugglingTest` exists to keep shut, and it lands the same substitution on pass one
+with no interruption needed. Making the **marker** durable means writing it into the message file,
+which widens the permitted-key set that closed the laundering oracle.
+
+So the answer is recorded **on the entry**, in the same file and the same commit as the re-keying it
+describes: if the log write lands, the flags land with it; if it does not, neither does the re-keying.
+The flag is set even when the entry could not be attributed, because *"I could not tell"* is an
+answer too, and asking again later means asking against a contact list the messenger has had time to
+arrange — which closes the second half of the same finding.
+
+**A message this build creates is already correctly keyed**, so the ordinary constructor records the
+question as answered, and only a store written before the field existed reads as unasked. That is
+what makes the fixtures interesting: six legacy fixtures had to say so explicitly, and they read
+better for it — a legacy entry is now visibly a legacy entry rather than an ordinary one that happens
+to be keyed oddly. The new field is excluded from `equals` with its reason: it is bookkeeping, not
+identity, and including it would stop a migrated entry matching the copy a deletion rollback took
+before it.

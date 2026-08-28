@@ -94,7 +94,7 @@ public class LegacyChatLogDeletionTest {
    */
   private void writeLegacyMessage(final String text) {
     victim.getUnencryptedMessages().add(new StorageMessage(peerName, peerName,
-        victim.getSignalProtocolAddress().getName(), Instant.now(), text));
+        victim.getSignalProtocolAddress().getName(), Instant.now(), text, false));
     com.amnesica.kryptey.inputmethod.signalprotocol.helper.LegacyKeyMigration.apply(victim);
   }
 

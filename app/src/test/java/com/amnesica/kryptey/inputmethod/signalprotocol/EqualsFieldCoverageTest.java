@@ -41,6 +41,12 @@ public class EqualsFieldCoverageTest {
   private static final List<String> DERIVED = Arrays.asList(
       // Derived from signalProtocolAddressName and deviceId, and resynced from them.
       "signalProtocolAddress",
+      // Migration bookkeeping, not identity. It records that the legacy migration has already asked
+      // who this entry belongs to; two messages that differ only in whether that question has been
+      // put are the same message. Including it would also be a hazard: removeAllUnencryptedMessages
+      // matches with equals, so an entry the migration touched would stop matching the copy taken
+      // before it, and a deletion rollback compares those copies.
+      "legacyKeyResolved",
       // Deliberately not part of contact identity. removeContact matches with equals, so a contact
       // whose badge changed between the lookup and the delete must still be removable; and a
       // contact is WHO someone is, not whether the user has compared their number yet. Verified

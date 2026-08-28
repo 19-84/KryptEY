@@ -7,23 +7,67 @@ import java.time.Instant;
 import java.util.Objects;
 
 public class StorageMessage {
-  private String contactUUID; // contact name or address name (uuid)
+  // The rendered address of the contact this message belongs to, as ProtocolAddresses.key writes
+  // it. Not a contact name and not a bare address name, whatever this comment used to say - see
+  // belongsTo below, which is the only reader and compares the full rendered form.
+  private String contactUUID;
   private String senderUUID;
   private String recipientUUID;
   private final Instant timestamp;
   private final String unencryptedMessage;
+
+  /**
+   * Whether the legacy migration has already asked who this entry belongs to.
+   *
+   * <p>The migration must run once per entry, and "once" could not be decided from anything that
+   * existed. Not from the key's shape: a 0.1.5 store was never held to the wire's name rules, so a
+   * messenger-supplied address name can be byte-for-byte a rendered key, and treating that as
+   * "already done" is the smuggling hole {@code LegacySeparatorSmugglingTest} exists to keep shut.
+   * Not from the schema marker either: the marker travels in the account batch while the log is
+   * committed first, so the state "log re-keyed, marker missing" is one the write order
+   * deliberately produces — and a second pass then re-evaluates a RENDERED key against the current
+   * contact list. Measured: an entry correctly attributed to Bob on the first pass was re-filed
+   * into an attacker's row on the second, and stopped belonging to Bob at all.
+   *
+   * <p>So the answer is recorded on the entry, in the same file and the same commit as the re-keying
+   * it describes. If the log write lands, the flags land with it; if it does not, neither does the
+   * re-keying. It is set even when the entry could not be attributed, because "I could not tell" is
+   * an answer too, and asking again later means asking against a contact list the messenger has had
+   * time to arrange.
+   *
+   * <p>Absent in a stored log written before this field existed, where it reads false — correct,
+   * since those entries have not been asked.
+   */
+  private boolean legacyKeyResolved;
 
   @JsonCreator
   public StorageMessage(@JsonProperty("contactUUID") String contactUUID,
                         @JsonProperty("senderUUID") String senderUUID,
                         @JsonProperty("recipientUUID") String recipientUUID,
                         @JsonProperty("timestamp") Instant timestamp,
-                        @JsonProperty("unencryptedMessage") String unencryptedMessage) {
+                        @JsonProperty("unencryptedMessage") String unencryptedMessage,
+                        @JsonProperty("legacyKeyResolved") boolean legacyKeyResolved) {
     this.contactUUID = contactUUID;
     this.senderUUID = senderUUID;
     this.recipientUUID = recipientUUID;
     this.timestamp = timestamp;
     this.unencryptedMessage = unencryptedMessage;
+    this.legacyKeyResolved = legacyKeyResolved;
+  }
+
+  /** The five-argument shape every caller but Jackson uses; a new message needs no migration. */
+  public StorageMessage(final String contactUUID, final String senderUUID,
+                        final String recipientUUID, final Instant timestamp,
+                        final String unencryptedMessage) {
+    this(contactUUID, senderUUID, recipientUUID, timestamp, unencryptedMessage, true);
+  }
+
+  public boolean isLegacyKeyResolved() {
+    return legacyKeyResolved;
+  }
+
+  public void setLegacyKeyResolved(final boolean legacyKeyResolved) {
+    this.legacyKeyResolved = legacyKeyResolved;
   }
 
   public String getSenderUUID() {

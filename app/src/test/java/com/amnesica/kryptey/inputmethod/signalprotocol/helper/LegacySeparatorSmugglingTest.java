@@ -118,7 +118,7 @@ public class LegacySeparatorSmugglingTest {
     // peer's address name.
     account.getUnencryptedMessages().add(new StorageMessage(craftedName, craftedName,
         account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
-        ATTACKER_WORDS));
+        ATTACKER_WORDS, false));
 
     LegacyKeyMigration.apply(account);
 
@@ -141,7 +141,7 @@ public class LegacySeparatorSmugglingTest {
     account.setContactList(contacts);
     account.getUnencryptedMessages().add(new StorageMessage("bob-uuid", "bob-uuid",
         account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
-        "ordinary"));
+        "ordinary", false));
 
     LegacyKeyMigration.apply(account);
 
@@ -149,5 +149,43 @@ public class LegacySeparatorSmugglingTest {
         logContains(logOf(genuineBob), "ordinary"));
     assertEquals(StorageMessage.chatLogKey("bob-uuid", 5),
         account.getUnencryptedMessages().get(0).getContactUUID());
+  }
+
+  /**
+   * A second migration pass must not re-attribute an entry the first pass already placed.
+   *
+   * <p>The migration's "runs once" is enforced by the schema marker, and the marker travels in the
+   * account batch while the log is committed first — so "log re-keyed, marker missing" is a state
+   * the write order deliberately produces, and this file's own fixture is what makes it dangerous.
+   * On the second pass the key being examined is a RENDERED one, and the crafted attacker row's
+   * address name is byte-for-byte a rendered key: {@code soleContactNamed} finds it, and the
+   * genuine contact's history moves into the impostor's conversation.
+   *
+   * <p>Measured before the fix: pass one placed the entry with Bob, pass two moved it to the
+   * attacker's row, and {@code belongsTo(Bob)} went false. The fix records the answer on the entry
+   * rather than inferring it — not from the key's shape, which is the hole this file exists for.
+   */
+  @Test
+  public void asecondPassDoesNotMoveAnentryTheFirstPassPlaced() throws Exception {
+    final ArrayList<Contact> contacts = new ArrayList<>();
+    contacts.add(genuineBob);
+    contacts.add(attackerRowFromStoredJson());
+    account.setContactList(contacts);
+
+    // Keyed by the bare name and never asked, which is how 0.1.5 wrote it.
+    account.getUnencryptedMessages().add(new StorageMessage("bob-uuid", "bob-uuid", "me",
+        java.time.Instant.ofEpochMilli(1000), ATTACKER_WORDS, false));
+
+    LegacyKeyMigration.apply(account);
+    assertTrue("precondition: the first pass must place it with the genuine contact",
+        logContains(logOf(genuineBob), ATTACKER_WORDS));
+
+    LegacyKeyMigration.apply(account);
+
+    assertTrue("a second pass must leave it where the first pass put it. The marker cannot make "
+            + "that true: it is written in the account batch, and the log is committed first",
+        logContains(logOf(genuineBob), ATTACKER_WORDS));
+    assertTrue("and it must not have moved into the row whose address name is a rendered key",
+        !logContains(logOf(attackerRowFromStoredJson()), ATTACKER_WORDS));
   }
 }

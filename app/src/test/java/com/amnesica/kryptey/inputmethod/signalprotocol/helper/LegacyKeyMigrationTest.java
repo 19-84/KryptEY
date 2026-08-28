@@ -57,7 +57,7 @@ public class LegacyKeyMigrationTest {
 
   private void writeLegacyMessage(final String addressName, final String text) {
     account.getUnencryptedMessages().add(new StorageMessage(addressName, addressName,
-        account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L), text));
+        account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L), text, false));
   }
 
   /**

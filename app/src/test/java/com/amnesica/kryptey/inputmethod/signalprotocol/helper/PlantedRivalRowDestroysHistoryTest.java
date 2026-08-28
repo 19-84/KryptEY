@@ -74,7 +74,7 @@ public class PlantedRivalRowDestroysHistoryTest {
     account.setContactList(contacts);
     account.getUnencryptedMessages().add(new StorageMessage("bob-uuid", "bob-uuid",
         account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
-        HISTORY));
+        HISTORY, false));
 
     LegacyKeyMigration.apply(account);
 
@@ -92,7 +92,7 @@ public class PlantedRivalRowDestroysHistoryTest {
     account.setContactList(contacts);
     account.getUnencryptedMessages().add(new StorageMessage("bob-uuid", "bob-uuid",
         account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
-        HISTORY));
+        HISTORY, false));
 
     assertFalse("precondition: no display-name warning stands between the attacker and this row",
         SignalProtocolMain.hasContactWithSameDisplayName("Carol", "Smith",
