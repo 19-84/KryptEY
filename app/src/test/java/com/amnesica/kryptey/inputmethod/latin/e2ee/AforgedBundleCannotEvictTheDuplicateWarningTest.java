@@ -187,6 +187,8 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
         device.getSignedPreKey(), null, device.getKyberPreKey()));
     final MessageEnvelope tampered = EnvelopeCodec.fromWire(impostorBundle);
     tampered.setPreKeyResponse(new PreKeyResponse(genuine.getIdentityKey(), stripped));
+    // The issuer's own signature over content it no longer covers, which is a relay's edit.
+    tampered.setBundleSignature(EnvelopeCodec.fromWire(impostorBundle).getBundleSignature());
 
     strip.processPreKeyResponseForTest(
         EnvelopeCodec.fromWire(EnvelopeCodec.toWire(tampered)), impostor);

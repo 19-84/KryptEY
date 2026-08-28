@@ -103,6 +103,8 @@ public class ArefusedBundleDoesNotEraseTheMessageItCarriedTest {
     stripped.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
         device.getSignedPreKey(), null, device.getKyberPreKey()));
     message.setPreKeyResponse(new PreKeyResponse(genuine.getIdentityKey(), stripped));
+    // The issuer's own signature, still attached to content it no longer covers: a relay's edit.
+    message.setBundleSignature(EnvelopeCodec.fromWire(peerBundle).getBundleSignature());
     // Through the codec, so this is what a relay's edit actually produces.
     tamperedButDecrypting = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(message));
 

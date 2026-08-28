@@ -1989,6 +1989,9 @@ public class SignalProtocolMain {
         // switched off by the same edit the refusal was added to catch. Recording it here is
         // independent of whether the rest of the bundle survives.
         recordIdentityChangeIfOffered(messageEnvelope.getPreKeyResponse(), signalProtocolAddress);
+        // After the identity change is recorded, for the reason the comment above gives: a bundle
+        // refused here must not be a way to stop a substitution being written down.
+        requireTheBundleWasIssuedAsOneUnit(messageEnvelope);
         final PreKeyBundle preKeyBundle = createPreKeyBundle(messageEnvelope.getPreKeyResponse());
 
         if (!buildSession(preKeyBundle, signalProtocolAddress)) {
@@ -2205,6 +2208,47 @@ public class SignalProtocolMain {
     return decryptedMessage;
   }
 
+  /**
+   * Refuses a bundle whose fields were not issued together.
+   *
+   * <p>libsignal signs the signed pre-key and the Kyber pre-key individually and signs nothing that
+   * ties a bundle's fields to each other; every other field is checked for presence alone. So a
+   * relay holding an <em>earlier genuine invite from the same person</em> can mix its fields into
+   * the current one and both libsignal signatures still verify. Measured before this existed: a
+   * bundle carrying the current signed and Kyber keys with an older invite's one-time pre-key
+   * spliced in was accepted.
+   *
+   * <p>What that buys the relay is not impersonation - the identity key is unchanged and the pin
+   * still refuses a substitution - it is <b>one-time pre-key reuse</b>: two peers negotiate against
+   * the same one-time key, so a single record covers both their opening messages and one device
+   * seizure inside its lifetime reads both. Whichever peer's first message arrives second can never
+   * be decrypted, because the record is consumed and regenerated. Splicing a signed or Kyber key
+   * from the previous rotation is the same move against forward secrecy, including the
+   * post-quantum half.
+   *
+   * <p>The signature is over the canonical encoding of the whole bundle, made with the identity key
+   * the bundle carries. It says nothing about WHO that identity is - trust-on-first-use and the
+   * safety number remain the only answer to that, and a bundle from an attacker's own identity
+   * verifies perfectly. It answers the narrower question the format could not: were these fields
+   * issued together.
+   */
+  private void requireTheBundleWasIssuedAsOneUnit(final MessageEnvelope envelope)
+      throws IOException {
+    final PreKeyResponse bundle = envelope.getPreKeyResponse();
+    final byte[] signature = envelope.getBundleSignature();
+    if (signature == null || signature.length == 0) {
+      throw new IOException("bundle carries no issuing signature: every bundle this app emits does");
+    }
+    final org.signal.libsignal.protocol.IdentityKey identity = bundle.getIdentityKey();
+    if (identity == null) throw new IOException("bundle has no identity key to verify against");
+    if (!identity.getPublicKey().verifySignature(
+        com.amnesica.kryptey.inputmethod.signalprotocol.encoding.BinaryEnvelope
+            .canonicalBundleBytes(bundle), signature)) {
+      throw new IOException("the bundle's fields were not issued together: its signature does not "
+          + "cover what arrived, which is what a field taken from another invite looks like");
+    }
+  }
+
   public PreKeyBundle createPreKeyBundle(PreKeyResponse preKeyResponse) throws IOException {
     if (preKeyResponse.getDevices() == null || preKeyResponse.getDevices().size() < 1)
       throw new IOException("Empty prekey list");
@@ -2345,8 +2389,17 @@ public class SignalProtocolMain {
     }
     try {
       final PreKeyResponse preKeyResponse = createPreKeyResponse();
-      return new MessageEnvelope(preKeyResponse, mAccount.getSignalProtocolAddress().getName(), mAccount.getSignalProtocolAddress().getDeviceId());
-    } catch (InvalidKeyIdException | InvalidKeyException e) {
+      final MessageEnvelope envelope = new MessageEnvelope(preKeyResponse,
+          mAccount.getSignalProtocolAddress().getName(),
+          mAccount.getSignalProtocolAddress().getDeviceId());
+      // Signed with the identity key, over the canonical encoding of the whole bundle, so the
+      // fields cannot be separated afterwards. See requireTheBundleWasIssuedAsOneUnit for what a
+      // relay does with a bundle whose fields are only individually signed.
+      envelope.setBundleSignature(mAccount.getIdentityKeyPair().getPrivateKey().calculateSignature(
+          com.amnesica.kryptey.inputmethod.signalprotocol.encoding.BinaryEnvelope
+              .canonicalBundleBytes(preKeyResponse)));
+      return envelope;
+    } catch (InvalidKeyIdException | InvalidKeyException | java.io.IOException e) {
       Log.e(TAG, "Error: Creating pre key response message failed");
       e.printStackTrace();
     }

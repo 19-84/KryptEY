@@ -64,7 +64,8 @@ public class EnvelopeCodecNormalisationTest {
   @Test
   public void abundleOnlyEnvelopeCannotCarryAciphertextType() throws Exception {
     final MessageEnvelope hostile =
-        new MessageEnvelope(invite.getPreKeyResponse(), "peer-uuid", 7);
+        WireFixtures.carryingSignatureShapedBytes(
+            new MessageEnvelope(invite.getPreKeyResponse(), "peer-uuid", 7));
     hostile.setCiphertextType(2);
 
     final MessageEnvelope back = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(hostile));
@@ -81,7 +82,8 @@ public class EnvelopeCodecNormalisationTest {
   @Test
   public void thebundleSurvivesThatNormalisation() throws Exception {
     final MessageEnvelope hostile =
-        new MessageEnvelope(invite.getPreKeyResponse(), "peer-uuid", 7);
+        WireFixtures.carryingSignatureShapedBytes(
+            new MessageEnvelope(invite.getPreKeyResponse(), "peer-uuid", 7));
     hostile.setCiphertextType(2);
 
     final MessageEnvelope back = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(hostile));

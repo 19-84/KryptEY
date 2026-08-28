@@ -130,8 +130,11 @@ public class PostRejectWarningReachTest {
    */
   private void pasteAsIfFromThePeer(final String wire) throws Exception {
     final MessageEnvelope original = EnvelopeCodec.fromWire(wire);
-    final MessageEnvelope relabelled = new MessageEnvelope(original.getPreKeyResponse(),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    // Address-only relabelling, which the issuing signature does not cover by design.
+    final MessageEnvelope relabelled =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(original,
+            new MessageEnvelope(original.getPreKeyResponse(),
+                peerAddress.getName(), peerAddress.getDeviceId()));
     final ClipboardManager clipboard = (ClipboardManager) RuntimeEnvironment.getApplication()
         .getSystemService(Context.CLIPBOARD_SERVICE);
     clipboard.setPrimaryClip(ClipData.newPlainText("",

@@ -118,8 +118,12 @@ public class PostRejectWarningSurvivesSelectionTest {
   /** Relabels the envelope with the peer's address, as the messenger presents it. */
   private void pasteAsIfFromThePeer(final String wire) throws Exception {
     final MessageEnvelope original = EnvelopeCodec.fromWire(wire);
-    final MessageEnvelope relabelled = new MessageEnvelope(original.getPreKeyResponse(),
-        peerAddress.getName(), peerAddress.getDeviceId());
+    // Only the ADDRESS is relabelled, which the issuing signature deliberately does not cover:
+    // the address is an unsigned header and this file's whole subject is what arrives at one.
+    final MessageEnvelope relabelled =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(original,
+            new MessageEnvelope(original.getPreKeyResponse(),
+                peerAddress.getName(), peerAddress.getDeviceId()));
     final ClipboardManager clipboard = (ClipboardManager) RuntimeEnvironment.getApplication()
         .getSystemService(Context.CLIPBOARD_SERVICE);
     clipboard.setPrimaryClip(ClipData.newPlainText("",

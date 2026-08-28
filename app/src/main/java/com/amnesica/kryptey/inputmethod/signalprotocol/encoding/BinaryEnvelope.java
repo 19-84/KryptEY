@@ -65,7 +65,14 @@ import java.util.List;
  */
 public final class BinaryEnvelope {
 
-  static final byte VERSION = 1;
+  /**
+   * Two, because a bundle now carries a signature binding its fields to each other.
+   *
+   * <p>A version bump rather than an optional field: an optional signature is one an attacker omits.
+   * Mixed-version compatibility is not a requirement here, so the decoder refuses version one
+   * outright rather than accepting an unsigned bundle from an older build.
+   */
+  static final byte VERSION = 2;
   private static final int FLAG_PRE_KEY_RESPONSE = 0x01;
   private static final int FLAG_CIPHERTEXT = 0x02;
 
@@ -160,7 +167,12 @@ public final class BinaryEnvelope {
       writeVarU16(out, envelope.getCiphertextMessage());
     }
 
-    if (hasBundle) writeBundle(out, envelope.getPreKeyResponse());
+    if (hasBundle) {
+      writeBundle(out, envelope.getPreKeyResponse());
+      // Mandatory whenever a bundle is present. An encoder that can emit an unsigned bundle is a
+      // decoder that has to accept one.
+      writeVarU8(out, nonNull(envelope.getBundleSignature(), "bundleSignature"));
+    }
 
     return out.toByteArray();
   }
@@ -195,7 +207,12 @@ public final class BinaryEnvelope {
     }
 
     PreKeyResponse bundle = null;
-    if ((flags & FLAG_PRE_KEY_RESPONSE) != 0) bundle = readBundle(c);
+    byte[] bundleSignature = null;
+    if ((flags & FLAG_PRE_KEY_RESPONSE) != 0) {
+      bundle = readBundle(c);
+      bundleSignature = c.bytes(c.u8("bundleSignatureLen"), "bundleSignature");
+      if (bundleSignature.length == 0) throw new IOException("bundle signature is empty");
+    }
 
     c.requireExhausted();
 
@@ -206,7 +223,23 @@ public final class BinaryEnvelope {
     } else {
       envelope = new MessageEnvelope(bundle, name, deviceId);
     }
+    if (bundleSignature != null) envelope.setBundleSignature(bundleSignature);
     return envelope;
+  }
+
+  /**
+   * The exact bytes a bundle signature covers.
+   *
+   * <p>Produced by the one encoder, so signer and verifier cannot disagree about the canonical form:
+   * the fields have a fixed order, the presence markers are exactly 0 or 1, and the decoder refuses
+   * every other spelling. Re-encoding what was parsed is what lets the verifier work from the
+   * bundle rather than from byte offsets it would have to track through the parser.
+   */
+  public static byte[] canonicalBundleBytes(final PreKeyResponse bundle) throws IOException {
+    if (bundle == null) throw new IOException("bundle is null");
+    final ByteArrayOutputStream out = new ByteArrayOutputStream(2048);
+    writeBundle(out, bundle);
+    return out.toByteArray();
   }
 
   // ------------------------------------------------------------------ bundle

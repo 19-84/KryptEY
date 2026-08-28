@@ -117,10 +117,11 @@ public class BinaryEnvelopeTest {
 
     final java.util.List<PreKeyResponseItem> devices = new java.util.LinkedList<>();
     devices.add(rebuilt);
-    final MessageEnvelope envelope = new MessageEnvelope(
-        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-            original.getPreKeyResponse().getIdentityKey(), devices),
-        original.getSignalProtocolAddressName(), original.getDeviceId());
+    final MessageEnvelope envelope = WireFixtures.carryingSignatureShapedBytes(
+        new MessageEnvelope(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                original.getPreKeyResponse().getIdentityKey(), devices),
+            original.getSignalProtocolAddressName(), original.getDeviceId()));
 
     final PreKeyResponseItem after =
         BinaryEnvelope.decode(BinaryEnvelope.encode(envelope)).getPreKeyResponse()
@@ -142,10 +143,11 @@ public class BinaryEnvelopeTest {
     devices.add(new PreKeyResponseItem(device.getDeviceId(), device.getRegistrationId(),
         device.getSignedPreKey(), null, null));
 
-    final MessageEnvelope envelope = new MessageEnvelope(
-        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-            original.getPreKeyResponse().getIdentityKey(), devices),
-        original.getSignalProtocolAddressName(), original.getDeviceId());
+    final MessageEnvelope envelope = WireFixtures.carryingSignatureShapedBytes(
+        new MessageEnvelope(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                original.getPreKeyResponse().getIdentityKey(), devices),
+            original.getSignalProtocolAddressName(), original.getDeviceId()));
 
     final PreKeyResponseItem after =
         BinaryEnvelope.decode(BinaryEnvelope.encode(envelope)).getPreKeyResponse()
@@ -176,10 +178,11 @@ public class BinaryEnvelopeTest {
     devices.add(new PreKeyResponseItem(22, 202, device.getSignedPreKey(), device.getPreKey(),
         device.getKyberPreKey()));
 
-    final MessageEnvelope envelope = new MessageEnvelope(
-        new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
-            original.getPreKeyResponse().getIdentityKey(), devices),
-        original.getSignalProtocolAddressName(), original.getDeviceId());
+    final MessageEnvelope envelope = WireFixtures.carryingSignatureShapedBytes(
+        new MessageEnvelope(
+            new com.amnesica.kryptey.inputmethod.signalprotocol.prekey.PreKeyResponse(
+                original.getPreKeyResponse().getIdentityKey(), devices),
+            original.getSignalProtocolAddressName(), original.getDeviceId()));
 
     final byte[] encoded = BinaryEnvelope.encode(envelope);
 
