@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -172,5 +174,42 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
     assertFalse("deleting the contact a warning names is the deliberate response to it; a warning "
             + "that survives its own resolution is one the user cannot ever put down. Banner: "
             + banner(), banner().contains(WARNING));
+  }
+
+  /**
+   * A deletion that did not land leaves the contact where the user can try again.
+   *
+   * <p>Before this, the row was pruned in memory and nowhere else: it left the list while disk still
+   * held it, its pinned key and its messages. The user was correctly told the deletion was not saved
+   * — and then had no way to retry, because every route to a contact goes through the contact list.
+   * Its verify screen was gone, so Reject and Verify were unreachable; a second delete had nothing
+   * to delete. Any standing item about that contact then had no deliberate response left, and a
+   * caution holds the banner for the life of the process.
+   *
+   * <p>Restoring the row is also what the app already says happens — "they and their saved messages
+   * will come back" — which until now was true only after a reload the user cannot trigger.
+   */
+  @Test
+  public void awritefailureLeavesTheContactWhereTheUserCanRetry() {
+    makeTheWriteFail();
+
+    strip.removeContact(bob);
+
+    assertTrue("the contact must still be in the list. Without it there is no verify screen, no "
+            + "second delete, and no deliberate response to anything standing about them - the "
+            + "dead end the escape hatch on the verify screen exists to prevent, reached from the "
+            + "one direction that removes the screen itself.",
+        SignalProtocolMain.getInstance().getAccount().getContactList().contains(bob));
+  }
+
+  /** And a deletion that landed really is gone, or the rollback has swallowed the feature. */
+  @Test
+  public void adeletionThatLandsStillRemovesTheContact() {
+    TestStores.writesLand();
+
+    strip.removeContact(bob);
+
+    assertFalse("a successful deletion must still delete",
+        SignalProtocolMain.getInstance().getAccount().getContactList().contains(bob));
   }
 }

@@ -396,4 +396,26 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     assertTrue("and Encrypt must be dark, for the same reason it is when the row is the part that "
             + "was lost", !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
   }
+
+  /**
+   * A refused invite whose write also failed keeps both sentences.
+   *
+   * <p>They are independent facts, and the storage caution used to destroy the other one: the
+   * refused-invite line is a plain banner write stored nowhere, so the repaint that posts the
+   * caution simply erased it. The user was left with a storage notice and nothing saying the invite
+   * itself had failed — while the caution's own advice, "add them again successfully", is not
+   * actionable with an invite that will never work.
+   */
+  @Test
+  public void arefusedInviteWhoseWriteAlsoFailedSaysBoth() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(refusedInvite());
+
+    final String banner = String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("the lost write must be reported: " + banner, banner.contains("could not be saved"));
+    assertTrue("and so must the refused invite, or the user is told to add a contact again using "
+            + "an invite that cannot work: " + banner, banner.contains("fresh one"));
+  }
 }

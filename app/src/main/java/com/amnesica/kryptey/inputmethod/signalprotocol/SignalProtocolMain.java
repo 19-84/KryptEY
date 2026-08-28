@@ -1578,7 +1578,34 @@ public class SignalProtocolMain {
     // A comment that points a maintainer at wiring it up is pointing them at the thing the design
     // rejected.
 
-    return storeAllAccountInformationInSharedPreferences();
+    // Rolled back in memory when the write does not land, the way verifyContact rolls back its
+    // badge.
+    //
+    // Without this the deletion happened in memory and nowhere else: the row left the list while
+    // disk still held it, its pinned key and its messages. The user is correctly told it was not
+    // saved - and then has no way to try again, because every route to that contact goes through
+    // the contact list. Its verify screen is gone, so Reject and Verify are unreachable; a second
+    // delete has nothing to delete. Any standing item about that contact then had no deliberate
+    // response left, and a caution holds the banner for the life of the process.
+    //
+    // Putting the row back is also simply what the app already SAYS happened: the notice reads
+    // "they and their saved messages will come back", and until now that was true only after a
+    // reload the user cannot trigger.
+    //
+    // What comes back is the ROW, not everything. The swept messages and the deleted session were
+    // removed from memory above and are not restored here; they are still on disk, because that is
+    // the write that failed, so the next reload brings them. So the honest description of this
+    // state is "the contact is here and their session is not until the keyboard restarts", which is
+    // worse than a clean undo and much better than a contact the user can neither see nor retry.
+    // Encrypting to them meanwhile fails the way any sessionless contact does, which is a refusal
+    // rather than a silent plaintext path.
+    final boolean deletionReachedDisk = storeAllAccountInformationInSharedPreferences();
+    if (!deletionReachedDisk) {
+      Log.e(TAG, "The deletion did not reach disk; restoring the contact in memory so it can be "
+          + "retried");
+      mAccount.setContactList(contacts);
+    }
+    return deletionReachedDisk;
   }
 
   public static List<StorageMessage> getUnencryptedMessagesList(Contact contact) throws UnknownContactException {

@@ -805,9 +805,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // whether or not anything was pinned. Open Alice's screen while a warning about Bob stands,
       // press the only enabled button, and Alice is flagged for good while Bob's warning survives
       // untouched. Address-less warnings still enable it anywhere: they have no other exit.
-      if (mWarningStanding && mVerifyContactRejectButton != null
-          && (mStandingWarningAddress == null || mStandingWarningAddress
-              .equals(String.valueOf(chosenContact.getSignalProtocolAddress())))) {
+      //
+      // A standing CAUTION counts too, and leaving it out was the same dead end by a third route.
+      // A caution holds the banner exactly as a warning does - it suppresses every routine message
+      // through mayOverwriteInfoBanner - and one can stand with nothing pinned: a bundle whose
+      // signature fails pins nothing, and if the contact write also fails the lost-write caution
+      // goes up about a contact with no key. Verify is dark because there is no number, Reject was
+      // dark because no warning stood, and the remaining exit - deleting the contact - is refused
+      // when its own write fails, which is the same storage trouble that raised the caution. The
+      // banner then held a sentence nothing could clear, for the life of the process.
+      if (mVerifyContactRejectButton != null
+          && (aStandingItemAbout(chosenContact) || aStandingItemWithNoAddress())) {
         mVerifyContactRejectButton.setEnabled(true);
       }
       // "yet ... ask them for a key bundle first" describes an address nothing has happened at.
@@ -1232,6 +1240,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // end is a fallback for the arms that write nothing, and a fallback that fires anyway is just
     // an overwrite.
     boolean bannerWasWritten = false;
+    // Tracked separately from bannerWasWritten: that says "something is on the banner", this says
+    // which sentence, and only this one has to survive being replaced by the storage caution.
+    boolean sessionCreationFailed = false;
 
     final boolean rowReachedDisk = mE2EEStrip.lastContactWriteReachedDisk();
     if (!rowReachedDisk) {
@@ -1323,6 +1334,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
           // the end of this method - destroys it, and the one sentence telling the user to ask for
           // a fresh invite is gone with no trace.
           bannerWasWritten = true;
+          sessionCreationFailed = true;
         }
       }
     }
@@ -1423,7 +1435,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // for both, because it is true of both and the user's move is the same - add them again and
     // check it worked before sending anything.
     if (!rowReachedDisk || !mE2EEStrip.lastSessionWriteReachedDisk()) {
-      setCautionBesideAnyWarning(String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+      // Carrying the refused-invite instruction with it when that also applies.
+      //
+      // The two are independent - a bundle can be refused whether or not the write landed - and the
+      // refusal line is a plain banner write stored nowhere, so this repaint destroyed it. That
+      // left the user with a storage notice and nothing telling them the invite itself had failed
+      // or to ask for a fresh one. Appended rather than allowed to overwrite, because "add them
+      // again successfully" is not actionable when the invite they have will never work.
+      final String notSaved = String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact));
+      setCautionBesideAnyWarning(
+          bannerWasWritten && sessionCreationFailed
+              ? notSaved + " " + INFO_SESSION_CREATION_FAILED
+              : notSaved,
           chosenContact, true);
     }
   }
@@ -1814,6 +1837,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!mStandingCautionIsLostWrite || chosenContact == null) return false;
     return mStandingCautionAddress == null || mStandingCautionAddress
         .equals(String.valueOf(chosenContact.getSignalProtocolAddress()));
+  }
+
+  /** Whether a warning or caution is standing and names this contact. */
+  private boolean aStandingItemAbout(final Contact contact) {
+    if (contact == null) return false;
+    final String address = String.valueOf(contact.getSignalProtocolAddress());
+    return (mWarningStanding && address.equals(mStandingWarningAddress))
+        || (mStandingCaution != null && address.equals(mStandingCautionAddress));
+  }
+
+  /**
+   * Whether a standing item names nobody.
+   *
+   * <p>Those have no other exit - the storage warning and the same-address refusal are about the
+   * app rather than about a contact - so any verify screen may take them down. That is deliberate
+   * and predates the caution being counted here.
+   */
+  private boolean aStandingItemWithNoAddress() {
+    return (mWarningStanding && mStandingWarningAddress == null)
+        || (mStandingCaution != null && mStandingCautionAddress == null);
   }
 
   private boolean storageIsUnreadable() {

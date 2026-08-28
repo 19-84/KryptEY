@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -76,7 +78,11 @@ public class InertLogEntrySurvivesDeletionTest {
     final ArrayList<StorageMessage> log = new ArrayList<>();
     log.add(new StorageMessage(SHARED_NAME, SHARED_NAME, "me", Instant.now(), SECRET));
     account.setUnencryptedMessages(log);
-  }
+      // These tests delete contacts and assert the deletion happened. A deletion whose
+    // write does not land is now rolled back in memory so the user can retry, so the
+    // fixture has to say that its store writes.
+    TestStores.writesLand();
+}
 
   private long entriesHolding(final String text) {
     final List<StorageMessage> log = account.getUnencryptedMessages();

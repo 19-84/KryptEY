@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy sections, written in the order things were found rather than by subject, so the
+Seventy-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -126,6 +126,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The refusal that locked the keyboard](#the-refusal-that-locked-the-keyboard)
 - [Stating the rule instead of fixing the case](#stating-the-rule-instead-of-fixing-the-case)
 - [The refusal the adversary could switch off](#the-refusal-the-adversary-could-switch-off)
+- [A deletion that undid itself everywhere but on disk](#a-deletion-that-undid-itself-everywhere-but-on-disk)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4681,3 +4682,43 @@ warning, and a configuration change, where `adoptState` restores the warning and
 not restore the recipient. In both, the window became capturable while displaying who the user talks
 to and the tag distinguishing them from a second contact of the same name — the exact pair the
 predicate's own javadoc gives as its reason for existing. It asks the model for both halves now.
+
+## A deletion that undid itself everywhere but on disk
+
+**The three findings round twenty-three left owed, and the first of them was a dead end reached from
+the one direction that removes the way out.**
+
+A deletion whose write did not land was performed in memory and nowhere else: the row left the list
+while disk still held it, its pinned key and its messages. The user was correctly told it had not
+been saved — and then had no way to try again, because every route to a contact goes through the
+contact list. Its verify screen was gone, so Reject and Verify were unreachable; a second delete had
+nothing to delete. Any standing item about that contact had no deliberate response left, and a
+caution holds the banner for the life of the process.
+
+The row is restored now, the way `verifyContact` rolls back its badge. **What comes back is the row,
+not everything** — the swept messages and the deleted session are still on disk, because that is the
+write that failed, so the next reload brings them; the honest description of the interim state is
+"the contact is here and their session is not until the keyboard restarts". Worse than a clean undo,
+much better than a contact the user can neither see nor retry. It is also what the app already said
+happened: the notice reads "they and their saved messages will come back", which until now was true
+only after a reload the user cannot trigger.
+
+**The escape hatch counted warnings and not cautions.** The verify screen re-enables Reject when a
+warning stands with no fingerprint to show, precisely so a standing item always leaves one deliberate
+response. A caution holds the banner exactly as a warning does, and one can stand with nothing pinned
+— a bundle whose signature fails pins nothing, and if the contact write also fails the lost-write
+caution goes up about a contact with no key. Verify dark for want of a number, Reject dark for want
+of a warning, deletion refused by the same storage trouble that raised the caution. Cautions count
+now.
+
+**And the storage caution was erasing the refused-invite instruction.** They are independent facts —
+a bundle can be refused whether or not the write landed — and the refusal line is a plain banner
+write stored nowhere, so the repaint that posts the caution destroyed it. The user was left with a
+storage notice and nothing saying the invite had failed, while the caution's own advice, "add them
+again successfully", is not actionable with an invite that will never work. The two are carried
+together.
+
+**Three more fixtures turned out not to write**, found by the rollback rather than by inspection:
+they delete a contact and assert the deletion happened, which had been true only because a failed
+write left the in-memory pruning in place. That is the migration continuing to pay out — every one of
+these was a test whose subject was a successful deletion and whose fixture performed a failed one.

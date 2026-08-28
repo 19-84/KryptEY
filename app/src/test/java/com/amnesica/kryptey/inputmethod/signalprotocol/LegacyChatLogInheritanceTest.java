@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -97,7 +99,11 @@ public class LegacyChatLogInheritanceTest {
     contacts.add(genuineContact);
     contacts.add(impostor);
     victim.setContactList(contacts);
-  }
+      // These tests delete contacts and assert the deletion happened. A deletion whose
+    // write does not land is now rolled back in memory so the user can retry, so the
+    // fixture has to say that its store writes.
+    TestStores.writesLand();
+}
 
   /** A message as the pre-upgrade code wrote it: filed under the address NAME alone. */
   private void writeLegacyMessage(final String text) {
