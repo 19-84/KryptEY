@@ -71,6 +71,17 @@ and a *new* problem fails the build.
 Regenerate it with `gradlew updateLintBaseline` deliberately, never to turn a red build green: an
 entry added there is a finding nobody will look at again.
 
+## Adversarial review rounds
+
+`tools/review-prompt.md` holds the standing requirements for a review round — the per-finding fields
+(including a reachability verdict and the experiment that would settle the finding), the rule against
+re-reporting, and the shape of the report. Paste it under whatever scope the round is given.
+
+`REVIEW-SETTLED.md` in the repository root is the other half: claims that were investigated and
+refuted, each with the measurement that settled it and the test now holding the property in place.
+Reviewers read it before reporting, which is what stops a round spending itself on ground a previous
+round already covered.
+
 ## Instrumentation tests
 
 `tools/test-on-emulator` runs them. There are 30, and the count in this sentence is checked against
