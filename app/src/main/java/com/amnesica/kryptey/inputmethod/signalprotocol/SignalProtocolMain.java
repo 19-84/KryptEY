@@ -1768,6 +1768,9 @@ public class SignalProtocolMain {
   }
 
   private boolean processPreKeyResponse(final MessageEnvelope messageEnvelope, final SignalProtocolAddress signalProtocolAddress) {
+    // Cleared at entry, not only where it is written, so a caller asking about THIS attempt is
+    // never told about the previous one.
+    mLastSessionWriteReachedDisk = true;
     if (messageEnvelope == null) return false;
     try {
       // build session with recipients protocol address when preKeyResponse was send
@@ -1814,6 +1817,12 @@ public class SignalProtocolMain {
     // Cleared per attempt, so the strip reads the outcome of THIS decrypt and never a stale one.
     mLastAttachedBundleRefused = false;
     mLastChatLogWriteFailed = false;
+    // The session-write flag too, and for a sharper reason than the others: clearing it only at the
+    // top of processPreKeyResponse is not enough, because a decrypt that builds no session never
+    // runs that method - so the flag would still be describing whichever bundle was processed last,
+    // possibly on a different account entirely. A per-operation flag has to be cleared by every
+    // operation that reads it, not only by the one that writes it.
+    mLastSessionWriteReachedDisk = true;
 
     final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
 
@@ -2200,11 +2209,42 @@ public class SignalProtocolMain {
    * @param recipientSignalProtocolAddress SignalProtocolAddress
    * @return true only if the session was actually established and the bundle's signatures held.
    */
+  /**
+   * Whether the last accepted bundle's session and pinned key reached storage.
+   *
+   * <p>Cleared at the top of {@code processPreKeyResponse} AND of {@code decrypt}, rather than only
+   * on the path that writes. Clearing it in the writer alone was not enough and the difference is
+   * the whole hazard: a decrypt that builds no session never enters {@code processPreKeyResponse},
+   * so the flag went on describing whichever bundle was processed last - in one test fixture, one
+   * belonging to a different account. A per-operation flag has to be cleared by every operation that
+   * reads it.
+   */
+  private boolean mLastSessionWriteReachedDisk = true;
+
+  public static boolean lastSessionWriteReachedDisk() {
+    return sInstance.mLastSessionWriteReachedDisk;
+  }
+
   private boolean buildSession(final PreKeyBundle preKeyBundle, final SignalProtocolAddress recipientSignalProtocolAddress) {
     try {
       SessionBuilder sessionBuilder = new SessionBuilder(mAccount.getSignalProtocolStore(), recipientSignalProtocolAddress);
       sessionBuilder.process(preKeyBundle);
-      storeAllAccountInformationInSharedPreferences();
+      // Recorded, not discarded. This was the last member of the write family whose result went
+      // nowhere: creation, deletion, rejection, verification, the chat log and both message
+      // directions all thread theirs up, and session creation returned true regardless.
+      //
+      // The state that made it matter: the contact row write succeeds, so no lost-write notice
+      // fires, and then this write fails. The user is shown "Session with X created", is told to
+      // compare a security number, sends messages - and the session and the identity key just
+      // pinned exist in memory only. Reads keep succeeding from the in-memory store, so nothing
+      // looks wrong until the next reloadAccount, which is exactly the shape rejectContactKey's
+      // comment and INFO_CONTACT_NOT_SAVED were written for.
+      //
+      // Reported separately from the return value rather than folded into it: this method's boolean
+      // answers "was the bundle acceptable", which chooses between a security warning and a success
+      // line, and a storage failure must not be dressed up as a refused invite - that would send
+      // the user off to ask for a fresh bundle over a full disk.
+      mLastSessionWriteReachedDisk = storeAllAccountInformationInSharedPreferences();
       return true;
     } catch (UntrustedIdentityException e) {
       // This is where an identity change actually surfaces. libsignal calls isTrustedIdentity

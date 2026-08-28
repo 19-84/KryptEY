@@ -137,18 +137,39 @@ public class TheButtonsNeverContradictTheBannerTest {
         || text.contains(E2EEStripView.INFO_STORAGE_UNREADABLE);
   }
 
+  /**
+   * What a hostile app can do between the state being reached and the user acting.
+   *
+   * <p>The first version of this sweep enumerated states and stopped. It missed the defect that
+   * matters most, because the messenger does not need to reach a bad state - it needs to move the
+   * app out of a good one. Hiding the keyboard, relaying a message from anybody, and offering
+   * clipboard content are all unilateral, and the first two move the recipient.
+   */
+  private enum Interference {
+    NOTHING,
+    /** Any app may hide the keyboard. This nulls the chosen recipient. */
+    HIDE_AND_RAISE,
+    /** So does tapping the banner, which is a natural gesture on a notice just read. */
+    TAP_THE_BANNER,
+    /** And ordinary clipboard traffic, which the messenger produces at will. */
+    CLIPBOARD_TRAFFIC
+  }
+
   /** The states this cross product walks, named so a failure says which one broke. */
   private static final class Case {
     final boolean writeLands;
     final boolean warningStanding;
     final boolean storageUnreadable;
     final boolean passwordField;
+    final Interference interference;
 
-    Case(final boolean w, final boolean warn, final boolean unreadable, final boolean password) {
+    Case(final boolean w, final boolean warn, final boolean unreadable, final boolean password,
+        final Interference interference) {
       this.writeLands = w;
       this.warningStanding = warn;
       this.storageUnreadable = unreadable;
       this.passwordField = password;
+      this.interference = interference;
     }
 
     @Override
@@ -156,7 +177,8 @@ public class TheButtonsNeverContradictTheBannerTest {
       return "[write " + (writeLands ? "landed" : "failed")
           + ", " + (warningStanding ? "warning standing" : "no warning")
           + ", store " + (storageUnreadable ? "unreadable" : "readable")
-          + ", " + (passwordField ? "password field" : "ordinary field") + "]";
+          + ", " + (passwordField ? "password field" : "ordinary field")
+          + ", then " + interference + "]";
     }
   }
 
@@ -166,7 +188,9 @@ public class TheButtonsNeverContradictTheBannerTest {
       for (final boolean warn : new boolean[] {true, false}) {
         for (final boolean unreadable : new boolean[] {true, false}) {
           for (final boolean password : new boolean[] {true, false}) {
-            cases.add(new Case(write, warn, unreadable, password));
+            for (final Interference i : Interference.values()) {
+              cases.add(new Case(write, warn, unreadable, password, i));
+            }
           }
         }
       }
@@ -186,6 +210,26 @@ public class TheButtonsNeverContradictTheBannerTest {
       SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
     }
     strip.setHostFieldIsPassword(c.passwordField);
+
+    // Now let the adversary act, and put the user back where they were.
+    final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact chosen =
+        strip.chosenContactForTest();
+    switch (c.interference) {
+      case HIDE_AND_RAISE:
+        strip.onKeyboardHidden();
+        if (chosen != null) strip.selectContact(chosen);
+        break;
+      case TAP_THE_BANNER:
+        strip.resetChosenContactAndInfoTextForTest();
+        if (chosen != null) strip.selectContact(chosen);
+        break;
+      case CLIPBOARD_TRAFFIC:
+        strip.onClipboardHoldsDecryptableItemForTest();
+        break;
+      case NOTHING:
+      default:
+        break;
+    }
   }
 
   @Test

@@ -353,4 +353,47 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
         strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
   }
 
+  /**
+   * A session whose write did not land is reported, even when the contact row's did.
+   *
+   * <p>Two separate writes, either of which can be the one that fails. The row landing while the
+   * session and the freshly pinned identity key did not is the worse of the two and used to be
+   * entirely silent: {@code buildSession} called
+   * {@code storeAllAccountInformationInSharedPreferences} and discarded the result, then returned
+   * true, so the user got "Session with X created", a prompt to compare a security number, and a
+   * session existing in memory only. Reads keep succeeding from the in-memory store, so nothing
+   * looks wrong until the next {@code reloadAccount}.
+   *
+   * <p>It was the last member of the write family whose result went nowhere — creation, deletion,
+   * rejection, verification, the chat log and both message directions all thread theirs up.
+   */
+  @Test
+  public void afailedSessionWriteIsReportedEvenWhenTheRowLanded() throws Exception {
+    // The row write lands; the session write does not. One helper, flipped after the row is stored,
+    // is how the two are separated in a single add.
+    final java.util.concurrent.atomic.AtomicInteger writes =
+        new java.util.concurrent.atomic.AtomicInteger();
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            // The first write is the contact row; everything after it in this add is the session.
+            return writes.getAndIncrement() == 0;
+          }
+        });
+
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("precondition: the row's own write must have landed, or this is the other test",
+        writes.get() > 1);
+    final String banner = String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("a session that exists only in memory must be reported. The user is otherwise told "
+            + "the session was created and sent off to compare a security number for a key that "
+            + "will be gone at the next reload. Banner: " + banner,
+        banner.contains("could not be saved"));
+    assertTrue("and Encrypt must be dark, for the same reason it is when the row is the part that "
+            + "was lost", !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
 }

@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-nine sections, written in the order things were found rather than by subject, so the
+Seventy sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -125,6 +125,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The fail-open that made every fixture mean two things](#the-fail-open-that-made-every-fixture-mean-two-things)
 - [The refusal that locked the keyboard](#the-refusal-that-locked-the-keyboard)
 - [Stating the rule instead of fixing the case](#stating-the-rule-instead-of-fixing-the-case)
+- [The refusal the adversary could switch off](#the-refusal-the-adversary-could-switch-off)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4625,3 +4626,58 @@ What it does not claim is that these are the only invariants worth having, or th
 state appears in the sweep. It fixes the two that four rounds of case-by-case work kept breaking, and
 that is the point: **when the same decision breaks repeatedly in different ways, the next test should
 be about the decision rather than about the newest way.**
+
+## The refusal the adversary could switch off
+
+**Round twenty-three found seven defects, and the first of them defeated the invariant suite written
+one commit earlier — because that suite enumerated states and the messenger does not need to reach a
+bad state. It needs to move the app out of a good one.**
+
+The send-refusal was a flag about "the chosen contact", reset on every recipient change. Hiding the
+keyboard is a recipient change: `onKeyboardHidden` calls `forgetChosenRecipient`, and any app may
+hide the keyboard whenever it likes. So could tapping the banner — a natural gesture on a notice just
+read — or relaying a message from anybody else. The user then re-selects the contact and Encrypt is
+live again, under a banner still saying "do not send them anything until you have added them again
+successfully". The refusal survived exactly as long as the adversary allowed.
+
+It is a property of the standing caution now, set and cleared with it, and scoped to that caution's
+address. One fact, one lifetime, taken down by exactly the deliberate responses that take the caution
+down. The sweep now runs each of its sixteen states through four adversary transitions — nothing,
+hide-and-raise, tap-the-banner, clipboard traffic — and re-selects the contact afterwards, because
+that is what a user does. **The lesson is about the shape of the test, not the fix: enumerating
+states is not enough when the adversary owns the transitions.**
+
+**The session write was the last one whose result went nowhere.** `buildSession` called
+`storeAllAccountInformationInSharedPreferences` and discarded it, then returned true. Creation,
+deletion, rejection, verification, the chat log and both message directions all thread theirs up.
+The state that made it matter: the contact row lands, so no lost-write notice fires, and then the
+session and the freshly pinned identity key do not — "Session with X created", a prompt to compare a
+security number, and a session that exists in memory only until the next reload. Reported separately
+from the return value on purpose: that boolean answers "was the bundle acceptable", and a storage
+failure dressed as a refused invite would send the user off to ask for a fresh bundle over a full
+disk.
+
+Its flag then needed clearing in **`decrypt` as well as** in the writer, which is the sharper half of
+the same lesson: a decrypt that builds no session never enters `processPreKeyResponse`, so the flag
+went on describing whichever bundle was processed last — in one fixture, one belonging to a different
+account. *A per-operation flag has to be cleared by every operation that reads it, not only by the
+one that writes it.*
+
+**The banner repaint reached one arm of two, again.** Gating the pin caution removed the only banner
+write on the bundle-only arm. Reach it by following the app's own recovery advice — delete the
+contact, accept their fresh invite — and every repaint is skipped: the duplicate-name warning is
+deliberately suppressed for a re-add at the same address while the pin survives, the pin caution is
+gated because the pin survived the deletion, and an invite carries no ciphertext. The banner keeps
+"No contact chosen", and since `disablesActionButtons` matches that sentence, **both buttons go dark
+on a contact just set up successfully.** The fallback repaint now covers every arm — and fires only
+when nothing else wrote, because the first version of it was unconditional and destroyed the
+refused-invite sentence, which is a plain line stored nowhere.
+
+**And `FLAG_SECURE` came down while the warning was still on screen.** The predicate asked
+`chosenContact` alone, on the stated premise that every main-view banner naming a contact is written
+on a path where it is set. Two host-forceable events break that premise and leave the banner exactly
+where it was: hiding the keyboard, which clears the recipient and deliberately does not touch the
+warning, and a configuration change, where `adoptState` restores the warning and deliberately does
+not restore the recipient. In both, the window became capturable while displaying who the user talks
+to and the tag distinguishing them from a second contact of the same name — the exact pair the
+predicate's own javadoc gives as its reason for existing. It asks the model for both halves now.

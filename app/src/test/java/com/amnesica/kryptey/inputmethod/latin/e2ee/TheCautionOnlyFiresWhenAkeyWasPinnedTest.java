@@ -216,4 +216,37 @@ public class TheCautionOnlyFiresWhenAkeyWasPinnedTest {
             + "standing caution makes mayOverwriteInfoBanner refuse. Banner: " + banner(),
         banner().contains("This key reached you through the messenger"));
   }
+
+  /**
+   * And gating the caution must not take the banner repaint with it.
+   *
+   * <p>The caution was the only thing writing the banner on the bundle-only arm, so gating it left
+   * that arm silent — and "silent" here means the banner keeps whatever
+   * {@code decryptMessageInClipboard} left on its way to the add screen, which is "No contact
+   * chosen". Since {@code disablesActionButtons} matches that exact sentence, Encrypt and Decrypt
+   * both go dark on a contact that was just set up successfully.
+   *
+   * <p>Reached by following the app's own recovery advice: delete the contact, accept their fresh
+   * invite. Nothing else writes the banner on that path — the duplicate-name warning is deliberately
+   * suppressed for a re-add at the same address while the pin survives, the pin caution is gated
+   * because the pin survived the deletion, and an invite carries no ciphertext so that arm does not
+   * run.
+   */
+  @Test
+  public void arereaddAfterDeletingLeavesTheScreenUsable() throws Exception {
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    strip.removeContact(strip.chosenContactForTest());
+
+    // Their fresh invite arrives, and the app sends the user to the add screen.
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertNotNull("precondition: the re-add must succeed", strip.chosenContactForTest());
+    assertFalse("a contact IS chosen, so the banner must not still say none is: " + banner(),
+        banner().startsWith(E2EEStripView.INFO_NO_CONTACT_CHOSEN_TEXT));
+    assertTrue("and the screen must be usable - this is the flow the app's own advice routes the "
+            + "user through, and both buttons were dark at the end of it",
+        strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
 }

@@ -321,6 +321,11 @@ public class E2EEStrip {
     return SignalProtocolMain.getFingerprint(contact);
   }
 
+  /** @see SignalProtocolMain#lastSessionWriteReachedDisk */
+  public boolean lastSessionWriteReachedDisk() {
+    return SignalProtocolMain.lastSessionWriteReachedDisk();
+  }
+
   /** @see SignalProtocolMain#hasPinnedKey */
   public boolean hasPinnedKey(final org.signal.libsignal.protocol.SignalProtocolAddress address) {
     return SignalProtocolMain.hasPinnedKey(address);

@@ -63,11 +63,11 @@ public class EveryStripFieldIsClassifiedTest {
       // it a rebuild widens the caution's scope to "any contact", so the next deliberate response
       // about anybody takes it down.
       "mStandingCautionAddress",
-      // Whether the chosen contact's row reached disk. Carried for the same reason as the caution
-      // it travels with: a rebuild would otherwise re-enable Encrypt under a banner still saying
-      // "do not send them anything until you have added them again successfully", and a
+      // Whether the standing caution is the one that also refuses to send. Carried with the
+      // caution because it belongs to it: a rebuild restoring the sentence without the refusal
+      // would put "do not send them anything" back on screen with Encrypt live, and a
       // configuration change is something the host app can force at will.
-      "mChosenContactReachedDisk"));
+      "mStandingCautionIsLostWrite"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.
