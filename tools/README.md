@@ -84,14 +84,18 @@ round already covered.
 
 ## Instrumentation tests
 
-`tools/test-on-emulator` runs them. There are 31, and the count in this sentence is checked against
+`tools/test-on-emulator` runs them. There are 32, and the count in this sentence is checked against
 the source by `DocsDoNotContradictTheAppTest` — it said 17 for several rounds after the suite had
 grown past it, which is the kind of claim this project treats as a defect rather than as tidying.
 
 Eleven cover the Android Keystore, which has no JVM equivalent because there is no TEE behind a
-desktop provider, and a twelfth asks the platform a question no argument could settle: whether a key
-bound to the screen lock survives that lock being removed. (It does, at API 28. If it ever stops
-doing so, that test fails loudly rather than a user's history disappearing quietly.) Three more exercise the chat-log split against that same real keystore. Three
+desktop provider, and two more ask the platform questions no argument could settle: whether a key
+bound to the screen lock survives that lock being removed (it does, at API 28), and whether the key
+this install actually generated is bound to the lock at all — asserted as a refusal while the screen
+is locked, because the flag has no accessor at this API level and being unusable while locked is the
+property the flag exists to obtain. The key ladder steps down silently when a device cannot honour a
+rung, and records nowhere which rung it took, so that second test is the only place the degradation
+would be visible. Three more exercise the chat-log split against that same real keystore. Three
 cover whether the platform will bind a service declared `exported="false"` as an input method, and
 three establish that the decrypted-message compose box is never handed to an autofill service.
 Three run a protocol round trip on real hardware and two run the strip's own round trip; the

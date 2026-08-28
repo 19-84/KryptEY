@@ -114,4 +114,49 @@ public class AlockBoundKeyAcrossLockRemovalTest {
             + "stop using UnlockedDeviceRequired or grow a recovery path before it ships",
         new String(opened, StandardCharsets.UTF_8).equals("something the user cannot lose"));
   }
+
+  /**
+   * And the key this install actually took really is bound to the lock.
+   *
+   * <p>The ladder asks for a lock-bound rung first and steps down when a device cannot honour one,
+   * and which rung an install ended on is recorded nowhere a user or a test can see. The JVM tests
+   * pin the ORDER of the ladder against a double; nothing checks that the key a real device ends up
+   * with has the property the order exists to obtain. This asks the only question that settles it:
+   * with the screen locked, a key bound to the lock cannot be used.
+   *
+   * <p>Deliberately asserted as a refusal rather than read off {@code KeyInfo}, which has no
+   * accessor for this flag at the minimum API level this project supports. A refusal is also the
+   * thing that matters: the flag is a means, and being unusable while locked is the end.
+   */
+  @Test
+  public void thekeyThisDeviceGeneratedIsUnusableWhileTheScreenIsLocked() throws Exception {
+    final AndroidKeystoreCryptoBox box = new AndroidKeystoreCryptoBox(context, false);
+    final byte[] sealed = box.seal("locked-out".getBytes(StandardCharsets.UTF_8), AAD);
+    assertNotNull("fixture: the key must work while the device is unlocked", sealed);
+
+    final KeyguardManager keyguard =
+        (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+
+    shell("input keyevent 26");   // sleep, which locks a device that has a PIN
+    for (int waited = 0; waited < 40 && !keyguard.isDeviceLocked(); waited++) {
+      Thread.sleep(250);
+    }
+    assumeTrue("the emulator did not actually lock, so there is nothing to measure",
+        keyguard.isDeviceLocked());
+
+    boolean refused = false;
+    try {
+      new AndroidKeystoreCryptoBox(context, false).open(sealed, AAD);
+    } catch (final StorageCryptoException expected) {
+      refused = true;
+    } finally {
+      shell("input keyevent 224");   // wake, so the rest of the suite runs on a live screen
+    }
+
+    assertTrue("the storage key is usable while the screen is locked, so this install is NOT on a "
+            + "lock-bound rung. The ladder asks for one first and steps down silently when a device "
+            + "refuses; nothing records which rung was taken, so without this the degradation is "
+            + "invisible on the only devices that could show it",
+        refused);
+  }
 }
