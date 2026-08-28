@@ -67,11 +67,11 @@ public class EveryStripFieldIsClassifiedTest {
       // caution because it belongs to it: a rebuild restoring the sentence without the refusal
       // would put "do not send them anything" back on screen with Encrypt live, and a
       // configuration change is something the host app can force at will.
-      "mStandingCautionIsLostWrite",
-      // The write count when that caution went up. Carried with it, and dropping it would not
-      // merely lose information - it would silently CANCEL the refusal, because a fresh strip
-      // starts this below every real count, so the "a later write has landed" test passes at once.
-      "mWritesLandedWhenCautionRaised"));
+      // Contacts whose row did not reach disk, with the write count at that moment. Carried
+      // because it is the only thing between the user and sending to somebody the app has told
+      // them not to send to; a rebuild that dropped it would put "do not send them anything" back
+      // on screen with Encrypt live, and a configuration change is host-forceable.
+      "mContactsNotOnDisk"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

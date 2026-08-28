@@ -418,4 +418,92 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     assertTrue("and so must the refused invite, or the user is told to add a contact again using "
             + "an invite that cannot work: " + banner, banner.contains("fresh one"));
   }
+
+  /**
+   * Adding somebody else must not cancel the refusal about this contact.
+   *
+   * <p>There is one caution slot. While the refusal lived on the standing caution, a successful add
+   * of any OTHER contact overwrote that caution and took the refusal with it — so the app stopped
+   * refusing to send to Bob because the user had added Carol, which is not a fact about whether
+   * Bob's row is on disk.
+   *
+   * <p>This is the mirror of the defect before it: the refusal first lived on "the chosen contact"
+   * and was reset by every recipient change, which the messenger forces by hiding the keyboard.
+   * Both were the same mistake — keeping the fact somewhere that something else owns.
+   */
+  @Test
+  public void addingAdifferentContactDoesNotCancelTheRefusal() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact bob =
+        strip.chosenContactForTest();
+    assertNotNull(bob);
+    assertTrue("precondition: Encrypt must be refused for Bob",
+        !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+
+    // Storage recovers and the user adds somebody else, successfully.
+    TestStores.writesLand();
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Carol");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Smith");
+    strip.addContactForTest(ciphertextOnly());
+
+    // Back to Bob.
+    strip.selectContact(bob);
+
+    // Bob's row IS on disk now - the successful add wrote the whole account, contact list included
+    // - so the refusal must be gone for the RIGHT reason, and the app must say so by letting the
+    // user send. What must not happen is the refusal surviving as a stale claim.
+    assertTrue("after a later write landed, Bob's row is on disk and the refusal has expired",
+        strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
+
+  /** But while no write has landed, another contact's caution cannot lift it. */
+  @Test
+  public void anunrelatedCautionDoesNotLiftTheRefusalWhileNothingHasBeenWritten() throws Exception {
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact bob =
+        strip.chosenContactForTest();
+    assertNotNull(bob);
+
+    // A caution about somebody else, with the store still failing, so nothing has reached disk.
+    strip.setCautionForTest("Contact Carol Smith created. Compare the security number by voice.",
+        new com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact(
+            "Carol", "Smith", peerAddress.getName(), peerAddress.getDeviceId() + 5, false));
+    strip.selectContact(bob);
+
+    assertTrue("the caution about Carol says nothing about whether Bob's row reached disk, and "
+            + "overwriting the banner must not cancel a refusal it does not own",
+        !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+  }
+
+  /**
+   * The refusal survives being suppressed on screen.
+   *
+   * <p>{@code sessionCreationFailed} was recorded inside the guard that decides whether to PAINT the
+   * refusal line — and that guard fires when a standing item already holds the banner, which is the
+   * common case immediately after adding anyone. So the fact was lost exactly when the guard fired,
+   * and the lost-write caution then composed itself without the refusal while overwriting the very
+   * standing item the guard was protecting. The suppression protected nothing and cost the sentence:
+   * the user was told to "add them again successfully" with an invite that will never work, and
+   * never told it had been refused.
+   */
+  @Test
+  public void arefusedInviteIsStillSaidWhenItsLineWasSuppressed() throws Exception {
+    // A standing item already on the banner, which is what triggers the suppression.
+    strip.setWarningMessageForTest("Careful: something about a key.");
+
+    makeTheAccountWriteFail();
+    typeTheName();
+    strip.addContactForTest(refusedInvite());
+
+    final String banner = String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("the lost write must be reported: " + banner, banner.contains("could not be saved"));
+    assertTrue("and so must the refused invite, even though its own line was suppressed - the "
+            + "caution that replaced the banner is now the only place it can be said: " + banner,
+        banner.contains("fresh one"));
+  }
 }

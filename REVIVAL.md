@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-two sections, written in the order things were found rather than by subject, so the
+Seventy-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -128,6 +128,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The refusal the adversary could switch off](#the-refusal-the-adversary-could-switch-off)
 - [A deletion that undid itself everywhere but on disk](#a-deletion-that-undid-itself-everywhere-but-on-disk)
 - [Four of my own fixes, undone](#four-of-my-own-fixes-undone)
+- [Keeping a fact where nothing else owns it](#keeping-a-fact-where-nothing-else-owns-it)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4773,3 +4774,35 @@ else changed*, and in both cases the answer was reachable in one step: a caution
 add; the account batch writes everything. **A fix whose blast radius is not measured is a fix that
 has not been finished** — this document has said that twice before, and this is the round that had to
 pay for it in the same session.
+
+## Keeping a fact where nothing else owns it
+
+**The send-refusal has now been moved twice, and both moves were the same mistake in mirror image:
+the fact was kept somewhere that something else owns.**
+
+First it was a flag about "the chosen contact", cleared on every recipient change — and the messenger
+forces recipient changes at will by hiding the keyboard. Moving it onto the standing caution fixed
+that and created the reflection: there is one caution slot, so a successful add of any *other*
+contact overwrote the caution and cancelled the refusal with it. The app stopped refusing to send to
+Bob because the user had added Carol, which is not a fact about whether Bob's row is on disk.
+
+It is now a map from address to the write count at the moment the failure was seen. Nothing else
+owns that. It is not reset by choosing somebody else, not overwritten by another contact's caution,
+carried across a rebuild, and it expires for the right reason: any later successful account write
+puts the whole contact list on disk, so the refusal is dropped rather than left standing as a stale
+claim — refusing to send to somebody who *is* saved is the same class of defect as the reverse, and
+it is the one that teaches users to ignore the notice.
+
+**And a suppression protected nothing while costing a sentence.** `sessionCreationFailed` was
+recorded inside the guard deciding whether to *paint* the refusal line — a guard that fires when a
+standing item already holds the banner, which is the common case right after adding anyone. So the
+fact was lost exactly when the guard fired, and the lost-write caution then composed itself without
+the refusal while overwriting the standing item the guard existed to protect. The user was told to
+"add them again successfully" with an invite that will never work, and never told it had been
+refused. Recording the fact and painting the line are now separate decisions, which is what they
+always were.
+
+**Three fixes, three mutants, three different tests caught them** — including the round-23 defect,
+which the extended sweep still catches now that the refusal lives somewhere else entirely. That is
+the useful property of moving a fact rather than patching its symptoms: the old tests keep working
+because they were about the behaviour, not about where it was stored.
