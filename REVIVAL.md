@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and three sections, written in the order things were found rather than by subject, so the
+One hundred and four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -159,6 +159,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Once per process is not "every time the keyboard comes up"](#once-per-process-is-not-every-time-the-keyboard-comes-up)
 - [A control on one branch is not a control](#a-control-on-one-branch-is-not-a-control)
 - [A return value that meant something else](#a-return-value-that-meant-something-else)
+- [Two attacks that would work if the library were built differently](#two-attacks-that-would-work-if-the-library-were-built-differently)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5913,3 +5914,35 @@ deleting the call while keeping its comment fails. The dependency is real even t
 not, so it is written down rather than left to be re-derived. What the same finding got right is
 smaller and was fixed: the ordering check excused a missing landmark, so an ordinary rewording of a
 log line would have made it pass vacuously.
+
+## Two attacks that would work if the library were built differently
+
+**The key-material lifecycle had never been reviewed. It was, and the two most serious findings do
+not reproduce — which is a result worth writing down as carefully as a defect would be.**
+
+The reasoning behind both was sound. The Kyber replay guard records the sender's base key inside
+`markKyberPreKeyUsed`; libsignal calls that during session derivation; derivation happens before the
+inner message is authenticated. If those three held together, **one flipped byte would burn the base
+key while the message carrying it failed** — and since every message a peer sends before hearing
+back carries the same base key, every genuine copy afterwards would be refused as a replay. A
+permanent, deniable, zero-crypto denial of session establishment, repeatable before every delivery
+attempt, landing the user on the app's own delete-and-re-invite advice. The sibling claim was that
+`loadPreKey` is a mutating read reached on the same pre-authentication path.
+
+Measured against libsignal 0.86.5, on two different corruptions — a flipped byte in the body, and a
+flipped byte in the trailing MAC, which parses cleanly and fails authentication — **the store is
+untouched**: no base key recorded, no one-time pre-key marked used, and the genuine copy opens
+normally afterwards. The callbacks are not reached until the message verifies.
+
+That is a property of **the library version**, not of this code, and it is exactly the kind of thing
+that changes under an upgrade without anyone noticing. So it is a test now, with the replay refusal
+asserted alongside it: without that floor the pair would pass just as happily against a build where
+the guard had been deleted outright.
+
+**The review round that produced these was asked to report on ground nobody had audited, and its
+value is not diminished by two of four findings being wrong.** It described precisely what evidence
+would settle them — "one test away" — and that test took ten minutes. Two findings from the same
+round are still open and are real: bundle fields can be spliced between two genuine invites from the
+same identity, because the one-time pre-key is covered by no signature and the ids are unsigned; and
+`pruneUsedPreKeys` drops the lowest used **id** while the allocator hands out the lowest free id, so
+a recycled id can make the newest invite the first one pruned. Both are next.
