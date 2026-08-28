@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -64,7 +66,9 @@ public class StrippedBundleFieldsAreRefusedTest {
     // The recipient.
     SignalProtocolMain.initialize(null);
     victim = SignalProtocolMain.getInstance().getAccount();
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   /**
    * The positive control, without which "refuse every bundle" passes this entire file.

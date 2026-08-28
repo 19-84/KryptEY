@@ -21,33 +21,33 @@ import org.signal.libsignal.protocol.SignalProtocolAddress;
 import java.util.ArrayList;
 
 /**
- * With no storage helper, the app says a creation was saved and a deletion was not.
+ * With no storage helper, both reporters now say the same thing: nothing was written.
  *
- * <p>Same reality — nothing is written, because there is nothing to write with — and two opposite
- * answers, because two helpers answer the question:
+ * <p>They did not always. Two helpers answer "did the write land", and they used to disagree in the
+ * one state where the answer is unambiguous — there is no storage helper at all, so nothing can
+ * possibly have been stored:
  *
  * <ul>
- *   <li>{@code accountWriteSucceeded()} returns <b>true</b> on a null helper. Contact creation,
+ *   <li>{@code accountWriteSucceeded()} returned <b>true</b> on a null helper. Contact creation,
  *       verification and key rejection report through it.</li>
  *   <li>{@code storeAllAccountInformationInSharedPreferences()} returns <b>false</b> on a null
  *       helper, and {@code removeContact} returns its result directly.</li>
  * </ul>
  *
- * <p><b>Why this is pinned rather than fixed.</b> The true-on-null branch fails <em>open</em>: every
- * trust decision the user makes would be reported as saved while nothing was stored. It is
- * unreachable in production today — {@code LatinIME.setInputView} always passes a real context, so
- * the helper always exists — but "unreachable today" is precisely the status this document has been
- * wrong about before. Making it fail closed is one line and turns <b>46</b> existing tests red,
- * because that many fixtures quietly depend on the fail-open. That is a deliberate migration, not a
- * drive-by, and it is recorded in REVIVAL.md as owed.
+ * <p>So the app said a created contact was saved and a deleted one was lost, about the same store,
+ * in the same breath — and the true-on-null branch was the one that failed <b>open</b>: every trust
+ * decision reported as saved while nothing was stored.
  *
- * <p>Until then this asymmetry is a live trap for anyone writing a test: in the ordinary fixture a
- * created contact reports success and a deleted one reports failure, so a test can assert
- * post-deletion state that only holds because the write was reported lost. One had. It is the reason
- * this file exists.
+ * <p>It was unreachable in production — {@code LatinIME.setInputView} always passes a real context —
+ * but every test fixture inherited the split, and three of them ended up asserting state that held
+ * only because a write had been reported one way rather than the other. Closing it turned 48 tests
+ * red across 17 classes; each now says whether it needs a write to land, via {@link TestStores}.
+ *
+ * <p>This file is what stops it coming back. Both directions are asserted, so restoring the
+ * true-on-null branch fails here rather than quietly changing what a dozen fixtures mean.
  */
 @RunWith(RobolectricTestRunner.class)
-public class TheTwoWriteReportersDisagreeTest {
+public class TheTwoWriteReportersAgreeTest {
 
   private Account account;
   private Contact bob;
@@ -82,33 +82,32 @@ public class TheTwoWriteReportersDisagreeTest {
     SignalProtocolMain.testIsRunning = false;
   }
 
-  /** Creation, through the reporter that fails open. */
+  /** Creation, through the reporter that used to fail open. */
   @Test
-  public void acreationReportsSuccessWithNoStorageHelperAtAll() throws Exception {
+  public void acreationReportsFailureWithNoStorageHelperAtAll() throws Exception {
     assertNotNull(SignalProtocolMain.addContact("Carol", "Smith",
         bob.getSignalProtocolAddressName(), bob.getDeviceId() + 1));
 
-    assertTrue("accountWriteSucceeded returns true on a null helper, so creation reports saved "
-            + "while nothing was written. If this ever goes FALSE the fail-open has been closed - "
-            + "which is the intended direction, and the 46 fixtures that depend on it are the "
-            + "migration REVIVAL.md records as owed.",
+    assertFalse("with no storage helper nothing can have been written, so creation must not report "
+            + "saved. If this goes TRUE the fail-open is back, and with it a state where every "
+            + "trust decision the user makes is reported as stored while none of it is.",
         SignalProtocolMain.lastContactWriteReachedDisk());
   }
 
-  /** Deletion, through the reporter that fails closed, in the very same fixture. */
+  /** Deletion, in the very same fixture, agreeing. */
   @Test
   public void adeletionReportsFailureInTheSameFixture() {
-    assertFalse("removeContact returns storeAllAccountInformationInSharedPreferences directly, "
-            + "which returns false on a null helper - the opposite answer to the one creation gave "
-            + "about the same store, one line above in the same test class",
+    assertFalse("removeContact returns storeAllAccountInformationInSharedPreferences directly. It "
+            + "has always answered false here; the point of the test above it is that creation now "
+            + "answers the same way about the same store.",
         SignalProtocolMain.removeContactFromContactListAndProtocol(bob));
   }
 
   /**
-   * And the disagreement is about the reporters, not about the store.
+   * And they agree in the other direction too.
    *
-   * <p>With a helper that really writes, both answer the same way — which is what makes the two
-   * results above an inconsistency rather than two different facts.
+   * <p>Without this the pair above would pass on a build where both reporters simply always said
+   * "no", which is agreement of the useless kind.
    */
   @Test
   public void withArealHelperTheyAgree() throws Exception {

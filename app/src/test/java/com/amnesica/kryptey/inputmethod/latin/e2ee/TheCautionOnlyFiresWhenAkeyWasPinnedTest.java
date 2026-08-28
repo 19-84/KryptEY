@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -86,7 +88,9 @@ public class TheCautionOnlyFiresWhenAkeyWasPinnedTest {
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   @After
   public void tearDown() {

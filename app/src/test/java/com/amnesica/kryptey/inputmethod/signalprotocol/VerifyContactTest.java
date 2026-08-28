@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -51,7 +53,9 @@ public class VerifyContactTest {
     SignalProtocolMain.getInstance().setAccount(me);
     SignalProtocolMain.processPreKeyResponseMessage(
         EnvelopeCodec.fromWire(peerBundle), peerAddress);
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   private Contact storedContact() {
     final Contact contact = new Contact("Peer", "Account", peerAddress.getName(),

@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -88,7 +90,9 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
       @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
     }, strip);
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   @After
   public void tearDown() {

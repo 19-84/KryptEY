@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -53,7 +55,9 @@ public class DecryptPathSubstitutionTest {
     activate(victim);
     assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
         EnvelopeCodec.fromWire(genuine), peerAddress));
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   private void activate(final Account a) {
     SignalProtocolMain.getInstance().setAccount(a);

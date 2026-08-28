@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee.adapter;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -68,7 +70,9 @@ public class VerifiedBadgeRenderTest {
     SignalProtocolMain.getInstance().setAccount(me);
     assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
         EnvelopeCodec.fromWire(peerBundle), peerAddress));
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   /** A contact in the account's live list, which is what the adapter always renders from. */
   private Contact storedContact() {

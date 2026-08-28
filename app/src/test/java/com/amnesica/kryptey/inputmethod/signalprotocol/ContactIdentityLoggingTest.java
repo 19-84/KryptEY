@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -67,7 +69,9 @@ public class ContactIdentityLoggingTest {
     final ArrayList<Contact> contacts = new ArrayList<>();
     contacts.add(contact);
     victim.setContactList(contacts);
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   /**
    * Starts recording what the process writes out.

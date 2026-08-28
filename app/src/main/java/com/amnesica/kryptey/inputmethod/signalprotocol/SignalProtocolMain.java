@@ -2295,8 +2295,23 @@ public class SignalProtocolMain {
    * <p>Callers that report "this could not be recorded" to the user want this question, not the
    * other one.
    */
+  /**
+   * Whether the write this operation depends on actually reached storage.
+   *
+   * <p>Fails closed. It used to return true when there was no storage helper at all, which is the
+   * one state where nothing can possibly have been written - so every trust decision the user made
+   * was reported as saved while none of it was stored. Unreachable in production, because
+   * LatinIME.setInputView always passes a real context; but the sibling reporter beside it,
+   * storeAllAccountInformationInSharedPreferences, answers FALSE in that same state and
+   * removeContact returns it directly. So the app said a created contact was saved and a deleted
+   * one was lost, about the same store, in the same breath - and every test fixture inherited that
+   * split, which is how three of them came to assert post-write state that only held because the
+   * write had been reported one way rather than the other.
+   *
+   * <p>The two now agree. A test that needs a write to land installs a helper that writes; that is
+   * one line, and it makes the fixture's intent visible instead of inherited.
+   */
   private boolean accountWriteSucceeded() {
-    if (mStorageHelper == null) return true;
     return storeAllAccountInformationInSharedPreferences();
   }
 

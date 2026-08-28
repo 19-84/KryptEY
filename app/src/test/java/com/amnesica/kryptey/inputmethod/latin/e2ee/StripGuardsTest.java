@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -78,7 +80,9 @@ public class StripGuardsTest {
 
     strip = new E2EEStripView(new ContextThemeWrapper(RuntimeEnvironment.getApplication(),
         R.style.KeyboardTheme_LXX_Pure_Day), null);
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   private TextView infoField() {
     final TextView view = strip.findViewById(R.id.e2ee_info_text);

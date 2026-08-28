@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.storage;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -90,7 +92,9 @@ public class StoreRollbackTest {
     final ArrayList<Contact> contacts = new ArrayList<>();
     contacts.add(bob);
     victim.setContactList(contacts);
-  }
+      // This fixture depends on writes landing; see TestStores.
+    TestStores.writesLand();
+}
 
   /**
    * The chat log's own file.

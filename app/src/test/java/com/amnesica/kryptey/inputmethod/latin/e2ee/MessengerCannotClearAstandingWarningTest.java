@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -60,7 +62,7 @@ public class MessengerCannotClearAstandingWarningTest {
   @Before
   public void setUp() throws Exception {
     freshFixture();
-  }
+}
 
   private void freshFixture() throws Exception {
     if (strip != null) strip.clear();
@@ -85,7 +87,11 @@ public class MessengerCannotClearAstandingWarningTest {
 
     strip = newStrip();
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
-  }
+  
+    // Inside freshFixture, not in setUp: this is called again per test to rebuild the world, and
+    // each rebuild re-initialises SignalProtocolMain, which drops the helper with it.
+    TestStores.writesLand();
+}
 
   @After
   public void tearDown() {

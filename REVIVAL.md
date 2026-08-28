@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Sixty-six sections, written in the order things were found rather than by subject, so the
+Sixty-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -122,6 +122,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The inviter's side pinned a key and said nothing](#the-inviters-side-pinned-a-key-and-said-nothing)
 - [The true thing faded and the false thing stayed](#the-true-thing-faded-and-the-false-thing-stayed)
 - [A claim about an event, made without checking the event](#a-claim-about-an-event-made-without-checking-the-event)
+- [The fail-open that made every fixture mean two things](#the-fail-open-that-made-every-fixture-mean-two-things)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4432,7 +4433,8 @@ stored. It is unreachable in production today, because `LatinIME.setInputView` a
 context so the helper always exists — but "unreachable today" is exactly the status this document has
 been wrong about before. **Closing it is one line and turns 46 existing tests red**, because that
 many fixtures depend on the fail-open. Measured, not estimated. That is a deliberate migration rather
-than a drive-by, and it is owed.
+than a drive-by — and it has since been done; see [the section on
+it](#the-fail-open-that-made-every-fixture-mean-two-things).
 
 **The help stops promising a deletion it cannot make.** It said *"if you delete the contact, the
 message history will be deleted too"*. `removeContact`'s own comment records the exception: an entry
@@ -4498,3 +4500,40 @@ subject — but the same *kind*: the fix was right about the threat and wrong ab
 under which it fires. The rule earned here is narrower than "test the fix": **a notice that asserts
 an event must be gated on that event having happened, and the gate belongs beside the notice, not in
 the caller that usually happens to be right.**
+
+## The fail-open that made every fixture mean two things
+
+**Done rather than deferred, because three consecutive rounds each found the previous round's fix in
+the same few methods, and this was underneath all of them.**
+
+Two helpers answered "did the write land", and in the one state where the answer is unambiguous — no
+storage helper at all, so nothing can possibly have been stored — they disagreed.
+`accountWriteSucceeded()` returned **true**; `storeAllAccountInformationInSharedPreferences()`
+returned **false**, and `removeContact` returns that directly. So the app said a created contact was
+saved and a deleted one was lost, about the same store, in the same breath.
+
+The true-on-null branch fails **open**: every trust decision reported as saved while nothing is
+stored. Unreachable in production — `LatinIME.setInputView` always passes a real context — but that
+is not where the damage was. **Every test fixture inherited the split without saying so.** A fixture
+that created a contact was on the success path; the same fixture deleting one was on the failure
+path; nothing anywhere said which. Three tests were caught asserting state that held only because a
+write had been reported one way rather than the other, and one of them had been green for rounds
+while describing a deletion that never reached disk.
+
+Closing it turned **48 tests red across 17 classes**. Each now states whether it depends on a write
+landing, through one shared helper whose whole purpose is to make that a decision rather than an
+inheritance. Two classes needed the call in a different place than the rest, and the difference is
+instructive: one rebuilds its whole world per test in a helper that re-initialises
+`SignalProtocolMain` — which drops the storage helper with it — and one runs its entire flow inside
+`setUp`, so a helper installed at the end of `setUp` arrived after the write it was meant to
+describe. Both would have looked like the migration failing rather than the fixture being wrong.
+
+**The migration was not only bookkeeping.** Fixtures that delete a contact had been exercising a
+*failed* deletion by accident, and now exercise a real one — including the ten cases in
+`MessengerCannotClearAstandingWarningTest`, whose subject is which events may take a warning down.
+Those were testing the event against a deletion that never happened.
+
+`TheTwoWriteReportersAgreeTest` asserts both directions, so restoring the fail-open fails there
+rather than quietly changing what a dozen fixtures mean. It is the same file that pinned the
+disagreement one commit earlier, rewritten rather than deleted, because the disagreement is the
+reason the agreement is worth asserting.

@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -89,6 +91,9 @@ public class TheInviterSideIsToldToCompareTheNumberTest {
     assertNotNull(reply);
 
     SignalProtocolMain.getInstance().setAccount(inviter);
+    // Before the flow below, not after it: setUp runs the whole add here, so a helper installed at
+    // the end would arrive after the write it is meant to describe.
+    TestStores.writesLand();
 
     // Stripped to ciphertext alone, which is what an ordinary first message looks like on arrival.
     final MessageEnvelope ciphertextOnly = EnvelopeCodec.fromWire(EnvelopeCodec.toWire(
