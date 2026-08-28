@@ -138,8 +138,23 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
     assertTrue("...and re-derive it when one is. Asking without re-deriving leaves the same "
             + "permanent banner", body.contains("refreshOpeningMessage"));
     assertTrue("...after re-reading the store, since whether the contact list could be read is a "
-            + "fact recorded by the last load rather than a live probe",
-        body.contains("reloadAccount"));
+            + "fact recorded by the last load rather than a live probe. And through the "
+            + "recovery-gated re-read specifically: the plain reloadAccount installs a replacement "
+            + "account here even when nothing recovered, which on the contacts arm means an emptied "
+            + "contact list destroying everything the session did while writes were refused - on "
+            + "every raise, at a moment the messenger picks. Asserting on the substring "
+            + "'reloadAccount' alone did not catch that, because the safe call contains it",
+        body.contains("reloadAccountIfStorageRecovered"));
+
+    // And BEFORE the method's first early return, or a raise over a field the framework describes
+    // with a null EditorInfo skips it - a shape the messenger picks by presenting that field.
+    final int reconsider = body.indexOf("hasStandingConditionWarning");
+    final int firstEarlyReturn = body.indexOf("Null EditorInfo");
+    assertTrue("the per-raise entry point must be found to contain both", reconsider > 0);
+    assertTrue("the re-derivation must run before onStartInputViewInternal's first early return, "
+            + "or a raise the host app shapes to hit that return skips it and the warning with no "
+            + "other way down stays up",
+        firstEarlyReturn < 0 || reconsider < firstEarlyReturn);
   }
 
   /** Method name → its body, for every method in the file. */

@@ -623,6 +623,14 @@ public class MessengerCannotClearAstandingWarningTest {
     NOT_WARNINGS.put("INFO_CONTACT_NOT_SAVED",
         "a Toast in addContact, which also raises warnings - it reports a failed write and does not "
             + "set mWarningStanding");
+    NOT_WARNINGS.put("INFO_PASSWORD_FIELD",
+        "an informational line that never sets mWarningStanding. It appears inside "
+            + "refreshOpeningMessage because that method takes a condition warning DOWN and must "
+            + "then choose what to paint: over a password field the opening line would lose the "
+            + "notice, and nothing would bring it back until the guard next transitions. Sweeping "
+            + "it would measure nothing, because it is re-derived from the host field's inputType "
+            + "on every input session - and the messenger owns that inputType, which is why "
+            + "setInfoUnlessWarned refuses to let it overwrite anything");
     NOT_WARNINGS.put("INFO_SESSION_NOT_SAVED",
         "the sibling of the line above, and it appears in addContact for the same reason: when the "
             + "contact ROW landed and the session write did not, the row sentence is false in both "

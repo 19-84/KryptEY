@@ -757,6 +757,34 @@ public class StripGuardsTest {
   }
 
   /**
+   * A refused invite must not leave the recipient where the envelope's address said.
+   *
+   * <p>The plain-message arm gives the recipient back when nothing decrypted, with a comment
+   * explaining exactly why: the address that moved it "is an unsigned header the relay copies out
+   * of any envelope that contact ever sent". The two bundle arms did not, and which arm handles an
+   * envelope is decided by field presence alone - so the undo cost one appended field to escape.
+   * Staple a bundle built to be refused onto any ciphertext and the recipient moves on an envelope
+   * where nothing was accepted and nothing decrypted.
+   *
+   * <p>The refused bundle here is a real one from another identity, offered at the address where
+   * the genuine peer's key is pinned - which is the substitution the pin exists to refuse.
+   */
+  @Test
+  public void arefusedBundleDoesNotLeaveTheRecipientWhereTheEnvelopeSaid() throws Exception {
+    final MessageEnvelope forged = EnvelopeCodec.fromWire(attackerBundle);
+    forged.setSignalProtocolAddressName(peerAddress.getName());
+    forged.setDeviceId(peerAddress.getDeviceId());
+
+    strip.processPreKeyResponseForTest(
+        EnvelopeCodec.fromWire(EnvelopeCodec.toWire(forged)), bob());
+
+    assertNull("nothing was accepted and nothing decrypted, so the recipient must go back - "
+            + "otherwise Encrypt is aimed at whoever an unsigned header named, on an arm the "
+            + "attacker selects by appending one field",
+        strip.chosenContactForTest());
+  }
+
+  /**
    * And forgetting the recipient must not become the messenger's warning eraser.
    *
    * <p>Any app may hide the keyboard whenever it likes, so this runs on demand for an attacker. It

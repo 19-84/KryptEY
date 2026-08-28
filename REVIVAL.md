@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and one sections, written in the order things were found rather than by subject, so the
+One hundred and two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -157,6 +157,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two questions, one list](#two-questions-one-list)
 - [The clause the argument rested on, and did not mention](#the-clause-the-argument-rested-on-and-did-not-mention)
 - [Once per process is not "every time the keyboard comes up"](#once-per-process-is-not-every-time-the-keyboard-comes-up)
+- [A control on one branch is not a control](#a-control-on-one-branch-is-not-a-control)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5807,3 +5808,61 @@ no application frame in the stack, during the foreign-app ciphertext test; the r
 is recorded rather than explained: this file already notes that multi-core TCG crashed the guest's
 system server, and an unexplained abort in the same environment is worth a line even when the next
 run is green.
+
+## A control on one branch is not a control
+
+**Two reviews, six defects, and the largest one is the rule this file keeps re-learning.**
+
+**The duplicate-name warning was re-derived where the user taps a row, and not where the messenger
+chooses one.** `warnIfNameIsShared` had exactly one caller: `selectContact`, the contact list being
+tapped. The three decrypt arms move the recipient through `setChosenContact` and re-derived the
+other two warnings — the identity change and the rejection — but not this one. Which path runs is
+not the user's choice: the messenger decides what arrives and the user only presses Decrypt.
+
+So the eviction this control was rewritten to survive still worked, one branch over. Add an impostor
+row under a name the user already has (which warns, correctly), displace that warning with any
+cheaper one about somebody else, let the user resolve *that* — and from then on every relayed item
+from the impostor selects it in silence, banner reading like a healthy contact, Encrypt aimed at the
+row the messenger picked. The re-derivation now lives in the setter, where no future path can
+forget it.
+
+**The same shape twice more, in the same commit.** The plain-message arm gives the recipient back
+when nothing decrypted, with a comment explaining that the address which moved it is an unsigned
+header the relay copies from any envelope. The two bundle arms did not — and which arm handles an
+envelope is decided by field presence alone, so the undo cost **one appended field** to escape.
+Both arms undo it now, each asking about the halves it actually carries.
+
+**And "the attached bundle was refused" had three outcomes read as two.** The flag was set only on a
+false return. Bundle processing can also *throw* — a stored session record that cannot be read back
+raises from inside libsignal's own store callback, which needs one flipped byte and no attacker at
+all — and a throw left the flag exactly as cleared. The strip then retracts a standing "that invite
+was changed on the way here" warning and says "Detected contact" for a bundle nobody looked at. It
+is set in a `finally` now: *threw* maps to refused, not to accepted.
+
+**The fix from last tick had two defects of its own, both found before shipping anything else.**
+The lowering path ends by painting the opening line, and it wrote that line **raw** — the only
+banner writer in the file that never asked whether a caution or a store notice held the banner. That
+was invisible while its only callers were a fresh strip and `adoptState`; a keyboard raise reaching
+it on a live strip is what made it matter, and a live strip in that state is precisely one holding
+cautions. Their fields stay set when the paint is lost, so nothing would ever have written them
+again — the fix for one erasure performing another. Over a password field it wiped that notice too.
+
+**And the re-read itself was too blunt for the cadence it now runs at.** On the contacts-unreadable
+arm every other value reads fine, so a plain reload builds a whole replacement account — contact
+list substituted empty — and installs it. Every write has been refused since the fault began, so
+whatever the session did exists in memory only and is destroyed: on a rebuild that happened once per
+forced configuration change; on every raise it happens whenever the messenger cares to lower and
+raise the keyboard. The re-read now adopts only when it actually recovers something. What it costs
+when it *does* recover — the session's memory-only rows — is deliberate and written down: keeping
+them would mean the next successful write replaces the user's real contacts with a list that never
+held them.
+
+**Two things recorded rather than fixed.** The per-raise call is unconditional today only because
+`onStartInputViewInternal`'s own suppressor is dead code — it fires under a flag with no assignment
+to `true` anywhere in the file. Restoring that setter, an ordinary merge outcome, would give back a
+window per rotation in which a raise skips the re-derivation. And the reachability guard now demands
+the recovery-gated re-read by name and demands it *before* the method's first early return, because
+asserting on the substring `reloadAccount` alone did not catch swapping it back — the safe call
+contains it.
+
+Seven mutants this round, each killed by the test that claims it.

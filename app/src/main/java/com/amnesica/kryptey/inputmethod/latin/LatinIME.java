@@ -506,11 +506,23 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     // storage works. The lowering path written for that could not execute: both of its callers
     // guarantee no warning is standing.
     //
-    // Here it can. reloadAccount is what re-attempts the read - contactsAreUnreadable() is a fact
-    // recorded by the last load, not a live probe - and it is called only when a condition warning
-    // is standing, so a healthy raise pays nothing.
+    // Here it can. Re-reading the store is what re-attempts the question - contactsAreUnreadable()
+    // is a fact recorded by the last load, not a live probe - and it runs only while a condition
+    // warning is standing, so a healthy raise pays nothing.
+    //
+    // "Every raise" is true of this method today, but not for the reason it looks like: the handler
+    // above can suppress the call outright, and only under mPendingSuccessiveImsCallback, which is
+    // set only under mIsOrientationChanging - a field with no assignment to true anywhere in this
+    // file. The suppressor is dead code, so the call is unconditional. Restoring that setter, which
+    // is an ordinary outcome of merging upstream, would give back an ~800ms window per rotation in
+    // which a raise skips this, and nothing would notice.
+    //
+    // reloadAccountIfStorageRecovered rather than reloadAccount, because at this cadence the
+    // difference matters: a plain reload on the contacts arm installs a replacement account with
+    // the contact list substituted empty, destroying whatever the session did while writes were
+    // refused - on every raise, at a moment the messenger chooses. See its javadoc.
     if (mE2EEStripView != null && mE2EEStripView.hasStandingConditionWarning()) {
-      SignalProtocolMain.reloadAccount(this);
+      SignalProtocolMain.reloadAccountIfStorageRecovered(this);
       mE2EEStripView.refreshOpeningMessage();
     }
 

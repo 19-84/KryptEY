@@ -54,6 +54,9 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
   private E2EEStripView strip;
   private Contact genuineBob;
   private Contact impostor;
+  /** A bundle the impostor can send from its own address, for the decrypt-path selection. */
+  private String impostorBundle;
+  private int impostorDeviceId;
 
   @Before
   public void setUp() throws Exception {
@@ -68,6 +71,21 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
         peer.getSignalProtocolAddress().getName(), peer.getDeviceId());
     final String bobBundle = SignalProtocolMain.exportOwnKeyBundle();
 
+    // In libsignal's range, and the same value the row below uses. Adding a constant to the peer's
+    // device id runs off the end of [1,127] for a third of the ids the generator picks, and the
+    // encoder is right to refuse it - the test would then be asserting about an envelope no
+    // messenger could ever deliver.
+    impostorDeviceId = (peer.getDeviceId() % 127) + 1;
+
+    // A third identity, so the impostor can offer a bundle of its own rather than a forged one.
+    // The address IN the envelope is the impostor's row - the address name is public and the device
+    // id is a byte the sender writes.
+    SignalProtocolMain.initialize(null);
+    final MessageEnvelope impostorEnvelope = SignalProtocolMain.getPreKeyResponseMessage();
+    impostorEnvelope.setSignalProtocolAddressName(bobAddress.getName());
+    impostorEnvelope.setDeviceId(impostorDeviceId);
+    impostorBundle = EnvelopeCodec.toWire(impostorEnvelope);
+
     SignalProtocolMain.initialize(null);
     final Account victim = SignalProtocolMain.getInstance().getAccount();
     victim.setMessageLogLoader(ArrayList::new);
@@ -77,7 +95,7 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
 
     genuineBob = new Contact("Bob", "Jones", bobAddress.getName(), peer.getDeviceId(), false);
     // The impostor row: same rendered name, an address the attacker controls.
-    impostor = new Contact("Bob", "Jones", bobAddress.getName(), peer.getDeviceId() + 9, false);
+    impostor = new Contact("Bob", "Jones", bobAddress.getName(), impostorDeviceId, false);
     final ArrayList<Contact> contacts = new ArrayList<>();
     contacts.add(genuineBob);
     contacts.add(impostor);
@@ -109,6 +127,34 @@ public class AforgedBundleCannotEvictTheDuplicateWarningTest {
             + "describes an attack it is not testing",
         SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones",
             impostor.getSignalProtocolAddress()));
+  }
+
+  /**
+   * And the DECRYPT path re-raises it too, which is the path the messenger actually drives.
+   *
+   * <p>The re-derivation lived in {@code selectContact} - the contact list being tapped - and the
+   * three decrypt arms move the recipient through {@code setChosenContact} without it. Which path
+   * runs is not the user's choice: the messenger decides what arrives, and the user only presses
+   * Decrypt. So the eviction survived after all, one branch over: displace the warning, let the
+   * user resolve the displacing one, and from then on every relayed item from the impostor selects
+   * it in silence, with the banner reading like a healthy contact and Encrypt aimed at the row the
+   * messenger chose.
+   *
+   * <p>This drives the arm that needs no valid ciphertext to move the recipient, which is also the
+   * cheapest one for an attacker: an invite from its own address.
+   */
+  @Test
+  public void theduplicateWarningComesBackWhenTheDecryptPathChoosesTheRow() throws Exception {
+    strip.setWarningMessageForTest("Careful: something else entirely.");
+    assertTrue("precondition: something else must hold the slot",
+        banner().contains("something else entirely"));
+
+    strip.processPreKeyResponseForTest(EnvelopeCodec.fromWire(impostorBundle), impostor);
+
+    assertTrue("the messenger chooses which path selects a contact, so a control on one of them is "
+            + "not a control: the row the user never tapped is now the Encrypt recipient, and the "
+            + "banner reads like a healthy contact: " + banner(),
+        banner().contains("You already have a contact called"));
   }
 
   /**

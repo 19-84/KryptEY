@@ -189,6 +189,43 @@ public class SignalProtocolMain {
     }
   }
 
+  /**
+   * Re-reads the store, and adopts what it read ONLY if the failure it is checking for has ended.
+   *
+   * <p>For the per-raise re-derivation in {@code LatinIME.onStartInputViewInternal}, which runs
+   * exactly while one of the two storage warnings is standing. The plain {@code reloadAccount}
+   * would be wrong there in a way that only shows up at this cadence: on the contacts-unreadable
+   * arm every other value reads fine, so it builds a whole replacement account - with the contact
+   * list substituted EMPTY - and installs it. Every write has been refused since the fault began,
+   * so anything the session has done (a contact added, a key pinned, a name retired, a rejection
+   * recorded) exists in memory only and is destroyed. On a rebuild that happened once per forced
+   * configuration change; on every keyboard raise it happens whenever the messenger cares to lower
+   * and raise the keyboard.
+   *
+   * <p>So the account is replaced only when the reload actually recovers something: a null read
+   * means the store is still unopenable and the in-memory account is the better copy, and a read
+   * that still reports the contacts unreadable is the same substitution again, with nothing gained
+   * for what it would cost.
+   *
+   * <p>When it DOES recover, the session's memory-only work is still lost, and that is the right
+   * way round rather than an oversight: the in-memory list is the empty substitution plus whatever
+   * was added on top of it, and keeping it would mean the next successful write replaces the user's
+   * real contacts with it. The stored list is the one that must win.
+   *
+   * <p>No write-back, unlike {@code reloadAccount}. That call writes what it has just read, which
+   * cannot carry anything new; here it would be a write on every keyboard raise for nothing.
+   *
+   * @return whether an account was adopted, i.e. whether the condition has ended.
+   */
+  public static boolean reloadAccountIfStorageRecovered(final Context context) {
+    sInstance.initializeStorageHelper(context);
+    if (sInstance.mStorageHelper == null) return false;
+    final Account loaded = sInstance.mStorageHelper.getAccountFromSharedPreferences();
+    if (loaded == null || loaded.contactsWereUnreadable()) return false;
+    sInstance.mAccount = loaded;
+    return true;
+  }
+
   public static MessageEnvelope encryptMessage(final String unencryptedMessage, final SignalProtocolAddress signalProtocolAddress) {
     Log.d(TAG, "Encrypting signal message...");
     return sInstance.encrypt(unencryptedMessage, signalProtocolAddress);
@@ -2004,9 +2041,25 @@ public class SignalProtocolMain {
       // Kept, rather than discarded. This boolean is the whole difference between "your contact
       // sent a fresh invite and it worked" and "something changed that invite in transit", and
       // throwing it away here is what made every UI arm above have to guess.
-      if (!processPreKeyResponseMessage(messageEnvelope, signalProtocolAddress)) {
-        Log.e(TAG, "The attached key bundle was refused");
-        mLastAttachedBundleRefused = true;
+      // Three outcomes, not two, and the third was being read as "accepted".
+      //
+      // The flag was set only on a false RETURN. Bundle processing can also throw - a corrupt
+      // stored session record surfaces StoredRecordUnreadableException from inside libsignal's own
+      // store callback, which needs no attacker cooperation and no key material - and that throw
+      // leaves the flag exactly as this method cleared it. The strip then reads "the attached
+      // bundle was not refused" for a bundle it never looked at: it retracts a standing
+      // refused-invite warning about that sender and paints "Detected contact: X".
+      //
+      // In a finally, so "threw" maps to refused rather than to accepted. The exception still
+      // propagates; this only stops the fact being lost on the way out.
+      boolean accepted = false;
+      try {
+        accepted = processPreKeyResponseMessage(messageEnvelope, signalProtocolAddress);
+      } finally {
+        if (!accepted) {
+          Log.e(TAG, "The attached key bundle was refused");
+          mLastAttachedBundleRefused = true;
+        }
       }
     }
 

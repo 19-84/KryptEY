@@ -46,6 +46,7 @@ import java.util.ArrayList;
 public class AwarningDisplacedIsAwarningThatComesBackTest {
 
   private E2EEStripView strip;
+  private Account victim;
   private Contact bob;
   private Contact impostor;
   private SignalProtocolAddress bobAddress;
@@ -63,7 +64,7 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
     final String bobBundle = SignalProtocolMain.exportOwnKeyBundle();
 
     SignalProtocolMain.initialize(null);
-    final Account victim = SignalProtocolMain.getInstance().getAccount();
+    victim = SignalProtocolMain.getInstance().getAccount();
     victim.setMessageLogLoader(ArrayList::new);
     TestStores.writesLand();
     assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
@@ -194,6 +195,56 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
     assertTrue("an event warning is not a condition warning: a key substitution does not stop "
             + "having happened, and re-deriving it on every raise would cost a store read forever",
         !strip.hasStandingConditionWarning());
+  }
+
+  /**
+   * Lowering the warning must not erase what was standing beside it.
+   *
+   * <p>The lowering path ends by painting the opening line, and it wrote that line RAW - the only
+   * banner writer in the file that did not first ask whether a caution or a store notice held the
+   * banner. That was invisible while the only callers were a freshly inflated strip and
+   * {@code adoptState}, which restores the cautions afterwards and repaints; a keyboard raise
+   * reaching it on a live strip is what made it matter, and a live strip in this state is exactly
+   * one that holds cautions - the compare-the-number caution for a key just pinned, "do not send
+   * them anything" for a row that never reached disk.
+   *
+   * <p>Their fields stay set when the paint is lost, so nothing would ever have written them again.
+   * The fix for one erasure must not perform another.
+   */
+  @Test
+  public void aloweringDoesNotEraseAcautionStandingBesideTheWarning() {
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+    strip.setCautionForTest("Compare the safety number with Bob before trusting this key.", bob);
+    assertTrue("precondition: the caution must be on screen beside the warning: " + banner(),
+        banner().contains("Compare the safety number"));
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.refreshOpeningMessage();
+
+    assertTrue("the storage warning came down and took the caution with it. The caution's field is "
+            + "still set, so nothing will ever paint it again - the user is left with 'No contact "
+            + "chosen' over a key nobody compared: " + banner(),
+        banner().contains("Compare the safety number"));
+  }
+
+  /**
+   * And the contacts arm is offered to the per-raise path too, not only the storage one.
+   *
+   * <p>Written because dropping the second half of {@code hasStandingConditionWarning}'s test
+   * survived the whole suite: every test here drove the storage arm. That mutant reinstates the
+   * original defect on the arm with no other exit at all - the warning it leaves standing tells the
+   * user to compare or reject a contact, and the contact list is what cannot be read.
+   */
+  @Test
+  public void thecontactsArmIsOfferedToThePerRaisePathAswell() {
+    victim.markContactsUnreadable();
+    strip.refreshOpeningMessage();
+    assertTrue("precondition: the contacts warning must be standing: " + banner(),
+        banner().contains("This is not an empty app"));
+
+    assertTrue("a keyboard raise must reconsider this arm as well; it is the one with no other way "
+        + "down", strip.hasStandingConditionWarning());
   }
 
   /** But a warning about an EVENT is not lowered, because the event still happened. */
