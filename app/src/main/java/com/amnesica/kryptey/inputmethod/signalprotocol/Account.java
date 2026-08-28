@@ -344,7 +344,20 @@ public class Account {
     final String address = addressName == null ? "" : addressName;
 
     final LinkedList<String[]> retired = getRetiredDisplayNames();
-    retired.removeIf(entry -> entry.length > 2 && address.equals(entry[2])
+    // By NAME, which is what the reader matches on and therefore what the bound has to count.
+    //
+    // Requiring the address to match too meant the bound counted (name, address) pairs. The address
+    // is derived from a peer-chosen value - the attacker mints a fresh one per invite for nothing -
+    // so varying it made every delete-and-re-add cycle a distinct entry, and a hundred cycles
+    // evicted the genuine retired entry: the one that stops a later contact reusing a deleted
+    // person's name at a new address from being accepted in silence. Folding the name was the fix
+    // for varying the NAME; this is the same attack through the field that was still exact.
+    //
+    // What is given up is small and in the safe direction. The stored address is used only to
+    // suppress the warning for a re-add at that same address while its pin survives, so collapsing
+    // to the most recent address means an older one is no longer suppressed - a warning the user
+    // did not need, rather than a warning they did.
+    retired.removeIf(entry -> entry.length > 2
         && SignalProtocolMain.displayNamesMatch(entry[0], entry[1], first, last));
     retired.addLast(new String[] {first, last, address});
     while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();

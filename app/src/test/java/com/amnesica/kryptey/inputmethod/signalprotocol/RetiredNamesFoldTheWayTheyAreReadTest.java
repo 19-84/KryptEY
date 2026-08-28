@@ -65,21 +65,32 @@ public class RetiredNamesFoldTheWayTheyAreReadTest {
   }
 
   /**
-   * The same name at a different address is a different entry, which the fold must not change.
+   * The same name at a different address is ONE entry, because the reader matches on the name.
    *
-   * <p>The address half is what makes a re-add at the same address unwarned; merging across
-   * addresses would suppress the warning at an address the user never deleted from.
+   * <p>This test asserted the opposite until a review round showed what that cost. Requiring the
+   * address to match as well meant the hundred-entry bound counted (name, address) pairs — and the
+   * address is derived from a peer-chosen value, so an attacker mints a fresh one per invite for
+   * nothing. Varying it made every delete-and-re-add cycle a distinct entry, and a hundred cycles
+   * evicted the genuine retired entry: the one that stops a later contact reusing a deleted
+   * person's name at a new address from being accepted in silence. Folding the name closed that
+   * attack through the name; this closes it through the field that was still exact.
+   *
+   * <p>What is given up is in the safe direction. The stored address suppresses the warning for a
+   * re-add at that same address while its pin survives, so collapsing to the most recent address
+   * means an older one is no longer suppressed — a warning the user did not need, rather than a
+   * warning they did.
    */
   @Test
-  public void thesameNameAtAdifferentAddressIsAdifferentEntry() {
+  public void thesameNameAtAdifferentAddressIsOneEntry() {
     final Account account = account();
 
     account.retireDisplayName("Bob", "Jones", ProtocolAddresses.key(address()));
     account.retireDisplayName("Bob", "Jones",
         ProtocolAddresses.key(ProtocolAddresses.of("22222222-2222-2222-2222-222222222222", 1)));
 
-    assertEquals("the address is half the identity of a retired name; folding the name must not "
-        + "fold the address with it", 2, account.getRetiredDisplayNames().size());
+    assertEquals("the bound has to count what the reader distinguishes, which is names. Counting "
+        + "pairs let an attacker who controls the address fill it with one name.",
+        1, account.getRetiredDisplayNames().size());
   }
 
   /** And the fold is the reader's, not a second one that could drift from it. */

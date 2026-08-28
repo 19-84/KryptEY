@@ -3431,6 +3431,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         contact.getLastName(), contact.getSignalProtocolAddress())) {
       return false;
     }
+    // Deliberately does NOT yield to a warning standing about something else.
+    //
+    // Yielding was tried and reverted, and the test that caught it is the one written for the
+    // eviction attack: an attacker raises any cheap warning about a different contact, and if this
+    // one yields to it, the duplicate-name warning never comes back and the impostor row is
+    // indistinguishable again. Yielding closes a displacement and reopens an eviction, which is
+    // strictly worse.
+    //
+    // What makes last-writer-wins acceptable here is that every warning on this surface is now
+    // RECOMPUTABLE: the identity change, the rejection and the shared name are all re-derived on
+    // selection, and the storage warnings are re-raised on every setInputView. So a displaced
+    // warning returns the moment its own subject is looked at, and displacement is a momentary
+    // ordering question rather than a loss. That property is the thing to protect, and it is what
+    // AwarningDisplacedIsAwarningThatComesBackTest pins.
     final String duplicate = String.format(duplicateNameMessage(contact), labelFor(contact));
     setWarningMessage(duplicate, String.valueOf(contact.getSignalProtocolAddress()));
     return true;

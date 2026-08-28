@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety sections, written in the order things were found rather than by subject, so the
+Ninety-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -146,6 +146,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A warning nobody can answer](#a-warning-nobody-can-answer)
 - [Three call sites, three answers to one question](#three-call-sites-three-answers-to-one-question)
 - [The failure the app had no words for](#the-failure-the-app-had-no-words-for)
+- [A displaced warning is one that comes back](#a-displaced-warning-is-one-that-comes-back)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5422,3 +5423,33 @@ the hostile multi-device wire texts that prove the decoder refuses them. Tighten
 ability to construct the adversarial input while protecting nothing. **The claim is corrected instead
 of enforced**: what is true is that the app's own callers build exactly one device, which is why
 refusing more on the way in cannot reject anything legitimate.
+
+## A displaced warning is one that comes back
+
+**The banner holds one warning, so warnings displace each other. The obvious fix made things worse,
+and the test that proved it was one written three ticks earlier for a different attack.**
+
+Three writers run on every selection in reverse severity, so the most serious wins the slot *for the
+contact being tapped*. That orders them against each other and not across subjects: tapping a contact
+whose name is shared displaces an identity-change warning about a **different** contact, or the
+address-less storage warning. The obvious fix — make the least severe one yield to any standing
+warning — was tried, and `AforgedBundleCannotEvictTheDuplicateWarningTest` failed within one run: if
+this warning yields, an attacker raises one cheap warning about somebody else and the duplicate-name
+warning never returns. **Closing a displacement by reopening an eviction is strictly worse**, and the
+older test knew it.
+
+So the property worth having is not "no displacement" but **displacement that undoes itself**. Every
+warning on this surface is now recomputed rather than remembered: the identity change, the rejection
+and the shared name are re-derived on selection, and the storage warnings are re-raised on every
+`setInputView`. Looking at a warning's own subject brings it back. That is now pinned for the two
+ends of the range — the most frequent contact-scoped one and the app-wide one — and both mutants
+kill: stop re-deriving either and the test says so.
+
+**And the retired-name bound was still counting what the reader does not distinguish.** Folding the
+name closed the attack that varied the *name*; the address half was still compared exactly, and the
+address is derived from a peer-chosen value the attacker mints fresh for nothing. So the same
+eviction ran through the field that had not been fixed: a hundred delete-and-re-add cycles at
+different addresses fill a hundred slots under one name. It counts names now, which is what the
+reader matches on. What is given up is in the safe direction — the stored address only suppresses the
+warning for a re-add at that same address, so collapsing to the most recent one costs a warning the
+user did not need rather than one they did.
