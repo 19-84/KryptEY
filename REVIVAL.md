@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-six sections, written in the order things were found rather than by subject, so the
+Ninety-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -152,6 +152,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [One slot, two facts, four defects](#one-slot-two-facts-four-defects)
 - [A warning raised from a condition has to come down with it](#a-warning-raised-from-a-condition-has-to-come-down-with-it)
 - [The warning that needed a way to be answered](#the-warning-that-needed-a-way-to-be-answered)
+- [Conditions and events, decided once](#conditions-and-events-decided-once)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5611,3 +5612,28 @@ when the condition goes; a warning raised from an event is not, because the even
 That closes the last finding from the last general sweep. The round that produced it judged the
 surface to be converging and recommended one more pass scoped to the caution slot, then stopping;
 that pass is done, and its four symptoms turned out to be the one missing abstraction it predicted.
+
+## Conditions and events, decided once
+
+**The same rule was discovered three times before it was written down: a warning raised from a
+CONDITION must be lowered when the condition goes, and one raised from an EVENT must not, because the
+event still happened.**
+
+Each discovery cost a defect. The storage warning kept asserting an unreadable store after it
+recovered. The contacts-unreadable warning kept asserting it after an unlock — including the clause
+describing its own exit. The shared-name warning kept asserting a clash after the user had resolved
+it by comparing the number. In every case the raise was right and nothing took it down, and in every
+case the sentence held `mWarningStanding`, which suppresses every other notice for the life of the
+process.
+
+Both halves of the rule matter and they fail in opposite directions. A condition warning that cannot
+be lowered is a permanent banner and therefore a permanent silence about everything else — in an app
+whose entire trust surface is sentences. An event warning that *can* be lowered by a passing refresh
+is worse: a detected key substitution is not undone by a disk emptying, and a warning a refresh can
+forget is one the messenger can arrange to have forgotten.
+
+So every method that raises a warning is classified, a condition raiser must contain its own lowering
+path, and an event raiser must contain none. Both mutants kill: remove the lowering from a condition
+raiser and one test fails; add one to an event raiser and the other does. **The classification is the
+point rather than the list** — a new raiser fails the build until somebody decides which kind it is,
+which is the question that was skipped three times.
