@@ -152,7 +152,11 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
     assertTrue("precondition: the storage warning must be standing: " + banner(),
         banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
 
-    // Storage recovers, and the keyboard is raised again.
+    // Storage recovers, and the keyboard is raised again - which is a real sequence now rather
+    // than a described one. LatinIME.onStartInputViewInternal asks hasStandingConditionWarning on
+    // every raise and, when one is standing, re-reads the store and calls this. Before that caller
+    // existed this test drove a path production could not reach: refreshOpeningMessage ran only on
+    // setInputView, always against a freshly inflated strip.
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
     strip.refreshOpeningMessage();
 
@@ -162,6 +166,34 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
         !banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
     assertTrue("and the flag must be down too, or nothing can write the banner again",
         !strip.warningIsStandingForTest());
+  }
+
+  /**
+   * The per-raise path recognises the two warnings that have no other way down, and only those.
+   *
+   * <p>{@code LatinIME.onStartInputViewInternal} asks this on every keyboard raise and re-derives
+   * only when the answer is yes — a refresh with no warning standing repaints the opening banner,
+   * which would wipe whatever the strip is currently saying, and re-asking means re-reading the
+   * store. So the answer being wrong in either direction matters: false while a condition warning
+   * stands is the permanent banner again, and true for an event warning spends a store read on
+   * every raise for the rest of the process.
+   */
+  @Test
+  public void onlyTheconditionWarningsAreOfferedToThePerRaisePath() {
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.UNREADABLE);
+    strip.refreshOpeningMessage();
+    assertTrue("a standing storage warning is one the keyboard raise must reconsider",
+        strip.hasStandingConditionWarning());
+
+    SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    strip.refreshOpeningMessage();
+    assertTrue("and once it is down there is nothing left to reconsider",
+        !strip.hasStandingConditionWarning());
+
+    strip.setWarningMessageAboutForTest("Careful: someone offered a different key for Bob.", bob);
+    assertTrue("an event warning is not a condition warning: a key substitution does not stop "
+            + "having happened, and re-deriving it on every raise would cost a store read forever",
+        !strip.hasStandingConditionWarning());
   }
 
   /** But a warning about an EVENT is not lowered, because the event still happened. */

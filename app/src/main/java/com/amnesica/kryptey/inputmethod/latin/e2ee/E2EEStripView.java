@@ -3067,6 +3067,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private final String INFO_CONTACTS_UNREADABLE = "Your contacts are still on this device and this app cannot open them right now. It is not saving anything until it can, so that it does not replace them with an empty list. This is not an empty app: do NOT re-invite anyone, because re-inviting replaces keys you have already checked. Freeing up space will not help - this clears when the device can read its own storage again, usually after an unlock or a restart.";
 
+  /**
+   * Whether the banner is holding one of the two warnings raised from a CONDITION.
+   *
+   * <p>Asked by {@code LatinIME.onStartInputViewInternal} — every keyboard raise — because these
+   * two are the only warnings with no other way down. A review round found that the lowering path
+   * inside {@code refreshOpeningMessage} could not execute in production at all: its only callers
+   * are {@code setInputView} on a freshly inflated strip and {@code adoptState} guarded on the same
+   * flag, and {@code setInputView} runs once per process unless the theme changes. So a keyboard
+   * that started while the device was locked kept "this clears when the device can read its own
+   * storage again" on screen after the unlock, held {@code mWarningStanding} so every other notice
+   * was suppressed, and left Encrypt and Decrypt dark on an install whose storage works — with no
+   * user action that clears it, and on the contacts arm no exit at all, since the contact list the
+   * suggested Verify or Reject would act on is precisely what cannot be read.
+   *
+   * <p>The re-derivation is gated on this rather than run unconditionally, for two reasons. A
+   * refresh with no warning standing repaints the opening banner, which would wipe whatever the
+   * strip is currently saying on every raise. And re-asking the question means re-reading the
+   * store, which is worth paying for exactly when the answer on file is "it could not be read".
+   */
+  public boolean hasStandingConditionWarning() {
+    return mWarningStanding && (INFO_STORAGE_UNREADABLE.equals(mStandingWarningText)
+        || INFO_CONTACTS_UNREADABLE.equals(mStandingWarningText));
+  }
+
   public void refreshOpeningMessage() {
     if (mInfoTextView == null) return;
     // Asked first, because it is invisible to storageState(): the protocol store opens, so that
@@ -4073,7 +4097,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         INFO_STORAGE_UNREADABLE.equals(carried.standingWarningText)
             || INFO_CONTACTS_UNREADABLE.equals(carried.standingWarningText);
     if (carried.warningStanding && !mWarningStanding && carriedIsAconditionWarning) {
-      // Re-derived: refreshOpeningMessage raises it again if and only if it is still true.
+      // Re-derived rather than replayed, and the call is redundant in the ORDER LatinIME uses
+      // today: setInputView refreshes the fresh strip before adopting, so reaching this branch
+      // already means that refresh raised nothing, and calling it again takes the same path to the
+      // same answer. It is kept because it makes this method independent of that order - adopting
+      // before refreshing would otherwise drop a carried condition warning without ever asking
+      // whether it is still true, which is the fail-open direction - and because a review round
+      // showed the previous justification for this line described a mechanism that was not running.
       refreshOpeningMessage();
     } else if (carried.warningStanding && !mWarningStanding) {
       // The warning's own text, not the banner: the banner may already carry a "Sending to: X"

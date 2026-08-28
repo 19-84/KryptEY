@@ -496,6 +496,24 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
               .isAnyPasswordInputType(editorInfo.inputType));
     }
 
+    // And ask the storage question again, on the one banner that has no other way down.
+    //
+    // The two condition warnings are derived from the state of the store, and the only thing that
+    // derived them ran in setInputView - which happens once per process unless the theme changes.
+    // A keyboard that started while the device was locked therefore kept "this clears when the
+    // device can read its own storage again" on screen after the unlock, held the warning flag so
+    // every other notice was suppressed, and left Encrypt and Decrypt dark on an install whose
+    // storage works. The lowering path written for that could not execute: both of its callers
+    // guarantee no warning is standing.
+    //
+    // Here it can. reloadAccount is what re-attempts the read - contactsAreUnreadable() is a fact
+    // recorded by the last load, not a live probe - and it is called only when a condition warning
+    // is standing, so a healthy raise pays nothing.
+    if (mE2EEStripView != null && mE2EEStripView.hasStandingConditionWarning()) {
+      SignalProtocolMain.reloadAccount(this);
+      mE2EEStripView.refreshOpeningMessage();
+    }
+
     // Switch to the null consumer to handle cases leading to early exit below, for which we
     // also wouldn't be consuming gesture data.
     final KeyboardSwitcher switcher = mKeyboardSwitcher;

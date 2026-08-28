@@ -73,14 +73,73 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
       "setWarningMessageForTest", "setWarningMessageAboutForTest"));
 
   private static String source() throws IOException {
+    return sourceOf(repositoryRoot(),
+        "app/src/main/java/com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStripView.java");
+  }
+
+  /** The same, for any file in the tree, with comments stripped so no claim is read from one. */
+  private static String sourceOf(final Path root, final String path) throws IOException {
+    return new String(Files.readAllBytes(root.resolve(path)), StandardCharsets.UTF_8)
+        .replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("//[^\n]*", " ");
+  }
+
+  /**
+   * The repository root, found by walking up from the working directory.
+   *
+   * <p>Marked by a file this task already declares as an input. Any other marker would be a repo
+   * path a test reads and Gradle does not track, which is a guard of its own here - and it fired
+   * the moment this method was written with a different one.
+   */
+  private static Path repositoryRoot() {
     Path here = Paths.get("").toAbsolutePath();
     while (here != null && !Files.exists(here.resolve("gradle/verification-metadata.xml"))) {
       here = here.getParent();
     }
     assertTrue("the repository root must be findable", here != null);
-    return new String(Files.readAllBytes(here.resolve(
-        "app/src/main/java/com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStripView.java")),
-        StandardCharsets.UTF_8).replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("//[^\n]*", " ");
+    return here;
+  }
+
+  /**
+   * The lowering must have a caller that runs on every keyboard RAISE, not only on a rebuild.
+   *
+   * <p>This is the check that would have caught the defect the whole file is about. The lowering
+   * path was added, tested, and could not execute: {@code refreshOpeningMessage}'s callers were
+   * {@code setInputView} - always handed a freshly inflated strip, so no warning is standing - and
+   * {@code adoptState}, guarded on the same flag. {@code setInputView} runs once per process unless
+   * the theme changes, so a keyboard started while the device was locked kept the warning after the
+   * unlock, suppressed every other notice for the life of the process, and left Encrypt and Decrypt
+   * dark on an install whose storage works.
+   *
+   * <p>A test asserting the body CONTAINS a lowering path certifies dead code just as happily. So
+   * this asserts the reachability instead: {@code onStartInputViewInternal} - which the framework
+   * calls every time the keyboard comes up - must ask whether a condition warning is standing and
+   * re-derive it if one is.
+   */
+  @Test
+  public void theloweringHasAcallerThatRunsOnEveryKeyboardRaise() throws IOException {
+    final String latinIme = sourceOf(repositoryRoot(),
+        "app/src/main/java/com/amnesica/kryptey/inputmethod/latin/LatinIME.java");
+    final int start = latinIme.indexOf("void onStartInputViewInternal");
+    assertTrue("onStartInputViewInternal must exist; it is the per-raise entry point", start > 0);
+
+    int depth = 0;
+    int i = latinIme.indexOf('{', start);
+    final int bodyStart = i;
+    while (i < latinIme.length()) {
+      if (latinIme.charAt(i) == '{') depth++;
+      else if (latinIme.charAt(i) == '}' && --depth == 0) break;
+      i++;
+    }
+    final String body = latinIme.substring(bodyStart, Math.min(i, latinIme.length()));
+
+    assertTrue("the per-raise path must ask whether a condition warning is standing, or the two "
+            + "warnings with no other way down are lowered only by a theme change: " + body.length()
+            + " characters scanned", body.contains("hasStandingConditionWarning"));
+    assertTrue("...and re-derive it when one is. Asking without re-deriving leaves the same "
+            + "permanent banner", body.contains("refreshOpeningMessage"));
+    assertTrue("...after re-reading the store, since whether the contact list could be read is a "
+            + "fact recorded by the last load rather than a live probe",
+        body.contains("reloadAccount"));
   }
 
   /** Method name → its body, for every method in the file. */

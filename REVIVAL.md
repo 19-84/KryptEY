@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred sections, written in the order things were found rather than by subject, so the
+One hundred and one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -156,6 +156,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A fix that could not run, and a test that could not tell](#a-fix-that-could-not-run-and-a-test-that-could-not-tell)
 - [Two questions, one list](#two-questions-one-list)
 - [The clause the argument rested on, and did not mention](#the-clause-the-argument-rested-on-and-did-not-mention)
+- [Once per process is not "every time the keyboard comes up"](#once-per-process-is-not-every-time-the-keyboard-comes-up)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5761,3 +5762,48 @@ neither can produce into a crash on a click listener.
 
 Four more mutants, each now killed by the test that claims it: the merge without de-duplication, the
 trim reversed, the loader without the fold, and the migration blanking one element.
+
+## Once per process is not "every time the keyboard comes up"
+
+**The lowering path for the two condition warnings was still unreachable after the round that was
+written to make it reachable.**
+
+Last round moved the re-derivation into the rebuild. A reviewer then established the real call graph
+rather than reading the comments: `refreshOpeningMessage` has exactly two callers, `setInputView` on
+a freshly inflated strip and `adoptState` guarded on the same flag — and `setInputView` runs **once
+per process** unless the theme changes, because `KeyboardSwitcher.updateKeyboardTheme` is the only
+in-app caller and it returns early when the theme has not changed. So both callers guarantee no
+warning is standing, and the branch that lowers one could not execute at all.
+
+The sequence that costs something is ordinary: the keyboard starts while the device is locked, or
+while the contact list is sealed. The banner says so — including the clause naming its own exit,
+"this clears when the device can read its own storage again, usually after an unlock". The user
+unlocks. Nothing re-asks. The sentence stays for the life of the process, holds `mWarningStanding`
+so **every other notice is suppressed**, and leaves Encrypt and Decrypt dark on an install whose
+storage works. On the contacts arm there is no exit at all: the suggested Verify or Reject acts on
+the contact list, which is exactly what cannot be read.
+
+`onStartInputViewInternal` **does** run every time the keyboard comes up, and already reaches into
+the strip. It now asks whether a condition warning is standing and, only then, re-reads the store
+and re-derives. Gated for two reasons, both load-bearing: an ungated refresh repaints the opening
+banner, wiping whatever the strip is currently saying on every raise; and re-asking means a store
+read, which is worth paying for exactly when the answer on file is "it could not be read".
+
+**The guard for this had to change shape.** The existing one asserted that a condition raiser's body
+*contains* a lowering path — which certifies dead code just as happily, and did. The new one asserts
+**reachability**: the per-raise entry point must ask the question, re-read the store, and re-derive.
+That is the check that would have caught this a round earlier.
+
+Two smaller corrections in the same commit. The re-derivation inside `adoptState` is redundant in the
+order `LatinIME` uses today — reaching it already means the fresh strip's refresh raised nothing —
+and its comment claimed a mechanism that was not running; it is kept, and now says why: it makes the
+method independent of an ordering it does not control, and dropping a carried condition warning
+without asking is the fail-open direction. And the new guard reads `LatinIME.java`, which tripped
+the rule that every repo file a test reads must be a declared task input — caught by that guard, not
+by a run.
+
+**One instrumentation run out of two aborted natively**, deep in the framework's view-tree draw with
+no application frame in the stack, during the foreign-app ciphertext test; the re-run was 30/30. It
+is recorded rather than explained: this file already notes that multi-core TCG crashed the guest's
+system server, and an unexplained abort in the same environment is worth a line even when the next
+run is green.
