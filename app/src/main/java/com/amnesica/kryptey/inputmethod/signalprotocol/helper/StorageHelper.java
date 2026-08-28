@@ -252,10 +252,26 @@ public class StorageHelper {
           // shape is the only shape production ever sees: the suppression never fired, and every
           // delete-and-re-add appended another copy to a bounded list whose oldest entry is the one
           // an attacker wants evicted.
-          retired.add(new String[] {
-              pair.size() > 0 && pair.get(0) != null ? String.valueOf(pair.get(0)) : "",
-              pair.size() > 1 && pair.get(1) != null ? String.valueOf(pair.get(1)) : "",
-              pair.size() > 2 && pair.get(2) != null ? String.valueOf(pair.get(2)) : ""});
+          //
+          // Length THREE OR MORE, since one entry now carries every address that name was deleted
+          // from. Reading a fixed three would have quietly discarded all but the first on the next
+          // reload, and reloadAccount runs on every setInputView - so the set would have been an
+          // in-memory nicety and the suppression would have gone back to answering for one address.
+          final int addresses = Math.min(Math.max(pair.size() - 2, 1),
+              com.amnesica.kryptey.inputmethod.signalprotocol.Account.RETIRED_ADDRESSES_PER_NAME);
+          final String[] entry3 = new String[2 + addresses];
+          entry3[0] = pair.size() > 0 && pair.get(0) != null ? String.valueOf(pair.get(0)) : "";
+          entry3[1] = pair.size() > 1 && pair.get(1) != null ? String.valueOf(pair.get(1)) : "";
+          // The NEWEST when a stored entry somehow holds more than the bound, which is the end the
+          // writer's trim keeps. Nothing observable turns on the direction today - suppression
+          // needs a set of exactly one address and neither trim can produce one - so this is
+          // written for agreement between the two, not as a control.
+          final int from = Math.max(pair.size() - addresses, 2);
+          for (int i = 0; i < addresses; i++) {
+            final Object at = pair.size() > from + i ? pair.get(from + i) : null;
+            entry3[2 + i] = at == null ? "" : String.valueOf(at);
+          }
+          retired.add(entry3);
         } else if (entry instanceof String[]) {
           retired.add((String[]) entry);
         }

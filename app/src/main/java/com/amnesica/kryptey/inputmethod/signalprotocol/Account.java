@@ -305,6 +305,16 @@ public class Account {
   /** How many deleted names to remember. Enough to cover a user tidying their list. */
   private static final int RETIRED_DISPLAY_NAME_LIMIT = 100;
 
+  /**
+   * How many addresses one retired name remembers.
+   *
+   * <p>The list is bounded by NAME, so a name's addresses cannot be the thing that fills it. This
+   * second bound only stops one name growing without limit, and dropping the oldest address is the
+   * safe direction: an address that is no longer remembered is an address the suppression no longer
+   * applies to, so what is lost is silence, not a warning.
+   */
+  public static final int RETIRED_ADDRESSES_PER_NAME = 8;
+
   public LinkedList<String[]> getRetiredDisplayNames() {
     if (retiredDisplayNames == null) retiredDisplayNames = new LinkedList<>();
     return retiredDisplayNames;
@@ -322,7 +332,7 @@ public class Account {
    * there is a false alarm, and it is the commonest firing of this control, because the app's own
    * decryption-failure advice sends users round exactly that loop.
    *
-   * <p>De-duplicated, so the bound counts DISTINCT names. Without that, a hundred delete-and-re-add
+   * <p>Merged by name, so the bound counts DISTINCT names. Without that, a hundred delete-and-re-add
    * cycles of one unrelated contact evict the name an attacker cares about - user work rather than
    * attacker work, but it is the loop the app's advice creates.
    *
@@ -344,27 +354,64 @@ public class Account {
     final String address = addressName == null ? "" : addressName;
 
     final LinkedList<String[]> retired = getRetiredDisplayNames();
-    // By NAME AND ADDRESS, and this was changed to name-only for one round and changed back.
+
+    // One entry per folded NAME, carrying the set of addresses that name has been deleted from.
     //
-    // The argument for name-only was that the reader matches on the name, so the hundred-entry
-    // bound should count names - otherwise an attacker varying the address fills it. That attack is
-    // real and it is expensive: entries are created only when the USER deletes a contact, so it
-    // needs a hundred add-and-delete cycles the user performs. The attacker cannot mint entries
-    // under a name the user never types.
+    // Keying was name-only for one round and name-and-address for the next, and each shape bought
+    // its own attack, because the two things being asked of this list are different questions:
     //
-    // Name-only eviction bought a much cheaper attack in exchange. The user deletes the genuine
-    // "Bob" at one address; an impostor invites as "Bob" from another, which correctly warns; the
-    // user heeds the warning and deletes the impostor - and that deletion, under the same folded
-    // name, EVICTS the genuine entry. Deletion deliberately keeps the pin, so the impostor's next
-    // invite at that same address is suppressed by hasRetiredDisplayName and arrives with no
-    // warning at all. One cycle, using the name it is impersonating as the eviction key, turning a
-    // firing warning into silence.
+    //   the BOUND asks "how many names do we remember", and the reader matches on the name - so an
+    //   entry per address let the attacker mint entries for free by varying the address, pressing a
+    //   real name out of a hundred-entry list without the user ever typing the impostor's name;
     //
-    // A hundred user-driven cycles to crowd out an entry is worse than nothing; one attacker-driven
-    // cycle to delete the exact entry that would have warned is worse than that.
-    retired.removeIf(entry -> entry.length > 2 && address.equals(entry[2])
-        && SignalProtocolMain.displayNamesMatch(entry[0], entry[1], first, last));
-    retired.addLast(new String[] {first, last, address});
+    //   the SUPPRESSION asks "was this exact address deleted", because deletion keeps the pin and a
+    //   re-add there is provably the same identity - so collapsing to the name alone made the
+    //   deletion of an impostor "Bob" EVICT the genuine "Bob", and the impostor's next invite at
+    //   its own address arrived silent. One attacker-driven cycle, using the impersonated name as
+    //   the eviction key.
+    //
+    // Neither is a keying problem. They are two facts about one name, and an entry that holds the
+    // name once and its addresses as a set answers both: the bound counts names, so varying the
+    // address merges instead of accumulating, and the suppression still needs an exact address that
+    // is in the set, so deleting the impostor ADDS its address rather than removing the genuine
+    // one. Merging is also why this cannot be written as removeIf-then-add: the entry being
+    // replaced carries addresses the new one must keep.
+    String[] merged = null;
+    for (final java.util.Iterator<String[]> it = retired.iterator(); it.hasNext(); ) {
+      final String[] entry = it.next();
+      if (entry.length < 2
+          || !SignalProtocolMain.displayNamesMatch(entry[0], entry[1], first, last)) {
+        continue;
+      }
+      it.remove();
+      merged = entry;
+      break;
+    }
+
+    if (merged == null) {
+      retired.addLast(new String[] {first, last, address});
+    } else {
+      final java.util.LinkedList<String> addresses = new java.util.LinkedList<>();
+      for (int i = 2; i < merged.length; i++) {
+        if (merged[i] != null && !merged[i].equals(address)) addresses.addLast(merged[i]);
+      }
+      addresses.addLast(address);
+      // Oldest address first, so the trim below drops the oldest. An entry written before the
+      // record held an address contributes an empty string, which matches no live address and is
+      // kept rather than dropped: it is what makes a legacy entry warn about everything.
+      while (addresses.size() > RETIRED_ADDRESSES_PER_NAME) addresses.removeFirst();
+
+      final String[] replacement = new String[2 + addresses.size()];
+      // The name is re-recorded from the CURRENT deletion rather than kept from the old entry. The
+      // two fold to the same thing by construction; the newer spelling is the one the user last
+      // saw, and the warning quotes it back to them.
+      replacement[0] = first;
+      replacement[1] = last;
+      int i = 2;
+      for (final String each : addresses) replacement[i++] = each;
+      retired.addLast(replacement);
+    }
+
     while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();
   }
 

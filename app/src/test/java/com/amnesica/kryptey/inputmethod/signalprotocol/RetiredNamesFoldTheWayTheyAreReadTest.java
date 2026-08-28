@@ -68,33 +68,40 @@ public class RetiredNamesFoldTheWayTheyAreReadTest {
   }
 
   /**
-   * The same name at a different address is a SEPARATE entry, and this test asserted the opposite
-   * for one round.
+   * The same name at a different address is ONE entry that remembers both addresses.
    *
-   * <p>The case for merging them was that the reader matches on the name, so a bound meant to count
-   * names should not be fillable by varying the address. That attack is real and expensive: entries
-   * are created only when the <em>user</em> deletes a contact, so it needs a hundred add-and-delete
-   * cycles the user performs, and the attacker cannot mint entries under a name the user never
-   * types.
+   * <p>This assertion has been written three ways, and the two earlier ones each held half of it.
+   * Separate entries per address made the hundred-name bound fillable by varying the address, which
+   * the attacker chooses freely. A single entry keyed by name alone erased the earlier address,
+   * which is worse: the user deletes the genuine "Bob"; an impostor invites as "Bob" from another
+   * address and is correctly warned about; the user heeds the warning and deletes the impostor —
+   * and that deletion, under the same folded name, evicted the genuine record, so the impostor's
+   * next invite arrived silent. One cycle, using the impersonated name as the eviction key.
    *
-   * <p>Merging bought a far cheaper attack. The user deletes the genuine "Bob" at one address; an
-   * impostor invites as "Bob" from another, which correctly warns; the user heeds the warning and
-   * deletes the impostor — and that deletion, under the same folded name, evicts the genuine entry.
-   * Deletion deliberately keeps the pin, so the impostor's next invite at that same address is
-   * suppressed and arrives with no warning at all. One cycle, using the name it is impersonating as
-   * the eviction key, turning a firing warning into silence.
+   * <p>The record is not the entry count. It is "which addresses has this name been deleted from",
+   * and the answer must keep both while occupying one slot. What that buys is asserted where it can
+   * be seen end to end, in {@code RetiredNameBoundCountsNamesTest}; this pins the shape underneath
+   * it.
    */
   @Test
-  public void thesameNameAtAdifferentAddressIsAseparateEntry() {
+  public void thesameNameAtAdifferentAddressJoinsTheSameEntry() {
     final Account account = account();
+    final String first = ProtocolAddresses.key(address());
+    final String second =
+        ProtocolAddresses.key(ProtocolAddresses.of("22222222-2222-2222-2222-222222222222", 1));
 
-    account.retireDisplayName("Bob", "Jones", ProtocolAddresses.key(address()));
-    account.retireDisplayName("Bob", "Jones",
-        ProtocolAddresses.key(ProtocolAddresses.of("22222222-2222-2222-2222-222222222222", 1)));
+    account.retireDisplayName("Bob", "Jones", first);
+    account.retireDisplayName("Bob", "Jones", second);
 
-    assertEquals("deleting a contact at one address must not erase the record of a deletion at "
-        + "another - that record is what warns about the next impersonation",
-        2, account.getRetiredDisplayNames().size());
+    assertEquals("one folded name occupies one slot, or the bound counts addresses the attacker "
+        + "picks instead of names the user typed", 1, account.getRetiredDisplayNames().size());
+
+    final java.util.List<String> addresses = java.util.Arrays.asList(
+        account.getRetiredDisplayNames().getFirst());
+    assertTrue("deleting a contact at one address must not erase the record of a deletion at "
+        + "another - that record is what warns about the next impersonation", 
+        addresses.contains(first));
+    assertTrue("and the newer deletion must be recorded too", addresses.contains(second));
   }
 
   /** And the fold is the reader's, not a second one that could drift from it. */

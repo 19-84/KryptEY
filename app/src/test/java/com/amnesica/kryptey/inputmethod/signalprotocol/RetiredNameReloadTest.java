@@ -166,6 +166,50 @@ public class RetiredNameReloadTest {
   }
 
   /**
+   * EVERY address a name was deleted from survives the reload, not just the first.
+   *
+   * <p>One entry now carries the whole set, and a loader reading a fixed three elements would keep
+   * the oldest and drop the rest on the next {@code setInputView} — which is every time the
+   * keyboard is raised. The in-memory set would have been a nicety and the suppression would have
+   * gone back to answering for one address, silently, exactly the way the address itself was
+   * dropped before this file existed.
+   */
+  @Test
+  public void everyAddressOnAretiredNameSurvivesAreload() throws Exception {
+    pinAndThenDeleteBob();
+    final SignalProtocolAddress second = ProtocolAddresses.of("attacker-uuid", 9);
+
+    final Account before = SignalProtocolMain.getInstance().getAccount();
+    before.retireDisplayName("Bob", "Jones", ProtocolAddresses.key(second));
+    assertEquals("fixture: both deletions share one entry", 1,
+        before.getRetiredDisplayNames().size());
+    assertEquals("fixture: that entry holds both addresses", 4,
+        before.getRetiredDisplayNames().getFirst().length);
+    storeTheAccount(before);
+
+    final Account after = reloaded();
+    assertEquals("both addresses must come back, or the set is in-memory only and the reload "
+            + "quietly re-widens the warning", 4,
+        after.getRetiredDisplayNames().getFirst().length);
+
+    assertNotNull("precondition: the pin at the first address still stands",
+        after.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+    assertTrue("a name deleted at two addresses warns at either of them, and that must survive "
+            + "the reload too",
+        SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", peerAddress));
+  }
+
+  /** Writes the account through a helper holding this test's key. */
+  private void storeTheAccount(final Account account) {
+    new StorageHelper(context, (c, hasExistingData) -> new GcmCryptoBox() {
+      @Override
+      protected SecretKey key() {
+        return key;
+      }
+    }).storeAllInformationInSharedPreferences(account);
+  }
+
+  /**
    * De-duplication is by (name, address), so losing the address also loses the de-duplication.
    *
    * <p>{@code retireDisplayName} removes a prior entry only when {@code entry.length > 2}. Reloaded

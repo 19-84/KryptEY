@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-eight sections, written in the order things were found rather than by subject, so the
+Ninety-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -154,6 +154,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The warning that needed a way to be answered](#the-warning-that-needed-a-way-to-be-answered)
 - [Conditions and events, decided once](#conditions-and-events-decided-once)
 - [A fix that could not run, and a test that could not tell](#a-fix-that-could-not-run-and-a-test-that-could-not-tell)
+- [Two questions, one list](#two-questions-one-list)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5674,3 +5675,48 @@ into a commit — it is removed, and the lesson is that a broad add is not safe 
 writing to the tree. And the first version of the test above recorded its refusal at the wrong
 address, so the mutant survived: the test passed with the defect reinstated. **The mutant is the
 only reason either was noticed.**
+
+## Two questions, one list
+
+**The retired-name list was keyed twice, each way bought its own attack, and neither was a keying
+problem.**
+
+The list remembers the names of deleted contacts so that a name coming back can be warned about. It
+was keyed by name and address for one round and by name alone for the next, and the argument
+reversed each time, because two different questions are being asked of one list:
+
+- the **bound** asks *how many names do we remember*, and the reader matches on the name — so an
+  entry per address let a messenger that drives deletions mint entries for free by varying the
+  address, pressing a real name out of a hundred-entry list without the user ever typing the
+  impostor's name;
+- the **suppression** asks *was this exact address one the name was deleted from*, because deletion
+  keeps the pin and a re-add there is provably the same identity — so collapsing to the name alone
+  made deleting an impostor "Bob" **evict** the genuine "Bob", and the impostor's next invite
+  arrived silent. One attacker-driven cycle, using the impersonated name as the eviction key.
+
+They are two facts about one name. One entry per folded name, carrying its addresses as a **set**,
+answers both: the bound counts names, so varying the address merges instead of accumulating, and the
+suppression still needs an exact address, so deleting the impostor **adds** its address rather than
+removing the genuine one.
+
+**The merge had to not widen the suppression, and the obvious reading would have.** With an entry
+per address, a second retirement of the same name elsewhere left a record matching the name and not
+the excluded address, so the reader warned. Under a set, "the set contains this address" suppresses
+instead — and that case is the one the control exists for: a genuine Bob deleted at one address, an
+impostor Bob deleted at another, the impostor coming back. So the rule is **every** recorded address
+must be the excluded one. That reproduces the old answer for every input, and an attacker cannot
+shrink a set back to one.
+
+Two bounds now, and the second one's direction is the argument for allowing it at all: a name's
+address set is capped, and dropping the oldest loses **silence, not a warning** — an address no
+longer listed is one the suppression no longer applies to.
+
+**And the loader had to be changed with it.** It read a fixed three elements. Reading the set back as
+its first address would have discarded the rest on the next `setInputView` — which is every time the
+keyboard is raised — so the set would have been an in-memory nicety while the suppression quietly
+went back to answering for one address. That is the same failure this file already records once, and
+it is the reason the reload test exists rather than being assumed.
+
+Four mutants were run against this: the reader taking "contains" instead of "every", the loader
+keeping one address, and both earlier keyings. Each is killed by the test that claims that property,
+and by no other.

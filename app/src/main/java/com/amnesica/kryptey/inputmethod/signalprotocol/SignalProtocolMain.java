@@ -1287,8 +1287,21 @@ public class SignalProtocolMain {
       // pin - so excludedIsStillPinned was satisfied by the attacker's own key and the duplicate
       // warning was suppressed. Those entries are re-keyed once at load instead; where the address
       // could not be identified their address element is blanked, which leaves the warning ON.
-      if (excludedIsStillPinned && retired.length > 2
-          && excludedAddress.equals(retired[2])) {
+      // EVERY address this name was deleted from must be the excluded one, not merely one of them.
+      //
+      // One entry now carries the whole set, so that varying the address cannot mint entries
+      // against the hundred-name bound - see Account.retireDisplayName. That merge must not quietly
+      // widen the suppression, and "the set contains it" would have: with an entry per address, a
+      // second retirement of the same name at a DIFFERENT address left a record that matched the
+      // name and not the excluded address, so this loop warned. Under a set, "contains" would
+      // suppress instead, and the case is the one that matters - the user deleted a genuine Bob at
+      // one address and an impostor Bob at another, and the impostor coming back is exactly what
+      // the warning is for.
+      //
+      // Requiring all of them keeps the old answer for every input: a lone retirement at the
+      // excluded address still suppresses, which is the common false alarm this exists to stop, and
+      // an attacker cannot shrink a set back to one.
+      if (excludedIsStillPinned && everyAddressIs(retired, excludedAddress)) {
         continue;
       }
       // And a contact whose number the user has actually compared.
@@ -1310,6 +1323,21 @@ public class SignalProtocolMain {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Whether every address a retired-name entry records is this exact address.
+   *
+   * <p>An entry recording no address at all answers no: entries written before the record held one
+   * contribute an empty element, and a legacy entry warns about everything, which is the direction
+   * that fails safe.
+   */
+  private static boolean everyAddressIs(final String[] retired, final String address) {
+    if (address == null || address.isEmpty() || retired.length < 3) return false;
+    for (int i = 2; i < retired.length; i++) {
+      if (!address.equals(retired[i])) return false;
+    }
+    return true;
   }
 
   /** Whether the contact at this address has had its safety number compared and confirmed. */
