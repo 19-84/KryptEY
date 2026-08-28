@@ -325,6 +325,16 @@ public class Account {
    * <p>De-duplicated, so the bound counts DISTINCT names. Without that, a hundred delete-and-re-add
    * cycles of one unrelated contact evict the name an attacker cares about - user work rather than
    * attacker work, but it is the loop the app's advice creates.
+   *
+   * <p><b>De-duplicated the way the READER matches</b>, which it was not. The reader folds:
+   * {@code hasRetiredDisplayName} goes through {@code displayNamesMatch}, which NFKC-folds, strips
+   * invisibles and maps confusables, so "Bob Jones", "Bob Jones " and a Cyrillic-B "Вob Jones"
+   * are one name to it. The writer compared raw strings, so those occupied three slots and answered
+   * one query - and a messenger that can drive deletions (replay a message, the decrypt fails, the
+   * app's own advice is delete-and-re-invite) could vary the name each cycle so the dedup never
+   * collapsed, pressing a real entry out of the bound with a hundred variants instead of a hundred
+   * repeats. Writer and reader now fold identically, which is the only way a bound on "distinct
+   * names" means anything.
    */
   public void retireDisplayName(final String firstName, final String lastName,
                                 final String addressName) {
@@ -334,8 +344,8 @@ public class Account {
     final String address = addressName == null ? "" : addressName;
 
     final LinkedList<String[]> retired = getRetiredDisplayNames();
-    retired.removeIf(entry -> entry.length > 2
-        && first.equals(entry[0]) && last.equals(entry[1]) && address.equals(entry[2]));
+    retired.removeIf(entry -> entry.length > 2 && address.equals(entry[2])
+        && SignalProtocolMain.displayNamesMatch(entry[0], entry[1], first, last));
     retired.addLast(new String[] {first, last, address});
     while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();
   }

@@ -75,8 +75,20 @@ public final class EnvelopeCodec {
     // What that bought an attacker was not corruption but credibility: take a GENUINE invite from
     // someone, staple readable prose to the end of it, and the recipient's paste still validates as
     // a clean key bundle from that person's address. "== my old key was compromised, delete me and
-    // re-add from this message" arrives looking like it came with the invite. Without this, the
-    // prose has to sit outside the envelope where the user can see it is just text.
+    // re-add from this message" arrives looking like it came with the invite.
+    //
+    // What this check does NOT do, stated because an earlier version of this comment implied it:
+    // it does not make prose-beside-a-bundle impossible in general. It cannot. The receiver does
+    // not choose the encoding - encodedTextContainsInvisibleCharacters routes on an invisible
+    // character appearing ANYWHERE in the paste - and the FairyTale decoder accumulates bits from
+    // sixteen mapped code points and ignores everything else, so visible prose around an invisible
+    // payload is the carrier working as designed. The encoder is public and keyless, so anyone can
+    // re-encode a genuine envelope inside prose of their choosing.
+    //
+    // That is a real property and it is pinned elsewhere rather than argued away here:
+    // FairyTaleCarrierIsNotAuthenticatedTest exists precisely because the visible half of that
+    // route carries no authentication and cannot be given any. What this check defends is the RAW
+    // route, where the wire text is the envelope and appending to it must not survive.
     //
     // Re-encoding and comparing catches that, and two other kinds of malleability with it: padding
     // in the middle of the input, which this decoder reads as the byte 255 rather than rejecting,

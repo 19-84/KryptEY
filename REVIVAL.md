@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Eighty sections, written in the order things were found rather than by subject, so the
+Eighty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -136,6 +136,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [One sentence doing four jobs](#one-sentence-doing-four-jobs)
 - [A row with no key, and the arm that filled it](#a-row-with-no-key-and-the-arm-that-filled-it)
 - [Two facts, one slot, again](#two-facts-one-slot-again)
+- [A bound that counted what the app does not distinguish](#a-bound-that-counted-what-the-app-does-not-distinguish)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5067,3 +5068,35 @@ explicit pair, so adding a third standing item meant finding all four — and th
 first is the one the test caught: the plain "Chosen contact: X" line painted straight over the
 notice. They ask one shared question now, which is what should have been there before a third kind
 existed.
+
+## A bound that counted what the app does not distinguish
+
+**The retired-name list is capped at a hundred entries and de-duplicated so the cap counts distinct
+names rather than repeats. The writer compared raw strings; the reader folds.**
+`hasRetiredDisplayName` goes through `displayNamesMatch`, which NFKC-folds, strips invisible
+characters and maps confusables — so "Bob Jones", "Bob Jones " and a Cyrillic-B "Вob Jones" occupied
+three slots and answered one query.
+
+That is worth fixing rather than tidying because **a messenger can drive deletions**: replaying a
+message makes the decrypt fail, and this app's own advice for a failed decrypt is
+delete-and-re-invite. Varying the name each cycle meant the dedup never collapsed, so a hundred
+*variants* could press a real entry out of the bound where a hundred repeats could not — and the
+entry pressed out is what stops a later contact reusing a deleted person's name at a new address from
+being accepted in silence. Writer and reader fold identically now, which is the only way a bound on
+"distinct names" means anything. The address half is deliberately still compared exactly: it is what
+makes a re-add at the same address unwarned, and folding it would suppress the warning at an address
+the user never deleted from.
+
+**And the canonical-encoding check was claiming a property it cannot have.** Its comment said that
+without it "the prose has to sit outside the envelope where the user can see it is just text". That
+holds on the RAW route, which is what the check defends. It does not hold in general, and cannot: the
+receiver does not choose the encoding — the router sends anything containing an invisible character
+to the FairyTale decoder — and that decoder accumulates bits from sixteen mapped code points and
+ignores everything else, so visible prose around an invisible payload is the carrier working exactly
+as designed. The encoder is public and keyless, so anyone can re-encode a genuine envelope inside
+prose of their choosing.
+
+The comment now says what the check defends and names the test that already pins the other half.
+This is the same class as every wording defect in this document, applied to a comment rather than to
+a notice: **a control that describes itself more broadly than it works is a control someone will
+later rely on for the part that does not exist.**
