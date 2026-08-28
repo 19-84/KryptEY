@@ -1557,9 +1557,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final String notSaved = rowReachedDisk
           ? String.format(INFO_SESSION_NOT_SAVED, labelFor(chosenContact))
           : String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact));
-      setCautionBesideAnyWarning(
+      // Through the composer, like the other two. This was the call site the composer never
+      // reached: it wrote the shared caution field directly, so on the arm where the row lands and
+      // the session write does not, the pin caution posted moments earlier - about a key this very
+      // add pinned by trust-on-first-use - was overwritten by a storage sentence that says nothing
+      // about comparing a number. Nothing re-posts it, so the loss was permanent.
+      // And when the ROW is what was lost, the compare-the-number caution goes with it.
+      //
+      // This is the distinction neither previous behaviour had. The old code replaced the pin
+      // caution unconditionally, justified by containment - "do not send them anything until you
+      // have added them again successfully" subsuming "compare the number before sending anything
+      // private". That argument is sound when the contact is about to disappear and false when it
+      // is not, and the two cases were being treated the same:
+      //
+      //   - the ROW write failed: the contact will not survive the restart, so asking the user to
+      //     compare a security number for it is asking for work that is about to be thrown away.
+      //   - only the SESSION write failed: the row is on disk, the contact stays, and the key that
+      //     was just pinned by trust-on-first-use is exactly what the user should be comparing.
+      if (!rowReachedDisk) clearCautionIfAbout(chosenContact);
+      postStorageCaution(
           sessionCreationFailed ? notSaved + " " + INFO_SESSION_CREATION_FAILED : notSaved,
-          chosenContact, true);
+          chosenContact);
     }
   }
 
@@ -1934,15 +1952,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * "about anyone", so verifying or deleting anybody cleared it as well. Both are trivially
    * reachable straight after the deletion that raises it.
    */
-  /**
-   * Whether the standing caution is one of the storage notices, rather than a security one.
-   *
-   * <p>Set beside the caution so the retirement above can ask a fact instead of searching the
-   * sentence for a phrase. Searching worked until a second storage notice was written that did not
-   * contain the phrase, and then failed silently in the direction that leaves a false sentence on
-   * the durable surface.
-   */
-  private boolean mStandingCautionIsAstorageNotice;
 
   private String mStandingStoreNotice;
 
@@ -2042,27 +2051,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * an earlier failure lost; it is excluded at the counter rather than here.
    */
   /**
-   * Posts a storage caution without discarding a pin caution standing about the same contact.
+   * Posts a storage caution. It has its own slot, so there is nothing to merge and nothing to lose.
    *
-   * <p>Three call sites needed this and each had solved it differently: one appended, one replaced,
-   * and one replaced while storing a null address. Replacing loses the sentence that fires because
-   * nothing was noticed - a messenger-supplied key pinned by trust-on-first-use - and no storage
-   * sentence contains "compare the security number", so nothing carries that instruction forward.
+   * <p>This composed the storage sentence onto a standing pin caution, because the two shared one
+   * field. That merge was hand-rolled at three call sites in three different ways and every one lost
+   * something: it could not compose onto its own output, so a second storage failure for the same
+   * contact dropped the pin half; the refusal retirement cleared the composed string on the strength
+   * of a comment saying the pin caution would be re-posted, which it never is; and one call site
+   * never reached the composer at all.
    *
-   * <p>Composed only when the standing caution is a pin caution ABOUT THIS CONTACT, so composing
-   * cannot re-scope somebody else's caution onto this address. Always stored as a storage notice,
-   * which is both true and what bounds it: a composed caution marked as a storage notice is not
-   * something the next paste appends to again, so the sentence cannot accumulate one copy per
-   * incoming message.
+   * <p>Two fields make all of that unnecessary rather than careful.
    */
   private void postStorageCaution(final String notice, final Contact about) {
-    final boolean apinCautionStandsAboutThisContact = about != null
-        && mStandingCaution != null
-        && !mStandingCautionIsAstorageNotice
-        && mStandingCaution.contains("compare the security number")
-        && String.valueOf(about.getSignalProtocolAddress()).equals(mStandingCautionAddress);
-    setCautionBesideAnyWarning(
-        apinCautionStandsAboutThisContact ? mStandingCaution + " " + notice : notice, about, true);
+    mStandingStorageCaution = notice;
+    mStandingStorageCautionAddress = about == null ? null
+        : String.valueOf(about.getSignalProtocolAddress());
+    setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
 
   private void expireRefusalsSettledByAlaterWrite() {
@@ -2103,13 +2107,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // A composed caution counts: it is stored with the storage flag set, so this finds it, and
       // retiring it takes the pin sentence with it - which is correct, because the pin caution is
       // re-posted by the next paste that pins and the storage half is what has just been resolved.
-      if (address.equals(mStandingCautionAddress) && mStandingCautionIsAstorageNotice) {
-        mStandingCaution = null;
-        mStandingCautionAddress = null;
-        mStandingCautionIsAstorageNotice = false;
-        setInfoTextViewMessage(mInfoTextView, mWarningStanding ? warningWithRecipient()
-            : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
-                : INFO_NO_CONTACT_CHOSEN);
+      // Only the STORAGE half, which is the half a landed write settles.
+      //
+      // It used to clear the whole composed caution, justified by a comment saying the pin caution
+      // would be re-posted by the next paste that pins. It never is: cautionThatAkeyWasPinned
+      // returns immediately once a key is pinned, and after the pin it always is. So the sentence
+      // saying a messenger-supplied key had been pinned by trust-on-first-use was deleted by any
+      // later write anywhere - and the messenger chooses when that happens, since relaying any
+      // message is enough.
+      if (address.equals(mStandingStorageCautionAddress)) {
+        mStandingStorageCaution = null;
+        mStandingStorageCautionAddress = null;
+        setInfoTextViewMessage(mInfoTextView,
+            aStandingItemHoldsTheBanner() ? warningWithRecipient()
+                : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
+                    : INFO_NO_CONTACT_CHOSEN);
       }
     }
   }
@@ -2786,7 +2798,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // chat line.
     // The store notice counts here for the same reason the caution does: this method runs from
     // deleting ANY contact, which is precisely the moment the notice is raised.
-    if (mStandingCaution != null || mStandingStoreNotice != null) {
+    if (mStandingCaution != null || mStandingStorageCaution != null
+        || mStandingStoreNotice != null) {
       // The other unconditional banner writer, and the one the caution work did not reach. It runs
       // from deleting ANY contact - so deleting Alice painted "No contact chosen" over a caution
       // about Carol, which is precisely the cross-contact erase clearCautionIfAbout was scoped to
@@ -2882,7 +2895,25 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * by any rotation. The warning survived all three, which is why the invariant sweep could not
    * see it: that sweep watches the flag, and this is an erase of text with the flag left standing.
    */
+  /**
+   * The caution about a KEY: a pin the app cannot attribute, and the instruction to compare.
+   *
+   * <p>Split from the storage caution below because the two are independent facts about one contact
+   * and sharing a slot produced four separate defects in as many rounds: a composer that could not
+   * compose onto its own output and therefore dropped the pin half on the second storage failure; a
+   * retirement that dropped the pin half on the strength of a comment claiming it would be re-posted,
+   * which it never is; one call site that never reached the composer at all and simply overwrote;
+   * and an address-less storage notice that re-scoped the whole thing.
+   *
+   * <p>Every one of those was a merge hand-rolled at a call site. Two fields need no merge.
+   */
   private String mStandingCaution = null;
+
+  /** The caution about STORAGE for the same contact: a write that did not land. */
+  private String mStandingStorageCaution = null;
+
+  /** The address that storage caution is about, scoped like every other item here. */
+  private String mStandingStorageCautionAddress = null;
 
   /**
    * The contact that caution is about, so a response about someone else cannot take it down.
@@ -2914,7 +2945,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * through this whenever a warning is standing.
    */
   private String warningWithRecipient() {
-    if (mStandingWarningText == null && mStandingCaution == null && mStandingStoreNotice == null) {
+    if (mStandingWarningText == null && mStandingCaution == null
+        && mStandingStorageCaution == null && mStandingStoreNotice == null) {
       return null;
     }
     final StringBuilder body = new StringBuilder();
@@ -2922,6 +2954,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mStandingCaution != null) {
       if (body.length() > 0) body.append("\n\n");
       body.append(mStandingCaution);
+    }
+    // After the key caution and before the store notice: a storage failure about this contact is
+    // less urgent than an unattributable key and more specific than a notice about the whole store.
+    if (mStandingStorageCaution != null) {
+      if (body.length() > 0) body.append("\n\n");
+      body.append(mStandingStorageCaution);
     }
     // Last, and in a slot of its own. It is about the store rather than about a contact, so it has
     // no address - and everything else here is addressed. Sharing the caution slot meant the next
@@ -3327,18 +3365,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * from the warning alone rather than from what is on screen.
    */
   private void setCautionBesideAnyWarning(final String caution, final Contact about) {
-    setCautionBesideAnyWarning(caution, about, false);
-  }
-
-  /**
-   * @param isAstorageNotice whether this caution reports a storage failure rather than a key event.
-   *                         Passed in rather than inferred from the text, because inferring it from
-   *                         the text is what broke: the phrase searched for was in one storage
-   *                         notice and not in the one added later.
-   */
-  private void setCautionBesideAnyWarning(final String caution, final Contact about,
-      final boolean isAstorageNotice) {
-    mStandingCautionIsAstorageNotice = isAstorageNotice;
 
     // Stored in BOTH cases, then painted through the same builder every repaint uses.
     //
@@ -3389,10 +3415,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean aStandingItemHoldsTheBanner() {
     // The store notice counts: it holds the banner exactly as the other two do, and leaving it out
     // meant every routine informational line painted straight over it.
-    return mWarningStanding || mStandingCaution != null || mStandingStoreNotice != null;
+    return mWarningStanding || mStandingCaution != null || mStandingStorageCaution != null
+        || mStandingStoreNotice != null;
   }
 
   private void clearCautionIfAbout(final Contact contact) {
+    clearStorageCautionIfAbout(contact);
     if (mStandingCaution == null) return;
     if (mStandingCautionAddress == null || (contact != null && mStandingCautionAddress
         .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
@@ -3448,6 +3476,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final String duplicate = String.format(duplicateNameMessage(contact), labelFor(contact));
     setWarningMessage(duplicate, String.valueOf(contact.getSignalProtocolAddress()));
     return true;
+  }
+
+  /** The storage half of the same scoped clear. */
+  private void clearStorageCautionIfAbout(final Contact contact) {
+    if (mStandingStorageCaution == null) return;
+    if (mStandingStorageCautionAddress == null || (contact != null && mStandingStorageCautionAddress
+        .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
+      mStandingStorageCaution = null;
+      mStandingStorageCautionAddress = null;
+    }
   }
 
   /** Posts the refused-invite warning, tagged so a later good invite can retract it. */
@@ -3776,8 +3814,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      * user's one chance to learn that a deletion left their plaintext behind would be spent on
      * whichever rotation happened first.
      */
-    /** Whether the carried caution is a storage notice; travels with it, for the same reason. */
-    private final boolean standingCautionIsAstorageNotice;
+    /** The storage caution and the address it is about; a separate slot, carried separately. */
+    private final String standingStorageCaution;
+    private final String standingStorageCautionAddress;
     private final String standingStoreNotice;
     private final long logWritesLandedWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
@@ -3788,7 +3827,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final String standingCautionAddress, final Map<String, Long> contactsNotOnDisk,
-        final boolean standingCautionIsAstorageNotice,
+        final String standingStorageCaution, final String standingStorageCautionAddress,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
@@ -3801,7 +3840,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingCaution = standingCaution;
       this.standingCautionAddress = standingCautionAddress;
       this.contactsNotOnDisk = contactsNotOnDisk;
-      this.standingCautionIsAstorageNotice = standingCautionIsAstorageNotice;
+      this.standingStorageCaution = standingStorageCaution;
+      this.standingStorageCautionAddress = standingStorageCautionAddress;
       this.standingStoreNotice = standingStoreNotice;
       this.logWritesLandedWhenNoticeRaised = logWritesLandedWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
@@ -3881,7 +3921,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
         mStandingCautionAddress, new HashMap<>(mContactsNotOnDisk),
-        mStandingCautionIsAstorageNotice, mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
+        mStandingStorageCaution, mStandingStorageCautionAddress,
+        mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
         mHostFieldIsPassword, encodingMethod);
   }
 
@@ -3965,7 +4006,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the host app can force.
     mContactsNotOnDisk.clear();
     if (carried.contactsNotOnDisk != null) mContactsNotOnDisk.putAll(carried.contactsNotOnDisk);
-    mStandingCautionIsAstorageNotice = carried.standingCautionIsAstorageNotice;
+    mStandingStorageCaution = carried.standingStorageCaution;
+    mStandingStorageCautionAddress = carried.standingStorageCautionAddress;
     mStandingStoreNotice = carried.standingStoreNotice;
     mLogWritesLandedWhenNoticeRaised = carried.logWritesLandedWhenNoticeRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the
@@ -4125,7 +4167,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // A standing caution holds the banner too, and it carries the recipient line itself - so this
     // repaints through the shared builder rather than returning, which would leave "Sending to: X"
     // naming whoever was chosen before.
-    if (mStandingCaution != null || mStandingStoreNotice != null) {
+    if (mStandingCaution != null || mStandingStorageCaution != null
+        || mStandingStoreNotice != null) {
       setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
       return;
     }
@@ -4285,7 +4328,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // for a phrase - that was the whole reason the flag was introduced - and this call was still
       // using the two-argument overload, which says "not a storage notice" about a sentence whose
       // subject is the app failing to write to its own storage.
-      setCautionBesideAnyWarning(INFO_DELETE_NOT_SAVED, contact, true);
+      postStorageCaution(INFO_DELETE_NOT_SAVED, contact);
     } else if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
       Toast.makeText(getContext(),
           String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)),

@@ -604,4 +604,37 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
         strip.refusalCountForTest() == 1);
     assertTrue("and sending must still be refused", strip.sendingIsRefusedForTest());
   }
+
+  /**
+   * A lost SESSION write keeps the compare-the-number caution; a lost ROW write does not.
+   *
+   * <p>The two were treated the same, justified by containment: "do not send them anything until you
+   * have added them again successfully" subsuming "compare the number before sending anything
+   * private". That argument holds when the contact is about to disappear and fails when it is not.
+   * When only the session write is lost the row is on disk, the contact stays, and the key just
+   * pinned by trust-on-first-use is exactly what the user should be comparing — and nothing
+   * re-posts that sentence, so replacing it lost it permanently.
+   */
+  @Test
+  public void alostSessionWriteKeepsThePinCautionAndAlostRowDoesNot() throws Exception {
+    // Row lands, session write does not.
+    final java.util.concurrent.atomic.AtomicInteger writes =
+        new java.util.concurrent.atomic.AtomicInteger();
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return writes.getAndIncrement() == 0;
+          }
+        });
+    typeTheName();
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+
+    assertTrue("precondition: the row's write must have landed", writes.get() > 1);
+    assertTrue("the storage failure must be reported: " + banner(),
+        banner().contains("could not save the change"));
+    assertTrue("and the key just pinned by trust-on-first-use must still be something the user is "
+            + "told to compare - the contact is on disk and is not going anywhere: " + banner(),
+        banner().contains("compare the security number"));
+  }
 }

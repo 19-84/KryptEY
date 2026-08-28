@@ -76,10 +76,11 @@ public class EveryStripFieldIsClassifiedTest {
       // leaving plaintext owned by no row. Carried because the condition survives a rebuild and
       // nothing re-asserts it: the user's one chance to learn of it would be spent on whichever
       // rotation happened first.
-      // Whether the standing caution is a storage notice rather than a key one. Carried with the
-      // caution it describes: a rebuild that kept the sentence and dropped this would leave a
-      // storage caution that can never be retired, since the retirement asks this flag.
-      "mStandingCautionIsAstorageNotice",
+      // The storage caution and the contact it is about. Its own slot, carried like the caution
+      // beside it: the two are independent facts about one contact, and sharing a field produced
+      // four separate defects in as many rounds.
+      "mStandingStorageCaution",
+      "mStandingStorageCautionAddress",
       "mStandingStoreNotice",
       // The log-write count when that notice went up. Carried with it: a fresh strip starts this
       // below every real count, so dropping it would clear the notice on the first repaint after a

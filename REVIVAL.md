@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Ninety-three sections, written in the order things were found rather than by subject, so the
+Ninety-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -149,6 +149,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A displaced warning is one that comes back](#a-displaced-warning-is-one-that-comes-back)
 - [Twenty-eight seams and no way in](#twenty-eight-seams-and-no-way-in)
 - [Nine Errors nobody could catch](#nine-errors-nobody-could-catch)
+- [One slot, two facts, four defects](#one-slot-two-facts-four-defects)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -5505,3 +5506,39 @@ failed on the session store, which fails inside libsignal with its own unchecked
 same guards, and therefore fine. Requiring our class would have been asserting the implementation
 rather than the property that keeps the keyboard alive. A source scan sits beside the four
 behavioural cases, because what is being forbidden is the idiom rather than any one instance.
+
+## One slot, two facts, four defects
+
+**A review round was asked whether this surface is converging, and its answer was the most useful
+thing it produced: yes, and five of its seven findings are the same defect.** The caution slot held
+two independent facts about one contact — a key was pinned that the app cannot attribute, and a write
+did not land — in one string with one flag. Every writer therefore hand-rolled the merge, and every
+hand-rolled merge lost something:
+
+- the composer could not compose onto its own output, so a **second** storage failure for the same
+  contact dropped the pin half;
+- the refusal retirement cleared the whole composed string, justified by a comment saying the pin
+  caution would be re-posted by the next paste that pins — it never is, because that method returns
+  immediately once a key is pinned, and after the pin it always is. So any later write anywhere
+  deleted the sentence saying a messenger-supplied key had been pinned, and the messenger chooses
+  when that happens by relaying any message at all;
+- one call site never reached the composer and simply overwrote;
+- and an address-less storage notice re-scoped the whole caution onto whoever was chosen.
+
+**Two fields make all of that unnecessary rather than careful.** There is no merge, no flag, and no
+call site that has to remember which half it is holding.
+
+**And splitting them exposed a distinction neither behaviour had.** The old replacement was justified
+by containment — "do not send them anything until you have added them again successfully" subsuming
+"compare the number before sending anything private". That argument is sound when the contact is
+about to disappear and false when it is not, and both cases were treated the same. When the **row**
+write fails the contact will not survive the restart, so asking the user to compare a security number
+is asking for work about to be thrown away; when only the **session** write fails the row is on disk,
+the contact stays, and the key just pinned by trust-on-first-use is precisely what should be
+compared. The code asks which write was lost now.
+
+**The review's negative note is recorded because it is fair**: each recent fix has shipped with a
+justifying comment that is wrong on a fact the code beside it settles — "the pin caution is
+re-posted", the containment argument above, "every warning is re-derived on selection". The reasoning
+was being written faster than it was checked against the body. Three of that round's seven findings
+were exactly that, and they are why this section exists.
