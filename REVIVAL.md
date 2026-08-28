@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-Seventy-three sections, written in the order things were found rather than by subject, so the
+Seventy-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -129,6 +129,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A deletion that undid itself everywhere but on disk](#a-deletion-that-undid-itself-everywhere-but-on-disk)
 - [Four of my own fixes, undone](#four-of-my-own-fixes-undone)
 - [Keeping a fact where nothing else owns it](#keeping-a-fact-where-nothing-else-owns-it)
+- [Two mutants that survived, and what they were hiding](#two-mutants-that-survived-and-what-they-were-hiding)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -4806,3 +4807,47 @@ always were.
 which the extended sweep still catches now that the refusal lives somewhere else entirely. That is
 the useful property of moving a fact rather than patching its symptoms: the old tests keep working
 because they were about the behaviour, not about where it was stored.
+
+## Two mutants that survived, and what they were hiding
+
+**Round twenty-five found the send-refusal broken in two more ways, and the tests written to fix them
+both passed against the defect. The mutants are how that was discovered, and they are the reason this
+section is not a list of four confident fixes.**
+
+**The refusal expired while the sentence justifying it stayed.** The map entry was dropped when a
+later write landed; the caution saying "do not send them anything" is cleared only by verify, reject
+or a landed delete. Two halves of one fact, two lifetimes — the same mistake this refusal has now
+made in three shapes. They expire together now.
+
+**Every carried refusal was dead on arrival.** On a configuration change the order is: reload from
+disk, **write back**, build the new strip, restore its state. The write-back moved the counter, so
+every restored entry satisfied "a later write has landed" on its first read. The refusal was
+destroyed by exactly the event it was carried across. The write-back is excluded from the counter,
+and that is a correctness point rather than bookkeeping: it stores what it has just *read*, so it
+cannot contain the row an earlier failure lost.
+
+**The button was never the control.** Button state is recomputed from the banner's TextWatcher, so it
+moves when the banner *text* changes — and the events that matter need not change it: re-selecting a
+contact under a standing item repaints the same string, and a later successful write elsewhere
+changes nothing on screen. The refusal is now asked at the moment of the act, inside
+`encryptAndSendInputFieldContent`, which had no storage guard of its own at all. A dark button is a
+hint; the guard is the control.
+
+**And the trust-on-first-use arm was still silent.** A ciphertext-only envelope never reaches
+`buildSession`, so the write inside `decrypt` is the *only* place the freshly pinned key and its
+session are stored — and its result was discarded. That is the inviter's side of every conversation
+this app sets up: the row lands, no notice fires, the user is sent to compare a security number, and
+the pin exists in memory only until the next messenger-forced reload unpins it.
+
+**The two mutants.** Both first-draft tests passed with the defect reinstated. The trust-on-first-use
+test failed *every* write, so the caution fired from the row half and the discarded line was never
+observed — the fix needed a store that fails only the second write. And the reload exclusion cannot
+be tested behaviourally at all under Robolectric: there is no Keystore, so every write fails and any
+such test is vacuous whether or not the exclusion exists. That one is a source-level guard instead,
+which says out loud that it is asserting a shape rather than a behaviour, and asserts alongside it
+that the counter has exactly one increment so the exclusion cannot be sidestepped.
+
+**Two of this project's own mechanical guards fired during the work** — the short-circuit guard
+caught a predicate I had made mutate while it sat on the right of an `&&`, and the
+discarded-result guard caught the reload's write. Both were correct, and both caught the defect
+before a review round did. That is the first time in this log the guards have got there first.

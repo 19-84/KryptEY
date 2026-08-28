@@ -442,20 +442,27 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     assertTrue("precondition: Encrypt must be refused for Bob",
         !strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
 
-    // Storage recovers and the user adds somebody else, successfully.
+    // Storage recovers and any later account write lands. Verifying is used because it is
+    // unambiguous: one call, one write, and no second contact to complicate the address space.
+    // (The first version of this used a second "contact" that happened to sit at Bob's address, so
+    // the add was refused and nothing was written - the test was measuring the wrong event.)
     TestStores.writesLand();
-    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Carol");
-    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Smith");
-    strip.addContactForTest(ciphertextOnly());
+    final long before = SignalProtocolMain.accountWritesLanded();
+    SignalProtocolMain.verifyContact(bob);
+    assertTrue("precondition: a later write must actually have landed",
+        SignalProtocolMain.accountWritesLanded() > before);
 
     // Back to Bob.
     strip.selectContact(bob);
 
-    // Bob's row IS on disk now - the successful add wrote the whole account, contact list included
-    // - so the refusal must be gone for the RIGHT reason, and the app must say so by letting the
-    // user send. What must not happen is the refusal surviving as a stale claim.
-    assertTrue("after a later write landed, Bob's row is on disk and the refusal has expired",
-        strip.findViewById(R.id.e2ee_button_encrypt).isEnabled());
+    assertTrue("after a later write landed, Bob's row is on disk, so the refusal must be gone - "
+            + "asked of the control rather than of the button, because a dark button is a hint and "
+            + "the send guard is the thing that actually refuses",
+        !strip.sendingIsRefusedForTest());
+    assertTrue("and the sentence that justified the refusal must go with it - a refusal that "
+            + "expires while the banner still says 'do not send them anything' is the app "
+            + "offering exactly what it forbids, permanently: " + banner(),
+        !banner().contains("could not be saved"));
   }
 
   /** But while no write has landed, another contact's caution cannot lift it. */
@@ -505,5 +512,49 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     assertTrue("and so must the refused invite, even though its own line was suppressed - the "
             + "caution that replaced the banner is now the only place it can be said: " + banner,
         banner.contains("fresh one"));
+  }
+
+  /**
+   * The trust-on-first-use arm reports a lost write too.
+   *
+   * <p>A ciphertext-only envelope never reaches {@code buildSession}, so the write inside
+   * {@code decrypt} is the <em>only</em> place the freshly pinned key and its session are stored.
+   * That result was discarded, which left the inviter's side of every conversation this app sets up
+   * silent about a lost write: the row lands, no notice fires, the user is told to compare a
+   * security number, and the pin exists in memory only. The next reload unpins it, so the peer's
+   * next message is trust-on-first-use again and unwarned — and the messenger chooses when that
+   * reload happens by forcing a configuration change.
+   *
+   * <p>Distinct from the arm above it: there the bundle's own write is what fails. Here there is no
+   * bundle at all, which is exactly why the single discarded line mattered.
+   */
+  @Test
+  public void thetrustOnFirstUseArmReportsAlostWriteToo() throws Exception {
+    final MessageEnvelope message = ciphertextOnly();
+    // The ROW write lands and the decrypt's write does not, which is the only configuration that
+    // isolates the discarded line. Failing every write would raise the caution from the row half
+    // and the test would pass with the defect in place - which is exactly what the first version
+    // of it did.
+    final java.util.concurrent.atomic.AtomicInteger writes =
+        new java.util.concurrent.atomic.AtomicInteger();
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return writes.getAndIncrement() == 0;
+          }
+        });
+    typeTheName();
+    strip.addContactForTest(message);
+
+    assertTrue("precondition: the row's own write must have landed, or this is the other test",
+        writes.get() > 1);
+
+    final String banner = String.valueOf(
+        ((android.widget.TextView) strip.findViewById(R.id.e2ee_info_text)).getText());
+    assertTrue("the arm that pins by trust-on-first-use must report a lost write, not only the one "
+            + "that builds a session from a bundle: " + banner,
+        banner.contains("could not be saved"));
+    assertTrue("and sending must be refused until it is saved", strip.sendingIsRefusedForTest());
   }
 }

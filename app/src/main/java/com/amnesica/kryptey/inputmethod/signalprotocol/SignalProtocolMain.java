@@ -166,7 +166,24 @@ public class SignalProtocolMain {
     // kill it. It is kept because the inner guard is in a different method and a future refactor
     // that removes it would otherwise turn a failed reload into an overwrite with blanks.
     if (sInstance.mAccount != null) {
-      sInstance.storeAllAccountInformationInSharedPreferences();
+      // Not counted as a landed write, and that is a correctness point rather than bookkeeping.
+      //
+      // This writes back exactly what was just READ. It cannot contain anything that failed to
+      // reach disk earlier - the row an earlier failed write left in memory is gone, replaced by
+      // the on-disk account. Counting it told every "is that contact saved yet" question that a
+      // write had landed since the failure, so every carried send-refusal expired on its first read
+      // after a rebuild: the reload writes, the counter moves, and the map restored a moment later
+      // is already stale. The refusal was dead on arrival on exactly the event it was carried
+      // across.
+      final long before = sInstance.mAccountWritesLanded;
+      final boolean writtenBack = sInstance.storeAllAccountInformationInSharedPreferences();
+      sInstance.mAccountWritesLanded = before;
+      if (!writtenBack) {
+        // Nothing is lost by this failing - what it writes is what it just read - but a store that
+        // cannot be written to is about to make every trust decision in this session fail, and the
+        // log line is the only place that is visible before the user meets it.
+        Log.e(TAG, "The reloaded account could not be written back; storage is not accepting writes");
+      }
     } else {
       Log.e(TAG, "Error: account could not be reloaded; leaving stored data untouched");
     }
@@ -2005,7 +2022,21 @@ public class SignalProtocolMain {
         mLastChatLogWriteFailed = true;
       }
     }
-    storeAllAccountInformationInSharedPreferences();
+    // Recorded, not discarded, and this is the write that persists the trust-on-first-use pin.
+    //
+    // A ciphertext-only envelope never reaches buildSession, so this line is the ONLY place the
+    // key that was just pinned - and the session built from it - are written. Discarding the result
+    // left the inviter's side of every conversation this app sets up entirely silent about a lost
+    // write: the row lands, no notice fires, the user is told to compare a security number, and the
+    // pin exists in memory only. The next reload unpins it, so the peer's next message is
+    // trust-on-first-use again, unwarned - and the messenger chooses when that reload happens by
+    // forcing a configuration change.
+    //
+    // Combined with the flag rather than assigned to it: decrypt clears the flag at entry, and a
+    // combined envelope may already have recorded a failure from buildSession that this write
+    // succeeding must not erase.
+    mLastSessionWriteReachedDisk =
+        storeAllAccountInformationInSharedPreferences() && mLastSessionWriteReachedDisk;
     // A log write that did not land is the same outcome for the user as a log that could not be
     // read: the message arrived and is not in their history. The flag covered only the read half,
     // so the notice never fired for the other one.

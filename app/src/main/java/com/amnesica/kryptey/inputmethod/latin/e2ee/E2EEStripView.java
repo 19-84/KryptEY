@@ -137,6 +137,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         ? contact != null
         : !chosenContact.equals(contact);
     chosenContact = contact;
+    // Explicitly, because the usual trigger is a banner CHANGE and this event need not produce one.
+    //
+    // refreshActionButtons runs from the banner's TextWatcher, so it fires when the text differs.
+    // Re-selecting a contact while a standing item holds the banner repaints the same string, the
+    // watcher sees no change, and the buttons keep whatever state they had for somebody else -
+    // which is precisely the moment the answer is most likely to have changed, since the refusal is
+    // per contact. Ordered after the assignment so the refresh reads the new recipient.
+    if (changed) refreshActionButtons();
     if (changed && mInputEditText != null && mInputEditText.getText().length() > 0) {
       Log.i(TAG, "Recipient changed; clearing the staged message");
       clearComposeFieldAndCaches();
@@ -1642,6 +1650,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void setMainInfoTextClearChosenContactListener() {
     if (mInfoTextView == null) return;
+    // Unconditionally, and before the question below is asked: expiring is a write, and a write
+    // must not sit where a short circuit can skip it.
+    expireRefusalsSettledByAlaterWrite();
     mInfoTextView.setOnClickListener(v -> resetChosenContactAndInfoText());
   }
 
@@ -1873,18 +1884,51 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * refusal back with them - which is the whole point, since the messenger can move the recipient
    * off that contact whenever it likes.
    */
+  /**
+   * Whether the app is refusing to send to whoever is chosen. A question, and only a question.
+   *
+   * <p>It briefly cleared the expired caution itself, and the short-circuit guard caught it: this is
+   * called on the right of an {@code &&} in {@code refreshActionButtons}, so Java is free to skip
+   * it, and a writer that may or may not run is how the identity-change warning stopped being
+   * raised. Expiring is a separate statement now, run unconditionally before the question is asked.
+   */
   private boolean sendingIsRefusedForTheChosenContact() {
     if (chosenContact == null) return false;
-    final String address = String.valueOf(chosenContact.getSignalProtocolAddress());
-    final Long seenAt = mContactsNotOnDisk.get(address);
-    if (seenAt == null) return false;
-    // A later write landed, so the row is on disk and the refusal has expired. Dropped rather than
-    // merely ignored, so the answer cannot flap if the counter is ever reset.
-    if (mE2EEStrip.accountWritesLanded() > seenAt) {
-      mContactsNotOnDisk.remove(address);
-      return false;
+    return mContactsNotOnDisk.containsKey(String.valueOf(chosenContact.getSignalProtocolAddress()));
+  }
+
+  /**
+   * Drops refusals that a later successful write has settled, and the caution that justified them.
+   *
+   * <p>Both halves together, because separating them was the defect: the refusal expired on a later
+   * write while the sentence justifying it was cleared only by verify, reject or a landed delete, so
+   * the app returned to offering exactly what it was still telling the user not to do - permanently
+   * rather than for one repaint, on the surface it calls durable. Two halves of one fact must not
+   * have two lifetimes, which is the mistake this refusal has now made in three different shapes.
+   *
+   * <p>The account batch writes the whole contact list, so one landed write anywhere puts every
+   * in-memory row on disk. The one write that does NOT count is the write-back inside
+   * {@code reloadAccount}, which stores what it has just read and therefore cannot contain the row
+   * an earlier failure lost; it is excluded at the counter rather than here.
+   */
+  private void expireRefusalsSettledByAlaterWrite() {
+    if (mContactsNotOnDisk.isEmpty()) return;
+    final long landed = mE2EEStrip.accountWritesLanded();
+    final List<String> settled = new ArrayList<>();
+    for (final Map.Entry<String, Long> entry : mContactsNotOnDisk.entrySet()) {
+      if (landed > entry.getValue()) settled.add(entry.getKey());
     }
-    return true;
+    for (final String address : settled) {
+      mContactsNotOnDisk.remove(address);
+      if (address.equals(mStandingCautionAddress) && mStandingCaution != null
+          && mStandingCaution.contains("could not be saved")) {
+        mStandingCaution = null;
+        mStandingCautionAddress = null;
+        setInfoTextViewMessage(mInfoTextView, mWarningStanding ? warningWithRecipient()
+            : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
+                : INFO_NO_CONTACT_CHOSEN);
+      }
+    }
   }
 
   /** Records that this contact's row did not reach disk. */
@@ -1950,6 +1994,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
     if (chosenContact == null) {
       Toast.makeText(getContext(), INFO_CHOOSE_CONTACT_FIRST, Toast.LENGTH_SHORT).show();
+      return;
+    }
+
+    // The refusal, asked HERE rather than only rendered on the button.
+    //
+    // A dark button is a hint, not a control. Button state is recomputed from the banner's
+    // TextWatcher, so it moves when the banner TEXT changes - and the events that matter most here
+    // need not change it: re-selecting a contact under a standing item repaints the same string,
+    // and a later successful write elsewhere changes nothing on screen at all. Either way the
+    // buttons keep whatever state they had, which is stale in both directions: offering a send the
+    // app forbids, or refusing one it no longer has reason to refuse.
+    //
+    // So the question is asked at the moment of the act, with the expiry run first. This is also
+    // the only guard the send path has ever had against a contact that exists in memory only -
+    // encryptAndSend had none, and the whole refusal rested on a button being dark.
+    expireRefusalsSettledByAlaterWrite();
+    if (sendingIsRefusedForTheChosenContact()) {
+      Toast.makeText(getContext(),
+          String.format(INFO_CONTACT_NOT_SAVED, labelFor(chosenContact)),
+          Toast.LENGTH_LONG).show();
       return;
     }
 
@@ -2795,6 +2859,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** Drives the known-contact bundle path, for tests. */
   void processPreKeyResponseForTest(final MessageEnvelope envelope, final Contact sender) {
     processPreKeyResponse(envelope, sender);
+  }
+
+  /** Whether sending is refused for the chosen contact, for tests. */
+  boolean sendingIsRefusedForTest() {
+    // Expire first, exactly as the send path does. Asking the bare predicate would be asking a
+    // question the app never asks, and would pass or fail on a stale answer.
+    expireRefusalsSettledByAlaterWrite();
+    return sendingIsRefusedForTheChosenContact();
   }
 
   /** Posts a caution, for tests that need one standing without a warning beside it. */
