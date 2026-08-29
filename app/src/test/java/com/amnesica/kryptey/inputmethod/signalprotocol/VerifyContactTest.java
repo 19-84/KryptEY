@@ -99,10 +99,15 @@ public class VerifyContactTest {
 
   @Test
   public void verifyingIsSafeWithNoContactAndNoAccount() throws Exception {
-    SignalProtocolMain.verifyContact(null); // must not throw
+    // The return value is the contract, not just the absence of a throw. verifyContact's javadoc
+    // says false means "this could not be recorded", and the strip renders that as a toast rather
+    // than as a verified badge - so a mutant returning true here would put a badge over a contact
+    // that does not exist, which is the one outcome the whole trust model has no recovery from.
+    assertFalse("no contact means nothing could have been compared, so nothing may be recorded",
+        SignalProtocolMain.verifyContact(null));
     SignalProtocolMain.getInstance().setAccount(null);
-    SignalProtocolMain.verifyContact(
-        new Contact("A", "B", "some-uuid", 42, false)); // must not throw
+    assertFalse("and no account means the same",
+        SignalProtocolMain.verifyContact(new Contact("A", "B", "some-uuid", 42, false)));
   }
 
   /**
