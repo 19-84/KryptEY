@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and sixteen sections, written in the order things were found rather than by subject, so the
+One hundred and seventeen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -172,6 +172,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A line that was doing security work without saying so](#a-line-that-was-doing-security-work-without-saying-so)
 - [A hole that was not there](#a-hole-that-was-not-there)
 - [The instruction that vanished when it was needed](#the-instruction-that-vanished-when-it-was-needed)
+- [Nothing was testing the number itself](#nothing-was-testing-the-number-itself)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6431,3 +6432,32 @@ actually lands — the save that follows every decrypt once the log is loaded. 5
 2,000: 87 ms. 10,000: 222 ms. 20,000: 207 ms. 50,000: 412 ms, 15 MB stored. The decision is still
 yours; what changed is that it can now be made against evidence, and the harness that produced these
 is written down beside the two it sits with.
+
+## Nothing was testing the number itself
+
+**Everything this app does about trust reduces to one instruction — compare these digits by voice —
+and nothing tested the digits.**
+
+Two mutants were run and both survived the whole suite:
+
+- **Render every one of the twelve groups as the first group.** Both honest sides render the same
+  degraded value, so they still match. The comparison silently stops being a check while looking
+  exactly as it did, and the number falls from about two hundred bits to about seventeen — roughly
+  2^17 key generations to make the shown digits agree.
+- **Change the iteration count from 5200.** Two installs on different builds then show different
+  numbers for the same pair of keys. The app tells both users that a mismatch means an attack, and
+  its advice for a mismatch is a rejection that permanently discards a correct pin.
+
+Neither shows up as a broken screen. Both are agreements that quietly stop meaning anything. The
+existing fingerprint tests could not see either: every assertion compares two values that are both
+derived from production, or — in the one place an independent generator is constructed — compares
+that generator's output against *itself*.
+
+So the assertions added are about **relationships**, not values. The twelve views must equal what the
+protocol computed, and what the protocol computed must equal what an independently constructed
+generator at Signal's iteration count produces. Pinning literal digits as a golden vector would break
+on any legitimate libsignal change, and the reflex fix for a red golden test is to update the
+expected value — which is the one change that must never be made quietly. The iteration count is now
+stated once in a test, so changing it in production is a visible decision rather than a silent one.
+
+Both mutants now die, each on the assertion that names its failure.
