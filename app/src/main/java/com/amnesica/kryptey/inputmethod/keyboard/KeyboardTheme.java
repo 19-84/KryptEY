@@ -82,7 +82,10 @@ public final class KeyboardTheme {
 
   public static String getKeyboardThemeName(final int themeId) {
     final KeyboardTheme theme = searchKeyboardThemeById(themeId);
-    Log.i("Getting theme ID", Integer.toString(themeId));
+    // The log line that was here ran once per <case> element the keyboard parser reaches, on
+    // every keyboard cache miss, under a tag that was a sentence. Nothing reads it; the value is 6
+    // or 7. Deleted rather than guarded: minifyEnabled is false, so there is no R8 pass stripping
+    // Log calls from the shipped APK.
     return theme.mThemeName;
   }
 

@@ -22,6 +22,8 @@ import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
 
+import android.preference.Preference;
+
 import com.amnesica.kryptey.inputmethod.R;
 import com.amnesica.kryptey.inputmethod.keyboard.KeyboardTheme;
 
@@ -56,9 +58,19 @@ public final class AppearanceSettingsFragment extends SubScreenFragment {
   private void refreshSettings() {
     ThemeSettingsFragment.updateKeyboardThemeSummary(findPreference(Settings.SCREEN_THEME));
 
-    final SharedPreferences prefs = getSharedPreferences();
-    final KeyboardTheme theme = KeyboardTheme.getKeyboardTheme(prefs);
-    setPreferenceEnabled(Settings.PREF_KEYBOARD_COLOR, false);
+    // The custom-colour row is removed rather than shown greyed out.
+    //
+    // It was disabled by a literal false, on a line that computed the theme and then discarded it -
+    // the shape of a half-finished edit rather than a decision, and it has been there since the
+    // initial commit. So the app shipped a named, translated control ("Set custom keyboard color")
+    // that can never be tapped and says nothing about why.
+    //
+    // Removed, not enabled. The plumbing behind it is live - KeyboardView reads the key on every
+    // setKeyboard - but enabling it would give the exported SettingsActivity's theme fragment
+    // something real to delete on a drive-by launch, and a control nobody has been able to use is
+    // not a feature this revival should switch on without deciding it wants one.
+    final Preference colour = findPreference(Settings.PREF_KEYBOARD_COLOR);
+    if (colour != null) getPreferenceScreen().removePreference(colour);
   }
 
   private void setupKeyboardHeightSettings() {

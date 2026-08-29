@@ -2055,6 +2055,41 @@ mutant-checked: asking focus again turns one test red, re-pointing regardless tu
 appears without being written down beside the others. "Remember to update the comment" has already
 failed here, four times, and the site those comments omitted is the one that was leaking.
 
+**And the rest of that round, plus the first pass over the settings surface.**
+
+`adoptState` re-raised the redirect through a bare `requestFocus()` whose return value it discarded,
+relying on the focus listener firing as a side effect — which is the mechanism
+`composeInsideTheKeyboard`'s own javadoc says must not be relied on, because `requestFocus()` fails
+silently whenever the view cannot take focus. `surrenderState` nulls the connection and deliberately
+does not lower the flag, so a refused focus leaves the flag up with `mOtherIC` null: `getIC()`
+returns null and every keystroke is silently discarded, in any app, until the strip is rebuilt again.
+Not a disclosure — the keyboard has simply stopped being a keyboard. Routed through the guarded raise
+now, still gated on `wasComposing` so a rebuild cannot take focus the user never gave.
+
+That test needed forcing. Robolectric grants focus, so both forms behave identically and the first
+version passed against the bare `requestFocus` too; making the compose box unfocusable is what
+distinguishes them.
+
+**The settings surface, examined for the first time.** `SettingsActivity` is the app's one exported
+component and a `PreferenceActivity`, so any app can launch it with an `EXTRA_SHOW_FRAGMENT` extra
+naming an allowlisted fragment and take the foreground back — and `ThemeSettingsFragment.onPause`
+then ran two preference writes with no human having touched anything. Both were inert, and only by
+accident: the colour key can never have been set, and the theme id written was the one just read.
+That made the safety of an exported entry point a property of what two keys currently mean. It now
+persists only when a radio button was actually clicked, and the flag is deliberately cleared nowhere
+— clearing it in `onResume` would look right and silently break the genuine path, since that
+callback runs again after a dialog is dismissed.
+
+The colour key can never have been set because *"Set custom keyboard color"* is a named, translated
+row that has been permanently disabled since the initial commit, by a line that computes the theme
+and then discards it — the shape of a half-finished edit. It is removed rather than enabled:
+enabling it would give the drive-by launch something real to delete, and a control nobody has ever
+been able to use is not a feature to switch on without deciding one wants it.
+
+Also removed: a log line that ran once per `<case>` element the keyboard parser reaches, on every
+cache miss, under a tag that was a sentence; and two lines logging the `firstrun` flag on every
+raise. `minifyEnabled` is false, so nothing was stripping them from the shipped APK.
+
 ---
 
 ## Kept is not the same as inert

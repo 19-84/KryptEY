@@ -5059,8 +5059,21 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // on screen and that no clearing path can reach. Requesting focus re-points it through the same
     // listener a user's tap goes through, so there is one path that raises the redirect rather than
     // two that have to agree.
-    if (carried.wasComposing && mInputEditText != null) {
-      mInputEditText.requestFocus();
+    // Through composeInsideTheKeyboard, not a bare requestFocus.
+    //
+    // That method exists because requestFocus() returns false silently whenever the view cannot
+    // take focus at that moment - a GONE ancestor, a window not yet focusable - and its own javadoc
+    // calls a silent failure here "precisely the disclosure this exists to prevent". This site
+    // discarded the return value and relied on the focus listener firing as a side effect, which is
+    // the mechanism that method was written to distrust. If the focus is ever refused, the flag
+    // stays up from before the rebuild while mOtherIC is null - surrenderState nulls it and does
+    // not lower - so getIC() returns null and every keystroke is silently discarded.
+    //
+    // Still gated on wasComposing. Raising it on every rebuild would take focus on an event the
+    // host app can force at will, including rebuilds that happen while the user is typing into the
+    // messenger, which is the mirror defect.
+    if (carried.wasComposing) {
+      composeInsideTheKeyboard();
     }
 
     // A WARNING is carried. An ordinary banner is not, and the difference is the whole of two

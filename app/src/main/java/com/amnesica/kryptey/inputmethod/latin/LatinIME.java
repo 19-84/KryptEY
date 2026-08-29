@@ -330,13 +330,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
   private boolean isFirstRunAfterInstall() {
     final SharedPreferences prefs = PreferenceManagerCompat.getDeviceSharedPreferences(this);
-    Log.i(TAG, "Checking boolean firstrun: " + prefs.getBoolean("firstrun", true));
     return prefs.getBoolean("firstrun", true);
   }
 
   private void setBooleanFirstRunAfterInstall() {
     final SharedPreferences prefs = PreferenceManagerCompat.getDeviceSharedPreferences(this);
-    Log.i(TAG, "Setting boolean firstrun: " + false);
     prefs.edit().putBoolean("firstrun", false).apply();
   }
 

@@ -447,4 +447,59 @@ public class TypingDestinationTest {
             + "belongs to the app they are in",
         !connection.isUsingOtherIC());
   }
+
+  /**
+   * The redirect and the connection it points at must never disagree.
+   *
+   * <p>"Typing goes to the compose box" is two facts: the flag, and a non-null {@code mOtherIC}. If
+   * the flag is up while the connection is null, {@code getIC()} returns null and every keystroke is
+   * silently discarded — the user types and nothing happens anywhere, in any app, until the strip is
+   * rebuilt again. Not a disclosure, but the keyboard has stopped being a keyboard.
+   *
+   * <p>{@code surrenderState} nulls the connection and deliberately does not lower the flag, so the
+   * pair is inconsistent between a rebuild's two halves by construction. What has to hold is that
+   * {@code adoptState} closes it — and it used to rely on a bare {@code requestFocus()} whose return
+   * value it discarded, which is the exact mechanism {@code composeInsideTheKeyboard}'s javadoc says
+   * must not be relied on.
+   */
+  @Test
+  public void theredirectAndItsConnectionAgreeAfterArebuild() {
+    assertTrue(compose.requestFocus());
+    connection.commitText("half a sentence", 1);
+    assertTrue("precondition: the redirect must be up", connection.isUsingOtherIC());
+
+    final E2EEStripView.CarriedState carried = strip.surrenderState();
+    final E2EEStripView rebuilt = new E2EEStripView(new android.view.ContextThemeWrapper(
+        org.robolectric.RuntimeEnvironment.getApplication(),
+        R.style.KeyboardTheme_LXX_Pure_Day), null);
+    rebuilt.setListener(new E2EEStripView.Listener() {
+      @Override public void onTextInput(final String rawText) { }
+      @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
+    }, rebuilt);
+    rebuilt.setRichInputConnection(connection);
+
+    // The compose box cannot take focus at this moment. That is the case the guarded raise exists
+    // for - a GONE ancestor, a window not yet focusable - and it is the only case where the two
+    // forms differ: Robolectric grants focus otherwise, so a test that does not force the refusal
+    // passes against a bare requestFocus() too. Written without this first, and the mutant said so.
+    final android.widget.EditText rebuiltBox = rebuilt.findViewById(R.id.e2ee_input_field);
+    rebuiltBox.setFocusable(false);
+    rebuiltBox.setFocusableInTouchMode(false);
+
+    rebuilt.adoptState(carried);
+
+    assertTrue("the draft must have come across", 
+        ((android.widget.EditText) rebuilt.findViewById(R.id.e2ee_input_field))
+            .getText().toString().contains("half a sentence"));
+
+    // The pair, asserted together: either the redirect is down, or it points somewhere real.
+    connection.commitText(" continues", 1);
+    assertEquals("the keystroke must not reach the host application",
+        "", hostField.received.toString());
+    assertTrue("and it must have reached the rebuilt compose box. With the flag up from before the "
+            + "rebuild and mOtherIC still null - surrenderState nulls it and does not lower - "
+            + "getIC() returns null and the keystroke goes nowhere at all: the user types and "
+            + "nothing happens, in any app, until the strip is rebuilt again",
+        rebuiltBox.getText().toString().contains("continues"));
+  }
 }
