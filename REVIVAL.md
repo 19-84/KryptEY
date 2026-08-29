@@ -2108,6 +2108,20 @@ disable the gestures inside the compose box, and `handleBackspaceEvent` reads a 
 `setSelection` as "nothing happened" and skips its delete — so the two guards would interact.
 Reading the right field's caret is what these accessors were always supposed to mean.
 
+**One item left open on purpose.** `InputLogic.handleNonFunctionalEvent` forces `IME_ACTION_NONE`
+while typing is redirected, so the messenger does not get to decide what Enter does. Its sibling
+`handleFunctionalEvent` calls `performEditorAction(IME_ACTION_NEXT)` with no such question, and on
+tablet layouts the Tab key reaches it — which moves focus off the compose box.
+
+Not fixed, and the reasoning is the point. Since blur no longer lowers the redirect, no disclosure
+follows: the compose affordances go dark while typing still lands in the strip, which is a state
+this file already accepts and documents elsewhere. Every available fix is worse. Suppressing
+`CODE_ACTION_NEXT` while redirected removes the only way to leave the compose box on a hardware-tab
+tablet, and the natural repair — move focus to the next strip field instead — walks straight into
+the add-contact name fields, which raise the redirect on focus and do not lower it on blur. So the
+honest statement is narrower than the guard's: the host does not get to say what **Enter** does
+while composing, and a sibling entry point never asks the question.
+
 ---
 
 ## Kept is not the same as inert
