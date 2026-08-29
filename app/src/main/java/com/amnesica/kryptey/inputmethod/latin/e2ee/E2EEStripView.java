@@ -353,7 +353,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * outcome the app's own refusal elsewhere calls the worse of the two, and because the help text
    * now promises the opposite.
    */
-  private final String INFO_DELETED_BUT_MESSAGES_REMAIN = "%s was removed, but their saved messages could not be deleted - the app could not write to its own storage. Those messages are still on this device and no screen can reach them now. Try deleting another contact once the device has free space, which rewrites the same file.";
+  private final String INFO_DELETED_BUT_MESSAGES_REMAIN = "%s was removed, but their saved messages could not be deleted - the app could not write to its own storage. Those messages are still on this device and no screen can reach them now. Deleting another contact does not remove them - it rewrites the same file with these messages still in it. Clearing the app's storage is what removes them.";
 
   /**
    * The session state was not saved. A different failure from a contact row that was not saved.
@@ -2267,6 +2267,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /** The message-log write count when that notice went up; see {@link #clearAstoreNoticeThatHasBeenResolved}. */
   private long mLogWritesLandedWhenNoticeRaised = -1;
 
+  /**
+   * The reload count when that notice went up, so a reload can void its retirement rule.
+   *
+   * <p>The rule beside it retires the notice on the next landed log write, and the premise that
+   * makes that a resolution rather than a timeout is that the in-memory log is the PRUNED one - the
+   * deletion removed the entries, only the write failed. A reload ends that premise: it replaces
+   * the account with the stored copy, whose log was never pruned, so the orphaned plaintext is back
+   * in memory and the next write persists it. Measured, not reasoned: the reload brings the entries
+   * back, and following the notice's own advice then rewrites the file with them still in it.
+   *
+   * <p>Carried across a rebuild with the notice and its write count, for the reason those are: a
+   * fresh strip starts this below every real count, so dropping it would make the first repaint
+   * after a rotation decide the premise still held.
+   */
+  private long mAccountReloadsWhenNoticeRaised = -1;
+
   private void refreshActionButtons() {
     // The same guard setMainInfoTextTextChangeListener carries, and no more: the buttons come from
     // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
@@ -4051,10 +4067,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return sendingIsRefusedForTheChosenContact();
   }
 
+  /** The standing store notice, for tests that ask whether it survived something. */
+  String storeNoticeForTest() {
+    return mStandingStoreNotice;
+  }
+
   /** Posts the store notice, for tests that need the third standing item up. */
   void setStoreNoticeForTest(final String notice) {
     mStandingStoreNotice = notice;
     mLogWritesLandedWhenNoticeRaised = mE2EEStrip.messageLogWritesLanded();
+    mAccountReloadsWhenNoticeRaised = SignalProtocolMain.accountReloads();
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
 
@@ -4269,9 +4291,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private void clearAstoreNoticeThatHasBeenResolved() {
     if (mStandingStoreNotice == null) return;
+    // A reload voids the rule rather than satisfying it.
+    //
+    // Everything below rests on the in-memory log being the pruned one. reloadAccount replaces the
+    // account with the stored copy, whose log still holds the entries the failed write never
+    // removed - so after one, a landed write persists the orphaned plaintext instead of erasing it,
+    // and retiring here would take the notice down at the exact moment the leak became permanent.
+    //
+    // Asked with a counter rather than by scanning the log, deliberately. The only honest scan is
+    // "does the log still hold entries for that address", and the log after a reload is DEFERRED -
+    // so the scan would force a load from refreshActionButtons, which runs on essentially every
+    // repaint. That load throws an unchecked re-entrancy guard the chat-log screen does not catch.
+    // The counter answers the same question without reading anything.
+    if (SignalProtocolMain.accountReloads() > mAccountReloadsWhenNoticeRaised) return;
     if (mE2EEStrip.messageLogWritesLanded() > mLogWritesLandedWhenNoticeRaised) {
       mStandingStoreNotice = null;
       mLogWritesLandedWhenNoticeRaised = -1;
+      mAccountReloadsWhenNoticeRaised = -1;
       setInfoTextViewMessage(mInfoTextView,
           aStandingItemHoldsTheBanner() ? warningWithRecipient() : INFO_NO_CONTACT_CHOSEN);
     }
@@ -4924,6 +4960,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final long accountWritesLandedWhenStorageCautionRaised;
     private final String standingStoreNotice;
     private final long logWritesLandedWhenNoticeRaised;
+    private final long accountReloadsWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
 
@@ -4937,6 +4974,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final StorageCautionKind standingStorageCautionKind,
         final long accountWritesLandedWhenStorageCautionRaised,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
+        final long accountReloadsWhenNoticeRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
       this.wasComposing = wasComposing;
@@ -4955,6 +4993,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.accountWritesLandedWhenStorageCautionRaised = accountWritesLandedWhenStorageCautionRaised;
       this.standingStoreNotice = standingStoreNotice;
       this.logWritesLandedWhenNoticeRaised = logWritesLandedWhenNoticeRaised;
+      this.accountReloadsWhenNoticeRaised = accountReloadsWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
     }
@@ -5036,6 +5075,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mStandingStorageCaution, mStandingStorageCautionAddress,
         mStandingStorageCautionKind, mAccountWritesLandedWhenStorageCautionRaised,
         mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
+        mAccountReloadsWhenNoticeRaised,
         mHostFieldIsPassword, encodingMethod);
   }
 
@@ -5168,6 +5208,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         carried.accountWritesLandedWhenStorageCautionRaised;
     mStandingStoreNotice = carried.standingStoreNotice;
     mLogWritesLandedWhenNoticeRaised = carried.logWritesLandedWhenNoticeRaised;
+    mAccountReloadsWhenNoticeRaised = carried.accountReloadsWhenNoticeRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the
     // warning alone - which is the erase this carry exists to stop.
     if (aStandingItemHoldsTheBanner()) {
@@ -5558,6 +5599,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
         mStandingStoreNotice = String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact));
         mLogWritesLandedWhenNoticeRaised = mE2EEStrip.messageLogWritesLanded();
+        mAccountReloadsWhenNoticeRaised = SignalProtocolMain.accountReloads();
         setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
       }
     }

@@ -157,6 +157,9 @@ public class SignalProtocolMain {
     Log.d(TAG, "Reloading local account for signal protocol (not first app run)...");
     sInstance.initializeStorageHelper(context);
     sInstance.reloadAccountFromSharedPreferences();
+    // Counted before the write-back, because what depends on this is a claim about the log the app
+    // is now holding, and by this line it is holding the stored one.
+    sInstance.mAccountReloads++;
     // Only write back if we actually loaded something.
     //
     // Defence in depth, not the thing preventing the NPE: an earlier version of this comment said
@@ -2736,6 +2739,15 @@ public class SignalProtocolMain {
   private long mAccountWritesLanded = 0;
 
   /**
+   * How many times the account has been replaced by the one on disk.
+   *
+   * <p>Read by the strip's store notice, which is the one surface whose correctness depends on the
+   * in-memory state being the one that produced it. A reload discards that state, so anything
+   * reasoning about "what this process did earlier" has to know one happened.
+   */
+  private long mAccountReloads = 0;
+
+  /**
    * How many message-log writes have landed, ever, in this process.
    *
    * <p>Held here rather than on the storage helper, and that is the whole of the fix it represents.
@@ -2771,6 +2783,11 @@ public class SignalProtocolMain {
 
   public static long accountWritesLanded() {
     return sInstance == null ? 0 : sInstance.mAccountWritesLanded;
+  }
+
+  /** How many reloads have replaced the account with the stored copy. See {@link #mAccountReloads}. */
+  public static long accountReloads() {
+    return sInstance == null ? 0 : sInstance.mAccountReloads;
   }
 
   private boolean storeAllAccountInformationInSharedPreferences() {

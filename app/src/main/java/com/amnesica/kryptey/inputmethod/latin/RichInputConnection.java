@@ -707,7 +707,23 @@ public final class RichInputConnection {
       // getSelectionEnd(), so answering from the view without ordering would have made that
       // invariant true of one arm and not the other - and no reader asks which arm it is talking to.
       if (start >= 0 && end >= 0) return Math.min(start, end);
-      if (start >= 0) return start;
+      // No span is still not the host's field.
+      //
+      // The line that used to be here was `if (start >= 0) return start;`, and it was dead:
+      // Selection.setSelection writes BOTH spans and removeSelection removes both, so these two are
+      // always both non-negative or both -1. It read as coverage of the partial case, and the case
+      // that actually exists - neither set - fell past it to the host's number.
+      //
+      // Which is the state the decrypt path leaves the box in. TextView.setText installs a fresh
+      // Editable and calls mMovement.initialize(...); the compose box uses ScrollingMovementMethod,
+      // whose inherited initialize is empty, so nothing seeds a selection - and the two decrypt
+      // arms raise the redirect in the same breath as that setText. Measured: the accessor returned
+      // the host's 900 for a box holding the peer's plaintext.
+      //
+      // Zero rather than a refusal, because the accessor returns an int that callers subtract and
+      // there is no expressible "do not know". An unselected buffer has its caret at the start, so
+      // a delete computed from this is a no-op rather than a cut at an offset the messenger chose.
+      return 0;
     }
     return mExpectedSelStart;
   }
@@ -718,7 +734,8 @@ public final class RichInputConnection {
       final int start = mOtherIC.selectionStart();
       final int end = mOtherIC.selectionEnd();
       if (start >= 0 && end >= 0) return Math.max(start, end);
-      if (end >= 0) return end;
+      // Dead for the same reason, and falling through for the same one. See the start accessor.
+      return 0;
     }
     return mExpectedSelEnd;
   }

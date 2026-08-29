@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-six sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -87,6 +87,8 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The mutant is not a formality, and here is the tally](#the-mutant-is-not-a-formality-and-here-is-the-tally)
 - [Two ways the store wrote a default over something it could not read](#two-ways-the-store-wrote-a-default-over-something-it-could-not-read)
 - [Three defects in three fixes, again](#three-defects-in-three-fixes-again)
+- [A notice that retired on the write that made the leak permanent](#a-notice-that-retired-on-the-write-that-made-the-leak-permanent)
+- [The guard that read as coverage, and the state it let through](#the-guard-that-read-as-coverage-and-the-state-it-let-through)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7662,3 +7664,103 @@ device, and the only way to know was to revert the fix and watch the test not ca
 None of these were caught by reading. Every one was caught by reverting the production change and
 finding the test still green — which is the whole argument for the rule: a test you have not seen
 fail is a test you have not seen work.
+
+## A notice that retired on the write that made the leak permanent
+
+`INFO_DELETED_BUT_MESSAGES_REMAIN` is the notice for the worst of the two deletion failures: the
+contact row reached disk and the chat-log write did not, so that contact's plaintext is left in the
+log file owned by no row, reachable by no screen, and beyond the one erasure action the user has.
+The notice said so, and then told the user what to do about it — *"Try deleting another contact once
+the device has free space, which rewrites the same file."*
+
+It retires itself when a later message-log write lands, and `clearAstoreNoticeThatHasBeenResolved`
+stated the premise that makes that a resolution rather than a timeout:
+
+> The orphaned entries were already removed from the in-memory log by the deletion; only the write
+> failed. So the next message-log write that does land persists the pruned log, and the plaintext
+> the notice is about is gone.
+
+That is true of the process that performed the deletion, and `reloadAccount` ends it. The reload
+replaces the account with the stored copy, whose log is the **un-pruned** one — the write failed, so
+disk never lost those entries. The pruned list existed only in the account just discarded.
+
+**A previous round found half of this**, and the counter's own comment records it: the write-back
+inside `reloadAccount` reported a landed log write having touched nothing, so the notice cleared on
+the first theme change. The fix was the `messageLogIsLoaded()` guard, and it closes the bump *while
+the log is still deferred*. It does not close the one after. Once anything reads the log it is
+loaded, un-pruned, and the next genuine write persists it and advances the counter. The comment
+beside the counter already knew the reload re-reads the un-pruned log; the retirement rule three
+files away still assumed it did not.
+
+Measured, both halves, because the second is the one that matters and the first could have refuted
+it. After a reload the orphaned entries are back in the loaded log. Then the user does exactly what
+the notice advised — deletes another contact — and the file is rewritten **with the orphans still in
+it**, while the notice comes down. The one signal that the plaintext is there disappears at the
+moment it becomes permanent, and the user has been told the opposite.
+
+Worth recording how the first version of that test lied, because it lied in the direction that would
+have refuted the finding. It set the helper *instance* and not the *factory*; `reloadAccount` calls
+`initializeStorageHelper`, which rebuilds the helper from the factory, so the reload built a
+production helper over an Android Keystore box with no JVM implementation, read back nothing, and
+reported the log coming back **empty**. That reads exactly like "the reload prunes it, finding
+refuted". The precondition immediately above it — the file still holds the entry — was what said the
+fixture rather than the code was answering.
+
+The guard is a reload counter rather than a scan of the log, and the reason is the shape of the
+alternative. The honest scan is "does the log still hold entries for that address", and the log
+after a reload is *deferred* — so the scan forces a load from `refreshActionButtons`, which runs on
+essentially every repaint, and that load throws an unchecked re-entrancy guard the chat-log screen
+does not catch. The counter answers the same question without reading anything. It is carried across
+a rebuild with the notice and its write count, for the reason those are: a fresh strip starts below
+every real count, so dropping it would have the first repaint after a rotation conclude the premise
+still held — and the rotation is the event the reload happens on.
+
+And the advice was corrected, because it was measured false rather than merely unproven. Deleting
+another contact does not remove them; it rewrites the same file with them still in it. What the
+notice says now is that clearing the app's storage is what removes them. The cost of the fix is a
+notice that stands until then, and that is the honest state: the condition really is permanent, and
+the previous behaviour was not a shorter notice but a wrong one.
+
+## The guard that read as coverage, and the state it let through
+
+The caret fix taught `getExpectedSelectionStart`/`End` to answer from the strip's compose box while
+typing is redirected, because the host's numbers describe a field the user is not in and the
+pointer-slide handlers compute a caret move from them. The accessors ask the box for both ends and
+order the pair; then two lines handled what looked like the partial case:
+
+```java
+if (start >= 0 && end >= 0) return Math.min(start, end);
+if (start >= 0) return start;
+```
+
+**The second line was dead.** `Selection.setSelection` writes both spans and `removeSelection`
+removes both, so the two are always both non-negative or both `-1`. The case that actually exists —
+neither set — fell past both guards and returned the host's number. This is the same shape as the
+add-contact `hasFocus()` check that was dead for months, and the same cost: a line that reads as
+coverage, sitting exactly where a reader looks to check whether the case is handled.
+
+And the state it let through is not a corner. `TextView.setText` installs a fresh `Editable` and
+calls `mMovement.initialize(...)`; the compose box uses `ScrollingMovementMethod`, whose inherited
+`initialize` is empty, so nothing seeds a selection — and the two decrypt arms raise the redirect in
+the same breath as the `setText` that installed the buffer. So between decrypting a message and the
+user's first keystroke, the caret question about the box holding the peer's plaintext was answered
+with a number the messenger chose. Measured: the accessor returned **900**, the host's number, for a
+box that had never been touched. With space-swipe or delete-swipe enabled that is where the caret
+lands inside the message the user is about to reply to. Both preferences default off, which is what
+keeps this below a disclosure.
+
+The reviewer that found it could not settle the Android half by reading and said so — whether
+`setText` under a `BaseMovementMethod` really leaves `Selection` unset. The fixture asserts it
+rather than assuming it, and that assertion is a live control: if a platform version starts seeding
+a selection, the fall-through this is about becomes unreachable and the test says to rewrite it
+rather than delete it.
+
+Zero is the answer rather than a refusal, because the accessor returns an `int` that callers
+subtract and there is no expressible "do not know". An unselected buffer has its caret at the start,
+so a delete computed from it is a no-op rather than a cut at an offset somebody else picked — which
+is the safe direction, and the direction the old code had backwards.
+
+Worth naming what made this invisible to the tests that already existed: **every one of them sets
+the selection explicitly.** Both cases on this accessor call `Selection.setSelection` in their
+fixture, so both arms they exercise are the arm that works. A test suite can cover an accessor
+thoroughly and still never construct the state its caller actually hands it.

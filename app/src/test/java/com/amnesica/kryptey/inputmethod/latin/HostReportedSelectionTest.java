@@ -250,6 +250,52 @@ public class HostReportedSelectionTest {
     assertEquals(4, connection.getExpectedSelectionEnd());
   }
 
+  /**
+   * And a compose box with no selection span must not fall through to the host either.
+   *
+   * <p>The state above sets the selection explicitly, and so does every other test on this
+   * accessor - which is exactly why none of them can see this. {@code getExpectedSelectionStart}
+   * answers from the strip only while both {@code selectionStart()} and {@code selectionEnd()} are
+   * non-negative; {@code E2EEInputConnection} returns -1 for each when the {@code Editable} has no
+   * {@code SELECTION_START}/{@code END} span, and then the method falls past both guards and
+   * returns the host's number.
+   *
+   * <p>That is the state the decrypt path leaves the box in. {@code TextView.setText} installs a
+   * fresh {@code Editable} and calls {@code mMovement.initialize(...)}; the compose box's movement
+   * method is {@code ScrollingMovementMethod}, whose inherited {@code initialize} is empty, so
+   * nothing sets a selection. The two decrypt arms then raise the redirect in the same breath as
+   * the {@code setText} that installed the buffer - so between the decrypt and the user's first
+   * keystroke, the caret question is answered with numbers the messenger chose, about a field the
+   * user is not in. With space-swipe or delete-swipe enabled that is where the caret lands inside
+   * the peer's plaintext the user is about to reply to.
+   *
+   * <p>Zero is the answer rather than the host's number: an unselected buffer has its caret at the
+   * start, and the alternative - refusing to answer - has no expressible form, since the accessor
+   * returns an int that callers subtract.
+   */
+  @Test
+  public void acomposeBoxWithNoSelectionSpanIsStillNotTheHostsField() {
+    final android.widget.EditText compose =
+        new android.widget.EditText(RuntimeEnvironment.getApplication());
+    compose.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+    // No Selection.setSelection: setText is what the decrypt arms call, and it leaves none.
+    compose.setText("meet me at the usual place");
+    assertTrue("fixture: this test is only meaningful while the box reports no selection - if the "
+            + "platform starts seeding one, the fall-through it is about is unreachable and this "
+            + "must be rewritten rather than deleted",
+        android.text.Selection.getSelectionStart(compose.getText()) < 0);
+
+    final RichInputConnection connection = new RichInputConnection(ime);
+    connection.setOtherIC(compose);
+    connection.setShouldUseOtherIC(true);
+    connection.resetCachesUponCursorMoveAndReturnSuccess(900, 900);
+
+    assertEquals("with the redirect up and no selection in the compose box, the caret question was "
+            + "answered with the host's number - the messenger's, about a field the user is not in",
+        0, connection.getExpectedSelectionStart());
+    assertEquals(0, connection.getExpectedSelectionEnd());
+  }
+
   /** And with the redirect down the host's numbers are the right answer, which is the point. */
   @Test
   public void thehostsNumbersAreStillUsedWhenTypingGoesToTheHost() {

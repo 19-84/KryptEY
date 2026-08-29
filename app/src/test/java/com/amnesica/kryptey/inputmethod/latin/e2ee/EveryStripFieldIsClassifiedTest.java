@@ -98,6 +98,13 @@ public class EveryStripFieldIsClassifiedTest {
       // below every real count, so dropping it would clear the notice on the first repaint after a
       // rotation - silently, and the condition is never re-asserted.
       "mLogWritesLandedWhenNoticeRaised",
+      // The reload count when the notice went up. Carried with the notice for the same reason its
+      // write count is, and for one of its own: the notice's retirement rule assumes the log in
+      // memory is the pruned one, and a reload replaces it with the un-pruned stored copy. A fresh
+      // strip starts this below every real count, so dropping it would have the first repaint
+      // after a rotation conclude the premise still held - which is the rebuild the reload happens
+      // on.
+      "mAccountReloadsWhenNoticeRaised",
       // The refused invites, by address, with the sentence that was said. Carried because it exists
       // precisely to make that warning re-derivable, and a rebuild is host-forceable: dropping it
       // would hand back the erasure it was added to close, by a different route. The other three
