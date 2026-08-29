@@ -687,6 +687,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (mE2EEStrip.lastRejectionReachedDisk()) {
         clearStandingWarningIfAbout(chosenContact);
         clearCautionIfAbout(chosenContact);
+        // The record too, not only the sentence. Without this the refusal is re-derived on the
+        // next selection and the user has no way to end it at all.
+        forgetRefusedInviteBecauseTheUserAnsweredIt(chosenContact);
       }
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);
@@ -775,6 +778,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // screen, and not on a failed load, which is why this sits after the guard above.
         clearStandingWarningIfAbout(chosenContact);
         clearCautionIfAbout(chosenContact);
+        // The record too, not only the sentence. Without this the refusal is re-derived on the
+        // next selection and the user has no way to end it at all.
+        forgetRefusedInviteBecauseTheUserAnsweredIt(chosenContact);
         loadContactsIntoContactsListView();
         showOnlyUIView(UIView.CONTACT_LIST_VIEW);
       } catch (UnknownContactException e) {
@@ -4104,9 +4110,59 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setInviteRefusalWarning(final String message, final String aboutAddress) {
     setWarningMessage(message, aboutAddress);
     mStandingWarningIsInviteRefusal = true;
-    // Remembered so it can be worked out again. See mRefusedInvites: this is the warning a raise
-    // used to erase outright, because it was the only one with nothing behind it.
-    if (aboutAddress != null) mRefusedInvites.put(aboutAddress, message);
+  }
+
+  /**
+   * Records that the bundle attached at this address was refused, and what was said about it.
+   *
+   * <p>Separate from the painting, and called unconditionally. See {@code mRefusedInvites}: the
+   * decision about whether to paint belongs to whatever else is holding the banner, and the fact
+   * does not.
+   */
+  private void rememberRefusedInvite(final String address, final String message) {
+    if (address == null || message == null) return;
+    mRefusedInvites.put(address, message);
+  }
+
+  /**
+   * Replaces a remembered "nothing has been set up" once something has been.
+   *
+   * <p>Only that sentence. The other two describe states a later pin does not contradict: one
+   * already says a key was pinned, and one says an existing session is unchanged, which it is.
+   */
+  private void upgradeAremeberedRefusalThatAkeyNowContradicts(final Contact sender) {
+    if (sender == null) return;
+    final String address = String.valueOf(sender.getSignalProtocolAddress());
+    final String remembered = mRefusedInvites.get(address);
+    if (remembered == null
+        || !remembered.equals(String.format(INFO_INVITE_REFUSED, labelFor(sender)))) {
+      return;
+    }
+    mRefusedInvites.put(address,
+        String.format(INFO_INVITE_REFUSED_BUT_KEY_PINNED, labelFor(sender)));
+  }
+
+  /**
+   * Forgets a remembered refusal because the user answered it.
+   *
+   * <p>Verifying, rejecting and deleting are the three deliberate responses this file's own
+   * classification names as what ends an event warning, and the refusal record had only the third.
+   * So the warning came back on the next selection after the user had done exactly what it asked,
+   * held {@code mWarningStanding}, and suppressed every routine line for that contact for the life
+   * of the process - and after a rejection it came back <em>false</em>, claiming a key had been set
+   * up at an address whose key had just been discarded.
+   *
+   * <p>Address-scoped explicitly, not through {@code clearStandingWarningIfAbout}: that helper
+   * treats a null-addressed warning as being about anybody, which is right for a banner with one
+   * slot and wrong for a per-address record. Routing this through it would let rejecting Alice
+   * erase Bob's refusal - the cross-contact erase two other clears were narrowed to prevent.
+   *
+   * <p>This does not hand an attacker an eviction. A later tampered invite records again
+   * unconditionally, so what is forgotten is the answered event, not the next one.
+   */
+  private void forgetRefusedInviteBecauseTheUserAnsweredIt(final Contact contact) {
+    if (contact == null) return;
+    mRefusedInvites.remove(String.valueOf(contact.getSignalProtocolAddress()));
   }
 
   /**
@@ -4267,6 +4323,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!keyPinnedBefore && sender != null
         && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress())) {
       cautionThatAkeyWasPinned(false, false);
+      // And a remembered refusal saying "Nothing has been set up" has just stopped being true.
+      //
+      // This is the shape that makes storing a sentence dangerous as well as right. The record is
+      // retracted by a later good BUNDLE, and this route pins a key with no bundle at all - the
+      // two-step above, which costs the attacker one omitted optional field. Without this, the next
+      // selection repaints "Nothing has been set up. Ask them to send another" over an address that
+      // now holds a messenger-chosen key the app is encrypting to, on the only durable surface
+      // there is, in exactly the state a successful substitution leaves the app in.
+      //
+      // Upgraded rather than dropped: the invite really was changed on the way here, and that is
+      // still worth saying. The sentence it becomes is the one written for this state, which tells
+      // the user to compare the number.
+      upgradeAremeberedRefusalThatAkeyNowContradicts(sender);
     }
 
     if (bundleRefused) {
@@ -4309,16 +4378,35 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // any contact whose name folds onto another, the "that invite was changed on the way here"
       // warning was reduced to a three-second toast, which is precisely the silence-for-one-unsigned
       // -byte the refusal warning exists to close.
+      // Three states, and each needs its own sentence. Two of them were collapsed into one and
+      // the collapse pointed the wrong way: the reassuring wording landed on the first-pin case.
+      // A key pinned by this paste is the only state INFO_INVITE_REFUSED_BUT_KEY_PINNED
+      // describes; a session built against a key that was already trusted is not.
+      final boolean keyPinnedByThisPaste = !keyPinnedBefore
+          && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress());
+      final boolean somethingSurvived = sessionExistedBefore || keyPinnedBefore;
+      final String outcome = keyPinnedByThisPaste ? INFO_INVITE_REFUSED_BUT_KEY_PINNED
+          : (somethingSurvived ? INFO_INVITE_REFUSED_SESSION_KEPT : INFO_INVITE_REFUSED);
+
+      // RECORDED FIRST, and outside the guard below. Record the fact; decide separately whether to
+      // paint it.
+      //
+      // That rule is written in REVIVAL.md as one this file has needed three times, and the round
+      // that added mRefusedInvites put the new fact inside the paint guard - so the erasure it was
+      // written to close was still open in the case its own commit message described. One tampered
+      // invite from A raises and records A's refusal and leaves a warning standing; every tampered
+      // invite from B afterwards took the toast-only arm and recorded nothing, so B's refusal
+      // existed nowhere the moment those 3.5 seconds elapsed. That is silence for one unsigned
+      // byte per message, which is precisely what the refusal warning exists to buy back.
+      //
+      // The outcome is computed above rather than inside, and deliberately not moved any earlier:
+      // keyPinnedByThisPaste re-reads hasPinnedKey, and computing it before the pin caution would
+      // attribute pins that did not come from this paste.
+      rememberRefusedInvite(String.valueOf(sender.getSignalProtocolAddress()),
+          String.format(outcome, labelFor(sender)));
+
+      // A standing shared-name warning does not silence this one.
       if (!identityChanged && (!mWarningStanding || standingWarningIsAboutAsharedName())) {
-        // Three states, and each needs its own sentence. Two of them were collapsed into one and
-        // the collapse pointed the wrong way: the reassuring wording landed on the first-pin case.
-        // A key pinned by this paste is the only state INFO_INVITE_REFUSED_BUT_KEY_PINNED
-        // describes; a session built against a key that was already trusted is not.
-        final boolean keyPinnedByThisPaste = !keyPinnedBefore
-            && mE2EEStrip.hasPinnedKey(sender.getSignalProtocolAddress());
-        final boolean somethingSurvived = sessionExistedBefore || keyPinnedBefore;
-        final String outcome = keyPinnedByThisPaste ? INFO_INVITE_REFUSED_BUT_KEY_PINNED
-            : (somethingSurvived ? INFO_INVITE_REFUSED_SESSION_KEPT : INFO_INVITE_REFUSED);
         setInviteRefusalWarning(String.format(outcome, labelFor(sender)),
             String.valueOf(sender.getSignalProtocolAddress()));
       }

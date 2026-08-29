@@ -149,6 +149,30 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
    * <p>Built through the add-contact path rather than by hand, because the row-without-session
    * state is created by that path and by nothing else — asserting it exists is part of the finding.
    */
+
+  /**
+   * A PreKeySignalMessage labelled with the peer's address and carrying no bundle.
+   *
+   * <p>The two-step this file documents: strip the one-time pre-key from an invite so the bundle is
+   * refused and the row is left keyless, then send one of these. It pins by trust-on-first-use with
+   * no bundle to retract anything.
+   */
+  private MessageEnvelope bundlelessPreKeyMessage() throws Exception {
+    final String victimBundle;
+    activate(victim);
+    victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    activate(peer);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), addressOfVictim()));
+    final MessageEnvelope sent = SignalProtocolMain.encryptMessage("hello", addressOfVictim());
+    assertNotNull(sent);
+
+    activate(victim);
+    return new MessageEnvelope(sent.getCiphertextMessage(), sent.getCiphertextType(),
+        peerAddress.getName(), peerAddress.getDeviceId());
+  }
+
   private void contactRowWithoutASession() throws Exception {
     ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
         .setText("Bob");
@@ -990,5 +1014,108 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
             + "selection: the record is retracted by the same event that retracts the warning: "
             + bannerText(),
         !bannerText().contains("changed on the way here"));
+  }
+
+  /**
+   * The fact is recorded whether or not the sentence is painted.
+   *
+   * <p>This is the case the recomputability was FOR, and the round that added the record put the
+   * write inside the guard that decides whether to paint — so the erasure was still open in exactly
+   * the scenario its own commit message described. Two reviewers found it independently.
+   *
+   * <p>The attack costs the relay one cheap warning and then one unsigned byte per message: raise
+   * anything at all, and every tampered invite afterwards takes the toast-only arm. If the fact is
+   * not written there, "that invite was changed on the way here" exists nowhere once those three
+   * and a half seconds elapse.
+   */
+  @Test
+  public void arefusalIsRecordedEvenWhenItsSentenceIsSuppressed() throws Exception {
+    contactRowWithoutASession();
+    // The cheap warning that takes the slot first.
+    strip.setWarningMessageForTest("Careful: something else entirely.");
+
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    assertTrue("precondition: the sentence must be suppressed, which is correct: " + bannerText(),
+        !bannerText().contains("changed on the way here"));
+
+    // The user resolves the unrelated warning, and looks at the contact.
+    strip.resetChosenContactAndInfoTextForTest();
+    strip.selectContact(victim.getContactList().get(0));
+
+    assertTrue("the refusal must have been recorded while it was being suppressed, or one cheap "
+            + "warning still buys a relay silence on every tampered invite that follows - for one "
+            + "unsigned byte each, which is the trade this warning exists to close: " + bannerText(),
+        bannerText().contains("changed on the way here"));
+  }
+
+  /**
+   * And answering it ends it. Verifying, rejecting or deleting — the three deliberate responses
+   * this project's own classification names as what ends an event warning.
+   *
+   * <p>The record had only the third, so the warning came back on the next selection after the user
+   * had done exactly what it asked, held {@code mWarningStanding}, and suppressed every routine
+   * line for that contact for the life of the process.
+   */
+  @Test
+  public void answeringTherefusalEndsIt() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertTrue("precondition: the refusal must be standing", 
+        bannerText().contains("changed on the way here"));
+
+    // Reject, not Verify. A refused invite leaves the row keyless, so verifyContact refuses for
+    // the right reason - there is no number to have compared - and returns before its clears. The
+    // response actually available here is the one the escape hatch keeps live while a warning about
+    // this contact stands, and it is the sharper case: rejectContactKey discards the pin, so a
+    // refusal that came back afterwards would come back FALSE, claiming a key had been set up at an
+    // address whose key had just been discarded.
+    strip.showVerifyContactForTest(strip.chosenContactForTest());
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+
+    strip.selectContact(victim.getContactList().get(0));
+
+    assertTrue("a warning that survives the deliberate response the whole family rests on is how "
+            + "users learn to ignore the banner - and this one holds mWarningStanding, so it "
+            + "suppresses every routine line for that contact for the life of the process: "
+            + bannerText(),
+        !bannerText().contains("changed on the way here"));
+  }
+
+  /**
+   * A remembered sentence must not outlive the state it describes.
+   *
+   * <p>"Nothing has been set up" is retracted by a later good BUNDLE. A bundle-less PreKey message
+   * from the same address pins a messenger-supplied key by trust-on-first-use and carries no
+   * bundle, so it retracts nothing — and the next selection repainted "Nothing has been set up. Ask
+   * them to send another" over an address that now holds a key the app is encrypting to. That is
+   * the danger of storing a sentence, and it is the state a successful substitution leaves the app
+   * in.
+   *
+   * <p>Upgraded rather than dropped: the invite really was changed in transit, and the sentence it
+   * becomes is the one written for this state, which tells the user to compare the number.
+   */
+  @Test
+  public void aremeberedRefusalDoesNotOutliveTheStateItDescribes() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertTrue("precondition: the plain refusal must be standing: " + bannerText(),
+        bannerText().contains("Nothing has been set up"));
+
+    // A key arrives with no bundle at all, and is pinned by trust-on-first-use.
+    strip.processSignalMessageForTest(bundlelessPreKeyMessage(), strip.chosenContactForTest());
+    assertTrue("precondition: a key must now be pinned at that address",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    strip.selectContact(victim.getContactList().get(0));
+
+    assertTrue("the durable surface must not say nothing was set up over a pinned key the app is "
+            + "encrypting to: " + bannerText(),
+        !bannerText().contains("Nothing has been set up"));
+    assertTrue("and it must still say the invite was changed in transit, which is still true: "
+            + bannerText(), bannerText().contains("changed on the way here"));
   }
 }

@@ -2004,6 +2004,53 @@ many it staples a tampered bundle to; not persisted, because the fact is about a
 session and is retracted by a later good invite. Removing the re-derivation turns one new test red;
 keeping the record past the retraction turns the other red.
 
+**And then two reviewers, independently, found the same thing wrong with it: the record was written
+inside the guard that decides whether to PAINT.** So the erasure the change was written to close was
+still open in exactly the case its own commit message described. Raise any cheap warning first, and
+every tampered invite afterwards took the toast-only arm and recorded nothing — silence for one
+unsigned byte per message, which is the trade the refusal warning exists to close. This file already
+records that separation as one it has needed three times, most recently at the neighbouring site
+where `sessionCreationFailed` was recorded inside the same guard. The rule got applied to the local
+and not to the map. **Record the fact; decide separately whether to paint it** — now done, with the
+outcome computed above the guard and no earlier, because it re-reads `hasPinnedKey` and computing it
+before the pin caution would attribute pins that did not come from this paste.
+
+Fixing that alone would have been worse than not fixing it, and both reviewers said so. Two more
+things had to land with it:
+
+**The record had one exit and needed three.** It was retracted by a later good bundle or a landed
+deletion. Verifying and rejecting cleared the *banner* and left the *record*, so the refusal came
+back on the next selection after the user had done exactly what it asked, held `mWarningStanding`,
+and suppressed every routine line for that contact for the life of the process. This file's own
+classification says what ends an event warning: *verifying, rejecting, or deleting the contact.* The
+record had only the third. Worse in the reject case — `rejectContactKey` discards the pin, so the
+sentence that came back was `INFO_INVITE_REFUSED_BUT_KEY_PINNED`, claiming a key had been set up at
+an address whose key had just been discarded, on a screen whose only live control toasts "already
+rejected". The retraction is address-scoped explicitly rather than routed through
+`clearStandingWarningIfAbout`, which treats a null address as "about anybody" — right for a
+one-slot banner, wrong for a per-address record, and routing it there would let rejecting Alice
+erase Bob's.
+
+**And a stored sentence can outlive the state it describes.** "Nothing has been set up" is retracted
+by a later good *bundle*. A bundle-less PreKey message from the same address pins a
+messenger-supplied key by trust-on-first-use and carries no bundle, so it retracted nothing — and
+the next selection painted "Nothing has been set up. Ask them to send another" over an address that
+now holds a key the app is encrypting to. That is the state a successful substitution leaves the app
+in, and the danger of storing a sentence rather than a flag, which is the same property that made
+storing it right. Upgraded rather than dropped at the transition that was already being detected for
+the pin caution: the invite really was changed in transit, and the sentence it becomes is the one
+written for this state, which tells the user to compare the number.
+
+Three fixes, three tests, one mutant each and each kills exactly its own.
+
+**Left open and named.** Recording unconditionally removes an accidental brake a reviewer spotted:
+while the record was written only when painted, a standing warning blocked the next entry, so the
+32-entry bound could not be filled. It can be now — but each entry still costs the attacker a user
+paste plus a Decrypt press at an address that already has a contact row, so 32 of them is 32
+deliberate user actions, not a relay's free move. The other gap is the add-contact arm: a *first*
+invite that is refused is reported by a plain banner write and recorded nowhere, so it is still
+un-re-derivable. That is the common case and the one the help text describes, and it is owed.
+
 **A test measured the recovery route without using it.** The trade above rests on "the user gets the
 warning back by tapping the contact", and the test asserted it by calling `selectContact` directly.
 A reviewer proposed the mutant: guard the list rendering on the fault, so the row is never drawn and
