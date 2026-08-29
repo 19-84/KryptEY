@@ -568,4 +568,55 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
             + "landing is the event that ends this one: " + banner(),
         !banner().contains("was not removed"));
   }
+
+  /**
+   * A rejection that did not reach disk says so on the surface that lasts.
+   *
+   * <p>It was the last member of the {@code *_NOT_SAVED} family with only a toast, and the one
+   * whose consequence is worst. Measured in {@code ArejectionThatDidNotLandIsForgottenTest}: the
+   * key the user reported as not matching is pinned again at the next reload, AND the address is
+   * unmarked, so the next bundle there is a clean first sighting and nothing warns. The user
+   * performed this app's strongest deliberate refusal, was told for three and a half seconds that
+   * it had not stuck, and had no way to check afterwards.
+   */
+  @Test
+  public void afailedRejectionSaysSoDurably() {
+    makeTheWriteFail();
+
+    strip.showVerifyContactForTest(bob);
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    strip.selectContact(bob);
+
+    assertTrue("the rejected key comes back at the next raise and the address is unmarked; three "
+            + "and a half seconds is not where that belongs: " + banner(),
+        banner().contains("could not write to its own storage"));
+  }
+
+  /**
+   * And a landed REJECTION does not end a failed DELETION's notice.
+   *
+   * <p>This is why the kind is carried rather than a single flag. Both notices are ended by exactly
+   * one event each, and with one boolean the escape that lets a landed deletion end its own would
+   * let a landed rejection end it too - and a landed rejection says nothing about whether a contact
+   * was removed. The row, its key and its plaintext are all still there.
+   */
+  @Test
+  public void alandedRejectionDoesNotEndAfailedDeletionsNotice() {
+    makeTheWriteFail();
+    strip.removeContact(bob);
+    assertTrue("precondition: the deletion notice must be standing: " + banner(),
+        banner().contains("was not removed"));
+
+    // The trouble ends, and the user rejects the key of the contact they failed to delete.
+    makeTheWriteLand();
+    strip.showVerifyContactForTest(bob);
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    assertTrue("precondition: this rejection must have landed",
+        SignalProtocolMain.lastRejectionReachedDisk());
+    strip.selectContact(bob);
+
+    assertTrue("only a deletion that lands ends a deletion notice. A rejection landing says "
+            + "nothing about whether the contact was removed: " + banner(),
+        banner().contains("was not removed"));
+  }
 }

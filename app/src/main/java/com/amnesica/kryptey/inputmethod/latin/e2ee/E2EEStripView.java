@@ -686,10 +686,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // the one left.
       if (mE2EEStrip.lastRejectionReachedDisk()) {
         clearStandingWarningIfAbout(chosenContact);
+        // Through the arm allowed to end a rejection notice, because this is the event that ends
+        // it. A landed rejection says nothing about whether a contact was removed, so it cannot
+        // end a deletion notice - which is why the kind is carried rather than a single flag.
+        clearStorageCautionIfAbout(chosenContact, StorageCautionKind.REJECTION_DID_NOT_LAND);
         clearCautionIfAbout(chosenContact);
         // The record too, not only the sentence. Without this the refusal is re-derived on the
         // next selection and the user has no way to end it at all.
         forgetRefusedInviteBecauseTheUserAnsweredIt(chosenContact);
+      } else {
+        // On the surface that lasts, not only in a toast.
+        //
+        // This was the last member of the *_NOT_SAVED family with no durable copy, and the one
+        // whose consequence is worst: measured in ArejectionThatDidNotLandIsForgottenTest, the key
+        // the user reported as not matching is pinned again at the next reload AND the address is
+        // unmarked, so the next bundle there is a clean first sighting and nothing warns. That is
+        // the silent trust-on-first-use markKeyRejected exists to prevent, reached from the other
+        // side. The user performed the app's strongest deliberate refusal, was told for three and
+        // a half seconds that it had not stuck, and had no way to check afterwards.
+        //
+        // Flagged as a kind that no later write settles, for the same reason the failed deletion
+        // is: nothing a later write does makes it false. Only a rejection that lands does, and
+        // that is reachable - the contact is still in the list, so the user can try again.
+        postStorageCaution(String.format(INFO_REJECTION_NOT_SAVED, label), chosenContact,
+            StorageCautionKind.REJECTION_DID_NOT_LAND);
       }
       loadContactsIntoContactsListView();
       showOnlyUIView(UIView.CONTACT_LIST_VIEW);
@@ -2325,15 +2345,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * <p>Two fields make all of that unnecessary rather than careful.
    */
   private void postStorageCaution(final String notice, final Contact about) {
-    postStorageCaution(notice, about, false);
+    postStorageCaution(notice, about, StorageCautionKind.SETTLED_BY_ALATER_WRITE);
   }
 
   /**
-   * @param aboutAdeletion whether this reports a deletion that did not happen, which no later write
-   *                       settles - see {@link #mStandingStorageCautionIsAboutAdeletion}
+   * @param kind what ends this caution - see {@link #mStandingStorageCautionKind}
    */
   private void postStorageCaution(final String notice, final Contact about,
-      final boolean aboutAdeletion) {
+      final StorageCautionKind kind) {
     // A deletion that did not happen outranks any other storage caution, and the slot is single.
     //
     // Without this, one relayed message carrying a bundle is enough: the rotation's own write also
@@ -2343,8 +2362,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // and the replacement is, so the next successful write clears the weaker sentence too and the
     // screen reads like an ordinary success. The other cautions all have a route back: the failed
     // operation can simply be tried again.
-    if (mStandingStorageCautionIsAboutAdeletion && !aboutAdeletion) return;
-    mStandingStorageCautionIsAboutAdeletion = aboutAdeletion;
+    if (!mStandingStorageCautionKind.isSettledByAnyLaterWrite()
+        && kind.isSettledByAnyLaterWrite()) {
+      return;
+    }
+    mStandingStorageCautionKind = kind;
     mStandingStorageCaution = notice;
     mStandingStorageCautionAddress = about == null ? null
         : String.valueOf(about.getSignalProtocolAddress());
@@ -2461,7 +2483,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private void retireTheStorageCautionFor(final String address) {
     if (!address.equals(mStandingStorageCautionAddress)
-        || mStandingStorageCautionIsAboutAdeletion) {
+        || !mStandingStorageCautionKind.isSettledByAnyLaterWrite()) {
       return;
     }
     mStandingStorageCaution = null;
@@ -3353,7 +3375,41 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * still has not been attempted again. Without the distinction, a refusal left over from an
    * earlier failure at the same address retired the deletion notice on the next write anywhere.
    */
-  private boolean mStandingStorageCautionIsAboutAdeletion = false;
+  /**
+   * What kind of storage caution is standing, because they are not all settled by the same thing.
+   *
+   * <p>Most of this family report a write that did not land and are ended by a later one that does,
+   * or by retrying the operation. Two are not like that, and each is ended by exactly one event:
+   *
+   * <ul>
+   *   <li>{@code DELETION_DID_NOT_HAPPEN} - the contact, their pinned key and their plaintext are
+   *       all still on disk and come back at the next raise. Ended by a deletion that lands.</li>
+   *   <li>{@code REJECTION_DID_NOT_LAND} - the key the user reported as not matching is still
+   *       pinned on disk and the address is unmarked, so the next bundle there is a clean first
+   *       sighting and nothing warns. Ended by a rejection that lands. Measured in
+   *       {@code ArejectionThatDidNotLandIsForgottenTest}.</li>
+   * </ul>
+   *
+   * <p>A boolean was enough while only the deletion needed protecting. It stopped being enough the
+   * moment a second one did: with one flag, the escape that lets a landed deletion end its own
+   * notice would also let a landed REJECTION end it, and a landed rejection says nothing about
+   * whether a contact was removed.
+   */
+  private StorageCautionKind mStandingStorageCautionKind = StorageCautionKind.SETTLED_BY_ALATER_WRITE;
+
+  /** See {@code mStandingStorageCautionKind}. */
+  enum StorageCautionKind {
+    /** The ordinary case: a write that did not land, ended by a later one that does. */
+    SETTLED_BY_ALATER_WRITE,
+    /** A deletion that did not happen. Ended only by a deletion that lands. */
+    DELETION_DID_NOT_HAPPEN,
+    /** A rejection that did not reach disk. Ended only by a rejection that lands. */
+    REJECTION_DID_NOT_LAND;
+
+    boolean isSettledByAnyLaterWrite() {
+      return this == SETTLED_BY_ALATER_WRITE;
+    }
+  }
 
   /**
    * The contact that caution is about, so a response about someone else cannot take it down.
@@ -4144,15 +4200,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   /** The storage half of the same scoped clear. */
   private void clearStorageCautionIfAbout(final Contact contact) {
-    clearStorageCautionIfAbout(contact, false);
+    clearStorageCautionIfAbout(contact, StorageCautionKind.SETTLED_BY_ALATER_WRITE);
   }
 
   /**
-   * @param becauseTheDeletionLanded true only from the arm where the deletion actually reached
-   *                                 disk, which is the one event that ends a deletion caution
+   * @param becauseThisLanded the operation that has just reached disk, from the arm that knows it
+   *                          did. Only the kind that matches ends its own notice: a landed
+   *                          rejection says nothing about whether a contact was removed.
    */
   private void clearStorageCautionIfAbout(final Contact contact,
-      final boolean becauseTheDeletionLanded) {
+      final StorageCautionKind becauseThisLanded) {
     if (mStandingStorageCaution == null) return;
     // The same rule retireTheStorageCautionFor already had, and this path did not.
     //
@@ -4163,12 +4220,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // had not happened - after which the screen reads like an ordinary success. Only a deletion
     // that lands ends it, which is the exit that keeps this from being the dead end this file has
     // closed twice.
-    if (mStandingStorageCautionIsAboutAdeletion && !becauseTheDeletionLanded) return;
+    if (!mStandingStorageCautionKind.isSettledByAnyLaterWrite()
+        && mStandingStorageCautionKind != becauseThisLanded) {
+      return;
+    }
     if (mStandingStorageCautionAddress == null || (contact != null && mStandingStorageCautionAddress
         .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
       mStandingStorageCaution = null;
       mStandingStorageCautionAddress = null;
-      mStandingStorageCautionIsAboutAdeletion = false;
+      mStandingStorageCautionKind = StorageCautionKind.SETTLED_BY_ALATER_WRITE;
     }
   }
 
@@ -4638,7 +4698,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final String standingStorageCaution;
     private final String standingStorageCautionAddress;
     /** Whether that caution is about a deletion, which no later write settles. */
-    private final boolean standingStorageCautionIsAboutAdeletion;
+    private final StorageCautionKind standingStorageCautionKind;
     private final String standingStoreNotice;
     private final long logWritesLandedWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
@@ -4651,7 +4711,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String standingCautionAddress, final Map<String, Long> contactsNotOnDisk,
         final Map<String, String> refusedInvites,
         final String standingStorageCaution, final String standingStorageCautionAddress,
-        final boolean standingStorageCautionIsAboutAdeletion,
+        final StorageCautionKind standingStorageCautionKind,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
         final boolean hostFieldIsPassword, final Encoder encoding) {
       this.draft = draft;
@@ -4667,7 +4727,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.refusedInvites = refusedInvites;
       this.standingStorageCaution = standingStorageCaution;
       this.standingStorageCautionAddress = standingStorageCautionAddress;
-      this.standingStorageCautionIsAboutAdeletion = standingStorageCautionIsAboutAdeletion;
+      this.standingStorageCautionKind = standingStorageCautionKind;
       this.standingStoreNotice = standingStoreNotice;
       this.logWritesLandedWhenNoticeRaised = logWritesLandedWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
@@ -4749,7 +4809,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mStandingCautionAddress, new HashMap<>(mContactsNotOnDisk),
         new LinkedHashMap<>(mRefusedInvites),
         mStandingStorageCaution, mStandingStorageCautionAddress,
-        mStandingStorageCautionIsAboutAdeletion,
+        mStandingStorageCautionKind,
         mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
         mHostFieldIsPassword, encodingMethod);
   }
@@ -4865,7 +4925,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (carried.refusedInvites != null) mRefusedInvites.putAll(carried.refusedInvites);
     mStandingStorageCaution = carried.standingStorageCaution;
     mStandingStorageCautionAddress = carried.standingStorageCautionAddress;
-    mStandingStorageCautionIsAboutAdeletion = carried.standingStorageCautionIsAboutAdeletion;
+    mStandingStorageCautionKind = carried.standingStorageCautionKind;
     mStandingStoreNotice = carried.standingStoreNotice;
     mLogWritesLandedWhenNoticeRaised = carried.logWritesLandedWhenNoticeRaised;
     // Repainted through the shared builder so the restored banner shows both, rather than the
@@ -5195,7 +5255,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // for a phrase - that was the whole reason the flag was introduced - and this call was still
       // using the two-argument overload, which says "not a storage notice" about a sentence whose
       // subject is the app failing to write to its own storage.
-      postStorageCaution(INFO_DELETE_NOT_SAVED, contact, true);
+      postStorageCaution(INFO_DELETE_NOT_SAVED, contact, StorageCautionKind.DELETION_DID_NOT_HAPPEN);
     } else if (mE2EEStrip.lastDeletionLeftMessagesBehind()) {
       Toast.makeText(getContext(),
           String.format(INFO_DELETED_BUT_MESSAGES_REMAIN, labelFor(contact)),
@@ -5238,7 +5298,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (deleted) {
       // Through the arm that is allowed to end a deletion caution, because this is the event that
       // ends it: the contact is gone from disk as well as from memory.
-      clearStorageCautionIfAbout(contact, true);
+      clearStorageCautionIfAbout(contact, StorageCautionKind.DELETION_DID_NOT_HAPPEN);
       clearCautionIfAbout(contact);
       // Nothing left to refuse about: the row is gone from disk as well as from memory.
       if (contact != null) {

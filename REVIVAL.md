@@ -1984,7 +1984,25 @@ update could not be saved", and the deletion sentence is gone. Worse in a second
 replacement *is* settled by a later landed write, so the next successful write clears that too. A
 lesser storage caution now yields to a standing deletion notice.
 
-Three tests. The mutant for the second guard survived twice before it landed, and both reasons are
+**And there was a second notice of that kind, with a worse consequence.**
+`INFO_REJECTION_NOT_SAVED` was the last member of the family with only a toast. What it costs is now
+measured rather than described — `rejectContactKey`'s own comment stated it, and a reviewer flagged
+that nobody had checked. `ArejectionThatDidNotLandIsForgottenTest` runs both halves: after a
+rejection whose write fails, a reload brings the refused key back **pinned**, and the address comes
+back **unmarked**, so the next bundle there is a clean first sighting and nothing warns. That is the
+silent trust-on-first-use `markKeyRejected` exists to prevent, reached from the other side. The user
+performed this app's strongest deliberate refusal, was told for three and a half seconds that it had
+not stuck, and had no way to check afterwards. It now says so on the surface that lasts.
+
+**Which forced the flag to become a kind.** A boolean was enough while only the deletion needed
+protecting. With two, the escape that lets a landed deletion end its own notice would also let a
+landed *rejection* end it — and a landed rejection says nothing about whether a contact was removed;
+the row, its key and its plaintext are all still there. `mStandingStorageCautionKind` carries which
+of the two it is, so each is ended by exactly the event that makes it false, and everything else in
+the family keeps the ordinary "settled by a later landed write" rule. Collapsing the kinds back into
+one flag turns two tests red.
+
+Three tests for the deletion. The mutant for the second guard survived twice before it landed, and both reasons are
 worth keeping. The first attempt drove Verify and Reject while writes were still failing, where both
 listeners' clears are gated off — a route production cannot take. The second reached the clear and
 still passed, because `clearStorageCautionIfAbout` nulls the **field** and nothing on that path

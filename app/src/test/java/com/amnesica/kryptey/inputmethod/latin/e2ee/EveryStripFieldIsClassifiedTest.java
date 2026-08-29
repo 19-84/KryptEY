@@ -81,10 +81,12 @@ public class EveryStripFieldIsClassifiedTest {
       // four separate defects in as many rounds.
       "mStandingStorageCaution",
       "mStandingStorageCautionAddress",
-      // Whether that caution is about a deletion that did not happen. Carried with it: a refusal is
-      // settled by a later landed write and a failed deletion is not, and a rebuild that dropped
-      // this would let the next write anywhere erase "that contact was not removed".
-      "mStandingStorageCautionIsAboutAdeletion",
+      // What ENDS that caution. Carried with it: most of the family are settled by a later landed
+      // write and two are not, and a rebuild that dropped this would let the next write anywhere
+      // erase "that contact was not removed" or "the rejection was not saved". It was a boolean
+      // while only the deletion needed protecting; with two, one flag would let a landed rejection
+      // end a deletion's notice, which it says nothing about.
+      "mStandingStorageCautionKind",
       "mStandingStoreNotice",
       // The log-write count when that notice went up. Carried with it: a fresh strip starts this
       // below every real count, so dropping it would clear the notice on the first repaint after a
