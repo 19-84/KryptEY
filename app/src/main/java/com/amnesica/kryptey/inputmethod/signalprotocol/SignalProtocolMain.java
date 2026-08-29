@@ -429,11 +429,13 @@ public class SignalProtocolMain {
    * The identity key currently pinned for this address, or null if nothing is pinned.
    *
    * <p>Exposed so the verify screen can bind what it PAINTED to what its buttons act on. The digits
-   * are derived from this key at the moment the screen is drawn; the account object underneath can
-   * be replaced afterwards, by a theme change or by the recovery re-read that runs on every
-   * keyboard raise while a store fault stands. Without the binding, Verify records "the user
-   * compared this" against whatever is pinned when the button is pressed, which need not be the key
-   * whose number was on screen.
+   * are derived from this key at the moment the screen is drawn; the account object underneath is
+   * then replaced by {@link #reloadAccountIfStorageRecovered} on every keyboard raise while a store
+   * fault stands, which repaints nothing. (A theme change replaces it too, through
+   * {@code reloadAccount}, but that path rebuilds the strip and blanks the digits in the same
+   * method, so no press can land in it.) Without the binding, Verify records "the user compared
+   * this" against whatever is pinned when the button is pressed, which need not be the key whose
+   * number was on screen.
    */
   public static IdentityKey pinnedIdentityFor(final SignalProtocolAddress address) {
     if (address == null || sInstance == null || sInstance.mAccount == null) return null;

@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-four sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
 - [The carrier, attacked and found sound, with four things worth fixing anyway](#the-carrier-attacked-and-found-sound-with-four-things-worth-fixing-anyway)
 - [The number on screen and the key the button acts on](#the-number-on-screen-and-the-key-the-button-acts-on)
 - [A refusal and the sentence that justifies it are one fact](#a-refusal-and-the-sentence-that-justifies-it-are-one-fact)
@@ -1957,6 +1958,70 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
 
 ---
 
+## What the fix for the false permission then deleted
+
+Two review agents attacked the previous entries and found four things. Three were defects in the
+fixes themselves, which is the pattern this file keeps recording: the round that closes something
+opens the next one.
+
+**The recovery raise deleted the one sentence that was still true.** Retiring the storage caution
+alongside the refusal is right when the refusal is settled by a later landed write. It is wrong on
+the other arm. A contact added while writes are refused exists in memory only; the raise that
+recovers the store adopts the stored account and discards it — deliberately, and it has to, because
+the in-memory list is the empty substitution plus whatever was added on top. So the moment the row
+vanishes is precisely the moment its caution becomes the only true sentence on screen, and the sweep
+retired it there, dropped the refusal, and lit Encrypt. The user saw a healthy banner at the instant
+their session's work was thrown away.
+
+The refusal is now kept for **the contact the user is standing on**, and only that one. Keeping it
+for every vanished row would be an entry no user action can clear — a vanished contact is
+unselectable and undeletable — which is the dead end this file has closed twice. Choosing anybody
+else drops it, and adding a contact is always available, which is the exact action the sentence
+asks for. `TheButtonsNeverContradictTheBannerTest`'s new `RELOAD` case passed over this state
+because both halves had gone silent together: the invariant was satisfied vacuously in one
+direction, which is its own lesson about sweeps.
+
+**The "recomputable" argument was true of three warnings and asserted of four.** `selectContact`
+re-derives the shared-name, rejection and identity-change warnings, and the last also re-raises on
+every decrypt from that sender — so painting over them is a displacement. Nothing re-derives the
+**invite-refusal** warning: no per-address record says the last attached bundle was refused, and its
+only exit is a retraction by a later good invite. A raise during a fault can therefore repaint over
+*"that invite was changed on the way here"* and leave only the 3.5-second toast, which is exactly
+the silence that warning exists to buy back. INFERRED, not reproduced — the route needs the refusal
+raised into a free-or-shared-name slot first. The claim is now narrowed to what holds, the gap is
+named beside it, and the fix is **owed**: make the refusal recomputable, not yield here, because
+yielding is what reopens the re-invite hazard.
+
+**A test measured the recovery route without using it.** The trade above rests on "the user gets the
+warning back by tapping the contact", and the test asserted it by calling `selectContact` directly.
+A reviewer proposed the mutant: guard the list rendering on the fault, so the row is never drawn and
+the recovery route disappears from the UI. It survived. It survived a second time after the test was
+changed to `showContactListForTest`, which only flips visibility and leaves whatever adapter was
+there — so the assertion was reading a stale one. Driving `e2ee_button_select_recipient`, which is
+the button the user presses, catches it. *Assert against the route, not the handler behind it* is
+now three separate rounds old in this file.
+
+**And a comment that the code beside it contradicts.** The gate's javadoc defended asking
+`storageIsUnreadable()` on the grounds that the decrypted store is cached on the helper. When the
+gate answers yes, `reloadAccountIfStorageRecovered` rebuilds the `StorageHelper` first, and
+`mSecureStore` is a per-helper field — so the `storageState()` inside `refreshOpeningMessage`
+afterwards reconstructs it, CryptoBox and all. That is deliberate rather than wasteful (a stale
+secure store is what would make a recovered store keep reporting UNREADABLE), it is measured at one
+crypto box per raise, and the sentence now says so.
+
+**Also from the same round, on the verify screen.** The refusal toast chose its sentence before the
+repaint, so on the arm where the reloaded account pins nothing it said "the number below is the
+current one — compare it" over blank digits and two dark buttons. Corrected by repainting first and
+choosing from what is on screen, with a second constant for the empty cell; both carry "nothing was
+recorded". The claim that a theme change leaves digits painted was false in four places including
+this file — `setInputView` calls `surrenderState` three statements later, which blanks them — and
+the entry now says why that path is safe rather than dropping it, because under-stating reachability
+is the direction that gets a guard removed. And the animator note claiming the cancel is untested is
+now stale: it is measured on a device, which is what closes the one cell where the key binding fails
+open.
+
+---
+
 ## The carrier, attacked and found sound, with four things worth fixing anyway
 
 A round spent entirely on the FairyTale carrier and the encoders found **no reachable attack**. The
@@ -2012,12 +2077,21 @@ Recorded with the measurement rather than changed on a guess.
 The verify screen shows a safety number and offers two buttons that act on a key. Nothing bound them
 to each other.
 
-The digits are painted once, from the account held at that moment. The account object underneath is
-replaced by `reloadAccount` on a theme change the host app can force, and by the recovery re-read
-that now runs on every keyboard raise while a store fault stands. `onStartInputViewInternal` runs on
-any `restartInput` or focus move — the window need not hide, and `onWindowHidden`, which is what
-clears the digits, does not run. So the messenger picks the moment, mid voice-call, by presenting a
-text field. Neither path rebuilds the strip, repaints the digits, or disables anything.
+The digits are painted once, from the account held at that moment, and the account object
+underneath can be replaced afterwards without anything repainting them. Two production paths replace
+it and only one is a hazard — a distinction the first version of this entry got wrong, and a
+reviewer corrected. `reloadAccount` runs from `LatinIME.setInputView` on a theme change the host app
+can force, but three statements later that same method calls `surrenderState`, which blanks the
+digits and the binding together, and `adoptState` restores neither the chosen contact nor this
+screen. No press can land in it. The hazard is `reloadAccountIfStorageRecovered`, on every keyboard
+raise while a store fault stands: it repaints nothing and disables nothing, and
+`onStartInputViewInternal` runs on any `restartInput` or focus move — the window need not hide, and
+`onWindowHidden`, which is what clears the digits, does not run. So the messenger picks the moment,
+mid voice-call, by presenting a text field.
+
+The theme path is named rather than dropped, because under-stating reachability is the direction
+that gets a guard removed later: if `reloadAccount` gains a caller that does not rebuild, or
+`setInputView`'s last rites are reordered, that sentence is what records what was being relied on.
 
 `verifyContactInContactList`'s only key check is `getIdentity(address) != null` — *something* is
 pinned, never *the pinned key is the one these digits were built from*. So a user can read a number
@@ -2035,12 +2109,29 @@ invalidate.
 
 A refusal that only refuses is the dead end this screen has produced three times, so the refusal
 repaints: the digits become the current ones, both buttons come back, and the response the screen
-asks for — compare it again — is available immediately. `INFO_NUMBER_MOVED_UNDER_THE_SCREEN` says
-that nothing was recorded, which is the clause that matters; without it a user who pressed Verify
-has no way to know whether the badge exists.
+asks for — compare it again — is available immediately.
 
-Four tests. Removing the binding turns both harm tests red; removing the repaint alone turns the
-dead-end test red.
+**And the sentence is chosen after the repaint, not before it.** The first version picked it from
+what the presser hoped for. The reloaded account can pin nothing at that address — a rejected
+address, or a session whose write never landed — and then the repaint takes the null-fingerprint
+arm, blanks all twelve digits and darkens both buttons. "The number below is the current one —
+compare it" would then sit for three and a half seconds over a line saying there is no number, next
+to a control that is not live. This file had already rejected that exact reuse once, for
+`INFO_VERIFY_AFTER_REJECTION`, and the argument is the same: a sentence the screen disproves is one
+the user stops believing, and everything else this app has to say is a sentence. There are two
+constants now, and both carry "nothing was recorded" — the clause a user who pressed Verify has no
+other way to learn.
+
+Five tests. Removing the binding turns both harm tests red; removing the repaint turns the dead-end
+test red; choosing the sentence before the repaint turns the fifth red.
+
+**The fail-open cell, named because it is a real one.** A null binding means the guard passes, and
+`clearFingerprintViews` nulls it in the same call that cancels the count-up animators. So an
+animator that outlived its cancel would be the one way digits can stand on screen with the guard
+open — and Reject can be live there through the deliberate escape hatch. That is not reachable:
+`AcontactSwitchDoesNotRepaintThePreviousNumberTest` measures the cancel on a device, and reverting
+it turns that test red. Making the binding fail closed instead would break the escape hatch, which
+is the dead end this screen has produced three times.
 
 **What was not fixed, and why it is a decision rather than an omission.** The contact-list and
 message-list adapters also hold `Contact` objects from the account that was replaced. Every action

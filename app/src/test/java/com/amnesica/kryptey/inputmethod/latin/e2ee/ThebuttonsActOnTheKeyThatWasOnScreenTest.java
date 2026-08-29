@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -38,12 +39,13 @@ import javax.crypto.SecretKey;
  * The verify screen shows a number and offers two buttons that act on a key. They were not bound to
  * each other.
  *
- * <p>The digits are painted once, from the account held at that moment. The account object
- * underneath is replaced by {@code reloadAccount} on a theme change the host app can force, and by
- * the recovery re-read that runs on every keyboard raise while a store fault stands — and
- * {@code onStartInputViewInternal} runs on any {@code restartInput} or focus move, without the
- * window ever hiding, so the messenger picks the moment by presenting a field. Neither path rebuilds
- * the strip, repaints the digits, or disables anything.
+ * <p>The digits are painted once, from the account held at that moment. The hazard is
+ * {@code reloadAccountIfStorageRecovered}, which runs on every keyboard raise while a store fault
+ * stands and repaints nothing — and {@code onStartInputViewInternal} runs on any
+ * {@code restartInput} or focus move, without the window ever hiding, so the messenger picks the
+ * moment by presenting a field. (A theme change replaces the account too, but its caller
+ * {@code setInputView} calls {@code surrenderState} three statements later, which blanks the digits
+ * and the binding together, so no press can land in that one.)
  *
  * <p>So a user can read a number aloud, hear it match, press Verify, and record "I compared this"
  * against a key that was never on screen. That is the one failure this trust model has no recovery
@@ -259,5 +261,53 @@ public class ThebuttonsActOnTheKeyThatWasOnScreenTest {
             + "turned the badge off rather than made it mean something",
         SignalProtocolMain.isContactKeyTrustworthy(
             SignalProtocolMain.getInstance().getAccount().getContactList().get(0)));
+  }
+
+  /**
+   * The refusal must not tell the user to compare a number the repaint just erased.
+   *
+   * <p>The reloaded account can pin nothing at that address — a rejected address, or a session
+   * whose write never landed — and then the repaint takes the null-fingerprint arm, blanks all
+   * twelve digits and darkens both buttons. The first version of this refusal chose its sentence
+   * before the repaint, so it said "the number below is the current one - compare it" over a line
+   * saying there is no number and beside a control that was not live. This file has rejected that
+   * exact reuse once already, for a different constant, and the argument is the same: a sentence
+   * the screen disproves is one the user stops believing, and everything else this app has to say
+   * is a sentence.
+   */
+  @Test
+  public void therefusalDoesNotPromiseAnumberThatIsNotThere() throws Exception {
+    // Bob's key is pinned and stored, then rejected on disk: the stored account has the contact and
+    // no pin for it.
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(bobBundle), bobAddress));
+    SignalProtocolMain.rejectContactKey(bob);
+    helper().storeAllInformationInSharedPreferences(victim);
+
+    // In memory a key is pinned again, so there is a number to paint and press against.
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(attackerBundle), bobAddress));
+    strip.showVerifyContactForTest(bob);
+    assertTrue("precondition: the digits must be painted", verifyButton().isEnabled());
+
+    // The raise installs the stored account, which pins nothing at that address.
+    final Account loaded = helper().getAccountFromSharedPreferences();
+    assertNotNull(loaded);
+    SignalProtocolMain.getInstance().setAccount(loaded);
+    assertNull("precondition: the reloaded account must pin nothing for Bob",
+        SignalProtocolMain.pinnedIdentityFor(bobAddress));
+
+    verifyButton().performClick();
+
+    final String said = org.robolectric.shadows.ShadowToast.getTextOfLatestToast();
+    final CharSequence firstDigit =
+        ((android.widget.TextView) strip.findViewById(R.id.code_first)).getText();
+    assertNotNull("the refusal must say something", said);
+    assertTrue("the repaint left no number on screen, so the refusal must not point at one: the "
+            + "digits are '" + firstDigit + "' and it said: " + said,
+        firstDigit.length() > 0 || !said.contains("The number below is the current one"));
+    assertTrue("and whichever sentence it chose must still say that nothing was recorded - that is "
+            + "the clause a user who pressed Verify has no other way to learn: " + said,
+        said.contains("nothing was recorded"));
   }
 }

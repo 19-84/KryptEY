@@ -122,12 +122,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * at. Null whenever no number is painted.
    *
    * <p>The verify screen shows a number and offers two buttons that act on a key. Those were not
-   * the same thing. The digits are painted once, from the account held at that moment; the account
-   * object underneath is replaced by {@code reloadAccount} on a theme change the host app can
-   * force, and by the recovery re-read that runs on every keyboard raise while a store fault
-   * stands. Neither rebuilds the strip, neither repaints the digits, and neither disables anything
-   * - so the number the user compares by voice and the key their press lands on can be different
-   * keys, at a moment the messenger picks by presenting a text field.
+   * the same thing. The digits are painted once, from the account held at that moment, and the
+   * account object underneath can be replaced afterwards without anything repainting them.
+   *
+   * <p>Two production paths replace it, and only one of them is a hazard. {@code reloadAccount}
+   * runs from {@code LatinIME.setInputView} on a theme or ui-mode change - but three statements
+   * later that same method calls {@code surrenderState}, which runs {@code clearFingerprintViews}
+   * and so blanks the digits and nulls this binding, and {@code adoptState} restores neither the
+   * chosen contact nor the verify screen. There is no window in which a press lands. The hazard is
+   * the other one: {@code reloadAccountIfStorageRecovered}, on every keyboard raise while a store
+   * fault stands, which repaints nothing and disables nothing - and
+   * {@code onStartInputViewInternal} runs on any {@code restartInput} or focus move, without the
+   * window hiding, so the messenger picks the moment by presenting a text field.
+   *
+   * <p>The theme path is named here rather than left out because under-stating the reachability is
+   * the direction that gets a guard removed: if {@code reloadAccount} ever gains a caller that does
+   * not rebuild, or {@code setInputView}'s last rites are reordered, this paragraph is what says
+   * what was being relied on.
    *
    * <p>Verify's whole meaning is "the user compared this key against the peer's own device". A
    * verified badge recorded against a key that was never on screen is the one failure the trust
@@ -708,12 +719,36 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * this screen has produced three times: the user is told something is wrong and finds nothing to
    * press. After this the digits are the current ones and both buttons work again, so the response
    * available is the right one - compare the number again.
+   *
+   * <p><b>The repaint runs first and the sentence is chosen from what it left on screen.</b> Said
+   * before, the message was picked from what the presser hoped for rather than from what they would
+   * see: the reloaded account may pin nothing at that address - it may be a rejected address, or a
+   * session whose write never landed - and then {@code loadFingerprintInVerifyContactView} takes
+   * the null-fingerprint arm, blanks all twelve digits and darkens both buttons. "The number below
+   * is the current one - compare it" would then be sitting for three and a half seconds over a line
+   * that says there is no number to compare, telling the user to use a control that is not live.
+   * That is the reuse this file rejected once already, arriving by toast instead of by info text,
+   * and the argument against it is the same: a sentence the screen disproves is one the user stops
+   * believing, and everything else this app has to say is a sentence.
    */
   private void refuseThePressAndRepaintTheNumber() {
-    Toast.makeText(getContext(),
-        String.format(INFO_NUMBER_MOVED_UNDER_THE_SCREEN, labelFor(chosenContact)),
-        Toast.LENGTH_LONG).show();
     loadFingerprintInVerifyContactView();
+    // Asked of the binding rather than of the store: it is written from the paint, so it is the one
+    // thing that describes what is on screen NOW rather than what could be worked out again.
+    //
+    // Two calls rather than one call with a chosen string. NoToastCarriesMessageContentTest reads
+    // the ARGUMENT, and a local holding either constant is opaque to it - the guard said so the
+    // moment this was written the other way. Every toast on this strip is drawn outside
+    // FLAG_SECURE, so what it interpolates has to be visible at the call site.
+    if (mCodesWereDerivedFrom != null) {
+      Toast.makeText(getContext(),
+          String.format(INFO_NUMBER_MOVED_UNDER_THE_SCREEN, labelFor(chosenContact)),
+          Toast.LENGTH_LONG).show();
+    } else {
+      Toast.makeText(getContext(),
+          String.format(INFO_NUMBER_MOVED_AND_IS_GONE, labelFor(chosenContact)),
+          Toast.LENGTH_LONG).show();
+    }
   }
 
   private void createVerifyContactVerifyButtonClickListener() {
@@ -1078,10 +1113,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * its digits into the views a moment later - a safety number the user could then read and compare
    * while believing it belonged to whoever is named above it.
    *
-   * <p>Untested, deliberately: under Robolectric an un-cancelled animator delivers no further
-   * frames once the looper is idled past the view change, so the late repaint does not happen and
-   * a test of it passes with or without this cancel. Removing the cancel is therefore invisible
-   * here. It is on the device-check list in REVIVAL.md with FLAG_SECURE, for the same reason.
+   * <p>Untestable under Robolectric, and tested on a device instead. An un-cancelled animator
+   * delivers no further frames once the looper is idled past the view change, so the late repaint
+   * does not happen and a JVM test of it passes with or without this cancel - removing the cancel
+   * is invisible there. {@code AcontactSwitchDoesNotRepaintThePreviousNumberTest} runs on the
+   * emulator: it switches contacts 200ms into the count-up and reads the twelve views two seconds
+   * later, and reverting this cancel turns it red.
+   *
+   * <p>Why that matters beyond the digits themselves: {@code clearFingerprintViews} nulls the
+   * key binding in the same call that cancels these, and a null binding means the Verify/Reject
+   * guard passes. So an animator that outlived its cancel would be the one way digits can be on
+   * screen with the guard failing open. That state is now measured not to exist.
    */
   private final java.util.List<ValueAnimator> mCodeAnimators = new ArrayList<>();
 
@@ -1092,19 +1134,33 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mCodeAnimators.clear();
   }
 
-  /** Blanks the safety-number digits and disables confirmation. */
   /**
-   * Said when a press is refused because the key moved while the screen was open.
+   * Said when a press is refused because the key moved while the screen was open, and the current
+   * number is now painted.
    *
-   * <p>Names what happened rather than blaming the user or the store: the number changed, nothing
-   * was recorded, and the number now on screen is the current one. "Nothing was recorded" is the
+   * <p>Names what happened rather than blaming the user or the store. "Nothing was recorded" is the
    * clause that matters - without it a user who pressed Verify has no way to know whether the badge
-   * they were about to earn exists.
+   * they were about to earn exists - and it is the clause both of these must share, which is why
+   * they are written next to each other.
    */
   static final String INFO_NUMBER_MOVED_UNDER_THE_SCREEN = "The safety number for %s changed while "
       + "this screen was open, so nothing was recorded. The number below is the current one - "
       + "compare it with them by voice again before verifying or rejecting.";
 
+  /**
+   * The same refusal, for the arm where the repaint leaves no number at all.
+   *
+   * <p>A separate sentence rather than one that covers both, because the first one ends "the number
+   * below is the current one - compare it" and in this cell the digits are blank and both buttons
+   * are dark. This file has already rejected exactly that reuse once, in
+   * {@code INFO_VERIFY_AFTER_REJECTION}'s javadoc: a claim the screen disproves is a claim the user
+   * stops believing, and the next thing they are asked to believe here is about a key.
+   */
+  static final String INFO_NUMBER_MOVED_AND_IS_GONE = "The safety number for %s changed while this "
+      + "screen was open, so nothing was recorded - and this app no longer has a number for them "
+      + "at all. Ask them to send a new invite, and compare the number by voice when it arrives.";
+
+  /** Blanks the safety-number digits and disables confirmation. */
   private void clearFingerprintViews() {
     cancelCodeAnimations();
     // With the digits, not separately: the binding describes what is on screen, and blanking the
@@ -2248,11 +2304,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // it could not; the direction it does produce is the opposite one, and the sweep is reached
       // by two production paths that replace the account - reloadAccount on a host-forced theme
       // change, and the per-raise recovery re-read.
+      // ...except for the contact the user is standing on, which is where dropping it does harm.
+      //
+      // The recovery re-read is what makes a row vanish: it adopts the stored account and discards
+      // everything the session did while writes were refused, which its own javadoc calls
+      // deliberate. That happens on a keyboard raise, and the raise is at the messenger's disposal.
+      // So the moment a row disappears is precisely the moment the caution beside it becomes the
+      // only true sentence on screen - "contact X was set up here, but it could not be saved ...
+      // add them again" - and dropping the refusal there lit Encrypt under it.
+      //
+      // Scoped to the chosen contact rather than kept for everyone, because an entry no user
+      // action can clear is the dead end this file has closed twice: a vanished contact is
+      // unselectable and undeletable, so a refusal held for one would sit in the banner for the
+      // life of the process. Choosing anybody else drops it, and adding a contact is always
+      // available - which is the exact action the sentence asks for.
+      final String standingOn = chosenContact == null ? null
+          : String.valueOf(chosenContact.getSignalProtocolAddress());
       final List<String> vanished = new ArrayList<>();
       for (final String address : mContactsNotOnDisk.keySet()) {
-        if (!live.contains(address)) vanished.add(address);
+        if (!live.contains(address) && !address.equals(standingOn)) vanished.add(address);
       }
-      mContactsNotOnDisk.keySet().retainAll(live);
+      mContactsNotOnDisk.keySet().removeAll(vanished);
       for (final String address : vanished) {
         retireTheStorageCautionFor(address);
       }
@@ -3378,10 +3450,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *
    * <p>Both arms are asked, not just the one that latches. {@code storageIsUnreadable()} does cost a
    * trial decryption - but {@code refreshActionButtons} already asks it on ordinary clipboard
-   * traffic, and the store it decrypts is cached on the helper, so this is not a new class of cost.
-   * On a healthy install both facts are false and the raise pays a field read and a single AES-GCM
-   * open; on an unreadable store the re-read already ran on every raise, because nothing displaces
-   * that arm's banner in practice.
+   * traffic, so this is not a new class of cost. On a healthy install both facts are false and the
+   * raise pays one field read and one AES-GCM open against the helper's cached store; on an
+   * unreadable store the re-read already ran on every raise, because nothing displaces that arm's
+   * banner in practice.
+   *
+   * <p>Not "the store is cached, so the second read is free" - which is what this said, and it is
+   * false in exactly the case the gate is for. When the gate answers yes,
+   * {@code reloadAccountIfStorageRecovered} begins by rebuilding the {@code StorageHelper}, and
+   * {@code mSecureStore} is a per-helper field: the {@code storageState()} inside
+   * {@code refreshOpeningMessage} afterwards therefore reconstructs the store, CryptoBox and all.
+   * That is deliberate rather than wasteful - a stale secure store is what would make a recovered
+   * store keep reporting UNREADABLE - and it is measured at one crypto box per raise by
+   * {@code AraiseNeverAuthorisesAfreshMasterKeyTest}.
    */
   public boolean theStoreMustBeRereadOnThisRaise() {
     return hasStandingConditionWarning() || mE2EEStrip.contactsAreUnreadable()
@@ -3405,11 +3486,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *       Reject clear a standing warning only once the response reaches disk, which is exactly
    *       what the fault refuses. So a yield hides it until the device is unlocked - and unlocking
    *       is the thing the user does not know to do, because the sentence saying so is hidden.</li>
-   *   <li>Whereas the warning it displaces is recomputable, which is the property this file relies
-   *       on everywhere else. {@code warnIfIdentityChanged} re-raises on every decrypt from that
-   *       sender and on every {@code selectContact} - both actions the warning's own text asks for.
-   *       An eviction that the subject re-derives is a displacement.</li>
+   *   <li>Whereas the warnings it displaces are, with one exception, recomputable - the property
+   *       this file relies on everywhere else. {@code selectContact} re-derives exactly three:
+   *       {@code warnIfNameIsShared}, {@code warnIfKeyWasRejected} and
+   *       {@code warnIfIdentityChanged}, and the last also re-raises on every decrypt from that
+   *       sender. All three are actions the warnings' own text asks for. An eviction the subject
+   *       re-derives is a displacement.</li>
    * </ul>
+   *
+   * <p><b>The exception, named because it is the load-bearing gap.</b> The invite-refusal warning
+   * ({@code setInviteRefusalWarning}) is not re-derived by anything: nothing records per-address
+   * that the last attached bundle was refused, and its only lowering is a retraction by a later
+   * good invite. So a raise during a fault can repaint over "that invite was changed on the way
+   * here" and leave only the 3.5-second toast, which is the silence the refusal warning exists to
+   * buy back. The route is narrow - the refusal yields to a standing warning unless that warning is
+   * about a shared name, so it has to be raised into a free-or-shared-name slot first - and it is
+   * INFERRED rather than reproduced. The fix is to make the refusal recomputable rather than to
+   * yield here, because yielding is what reopens the re-invite hazard above; it is recorded in
+   * REVIVAL.md as owed rather than done.
    *
    * <p>So the ordering is deliberate and the cost is stated rather than hidden: while a fault
    * stands, a key-substitution warning is repainted away on raises the messenger can trigger, and

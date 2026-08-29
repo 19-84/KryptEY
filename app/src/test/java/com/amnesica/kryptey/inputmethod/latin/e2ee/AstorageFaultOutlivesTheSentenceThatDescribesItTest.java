@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Application;
@@ -270,12 +271,79 @@ public class AstorageFaultOutlivesTheSentenceThatDescribesItTest {
             + "checked. It has no other way onto the screen: " + banner(),
         banner().contains(THE_CONTACTS_SENTENCE));
 
-    // And the displaced warning comes back by an action its own text asks for.
+    // And the displaced warning comes back by an action its own text asks for - through the route
+    // the user actually has, not just the handler behind it. Asserting on selectContact alone left
+    // the promise open to a change that stops drawing the row: guard the list rendering on the
+    // fault and the recovery route disappears from the UI while this stayed green.
+    // The button the user presses, not showContactListForTest - which only flips visibility, so it
+    // asserts against whatever adapter happened to be left there. Written that way first, and the
+    // mutant a reviewer proposed for exactly this (stop drawing the list while the fault stands)
+    // survived it.
+    strip.findViewById(R.id.e2ee_button_select_recipient).performClick();
+    final android.widget.ListView list = strip.findViewById(R.id.e2ee_contact_list);
+    assertNotNull("the recovery this trade rests on is 'tap the contact', so the contact must be "
+        + "drawn while the fault stands", list.getAdapter());
+    boolean drawn = false;
+    for (int row = 0; row < list.getAdapter().getCount(); row++) {
+      final Object item = list.getAdapter().getItem(row);
+      if (item instanceof Contact && String.valueOf(((Contact) item).getSignalProtocolAddress())
+          .equals(String.valueOf(bob.getSignalProtocolAddress()))) {
+        drawn = true;
+      }
+    }
+    assertTrue("the contact whose warning was painted over must be reachable in the list, or the "
+        + "displacement is an eviction with no way back", drawn);
+
     strip.selectContact(bob);
 
     assertFalse("an eviction the subject can re-derive is a displacement. If tapping the contact "
             + "did not bring the substitution warning back, the ordering above would be handing "
             + "the messenger a way to erase key warnings for good: " + banner(),
         banner().contains(THE_CONTACTS_SENTENCE));
+  }
+
+  /**
+   * The recovery raise must not delete the sentence at the moment it becomes the only true one.
+   *
+   * <p>A contact added while writes are refused exists in memory only. The raise that recovers the
+   * store adopts the stored account and discards it — {@code reloadAccountIfStorageRecovered}'s own
+   * javadoc calls that loss deliberate, and it has to be, because the in-memory list is the empty
+   * substitution plus whatever was added on top. But the sweep that drops refusals for contacts the
+   * account no longer holds then fired on exactly that row, so the refusal went, Encrypt lit up,
+   * and the caution explaining what had happened was retired in the same pass. The user was left
+   * looking at a healthy banner at the instant their session's work was thrown away.
+   */
+  @Test
+  public void thelostRowKeepsItsSentenceWhileTheUserIsStandingOnIt() throws Exception {
+    final String readable = theContactListCannotBeOpened();
+
+    // A contact set up while nothing can be saved, through the real add flow: every write is
+    // refused while the fault stands, so the refusal and its caution are recorded together and the
+    // row exists in memory only. The attacker's own bundle is used because it carries an address
+    // that is not already in the list; nothing hostile is being modelled here.
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Carol");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Danvers");
+    strip.addContactForTest(EnvelopeCodec.fromWire(attackerBundle));
+    assertTrue("precondition: sending must be refused for a row that never reached disk",
+        strip.sendingIsRefusedForTest());
+    assertTrue("precondition: the caution must be on the banner: " + banner(),
+        banner().contains("could not be saved"));
+
+    // The device is unlocked, and the raise adopts the stored account - which never had this row.
+    store().edit().putString(String.valueOf(ProtocolIdentifier.CONTACTS), readable).commit();
+    if (strip.theStoreMustBeRereadOnThisRaise()) {
+      SignalProtocolMain.reloadAccountIfStorageRecovered(context);
+      strip.refreshOpeningMessage();
+    }
+
+    assertTrue("the row the user is standing on has just been discarded, and the sentence saying "
+            + "so is the only true thing on screen. Dropping the refusal here lit Encrypt under a "
+            + "banner that forbids sending, at a moment the messenger chooses by presenting a "
+            + "field: " + banner(),
+        strip.sendingIsRefusedForTest());
+    assertTrue("and the caution must still be there to justify it: " + banner(),
+        banner().contains("could not be saved"));
   }
 }

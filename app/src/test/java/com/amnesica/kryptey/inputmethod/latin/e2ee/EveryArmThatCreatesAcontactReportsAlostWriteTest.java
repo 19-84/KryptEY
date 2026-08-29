@@ -570,17 +570,24 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
   }
 
   /**
-   * A refusal for a contact that no longer exists is dropped rather than kept forever.
+   * A refusal for a contact that no longer exists is dropped — once the user is no longer on it.
    *
-   * <p>When the failure was the row's own write, the row was never on disk — so a later reload drops
-   * it from memory too, and the contact becomes unselectable and undeletable. Both of the other
-   * removal routes run only for a contact the user can reach, so the entry would be copied into
-   * every carried state for the life of the process. It cannot produce a false refusal, which is why
-   * this is a leak rather than a hazard; it is closed because reasoning about it again costs more
-   * than the four lines.
+   * <p>When the failure was the row's own write, the row was never on disk, so the reload that
+   * recovers the store drops it from memory too and the contact becomes unselectable and
+   * undeletable. Both of the other removal routes run only for a contact the user can reach, so the
+   * entry would otherwise be copied into every carried state for the life of the process.
+   *
+   * <p>This test used to assert the drop unconditionally, and that was wrong in the one moment it
+   * matters. The row vanishes on the recovery raise, which is exactly when the caution beside it —
+   * "it could not be saved … add them again" — becomes the only true sentence on screen; dropping
+   * the refusal there lit Encrypt underneath it, at a moment the messenger picks by presenting a
+   * field. So the entry is kept while it is the contact the user is standing on, and dropped the
+   * instant they are somewhere else. That is not "kept forever": choosing anybody, or the banner
+   * tap that clears the recipient, ends it — and adding a contact is always available, which is the
+   * action the sentence asks for.
    */
   @Test
-  public void arefusalForAcontactThatIsGoneIsDropped() throws Exception {
+  public void arefusalForAcontactThatIsGoneIsDroppedOnceTheUserLeavesIt() throws Exception {
     makeTheAccountWriteFail();
     typeTheName();
     strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
@@ -590,7 +597,15 @@ public class EveryArmThatCreatesAcontactReportsAlostWriteTest {
     // What a reload does to a row that never reached disk: it is simply not there any more.
     SignalProtocolMain.getInstance().getAccount().setContactList(new ArrayList<>());
 
-    assertTrue("the entry names an address no contact has; keeping it means carrying it forever",
+    assertTrue("while the user is standing on the row that just vanished, the refusal must stay - "
+            + "its caution is on the banner saying not to send, and Encrypt must agree with it",
+        strip.refusalCountForTest() == 1);
+
+    // The banner tap, which clears the recipient. Any other selection does the same.
+    strip.resetChosenContactAndInfoTextForTest();
+
+    assertTrue("and once the user is off it, the entry names an address no contact has; keeping it "
+            + "then would be carrying it for the life of the process",
         strip.refusalCountForTest() == 0);
   }
 
