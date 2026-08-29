@@ -90,7 +90,17 @@ public class RetiredNameLegacyArmReachTest {
     final ArrayList<Contact> contacts = new ArrayList<>();
     contacts.add(bob);
     victim.setContactList(contacts);
-    SignalProtocolMain.removeContactFromContactListAndProtocol(bob);
+    // The deletion has to actually happen, or this whole class tests the wrong arm.
+    //
+    // Without a landing store the write fails and removeContact rolls the deletion back wholesale -
+    // so Bob is still a LIVE contact afterwards. hasContactWithSameDisplayName then answers from
+    // the live row and the retired-name arm, which is what every test here is named for, is never
+    // consulted. Measured by a reviewer: dropping the retired check from that predicate was caught
+    // by eleven tests in five other classes and by none of these.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
+    assertTrue("fixture: the deletion must reach disk, or Bob stays live and the retired arm is "
+            + "never the thing answering",
+        SignalProtocolMain.removeContactFromContactListAndProtocol(bob));
 
     // The retirement as an older store holds it, and as StorageHelper reloads it: three elements,
     // the third a bare address NAME. This is precisely the shape the migration arm was added for.
@@ -123,14 +133,21 @@ public class RetiredNameLegacyArmReachTest {
   }
 
   /**
-   * ...and being unable to tell that apart from the attack, it suppresses the attack too.
+   * ...and the attack it used to suppress now warns as well.
    *
-   * <p>Note what is NOT required: no key collision, no name trickery, no U+001F, and nothing the
-   * attacker has to guess. The address name is in every envelope the messenger relays and the
-   * device id beside it is one byte the attacker writes.
+   * <p>This method was called {@code butitAlsoSuppressesAnAddAtAnAddress…}, its javadoc said "it
+   * suppresses the attack too", and its closing message said "the duplicate-name warning is
+   * suppressed" — while the assertion has always been {@code assertTrue(hasContactWithSameDisplayName
+   * (...))}, which requires the warning to FIRE. The suppressing arm was removed; the name and all
+   * three sentences describe the behaviour before that. Nothing was wrong with the assertion, and a
+   * reader checking whether this attack is covered would have read the name and concluded it is not.
+   *
+   * <p>Note what the attack does NOT require: no key collision, no name trickery, no U+001F, and
+   * nothing the attacker has to guess. The address name is in every envelope the messenger relays
+   * and the device id beside it is one byte the attacker writes.
    */
   @Test
-  public void butitAlsoSuppressesAnAddAtAnAddressTheAttackerMerelyGotPinnedAt() throws Exception {
+  public void theattackAtAnAddressTheAttackerMerelyGotPinnedAtWarnsToo() throws Exception {
     assertNull("precondition: nothing has been pinned at the attacker's address yet",
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(attackerAddress));
     assertTrue("precondition: with no pin there, the warning fires as the address-scoping fix "
@@ -151,9 +168,10 @@ public class RetiredNameLegacyArmReachTest {
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(attackerAddress));
 
     // Step 3: the same address comes back as "Bob Jones".
-    assertTrue("the duplicate-name warning is suppressed at an address whose only pin is the "
-            + "attacker's own, because a legacy retirement records no device id and the migration "
-            + "arm compares what is left",
+    assertTrue("the duplicate-name warning must fire at an address whose only pin is the "
+            + "attacker's own. A legacy retirement records no device id, so nothing can tell this "
+            + "from the honest re-add the sibling test describes - and warning on both is the safe "
+            + "side of that, since the alternative is silence on the attack",
         SignalProtocolMain.hasContactWithSameDisplayName("Bob", "Jones", attackerAddress));
   }
 }

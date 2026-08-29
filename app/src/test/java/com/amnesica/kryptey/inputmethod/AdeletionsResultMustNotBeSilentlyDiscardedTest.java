@@ -45,7 +45,7 @@ public class AdeletionsResultMustNotBeSilentlyDiscardedTest {
    *
    * <p>Twenty-nine when the check was written, less the one fixed alongside it.
    */
-  private static final int KNOWN = 21;
+  private static final int KNOWN = 18;
 
   private static final Pattern DISCARDED =
       Pattern.compile("^\\s*SignalProtocolMain\\.removeContactFromContactListAndProtocol\\(");

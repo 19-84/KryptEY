@@ -74,7 +74,12 @@ public class RetiredNameAddressScopeTest {
     // The premise of the whole retired-name mechanism: the user deletes the contact. The codebase
     // treats this as attacker-drivable - replay any message until decryption fails often enough
     // that starting over looks sensible.
-    SignalProtocolMain.removeContactFromContactListAndProtocol(bob);
+    // The deletion must land, or Bob stays a live contact and hasContactWithSameDisplayName
+    // answers from the live row - so the retired-name arm this class is named for is never
+    // consulted, and a mutant removing it goes unnoticed here.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
+    assertTrue("fixture: the deletion must reach disk, or the retirement is not what answers",
+        SignalProtocolMain.removeContactFromContactListAndProtocol(bob));
   }
 
   private void activate(final Account account) {
@@ -126,7 +131,12 @@ public class RetiredNameAddressScopeTest {
     victim.setContactList(contacts);
 
     assertTrue("fixture: there must be a pin to reject", SignalProtocolMain.rejectContactKey(bob));
-    SignalProtocolMain.removeContactFromContactListAndProtocol(bob);
+    // The deletion must land, or Bob stays a live contact and hasContactWithSameDisplayName
+    // answers from the live row - so the retired-name arm this class is named for is never
+    // consulted, and a mutant removing it goes unnoticed here.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
+    assertTrue("fixture: the deletion must reach disk, or the retirement is not what answers",
+        SignalProtocolMain.removeContactFromContactListAndProtocol(bob));
 
     assertNull("precondition: the rejection removed the pin the suppression is justified by",
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
