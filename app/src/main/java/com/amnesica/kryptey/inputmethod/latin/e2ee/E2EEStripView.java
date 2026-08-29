@@ -2314,6 +2314,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private void postStorageCaution(final String notice, final Contact about,
       final boolean aboutAdeletion) {
+    // A deletion that did not happen outranks any other storage caution, and the slot is single.
+    //
+    // Without this, one relayed message carrying a bundle is enough: the rotation's own write also
+    // fails during the same disk-full or locked episode, posts "a key update could not be saved",
+    // and the sentence saying a contact the user tried to delete is still present - with their key
+    // and their plaintext - is gone, flag and all. That one is not settled by a later landed write
+    // and the replacement is, so the next successful write clears the weaker sentence too and the
+    // screen reads like an ordinary success. The other cautions all have a route back: the failed
+    // operation can simply be tried again.
+    if (mStandingStorageCautionIsAboutAdeletion && !aboutAdeletion) return;
     mStandingStorageCautionIsAboutAdeletion = aboutAdeletion;
     mStandingStorageCaution = notice;
     mStandingStorageCautionAddress = about == null ? null
@@ -3810,6 +3820,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     setCautionBesideAnyWarning(caution, about);
   }
 
+  /**
+   * Posts an ordinary storage caution through the real writer, for tests.
+   *
+   * <p>The two-argument overload specifically, which is what every arm except the failed deletion
+   * uses - the one that means "a write did not land", is settled by a later one that does, and used
+   * to replace the deletion notice.
+   */
+  void setStorageCautionForTest(final String caution, final Contact about) {
+    postStorageCaution(caution, about);
+  }
+
   /** Posts a warning, for tests that drive the strip. */
   void setWarningMessageForTest(final String message) {
     setWarningMessage(message);
@@ -4097,7 +4118,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   /** The storage half of the same scoped clear. */
   private void clearStorageCautionIfAbout(final Contact contact) {
+    clearStorageCautionIfAbout(contact, false);
+  }
+
+  /**
+   * @param becauseTheDeletionLanded true only from the arm where the deletion actually reached
+   *                                 disk, which is the one event that ends a deletion caution
+   */
+  private void clearStorageCautionIfAbout(final Contact contact,
+      final boolean becauseTheDeletionLanded) {
     if (mStandingStorageCaution == null) return;
+    // The same rule retireTheStorageCautionFor already had, and this path did not.
+    //
+    // A caution about a deletion that did not happen is not settled by anything the other cautions
+    // are settled by: the row, its pinned key and its plaintext are all still on disk, and the next
+    // reload brings them back. Verifying or rejecting that contact is a plausible next move for
+    // somebody who has just failed to delete them, and it cleared the sentence saying the deletion
+    // had not happened - after which the screen reads like an ordinary success. Only a deletion
+    // that lands ends it, which is the exit that keeps this from being the dead end this file has
+    // closed twice.
+    if (mStandingStorageCautionIsAboutAdeletion && !becauseTheDeletionLanded) return;
     if (mStandingStorageCautionAddress == null || (contact != null && mStandingStorageCautionAddress
         .equals(String.valueOf(contact.getSignalProtocolAddress())))) {
       mStandingStorageCaution = null;
@@ -5170,6 +5210,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // points at is gone with the row - unless the deletion did not land, in which case the row and
     // everything the caution is about are coming back.
     if (deleted) {
+      // Through the arm that is allowed to end a deletion caution, because this is the event that
+      // ends it: the contact is gone from disk as well as from memory.
+      clearStorageCautionIfAbout(contact, true);
       clearCautionIfAbout(contact);
       // Nothing left to refuse about: the row is gone from disk as well as from memory.
       if (contact != null) {

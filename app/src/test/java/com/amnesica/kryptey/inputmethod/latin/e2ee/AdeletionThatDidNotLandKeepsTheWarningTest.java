@@ -367,7 +367,18 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
 
     strip.selectContact(bob);
     strip.showVerifyContactForTest(bob);
+    assertTrue("precondition: the reject button must be live, or nothing is being driven",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).isEnabled());
     strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    assertTrue("precondition: the rejection must have landed, or the listener's clears never ran",
+        SignalProtocolMain.lastRejectionReachedDisk());
+
+    // Repainted the way production does, because the clear nulls the FIELD and nothing repaints on
+    // that path - so reading the banner straight after the click reads a stale string and passes
+    // whether or not the sentence has been erased. Asserting against the text that produces the
+    // view instead of the view is the hollow control this project keeps catching; this is the same
+    // mistake with the two swapped, and the mutant caught it.
+    strip.selectContact(bob);
 
     assertTrue("acting on a contact says nothing about whether the log still holds somebody else's "
             + "plaintext: " + banner(), banner().contains("could not be deleted"));
@@ -466,5 +477,95 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
             + "the deletion succeeded while the contact, its key and its plaintext are all still "
             + "here: " + banner(),
         banner().contains("was not removed"));
+  }
+
+  /**
+   * The deletion notice is not settled by anything that settles the other storage cautions.
+   *
+   * <p>Every other member of the {@code *_NOT_SAVED} family reports a write that did not land and is
+   * ended by a later one that does, or by simply retrying the operation. This one reports that a
+   * contact the user tried to remove is still on disk, with their pinned key and their plaintext, so
+   * nothing a later write does settles it — and the caution slot is single, so any of them replaced
+   * it, flag and all. One relayed message carrying a bundle is enough: the rotation's own write
+   * fails during the same disk-full episode, posts "a key update could not be saved", and the
+   * sentence about the deletion is gone. Worse, the replacement IS settled by a later landed write,
+   * so the next successful write clears that too and the screen reads like an ordinary success.
+   */
+  @Test
+  public void alesserStorageCautionCannotReplaceTheDeletionNotice() {
+    makeTheWriteFail();
+    strip.removeContact(bob);
+    assertTrue("precondition: the deletion notice must be standing: " + banner(),
+        banner().contains("was not removed"));
+
+    // Any other storage caution, posted while the same failure is still in effect.
+    strip.setStorageCautionForTest("A key update from Bob Jones could not be saved.", bob);
+
+    assertTrue("a caution about a write that did not land must not displace the one saying a "
+            + "contact the user tried to delete is still here with their key and their messages - "
+            + "that one is settled by nothing a later write does: " + banner(),
+        banner().contains("was not removed"));
+  }
+
+  /**
+   * And acting on the contact does not clear it either — only deleting them again, successfully.
+   *
+   * <p>Verifying or rejecting a contact you have just failed to delete is a plausible next move,
+   * and it took the sentence down. {@code retireTheStorageCautionFor} already refused to touch a
+   * deletion caution for exactly this reason; the scoped clear beside it did not.
+   */
+  @Test
+  public void actingOnTheContactDoesNotClearTheDeletionNotice() {
+    makeTheWriteFail();
+    strip.removeContact(bob);
+    assertTrue("precondition: the deletion notice must be standing: " + banner(),
+        banner().contains("was not removed"));
+
+    // The storage trouble ends - the device is unlocked, space is freed - and the user rejects the
+    // key of the contact they failed to delete. That is a plausible next move for somebody who
+    // wanted them gone, and it is the reachable route: both clears on that listener are gated on
+    // the response reaching disk, so while writes are still failing nothing gets that far. The
+    // deletion notice is still TRUE at this point: the row, its key and its messages were never
+    // removed from disk.
+    makeTheWriteLand();
+    strip.showVerifyContactForTest(bob);
+    assertTrue("precondition: the reject button must be live, or nothing is being driven",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).isEnabled());
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    assertTrue("precondition: the rejection must have landed, or the listener's clears never ran",
+        SignalProtocolMain.lastRejectionReachedDisk());
+
+    // Repainted the way production does, because the clear nulls the FIELD and nothing repaints on
+    // that path - so reading the banner straight after the click reads a stale string and passes
+    // whether or not the sentence has been erased. Asserting against the text that produces the
+    // view instead of the view is the hollow control this project keeps catching; this is the same
+    // mistake with the two swapped, and the mutant caught it.
+    strip.selectContact(bob);
+
+    assertTrue("only a deletion that lands ends this one. The row, the pinned key and the "
+            + "plaintext are all still on disk and come back at the next raise: " + banner(),
+        banner().contains("was not removed"));
+  }
+
+  /**
+   * The exit exists, which is what keeps the two tests above from being a dead end.
+   *
+   * <p>This file has closed a "notice nobody can clear" twice. The deletion notice is ended by the
+   * one event that makes it false: deleting the contact again, and having it land.
+   */
+  @Test
+  public void adeletionThatLandsEndsTheDeletionNotice() {
+    makeTheWriteFail();
+    strip.removeContact(bob);
+    assertTrue("precondition: the deletion notice must be standing", 
+        banner().contains("was not removed"));
+
+    // The device is unlocked, space is freed, and they try again.
+    makeTheWriteLand();
+    strip.removeContact(bob);
+
+    assertTrue("a notice with no exit is the dead end this file has closed twice; the deletion "
+            + "landing is the event that ends this one: " + banner(),
+        !banner().contains("was not removed"));
   }
 }

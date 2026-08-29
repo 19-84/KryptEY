@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-five sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
 - [The carrier, attacked and found sound, with four things worth fixing anyway](#the-carrier-attacked-and-found-sound-with-four-things-worth-fixing-anyway)
 - [The number on screen and the key the button acts on](#the-number-on-screen-and-the-key-the-button-acts-on)
@@ -1955,6 +1956,41 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## The one notice a later write does not settle
+
+Every member of the `*_NOT_SAVED` family reports a write that did not land, and every one of them is
+ended by a later write that does, or by simply retrying the operation. `INFO_DELETE_NOT_SAVED` is
+not like that. It reports that a contact the user tried to remove is **still on disk**, with their
+pinned key and their plaintext, and that the next raise brings all three back. Nothing a later write
+does settles that.
+
+`retireTheStorageCautionFor` already knew: it checks `mStandingStorageCautionIsAboutAdeletion` and
+refuses. Two paths beside it did not.
+
+**`clearStorageCautionIfAbout` cleared it.** Reached from the Verify and Reject listeners, both
+gated on the response reaching disk — so the route needs the storage trouble to end first, which is
+ordinary. The user frees space, then rejects the key of the contact they just failed to delete,
+which is a plausible next move for somebody who wanted them gone. The sentence saying the deletion
+had not happened went with it, and after that the screen reads like an ordinary success. The exit
+that keeps this from being the "notice nobody can clear" dead end this file has closed twice is
+narrower and correct: a deletion that actually lands.
+
+**And `postStorageCaution` overwrote it, flag and all.** The slot is single. One relayed message
+carrying a bundle is enough — the rotation's own write fails during the same episode, posts "a key
+update could not be saved", and the deletion sentence is gone. Worse in a second step: the
+replacement *is* settled by a later landed write, so the next successful write clears that too. A
+lesser storage caution now yields to a standing deletion notice.
+
+Three tests. The mutant for the second guard survived twice before it landed, and both reasons are
+worth keeping. The first attempt drove Verify and Reject while writes were still failing, where both
+listeners' clears are gated off — a route production cannot take. The second reached the clear and
+still passed, because `clearStorageCautionIfAbout` nulls the **field** and nothing on that path
+repaints: the banner still held the old string. That is this file's own rule with the two swapped —
+assert against the rendered view, not the text that produces it — and here the rendered view was the
+stale one, so the assertion had to come after a real repaint. A mutant caught both.
 
 ---
 
