@@ -511,6 +511,39 @@ public class StripGuardsTest {
   }
 
   /**
+   * The failure exit from the add-contact screen must clear the typed name too.
+   *
+   * <p>Four exits leave that screen and three of them reset the fields. Cancel does, and its comment
+   * says why: <em>"The typed name used to survive. The next invite's screen then opened pre-filled
+   * with it, so a user who declines one invite and accepts the next without re-reading the field
+   * names a new address after the old contact."</em> {@code forgetAbandonedInvite} does, citing the
+   * same reasoning. The successful add does. {@code abortContactAdding} - the exit taken when the
+   * contact could not be created - does not.
+   *
+   * <p>Narrow, and worth saying so: {@code forgetAbandonedInvite} resets unconditionally on the next
+   * keyboard dismissal, so the residue lives one keyboard session. This is a gap in an invariant the
+   * project has already fixed twice, not a live attack.
+   */
+  @Test
+  public void afailedAddClearsTheNameItTypedIn() throws Exception {
+    strip.showAddContactViewForTest();
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field))
+        .setText("Bob");
+    ((android.widget.EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field))
+        .setText("Jones");
+
+    // The route to the failure exit: no account, so createAndAddContactToList returns null.
+    SignalProtocolMain.getInstance().setAccount(null);
+    strip.addContactForTest(EnvelopeCodec.fromWire(attackerBundle));
+
+    assertEquals("the add failed and left the typed name on the screen. The next invite opens "
+            + "pre-filled with it, so accepting that one without re-reading the fields names a new "
+            + "address after the old contact - which is what the other three exits reset to avoid",
+        "", ((android.widget.EditText) strip
+            .findViewById(R.id.e2ee_add_contact_first_name_input_field)).getText().toString());
+  }
+
+  /**
    * The duplicate-name warning must stand as well.
    *
    * <p>It is the only control covering the case the pin cannot: a SECOND contact under a name the

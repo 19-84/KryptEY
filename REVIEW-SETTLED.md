@@ -379,3 +379,36 @@ because the send empties the compose box the rest of the test is about. And swap
 listener for a recording one leaks: it is the LIVE strip in a shared process, so the next test
 inherits it — which broke the following test's anti-vacuity control, that control doing exactly its
 job.
+
+## The tablet Tab key moves focus off the compose box while typing is redirected
+
+**Refuted by measurement, and deliberately not "fixed".** The asymmetry is real and the consequence
+is not.
+
+`InputLogic.onCodeInput` handles `CODE_ACTION_NEXT`/`CODE_ACTION_PREVIOUS` by calling
+`performEditorAction` directly. Forty lines below, the Enter path asks first —
+`mConnection.isUsingOtherIC() ? IME_ACTION_NONE : …` — and its comment cites a measurement this
+project already made: *"IME_ACTION_NEXT made TextView.onEditorAction move focus off it, which is the
+typing redirection above reached by a route the app chooses rather than one the attacker pokes."* So
+one branch asks and its sibling does not, which is this codebase's most repeated shape.
+
+Measured on the field that actually matters: with the redirect up, `performEditorAction(
+IME_ACTION_NEXT)` reaches the compose box and **focus is retained**. The compose box declares no
+`imeOptions` and no editor-action listener, so `TextView.onEditorAction` does not take the
+focus-moving path there — which is precisely the link the reviewer named as unverified and declined
+to assert.
+
+The test carries its own anti-vacuity control: an editor-action listener records that the call
+reached the view, because "focus was kept" would otherwise be satisfied by the action doing nothing
+at all. The listener returns false so default handling still runs.
+
+**Not fixed, on the reviewer's own reasoning.** Copying the Enter guard verbatim would make
+`IME_ACTION_NONE` the answer while redirected, turning the tablet Tab key into a dead key inside the
+compose box — a usability regression bought with no security, now that the platform link is known to
+be false. The asymmetry stays, with a test pinning the behaviour that makes it harmless: if a future
+change gives the compose box `imeOptions` or an action listener, this goes red and the guard becomes
+worth adding.
+
+Narrow in any case: it needs `sw600dp` resources, the user to have added the PC subtype, and the host
+to declare a navigate flag, and only the last is the adversary's to choose. Nothing reaches the
+messenger on this path in either outcome, because nothing here lowers the redirect.

@@ -223,6 +223,88 @@ public class TypingDestinationTest {
   }
 
   /**
+   * The tablet Tab key reaches {@code performEditorAction} with no redirect guard.
+   *
+   * <p>{@code InputLogic.onCodeInput} handles {@code CODE_ACTION_NEXT}/{@code PREVIOUS} by calling
+   * {@code performEditorAction} directly. Forty lines below, the Enter path asks first — 
+   * {@code mConnection.isUsingOtherIC() ? IME_ACTION_NONE : …} — and its comment says why, from a
+   * measurement this project already made: <em>"IME_ACTION_NEXT made TextView.onEditorAction move
+   * focus off it, which is the typing redirection above reached by a route the app chooses rather
+   * than one the attacker pokes."</em> So the mechanism is not in question; only whether the second
+   * route asks.
+   *
+   * <p>Narrow: it needs {@code sw600dp} resources, the user to have added the PC subtype, and the
+   * host to declare a navigate flag — and only the last is the adversary's to choose. Nothing
+   * reaches the messenger either way, because nothing on this path lowers the redirect. It is
+   * reported and fixed because it is the third instance of "a control on one branch is not a
+   * control", and it costs one condition.
+   */
+  @Test
+  public void thetabKeyMustNotMoveFocusOffTheComposeBoxWhileRedirected() {
+    assertTrue(compose.requestFocus());
+    connection.commitText("a draft", 1);
+    assertTrue("precondition: the redirect is up", connection.isUsingOtherIC());
+
+    // Anti-vacuity: prove the action actually reached the compose box. Without this, "focus was
+    // kept" could be true because performEditorAction did nothing at all - and that is exactly the
+    // load-bearing unknown the reviewer named, since the box sets no imeOptions and no listener, so
+    // TextView.onEditorAction plausibly falls through to a key event rather than moving focus.
+    final boolean[] reached = {false};
+    compose.setOnEditorActionListener((v, actionId, event) -> {
+      reached[0] = true;
+      return false;
+    });
+
+    connection.performEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+
+    assertTrue("the action never reached the compose box, so the assertion below would hold "
+        + "whatever the platform did with it", reached[0]);
+    assertTrue("an editor action the host declared moved focus off the compose box while typing "
+            + "was still redirected into it, so the app's compose affordances go dark while the "
+            + "keystrokes keep landing in the box - the same state the Enter path refuses to "
+            + "produce, reached by the branch that does not ask",
+        compose.hasFocus());
+  }
+
+  /**
+   * A round trip through another screen must not leave the app lying about where typing goes.
+   *
+   * <p>Entering any non-main screen sets {@code mLayoutE2EEMainView} GONE, which clears the compose
+   * box's focus — the file states that mechanism itself — and the blur hides the Clear button and
+   * the encoding selector while deliberately NOT lowering the redirect. Returning to the main view
+   * restores neither, so typing still lands in the strip while the two controls that
+   * {@code changeVisibilityInputFieldButtons} calls <em>"the app's statement that the user is
+   * composing inside the keyboard"</em> stay dark.
+   *
+   * <p>Harmless in the direction that matters — nothing reaches the messenger — and labelled as
+   * such so it stays cheap. The concrete cost: after a decrypt the peer's plaintext is in the box
+   * and Clear, the only control that erases it, is unreachable until the user taps the box.
+   */
+  @Test
+  public void aroundTripThroughAnotherScreenLeavesTheComposeAffordancesLit() {
+    assertTrue(compose.requestFocus());
+    connection.commitText("a draft", 1);
+    assertTrue("precondition: the redirect is up", connection.isUsingOtherIC());
+    assertEquals("precondition: the app says so", View.VISIBLE,
+        strip.<View>findViewById(R.id.e2ee_button_clear_text).getVisibility());
+
+    strip.showMessagesListForTest();
+    strip.showMainViewForTest();
+
+    // The invariant is the pairing, not either half: the buttons must agree with the redirect.
+    assertTrue("after the round trip the redirect is " + (connection.isUsingOtherIC() ? "UP" : "DOWN")
+            + " and the compose buttons are "
+            + (strip.<View>findViewById(R.id.e2ee_button_clear_text).getVisibility() == View.VISIBLE
+                ? "LIT" : "DARK")
+            + ". Those two are the app's statement about where typing goes and where it actually "
+            + "goes; when they disagree the app is lying about its own state, and Clear - the only "
+            + "control that erases a decrypted message from the box - is unreachable",
+        connection.isUsingOtherIC()
+            == (strip.<View>findViewById(R.id.e2ee_button_clear_text).getVisibility()
+                == View.VISIBLE));
+  }
+
+  /**
    * A send must actually hand typing back, not hand it back and take it again.
    *
    * <p>{@code sendEncryptedMessageToApplication} lowers the redirect and then, three statements

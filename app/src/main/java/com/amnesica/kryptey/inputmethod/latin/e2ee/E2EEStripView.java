@@ -1964,6 +1964,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void abortContactAdding() {
     Toast.makeText(getContext(), INFO_CONTACT_CREATION_FAILED, Toast.LENGTH_SHORT).show();
     Log.d(TAG, INFO_CONTACT_CREATION_FAILED);
+    // The typed name goes with the screen, as it does on the other three exits.
+    //
+    // Four routes leave the add-contact screen and this was the only one that left the name behind.
+    // Cancel's comment says what that costs: the next invite's screen opens pre-filled, so a user
+    // who declines one invite and accepts the next without re-reading the fields names a new
+    // address after the old contact. forgetAbandonedInvite and the successful add reset for the
+    // same reason; the failure exit was simply missed.
+    //
+    // Before the screen switch, not after. It makes no difference today, and it would if the
+    // re-point guard in showOnlyUIViewInternal ever learned to read these fields the way it reads
+    // the compose box.
+    resetAddContactInputTextFields();
     showOnlyUIView(UIView.MAIN_VIEW);
     resetChosenContactAndInfoText();
   }
@@ -2870,6 +2882,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     if (uiView.equals(UIView.MAIN_VIEW)) {
       mLayoutE2EEMainView.setVisibility(VISIBLE);
+      // Coming back with the redirect still up, the affordances have to come back with it.
+      //
+      // Opening any other screen sets this layout GONE, which clears the compose box's focus, and
+      // the blur hides the Clear button and the encoding selector while deliberately not lowering
+      // the redirect. Returning restored neither, so typing went on landing in the strip while the
+      // two controls that ARE the app's statement that it does stayed dark - and Clear, the only
+      // control that erases a decrypted message from the box, was unreachable until the user
+      // happened to tap it.
+      //
+      // Conditional on the redirect already being up, and that is the whole care here. Lighting
+      // them unconditionally would mean re-raising it on every return to an empty box, taking
+      // focus the user never gave - the mirror defect the add-contact re-point refuses to commit
+      // twenty lines above. Through requestFocus rather than by painting the buttons directly, so
+      // the state arrives by the same route a user's tap would take.
+      if (mRichInputConnection != null && mRichInputConnection.isUsingOtherIC()
+          && mInputEditText != null && !mInputEditText.hasFocus()) {
+        mInputEditText.requestFocus();
+      }
       mLayoutE2EEAddContactView.setVisibility(GONE);
       mLayoutE2EEContactListView.setVisibility(GONE);
       mLayoutE2EEMessagesListView.setVisibility(GONE);
