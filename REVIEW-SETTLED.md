@@ -45,8 +45,10 @@ normally afterwards.* The flag binds use to the device being unlocked, not to th
 existing; `setUserAuthenticationRequired` and `setInvalidatedByBiometricEnrollment`, which do carry
 invalidation semantics, are not used.
 Held by `AlockBoundKeyAcrossLockRemovalTest`, which sets the PIN, generates, seals, clears the PIN
-and opens. **This is API-level-dependent** — the measurement is API 28, the minimum this project
-supports — and the test asserts the survival, so a platform that changes it fails loudly rather than
+and opens. **This is API-level-dependent** — the measurement is API 28, which is what the instrumentation
+runner uses, not the minimum this project supports (`minSdk` is 26, and on 26–27
+`setUnlockedDeviceRequired` is not applied at all, so those two releases have nothing to invalidate
+and no on-device measurement either) — and the test asserts the survival, so a platform that changes it fails loudly rather than
 losing a user's history quietly.
 
 ## Refuted — the code already does what the finding asks

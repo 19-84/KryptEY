@@ -32,8 +32,19 @@ public class NoSensitiveLoggingTest {
 
   /** Log statements that interpolate something this project must not write out. */
   private static final List<Pattern> FORBIDDEN = List.of(
-      // A whole contact: toString() carries names, device id, UUID and the verified flag.
+      // A whole contact, however it is spelled.
+      //
+      // This asked for a literal ".toString()" and so missed the one call that actually existed:
+      // Log.d(TAG, "chosenContact = " + chosenContact), where the concatenation invokes toString
+      // implicitly. A review round found it by reading the file; the guard written to stop exactly
+      // that had been green for the life of the branch. Concatenating a contact into a log line is
+      // the thing to refuse, not one way of writing it.
+      Pattern.compile("Log\\.[dviwe]\\([^)]*\\+\\s*\\w*[Cc]ontact\\b"),
       Pattern.compile("Log\\.[dviwe]\\([^)]*\\b\\w*[Cc]ontact\\.toString\\(\\)"),
+      // An address is an identifier too: it is durable, it names who the user talks to, and the
+      // messenger chooses when the paths that would log it run.
+      Pattern.compile("Log\\.[dviwe]\\([^)]*[Aa]ddress\\.getName\\(\\)"),
+      Pattern.compile("Log\\.[dviwe]\\([^)]*\\+\\s*\\w*[Aa]ddress\\b"),
       // Names, which identify who the user talks to.
       Pattern.compile("Log\\.[dviwe]\\([^)]*getFirstName\\(\\)"),
       Pattern.compile("Log\\.[dviwe]\\([^)]*getLastName\\(\\)"),

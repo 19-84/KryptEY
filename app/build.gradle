@@ -14,10 +14,19 @@ android {
     }
 
     lint {
-        // A baseline, not a suppression. lint reports 100 errors and 503 warnings, and NONE of them
-        // are in code this revival wrote - 77 are in files it never touched, and the other 23 are
-        // MissingTranslation on strings that exist in master. So this grandfathers exactly the state
-        // the project was already in, and gates everything new.
+        // A baseline, not a suppression. It grandfathers the state the project was already in and
+        // gates everything new.
+        //
+        // "NONE of them are in code this revival wrote" is what this said, and it was wrong by one:
+        // a DataExtractionRules entry points at the android:dataExtractionRules attribute the
+        // revival itself added. Checked rather than removed, because the sentence beside it says an
+        // entry here is a finding nobody sees again - and this one is a false positive. The app
+        // writes nothing outside its data directory, the settings preferences live in
+        // device-protected storage, and both the cloud-backup and device-transfer rules exclude
+        // root and device_root with no include. allowBackup is false besides, which on API 26-30
+        // disables Auto Backup and adb backup outright. The lint suggestion is to add
+        // fullBackupContent, i.e. a second rules file that would have to stay consistent with the
+        // first, and the guard that asserts these rules reads one file.
         //
         // Regenerate deliberately with `gradlew updateLintBaseline`, never to make a red build green:
         // an entry added here is a finding nobody will see again.
@@ -50,6 +59,20 @@ android {
             // packaging rather than from the dependency. The test classpath reads them from the jar
             // and is unaffected by this block.
             excludes += ['*.dylib', '*.dll', '**/*.dylib', '**/*.dll']
+        }
+        // And the attribution file for the testing binary, which is not a native library and so
+        // survived the exclusion above.
+        //
+        // libsignal ships one acknowledgments document per flavour, and the testing one differs
+        // from the real one by a single line - the crate list, naming libsignal-jni-testing. It is
+        // 44.7 KB of a release APK that deliberately excludes the binary it describes, so "the
+        // testing flavour is out of the artifact" was not quite true.
+        //
+        // By exact path, not by an acknowledgments pattern: these are third-party attribution for
+        // an AGPL dependency distributed through F-Droid, and dropping the wrong one trades 44 KB
+        // for a licence problem.
+        androidResources {
+            ignoreAssetsPattern '!libsignal-testing.md' 
         }
     }
 
@@ -215,8 +238,11 @@ dependencies {
 // DWARF sections but leaves their NAMES in the section-header string table, so a correctly
 // stripped library still contains that substring and the gate failed every build. It was
 // controlled in both directions when written - unstripped fails, a marker that exists nowhere
-// passes - but never against a genuinely stripped library, because this image had no NDK to
-// produce one. A synthetic negative is not a negative.
+// passes - but not at first against a genuinely stripped library, because the image had no NDK to
+// produce one, and a synthetic negative is not a negative. The image has one now
+// (tools/Dockerfile installs it), and the shipped library measures clean: no .debug section of any
+// kind in libsignal_jni.so, .text 4,705,420 bytes. The gate has since been exercised against a real
+// stripped binary, which is what that paragraph was waiting for.
 tasks.register('verifyReleaseNativesStripped') {
     description = 'Fails if a release APK carries native libraries with DWARF debug sections.'
     group = 'verification'
@@ -288,6 +314,71 @@ tasks.register('verifyReleaseNativesStripped') {
     }
 }
 
+/**
+ * What the shipped artifact actually contains, asserted against the artifact.
+ *
+ * Every other release guard in this project is a source or build-script scan, and one of them
+ * opens with "the shipped manifest is a security artefact" and then reads the DEBUG merged
+ * manifest - which carries EditableFieldActivity, RecordingAutofillService and
+ * android:debuggable="true". Those assertions were being made about a variant that is not shipped,
+ * so a release-only manifest contribution (a releaseImplementation dependency declaring INTERNET,
+ * say) was caught by nothing.
+ *
+ * This runs where the artifact exists and where a failure stops the build, which is the same
+ * reason the native-strip gate lives here rather than in a unit test: a test that opens
+ * outputs/apk/release would be skipped whenever no APK had been built, and would pass on a stale
+ * one the rest of the time.
+ */
+tasks.register('verifyReleaseArtifactContents') {
+    description = 'Fails if the release manifest or APK contains what release must not contain.'
+    group = 'verification'
+    doLast {
+        def manifests = fileTree("$buildDir/intermediates/packaged_manifests/release") {
+            include '**/AndroidManifest.xml'
+        }.files
+        if (manifests.isEmpty()) {
+            throw new GradleException('no merged release manifest found; run assembleRelease first')
+        }
+
+        def offenders = []
+        manifests.each { manifest ->
+            def text = manifest.text
+            // The claim this project makes most loudly, checked against the thing it is about.
+            def permitted = ['android.permission.VIBRATE']
+            (text =~ /uses-permission[^>]*android:name="([^"]+)"/).each { whole, name ->
+                if (!permitted.contains(name)) {
+                    offenders << "release manifest requests ${name}; this app is meant to have no "                        + "way to reach the network or anything outside itself"
+                }
+            }
+            ['RecordingAutofillService', 'EditableFieldActivity', 'ForeignAppActivity'].each { name ->
+                if (text.contains(name)) {
+                    offenders << "release manifest declares test scaffolding: ${name}"
+                }
+            }
+            if (text.contains('android:debuggable="true"')) {
+                offenders << 'release manifest is debuggable'
+            }
+            if (!text.contains('android:allowBackup="false"')) {
+                offenders << 'release manifest does not set allowBackup="false"'
+            }
+        }
+
+        fileTree("$buildDir/outputs/apk/release") { include '**/*.apk' }.files.each { apk ->
+            new java.util.zip.ZipFile(apk).withCloseable { zip ->
+                zip.entries().findAll { it.name.toLowerCase().contains('testing') }.each { entry ->
+                    offenders << "${apk.name} carries ${entry.name}, a testing-flavour artefact"
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException('the release artifact contains what release must not:\n  '
+                + offenders.join('\n  '))
+        }
+    }
+}
+
 tasks.matching { it.name == 'assembleRelease' }.configureEach {
     finalizedBy 'verifyReleaseNativesStripped'
+    finalizedBy 'verifyReleaseArtifactContents'
 }

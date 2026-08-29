@@ -2605,7 +2605,10 @@ public class SignalProtocolMain {
     } catch (InvalidKeyException e) {
       // Signature verification on the bundle failed. Swallowing this into a log made a forged
       // bundle report "session created" to the user.
-      Log.e(TAG, "Error: Building session with recipient id " + recipientSignalProtocolAddress.getName() + " failed");
+      // Without the address. The messenger triggers this arm at will - one flipped byte in a
+      // bundle it relays - so naming the peer here publishes a correspondent's protocol UUID to
+      // logcat on demand, at ERROR, which survives any release filtering that drops DEBUG.
+      Log.e(TAG, "Error: building a session from that bundle failed");
       e.printStackTrace();
       return false;
     }

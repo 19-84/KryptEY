@@ -1306,9 +1306,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (chosenContact == null) {
       abortContactAdding();
       return;
-    } else {
-      Log.d(TAG, "chosenContact = " + chosenContact);
     }
+    // Nothing is logged about the contact that was just added.
+    //
+    // There was a line here interpolating the whole Contact, whose toString concatenates first
+    // name, last name, device id, protocol UUID and the verified flag - in release, since this
+    // build does not minify and nothing strips Log calls. A logcat reader (adb on an unlocked
+    // device, a shared bug report, a vendor log collector) learned the display name and durable
+    // address of a correspondent the moment the user added them.
+    //
+    // Deleted rather than reduced. The tempting repair is to log the keyed display tag instead,
+    // which is not an off-device identifier - and is a stable correlator that ties every line about
+    // that contact together, while looking obviously safe to whoever reads the diff.
 
     resetAddContactInputTextFields();
     showOnlyUIView(UIView.MAIN_VIEW);

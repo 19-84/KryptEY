@@ -28,7 +28,7 @@ builds of the crypto library. They stay on the *test* classpath, where Robolectr
 them, so the fix belongs in packaging and not in the dependency. Found by opening the APK rather
 than by reading the build script, while checking a claim this file makes about release assembling.
 
-**Tests: 31 → 843 as of `bfb71c1`** (**4 skipped**, not the 1 this line
+**Tests: 31 → 843 at that point** (**4 skipped**, not the 1 this line
 claimed for weeks: `FixtureGenerator` is a tool rather than coverage and gives up via
 `Assume.assumeTrue`, and three assertions in `StripCarriedStateRound5Test` are `@Ignore`d as
 deliberate rejections — one vacuous, two superseded by `r0`. All four are now listed in
@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and eleven sections, written in the order things were found rather than by subject, so the
+One hundred and twelve sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -167,6 +167,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The half of the deletion that did happen](#the-half-of-the-deletion-that-did-happen)
 - [Asked once, and the answer written down](#asked-once-and-the-answer-written-down)
 - [Cannot, and cannot right now](#cannot-and-cannot-right-now)
+- [What the shipped thing actually contains](#what-the-shipped-thing-actually-contains)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -580,7 +581,7 @@ further decryption.
 
 **Verified by execution:**
 
-- 701 JVM tests as of `cd67fb3`, including an end-to-end conversation across all four phases and a
+- 701 JVM tests at that point, including an end-to-end conversation across all four phases and a
   real MITM identity substitution driven through libsignal. This figure is point-in-time and goes
   stale on every commit; `testDebugUnitTest` is the authority, not this line
 - A golden wire vector, re-checked against the three mutants that previously survived
@@ -665,7 +666,7 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
   - **42.6 MB was not libsignal's Android library at all.** The jar carries libsignal's *desktop*
     builds — macOS `.dylib` and Windows `.dll`, each in a normal and a `_testing_` flavour — at its
     root, as java resources rather than `jniLibs`, so the existing `jniLibs` exclusion never saw
-    them. Excluded in `521eb74`: arm64 115 → 74 MB, armeabi-v7a 109 → 68 MB, on every build host.
+    them. Excluded once measured: arm64 115 → 74 MB, armeabi-v7a 109 → 68 MB, on every build host.
   - **Of the 74 MB that remains, 64.2 MB is DWARF debug information**, not code. `.debug_str` alone
     is 43.8 MB against a `.text` of **4.7 MB**. AGP's `stripReleaseDebugSymbols` runs and prints
     *"Unable to strip … packaging them as they are"* because the build image has no NDK; a host with
@@ -748,7 +749,7 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
    survived the entire suite. The sentence was the most consequential in this file, because a reader
    deciding whether review had converged would read it and conclude yes.
    **And the correction went stale in its turn**, which is the same failure one level deeper and is
-   why it is being rewritten rather than patched. What is true as of `f3c1667`:
+   why it is being rewritten rather than patched. What was true at that point:
 
    - `signalprotocol/` is swept, and an independent round that went looking there specifically
      reported back that it could not break it — the first well-evidenced convergence signal this
@@ -1067,7 +1068,7 @@ and why. The image also installs build-tools 36.0.0, which AGP actually selects;
 carried only 35.0.0, and everyone working here relabelled a copy of the 35.0.0 directory to get
 past it — which worked, and meant nobody was building with the tools AGP chooses.
 
-Last cold verification, at `8eb728f`: `clean testDebugUnitTest` from an empty Gradle volume, with
+Last cold verification: `clean testDebugUnitTest` from an empty Gradle volume, with
 verification ON — BUILD SUCCESSFUL in 6m, 39 of 41 tasks executed, **894 tests green from scratch**
 (0 failures, 4 skipped) rather than warm. `assembleRelease` was run cold too, with
 `-Pkryptey.allowUnstrippedNatives=true`, so the new packaging exclusions and the strip gate are both
@@ -1078,7 +1079,7 @@ cold run and said why: no build-input file had changed in nineteen commits, so i
 confirmed habit. Since then `app/build.gradle` gained 93 lines — the desktop-native exclusions, a
 task input declaration, and `verifyReleaseNativesStripped` — which is exactly the case a warm cache
 speaks for least, because it changes what the build has to *do* rather than only what it runs. The
-previous cold run, at `af17117`, was triggered the same way by two commits that changed the build's
+previous cold run was triggered the same way by two commits that changed the build's
 work rather than its inputs.
 The run before it covered `clean assembleDebug` the same way (39 of 39 tasks executed, zero
 verification failures across all 386 pinned components).
@@ -1089,7 +1090,7 @@ untracked or ignored sitting in it. Such a run proves the *dependency* story (an
 verification on, 386 components fetched and checked) and says nothing about whether the tracked
 content is sufficient. A build quietly depending on an ignored file would pass every one of them.
 
-Tested at `49a451e`, and again at `85c3049` once the build image gained an NDK and the strip gate was
+Tested when the strip gate was written, and again once the build image gained an NDK and the gate was
 corrected. The second run is the one that matters, because it covers the whole path rather than the
 tests alone: `git clone` into a fresh directory, an empty Gradle volume, the committed image, and
 `testDebugUnitTest assembleRelease` — **BUILD SUCCESSFUL in 6m21, 957 tests, 0 failures, 4 skipped**,
@@ -2283,7 +2284,7 @@ Recorded so the next round does not spend itself re-deriving them.
   Reporting that as a finding would have been exactly the confident wrong answer this file keeps
   cataloguing.
 
-- **All four CI tasks pass at `e14bf8b`**, re-run because the baseline was generated four commits
+- **All four CI tasks pass**, re-run because the baseline was generated four commits
   earlier and production changed under it: 965 tests, `assembleDebug`, `assembleRelease` producing
   stripped 9.4 MB and 7.7 MB APKs with the gate passing unaided, and *"Lint found no new issues"*. A
   baseline that stops covering the code is worth less than no baseline, since it turns a real finding
@@ -2291,7 +2292,7 @@ Recorded so the next round does not spend itself re-deriving them.
 
 - **The branch history was replayed against its own doc guards, and holds.** Several tests here read
   markdown and build files, which means a documentation-only commit can turn the suite red — and one
-  did: `8bac6f6` added a section without indexing it, and a red test sat on `origin` until an
+  did: a section was added without being indexed, and a red test sat on `origin` until an
   unrelated isolation run happened to catch it.
 
   That raised the obvious question, so it was answered rather than assumed. Both guards were replayed
@@ -2380,7 +2381,7 @@ clipboard — every one of those exists because the app is the adversary. Advice
 against the servers, in the section explaining the one uncovered moment in the trust model, tells a
 careful reader they have closed a hole they have not.
 
-This one was written during this revival, in `ab07778`, as the fix for the *previous* round of this
+This one was written during this revival, as the fix for the *previous* round of this
 same class. That is the thing worth recording: the correction introduced a new instance of what it
 was correcting, because it was reasoned from the threat model rather than checked against the flow.
 `InviteAdviceMatchesTheFlowTest` asserts the behaviour first — the commit path, and the absence of
@@ -2646,7 +2647,7 @@ something is flaky, and one loose enough to be stable asserts nothing. What guar
 account, and a raise leaves its stored bytes byte-identical.
 
 
-**~~The CI workflow's Lint step has never passed.~~ Fixed in `5fb0a91`** — Temurin 21 plus a lint
+**~~The CI workflow's Lint step has never passed.~~ Fixed** — Temurin 21 plus a lint
 baseline, after which all four CI tasks pass and lint reports "no new issues". The finding is kept
 because how it was deferred and then undeferred is the useful part. The workflow runs four Gradle
 tasks. Three were exercised constantly here; `lintDebug` had never been run by anyone, and it failed
@@ -6237,3 +6238,55 @@ losing a user's history quietly.
 That leaves one thing genuinely open on this surface: **which rung a given install actually took is
 recorded nowhere a user or a test can see.** Where to put it is a product question — a diagnostic
 screen, a one-time notice, nothing at all — and not one to invent while fixing something else.
+
+## What the shipped thing actually contains
+
+**Two identifiers were reaching logcat in release builds, and the guard written to stop exactly that
+had been green for the life of the branch.**
+
+`Log.d(TAG, "chosenContact = " + chosenContact)` interpolates a whole `Contact`, whose `toString`
+concatenates first name, last name, device id, protocol UUID and the verified flag. It ran on the
+add-contact path, in release — this build does not minify and nothing strips `Log` calls. And a
+refused bundle logged the peer's protocol address at ERROR, on a path **the messenger triggers at
+will** by flipping one byte in a bundle it relays. Neither is message plaintext; both are the durable
+identity of somebody the user talks to, which is the thing this whole design spends its effort
+protecting.
+
+`NoSensitiveLoggingTest` could see neither. Its contact pattern required the literal text
+`.toString()`, and the one call that existed used implicit concatenation. That is the same shape as
+every hollow control this file records: the guard matched a *spelling* rather than the thing being
+refused. It now refuses a contact or an address concatenated into a log line however it is written,
+and both mutants — putting either line back — kill it.
+
+Deleting rather than reducing was deliberate in both cases. The tempting repair for the first is to
+log the keyed display tag, which is not an off-device identifier and *is* a stable correlator tying
+every line about that contact together, while looking obviously safe in a diff. For the second it is
+to name the person instead of the UUID, which is strictly worse and is what two already-fixed sites
+had to be talked out of.
+
+**And the guards for the shipped artifact were reading a different artifact.** Three release guards
+exist and all three are source or build-script scans; the one that opens "the shipped manifest is a
+security artefact" hands Robolectric the **debug** merged manifest — which carries the recording
+autofill service, the editable-field activity and `android:debuggable="true"`. Its permission and
+export assertions were being made about a variant nobody ships. A release-only manifest contribution
+— a `releaseImplementation` dependency declaring `INTERNET`, say — was caught by nothing.
+
+So the artifact is now asserted against itself, in the gradle task that already opens the release APK
+and already fails the build: no permission but `VIBRATE`, no scaffolding, not debuggable,
+`allowBackup` false, and no testing-flavour entry in the APK. A unit test could not do this job —
+it would be skipped whenever no APK had been built and would pass on a stale one otherwise. The
+mutant is an added `INTERNET` permission, and it fails the build.
+
+That last check found something on its first run: the release APK was shipping libsignal's
+**testing**-flavour acknowledgments file, 44.7 KB describing the binary the packaging block
+deliberately excludes. Removed by exact path rather than by an `acknowledgments` pattern, because
+these are third-party attribution for an AGPL dependency distributed through F-Droid and dropping the
+wrong one trades 44 KB for a licence problem. 781 entries to 780.
+
+**Every commit hash in this file pointed at nothing.** Twelve anchors, all unresolvable — the cause
+is ordinary and mine: amending a commit message rewrites that commit and every descendant, and this
+branch has been amended repeatedly to correct test counts. The claims themselves were fine; their
+addresses had rotted. They now cite what was measured rather than where, because a record that dates
+itself by hash on a branch that gets amended is a record that decays silently. The cold-verification
+entry was the one that mattered: it is the only evidence the pinned dependency set is complete, and
+it was pointing at a commit that does not exist.
