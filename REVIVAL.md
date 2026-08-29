@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twelve sections, written in the order things were found rather than by subject, so the
+One hundred and thirteen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -168,6 +168,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Asked once, and the answer written down](#asked-once-and-the-answer-written-down)
 - [Cannot, and cannot right now](#cannot-and-cannot-right-now)
 - [What the shipped thing actually contains](#what-the-shipped-thing-actually-contains)
+- [Three fields that were offering their text away](#three-fields-that-were-offering-their-text-away)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6290,3 +6291,44 @@ addresses had rotted. They now cite what was measured rather than where, because
 itself by hash on a branch that gets amended is a record that decays silently. The cold-verification
 entry was the one that mattered: it is the only evidence the pinned dependency set is complete, and
 it was pointing at a commit that does not exist.
+
+## Three fields that were offering their text away
+
+**Half of what a keyboard normally leaks does not exist in this fork, and the review that went
+looking said so first.** There is no personalization package, no user-history dictionary, no
+suggestion strip, no emoji palette, no clipboard-history manager, and no file write anywhere outside
+`SharedPreferences`. So "typed text reaches a learner" has no mechanism here. What is left is what
+the framework provides for free, and that had not been swept.
+
+**Every editable field this app owns was suggestion-enabled.** `TextView` opens a spell-checker
+session for any editable field whose suggestions are on, and such a session ships the field's text
+over binder to whatever app the user has set as their spell checker — a third-party process,
+commonly from the same vendor as the stock keyboard, commonly one that keeps what it is given. The
+compose box holds decrypted messages and the user's draft; the two contact fields hold a
+correspondent's name. This is neither autofill nor accessibility, so neither the autofill device test
+nor `FLAG_SECURE` covers it.
+
+Whether the platform actually starts a session for a view inside a non-focusable input-method window
+was **not** established, and the flag is set anyway rather than investigated: it costs one attribute,
+and the alternative is depending on a framework detail nobody here has measured. Not
+`textPassword` — that would hide the message from the person meant to read it. The guard asserts the
+**inflated view's** input type, because a source scan would stay green against a later
+`setInputType` call and would miss a field skinned by one of the two themes.
+
+**And the two contact fields lowered the typing redirect on focus loss** — the exact shape the
+compose box's own comment calls the app's central promise broken, twelve lines above them. Focus loss
+is not the user asking for their typing to go to the messenger; blurring a name field handed the rest
+of a correspondent's name to the messenger's own field. No path was found that drives it, so this
+pins the invariant rather than replaying an exploit — which is the argument the compose-box case was
+written on too.
+
+**The second half is what makes the first safe.** Copying that asymmetry without a lowering path
+leaves the redirect up pointing at a field that is no longer on screen, and every keystroke on the
+main view then vanishes into it — a total functional break rather than a leak. Leaving the
+add-contact screen is the choke point, so that is where it is handed back.
+
+**The first version of that test was hollow, and the mutant said so.** It blurred the field with
+`clearFocus()` and passed against a build that still lowered on blur. Measured: `clearFocus()` on the
+only focusable view in a container hands focus straight back, so no blur ever happened. The test now
+drives the production listener with the argument the framework delivers, and says why in the place
+someone would otherwise re-introduce a `clearFocus()`.

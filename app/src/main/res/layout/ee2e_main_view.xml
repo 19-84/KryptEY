@@ -44,7 +44,7 @@
           android:ems="10"
           android:focusableInTouchMode="true"
           android:hint="Type your secret message here"
-          android:inputType="textMultiLine"
+          android:inputType="textMultiLine|textNoSuggestions"
           android:maxHeight="100dp"
           android:padding="10dp"
           android:paddingStart="40dp"

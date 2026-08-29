@@ -343,4 +343,54 @@ public class TypingDestinationTest {
           keyboardStillHolds(SECRET));
     }
   }
+
+  /**
+   * The contact-name fields carry the same asymmetry, and leaving the screen is what lowers it.
+   *
+   * <p>These two fields had the shape the compose box's own comment calls the app's central promise
+   * broken: they lowered the typing redirect on focus loss, so blurring one handed the rest of a
+   * correspondent's name to the messenger's field. No path was found that drives it, which is why
+   * this pins the invariant rather than replaying an exploit — the compose-box case was written on
+   * the same argument.
+   *
+   * <p>The second half is what makes the first safe. Copying the asymmetry without a lowering path
+   * would leave the redirect up pointing at a field that is no longer on screen, and every keystroke
+   * on the main view would vanish into it — a total functional break rather than a leak. Leaving the
+   * add-contact screen is the choke point, so that is where it is lowered.
+   */
+  @Test
+  public void anameFieldLosingFocusDoesNotRedirectTypingIntoTheHostApp() {
+    strip.showAddContactViewForTest();
+    final android.widget.EditText firstName =
+        strip.findViewById(R.id.e2ee_add_contact_first_name_input_field);
+    assertNotNull("the name field must inflate", firstName);
+    assertTrue("the name field must take focus", firstName.requestFocus());
+    assertTrue("precondition: typing must be going into the strip", connection.isUsingOtherIC());
+
+    // The listener is driven with the argument the framework delivers, rather than through
+    // clearFocus(). Measured: clearFocus() on the only focusable view in a container hands focus
+    // straight back, so the blur never happens and the first version of this test passed against a
+    // build that still lowered on blur - the mutant caught it. Calling the production listener with
+    // hasFocus=false is the blur, minus a focus manager that refuses to produce one here.
+    firstName.getOnFocusChangeListener().onFocusChange(firstName, false);
+
+    assertTrue("focus loss is not the user asking for their typing to go to the messenger: the "
+        + "rest of a contact's name would be committed into the host app's own field",
+        connection.isUsingOtherIC());
+  }
+
+  @Test
+  public void leavingTheAddContactScreenHandsTypingBack() {
+    strip.showAddContactViewForTest();
+    final android.widget.EditText firstName =
+        strip.findViewById(R.id.e2ee_add_contact_first_name_input_field);
+    assertTrue(firstName.requestFocus());
+    assertTrue("precondition: the redirect must be up", connection.isUsingOtherIC());
+
+    strip.showMainViewForTest();
+
+    assertTrue("the redirect must not survive the screen it was raised on: left up, it points at a "
+            + "field that is no longer shown and the user's typing disappears into it",
+        !connection.isUsingOtherIC());
+  }
 }

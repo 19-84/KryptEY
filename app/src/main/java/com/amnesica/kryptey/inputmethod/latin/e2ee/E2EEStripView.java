@@ -858,6 +858,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   void showMainViewForTest() { showOnlyUIView(UIView.MAIN_VIEW); }
 
+  /** The add-contact screen, for the tests that are about what its two name fields do. */
+  void showAddContactViewForTest() { showOnlyUIView(UIView.ADD_CONTACT_VIEW); }
+
   void showVerifyContactForTest(final Contact contact) { verifyContact(contact); }
 
   /** Package-visible so a test can drive the real verify screen rather than the pieces. */
@@ -2345,6 +2348,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void showOnlyUIViewInternal(final UIView uiView) {
 
+    // Leaving the add-contact screen hands the redirect back.
+    //
+    // The two name fields raise it on focus and deliberately do not lower it on blur, so this is
+    // what stops it being left up pointing at a field that is no longer on screen. Asked of the
+    // screen being left rather than of the field, because a field can lose focus for reasons that
+    // are not the screen closing - which is the whole point of the asymmetry.
+    if (!uiView.equals(UIView.ADD_CONTACT_VIEW)
+        && mLayoutE2EEAddContactView.getVisibility() == VISIBLE
+        && mRichInputConnection != null) {
+      final boolean composeBoxHasIt = mInputEditText != null && mInputEditText.hasFocus();
+      if (!composeBoxHasIt) mRichInputConnection.setShouldUseOtherIC(false);
+    }
+
     if (uiView.equals(UIView.MAIN_VIEW)) {
       mLayoutE2EEMainView.setVisibility(VISIBLE);
       mLayoutE2EEAddContactView.setVisibility(GONE);
@@ -2482,7 +2498,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mAddContactFirstNameInputEditText.setMovementMethod(new ScrollingMovementMethod());
     mAddContactFirstNameInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
       if (hasFocus) mRichInputConnection.setOtherIC(mAddContactFirstNameInputEditText);
-      mRichInputConnection.setShouldUseOtherIC(hasFocus);
+      // Raised on focus, and NOT lowered on blur - the asymmetry the compose box's listener argues
+      // for twelve lines up, applied to the fields that hold a correspondent's name.
+      //
+      // Lowering on blur means focus loss hands typing to the messenger's own field, and focus loss
+      // is not the user saying "type into the host now". These two fields had the shape the compose
+      // box's comment calls the app's central promise broken; no path was found that drives it
+      // today, which is why it is written down as an invariant rather than as a fixed exploit.
+      //
+      // What makes not lowering safe is that leaving this screen does lower it: showOnlyUIView
+      // hands the redirect back when the add-contact view goes away, so the redirect cannot be left
+      // up pointing at a hidden field - which would be a total functional break rather than a leak,
+      // and is the trap in copying the compose box's asymmetry without its lowering paths.
+      if (hasFocus) mRichInputConnection.setShouldUseOtherIC(true);
     });
   }
 
@@ -2490,7 +2518,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mAddContactLastNameInputEditText.setMovementMethod(new ScrollingMovementMethod());
     mAddContactLastNameInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
       if (hasFocus) mRichInputConnection.setOtherIC(mAddContactLastNameInputEditText);
-      mRichInputConnection.setShouldUseOtherIC(hasFocus);
+      // Same asymmetry as its sibling above, for the same reason.
+      if (hasFocus) mRichInputConnection.setShouldUseOtherIC(true);
     });
   }
 
