@@ -164,6 +164,60 @@ public class FlagSecureReachesTheWindowOnDeviceTest {
               + "the device rather than this app - a platform that marks all IME windows secure "
               + "would satisfy it with the flag never applied at all",
           !secure(ordinary));
+      // And the same question in landscape, which is a different window mode entirely.
+      //
+      // values-land/config.xml is the only folder in the tree that sets config_use_fullscreen_mode
+      // true. Android resolves smallestWidth above orientation, so values-sw430dp and larger give
+      // false on tablets - but on a sub-430dp phone none of those match and values-land wins, and
+      // this emulator is --device pixel, which is 411dp. onEvaluateFullscreenMode ANDs that bool
+      // with the framework's own answer, so in landscape the keyboard runs in the platform's
+      // fullscreen/extract mode, with an ExtractEditText this app does not own and has never
+      // considered.
+      //
+      // Nobody has looked at that mode. This does not audit it - it asks the one question that
+      // decides whether the audit is urgent: does the app's only protective flag still reach the
+      // window there? FLAG_SECURE is what stops every screen holding decrypted plaintext being
+      // screenshottable, and a second window mode is exactly where a flag applied to "the window"
+      // can quietly apply to the wrong one.
+      activity.setRequestedOrientation(
+          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+      instrumentation.waitForIdleSync();
+      Thread.sleep(2_000L);
+
+      instrumentation.runOnMainSync(live::showMessagesListForTest);
+      instrumentation.waitForIdleSync();
+      Thread.sleep(1_500L);
+      final String landscapeSensitive = imeWindowBlock(windowDump());
+
+      instrumentation.runOnMainSync(live::showMainViewForTest);
+      instrumentation.waitForIdleSync();
+      activity.setRequestedOrientation(
+          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+      instrumentation.waitForIdleSync();
+      Thread.sleep(1_500L);
+
+      assertTrue("this test must still find the input-method window after a rotation, or the "
+          + "assertion below is reading an empty string", landscapeSensitive.length() > 0);
+
+      // Anti-vacuity: the rotation must actually have happened.
+      //
+      // If setRequestedOrientation does not take on this device, the block below is the portrait
+      // one again and the landscape assertion is a duplicate of the assertion above it - green,
+      // and measuring nothing about the second window mode. The window's own reported geometry is
+      // what says which way round the screen is, so it is compared rather than assumed.
+      System.out.println("MEASURED portrait block:\n" + sensitive);
+      System.out.println("MEASURED landscape block:\n" + landscapeSensitive);
+      assertTrue("the IME window is identical before and after the rotation, so the rotation did "
+              + "not take and the landscape assertion below is measuring portrait a second time",
+          !landscapeSensitive.equals(sensitive));
+      assertTrue("the chat log is on screen in LANDSCAPE and the IME window is not marked secure. "
+              + "In landscape this keyboard runs in the platform's fullscreen/extract mode - "
+              + "values-land is the only folder setting config_use_fullscreen_mode true, and it "
+              + "wins on any phone under 430dp - so this is a second window mode in which none of "
+              + "this project's measured properties had been checked. Window block was:\n"
+              + landscapeSensitive,
+          secure(landscapeSensitive));
+
       assertTrue("and the flag must come back off when the sensitive screen closes, or ordinary "
               + "typing stops screenshotting for the rest of the keyboard's life",
           !secure(afterwards));

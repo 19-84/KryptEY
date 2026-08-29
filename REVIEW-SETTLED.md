@@ -412,3 +412,35 @@ worth adding.
 Narrow in any case: it needs `sw600dp` resources, the user to have added the PC subtype, and the host
 to declare a navigate flag, and only the last is the adversary's to choose. Nothing reaches the
 messenger on this path in either outcome, because nothing here lowers the redirect.
+
+## Landscape is a second window mode, and FLAG_SECURE survives it
+
+**Half-settled by measurement, and the half that is settled is the one that decides urgency.**
+
+`values-land/config.xml` is the only folder in the tree that sets `config_use_fullscreen_mode` to
+true. Android resolves `smallestWidth` above orientation, so `values-sw430dp` and larger give false
+on tablets — but on a phone under 430dp none of those match and `values-land` wins.
+`onEvaluateFullscreenMode` ANDs that bool with the framework's own answer, so **in landscape, on most
+phones, this keyboard runs in the platform's fullscreen/extract mode**, with an `ExtractEditText`
+the app does not own and has never considered. Nobody had looked at that mode; eight rounds of Java
+review could not have seen it, because the switch is one line of XML.
+
+The question that decides whether an audit of it is urgent is whether the app's only protective flag
+still works there. `FLAG_SECURE` is what stops every screen holding decrypted plaintext being
+screenshottable, and a second window mode is exactly where a flag applied to "the window" can end up
+on the wrong one.
+
+Measured on the emulator, which is `--device pixel` at 411dp and therefore does resolve to the
+landscape branch: with the chat log on screen in landscape, the IME window **is** marked secure. The
+check lives in `FlagSecureReachesTheWindowOnDeviceTest` beside its portrait twin, and it carries an
+anti-vacuity control that the portrait one cannot supply for it: the landscape window block must
+differ from the portrait block, or `setRequestedOrientation` did not take and the new assertion is
+simply the old one run twice. That control passes, so the rotation is real.
+
+**What is still open, stated rather than implied.** The reviewer named a second unknown and could not
+settle it by reading: whether extract mode clears `FLAG_NOT_FOCUSABLE` on the IME window. That
+matters because this project's autofill negative result rests partly on that window being
+non-focusable, and `AutofillDoesNotReachTheKeyboardTest` runs in portrait only. Nothing here has
+measured it. The AOSP reading is that the window stays non-focusable and `ExtractEditText` fakes
+focus precisely so that it can — but that is a reading, not a measurement, and it is the next thing
+to run on this surface.
