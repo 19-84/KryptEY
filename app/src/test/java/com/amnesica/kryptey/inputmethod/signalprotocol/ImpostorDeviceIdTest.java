@@ -216,7 +216,18 @@ public class ImpostorDeviceIdTest {
     assertTrue("fixture: the message must be in the genuine log to start with",
         logContains(SignalProtocolMain.getUnencryptedMessagesList(realPeerContact), kept));
 
-    SignalProtocolMain.removeContactFromContactListAndProtocol(impostorContact);
+    // A store whose write lands, and the return value asserted.
+    //
+    // Without one this deletion rolls back: removeContact restores the contact list, the message
+    // list and the session wholesale when the write fails, so the log this test reads afterwards is
+    // the copy taken BEFORE the sweep ran. The assertion then holds whether the sweep is scoped or
+    // deletes everything - which is the one thing this test exists to tell apart. Measured by a
+    // reviewer: widening removeAllUnencryptedMessages to a total wipe was caught by three other
+    // tests and not by this one, whose whole subject it is.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
+    assertTrue("precondition: the deletion must actually reach disk, or the sweep under test never "
+            + "runs and the assertion below reads a rolled-back copy of the log",
+        SignalProtocolMain.removeContactFromContactListAndProtocol(impostorContact));
 
     final List<StorageMessage> after = new ArrayList<>();
     try {

@@ -8118,6 +8118,13 @@ contact erasing a warning about another was enforced by nothing.
 
 The shape generalises and the reviewer found it independently in three packages: **a fixture with no
 landing store, calling a production method that reports whether its write landed, and discarding the
-answer.** The two write reporters in `SignalProtocolMain` disagree on a null helper — one answers
-true, the other false — which is exactly why such fixtures look healthy. The remaining instances are
-listed in that report and are the next thing to sweep.
+answer.** The remaining instances are listed in that report and are the next thing to sweep.
+
+The reviewer's explanation for *why* those fixtures look healthy was that the two write reporters in
+`SignalProtocolMain` disagree on a null helper — one answering true and the other false. **Checked,
+and that is no longer so:** `accountWriteSucceeded()` delegates straight to
+`storeAllAccountInformationInSharedPreferences()`, which returns false when there is no helper, so
+both answer false. It was true once and this file records the commit that fixed it. The finding
+survives the correction untouched, because it never depended on the explanation: what makes those
+fixtures dishonest is that the default write does not land and nobody asserts the return value. The
+diagnosis was stale; the measurement was not, and only the measurement was load-bearing.
