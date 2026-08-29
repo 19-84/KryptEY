@@ -43,9 +43,14 @@ public class Account {
    *
    * <p>Keying removes the attacker's ability to compute the target at all. It never leaves the
    * device and is persisted in its own row of the same Keystore-encrypted store as the identity
-   * key. The constructor mints one on every load — which is what made an earlier bug possible — and
-   * the stored value then overwrites it, so a tag stays stable for the life of an install, which is
-   * what makes it comparable between two rows.
+   * key. The stored value overwrites whatever the constructor set, so a tag stays stable for the
+   * life of an install, which is what makes it comparable between two rows.
+   *
+   * <p>What the constructor sets is DERIVED from the identity private key rather than minted at
+   * random, and the difference matters in exactly one state: a stored secret that is present and
+   * will not open. There the store deliberately declines to write this session's value over the
+   * ciphertext, so nothing persists it - and a minted one therefore changed on every raise, taking
+   * every contact's tag with it. See {@code deriveDisplayTagSecret}.
    */
   private byte[] displayTagSecret;
 
@@ -58,13 +63,53 @@ public class Account {
     this.mSignalProtocolAddress = signalProtocolAddress;
     this.mUnencryptedMessages = new ArrayList<>();
     this.contactList = new ArrayList<>();
-    this.displayTagSecret = newDisplayTagSecret();
+    this.displayTagSecret = deriveDisplayTagSecret(identityKeyPair);
   }
 
   private static byte[] newDisplayTagSecret() {
     final byte[] secret = new byte[32];
     new java.security.SecureRandom().nextBytes(secret);
     return secret;
+  }
+
+  /**
+   * The secret this account uses when the store has not supplied one, derived rather than minted.
+   *
+   * <p>It used to be minted at random here, and the field's own javadoc explained why that was
+   * safe: the stored value overwrites it, so a tag stays stable for the life of an install. That is
+   * true exactly while the stored value can be read. When it is present and will not open,
+   * {@code StorageHelper} deliberately does not write the session's secret over the ciphertext -
+   * losing those bytes is permanent - so nothing overwrites this, and nothing persists it either.
+   * Measured: two consecutive loads produced two different secrets, so every contact's tag changed
+   * on every keyboard raise, permanently and with no repair path. The tag is the disambiguator
+   * between two rows the user cannot otherwise tell apart, and one that differs each time it is
+   * looked at is noise - the cries-wolf failure the preservation comment beside it names.
+   *
+   * <p>Deriving from the identity private key fixes that without writing anything: it is already
+   * persisted, it is stable for the life of the install, and it is the one piece of material that
+   * is both. The PRIVATE half specifically - keying the tag is what removes an attacker's ability
+   * to compute it, and the public half is in every bundle this device has ever handed out.
+   *
+   * <p>Unconditional rather than only-on-failure, because two derivations would mean two behaviours
+   * to reason about and the stored value still wins whenever it reads. A store written before this
+   * keeps its own secret and its tags do not move.
+   */
+  private static byte[] deriveDisplayTagSecret(final IdentityKeyPair identityKeyPair) {
+    if (identityKeyPair == null || identityKeyPair.getPrivateKey() == null) {
+      // No identity to derive from is not a state a live account reaches; a random secret is a
+      // better answer here than a null that becomes an NPE inside tag derivation on the contact
+      // list, which is the one screen a user checks when something already looks wrong.
+      return newDisplayTagSecret();
+    }
+    try {
+      final javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+      mac.init(new javax.crypto.spec.SecretKeySpec(
+          identityKeyPair.getPrivateKey().serialize(), "HmacSHA256"));
+      return mac.doFinal(
+          "kryptey-display-tag-secret".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    } catch (java.security.GeneralSecurityException e) {
+      return newDisplayTagSecret();
+    }
   }
 
   public byte[] getDisplayTagSecret() {

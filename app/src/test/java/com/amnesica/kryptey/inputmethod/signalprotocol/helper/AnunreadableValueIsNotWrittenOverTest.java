@@ -104,7 +104,14 @@ public class AnunreadableValueIsNotWrittenOverTest {
     final Account loaded = helper().getAccountFromSharedPreferences();
     assertNotNull("the store must still load - one bad value is not a lost account", loaded);
     loaded.setMessageLogLoader(ArrayList::new);
-    assertNotEquals("precondition: a fresh secret was minted, which is the substitution",
+    // This used to assert the opposite - that a FRESH secret was minted here, "which is the
+    // substitution". That was the behaviour, and it was a defect rather than a property: the
+    // session's secret was never persisted (this test's whole point is that the ciphertext is not
+    // written over), so every raise minted another one and every contact's tag moved with it. The
+    // secret is derived from the identity private key now, so it is the same one, and the stored
+    // bytes are still not touched - which is what the rest of this test checks.
+    assertEquals("the secret must not depend on when the account was loaded, or the tag it keys "
+            + "changes on every keyboard raise",
         java.util.Arrays.toString(secretBefore),
         java.util.Arrays.toString(loaded.getDisplayTagSecret()));
 
@@ -115,6 +122,46 @@ public class AnunreadableValueIsNotWrittenOverTest {
             + "changes at once and can never come back, and a tag is only useful because it is the "
             + "same next time you look",
         "not a sealed secret", store().getString(key, null));
+  }
+
+  /**
+   * And the tag the user compares must not change on every keyboard raise.
+   *
+   * <p>The other direction of the preservation above, and the one it opened. Skipping the key
+   * protects the stored ciphertext; it also means the secret this session is actually using is
+   * never persisted. {@code Account}'s constructor mints a fresh random one on every load, and
+   * {@code reloadAccount} runs from {@code LatinIME.setInputView} - so every raise HMACs the same
+   * contact under a different secret.
+   *
+   * <p>Within one raise two rows are still comparable, so the duplicate-name defence still works.
+   * Across raises the tag is noise, permanently and with no repair path, which is the cries-wolf
+   * failure the preservation comment beside it names: <em>"a tag is only useful because it is the
+   * same next time you look"</em>. This asserts the property that sentence claims.
+   */
+  @Test
+  public void thetagMustNotChangeOnEveryRaiseWhileTheSecretIsUnreadable() {
+    storedAccount();
+    final String key = String.valueOf(ProtocolIdentifier.DISPLAY_TAG_SECRET);
+    store().edit().putString(key, "not a sealed secret").commit();
+
+    final Account firstRaise = helper().getAccountFromSharedPreferences();
+    assertNotNull(firstRaise);
+    firstRaise.setMessageLogLoader(ArrayList::new);
+    assertTrue(helper().storeAllInformationInSharedPreferences(firstRaise));
+    final String tagFirst =
+        java.util.Arrays.toString(firstRaise.getDisplayTagSecret());
+
+    final Account secondRaise = helper().getAccountFromSharedPreferences();
+    assertNotNull(secondRaise);
+    secondRaise.setMessageLogLoader(ArrayList::new);
+    final String tagSecond =
+        java.util.Arrays.toString(secondRaise.getDisplayTagSecret());
+
+    assertEquals("the secret changed between two raises, so every contact's tag did too. The tag "
+            + "is the anti-impersonation disambiguator between two rows the user cannot otherwise "
+            + "tell apart, and one that differs every time the keyboard comes up is noise rather "
+            + "than a comparison",
+        tagFirst, tagSecond);
   }
 
   /** And the retired names, whose loss is a security control rather than a comparison aid. */

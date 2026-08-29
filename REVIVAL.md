@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-eight sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -89,6 +89,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Three defects in three fixes, again](#three-defects-in-three-fixes-again)
 - [A notice that retired on the write that made the leak permanent](#a-notice-that-retired-on-the-write-that-made-the-leak-permanent)
 - [The guard that read as coverage, and the state it let through](#the-guard-that-read-as-coverage-and-the-state-it-let-through)
+- [Preserving the old value stopped persisting the new one](#preserving-the-old-value-stopped-persisting-the-new-one)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7764,3 +7765,38 @@ Worth naming what made this invisible to the tests that already existed: **every
 the selection explicitly.** Both cases on this accessor call `Selection.setSelection` in their
 fixture, so both arms they exercise are the arm that works. A test suite can cover an accessor
 thoroughly and still never construct the state its caller actually hands it.
+
+## Preserving the old value stopped persisting the new one
+
+A round closed a real defect: the store used to write a freshly-minted default over a value it had
+failed to read, so one unopenable row became permanently lost bytes. The fix omits such a key from
+the write batch — `putAll` clears nothing, so the ciphertext survives untouched — and it is right.
+
+It also stopped persisting the value the session is actually using, and for the display tag that
+turned out to matter. `Account`'s constructor minted a random tag secret on every load; the stored
+value normally overwrites it, which is what the field's own javadoc cited for the claim that *"a tag
+stays stable for the life of an install, which is what makes it comparable between two rows"*. When
+the stored secret is present and unreadable, nothing overwrites it and nothing persists it either.
+`reloadAccount` runs from `LatinIME.setInputView`, so **every keyboard raise HMAC'd every contact
+under a different secret**. Measured: two consecutive loads, two different secrets.
+
+Within a single raise two rows are still comparable, so the duplicate-name defence still works.
+Across raises the tag is noise — permanently, with no repair path — which is the cries-wolf failure
+the preservation comment beside it names in as many words.
+
+The fix is to derive rather than mint. The identity private key is already persisted, already stable
+for the life of the install, and is the one piece of material that is both; the secret is
+`HMAC(identity private key, "kryptey-display-tag-secret")`. Nothing is written, so the preservation
+the other half of that commit bought is untouched. The **private** half specifically: keying the tag
+is what removes an attacker's ability to compute it, and the public half is in every bundle this
+device has ever handed out. Unconditional rather than only-on-failure, because two derivations would
+be two behaviours to reason about, and a store written before this keeps its own secret and its tags
+do not move.
+
+The part worth keeping is what the old test said. `anunreadableTagSecretIsNotOverwritten` asserted,
+as a **precondition**, that *"a fresh secret was minted, which is the substitution"* — the churn
+written down as expected behaviour, in the one test standing closest to it. It was describing the
+mechanism correctly and had simply not been asked whether the mechanism was wanted. A test can pin a
+defect as firmly as it pins a property, and it looks identical from the outside; what tells them
+apart is a sentence saying why the observed thing is the desired thing, which that precondition
+never had.
