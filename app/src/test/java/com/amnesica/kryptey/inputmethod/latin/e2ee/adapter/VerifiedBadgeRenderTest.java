@@ -245,4 +245,50 @@ public class VerifiedBadgeRenderTest {
   private static View.OnClickListener clickListenerOf(final View view) {
     return org.robolectric.Shadows.shadowOf(view).getOnClickListener();
   }
+
+  /**
+   * A recycled row must show the badge of the contact it is now showing.
+   *
+   * <p>{@code ListView} reuses row views: the row that scrolled off the top is handed back as
+   * {@code convertView} for the row scrolling in at the bottom. Nothing in this suite ever handed
+   * the adapter a used row — every call passed {@code null} — so the one thing a list actually does
+   * to these views was untested, on the icon a user is told to act on.
+   *
+   * <p>The failure direction is the bad one. The two badges are overlapping siblings and the
+   * verified one is declared second, so it draws on top: a row recycled from a verified contact
+   * shows a green tick over an unverified one. Measured — a mutant that sets the badges only when
+   * the row is newly inflated passes every other test here.
+   *
+   * <p>The recycled view is one the adapter itself returned, not a hand-built row: a hand-built one
+   * would also pass against an adapter that ignores {@code convertView} entirely, which is a
+   * different bug and would leave this test proving nothing about recycling.
+   */
+  @Test
+  public void arecycledRowShowsTheBadgeOfTheContactItNowShows() throws Exception {
+    // A verified contact first, so the row carries a green tick.
+    SignalProtocolMain.verifyContact(storedContact());
+    assertTrue("precondition: this contact must be trustworthy",
+        SignalProtocolMain.isContactKeyTrustworthy(live()));
+    final View recycled = renderRow(live());
+    assertEquals("precondition: the row must show the verified badge",
+        View.VISIBLE, verifiedVisibility(recycled));
+
+    // Now the same row object is handed back for a contact that is NOT verified.
+    SignalProtocolMain.importOutOfBandKeyBundle(attackerBundle, peerAddress);
+    assertTrue("precondition: the substitution must make this contact untrustworthy",
+        !SignalProtocolMain.isContactKeyTrustworthy(live()));
+
+    final ArrayList<Object> items = new ArrayList<>();
+    items.add(live());
+    final ListAdapterContacts adapter = new ListAdapterContacts(
+        new ContextThemeWrapper(RuntimeEnvironment.getApplication(),
+            R.style.KeyboardTheme_LXX_Pure_Day),
+        R.layout.e2ee_contact_list_element_view, items);
+    final View reused = adapter.getView(0, recycled, null);
+
+    assertEquals("a recycled row must stop showing the previous contact's verified badge - the two "
+            + "badges overlap and the verified one draws on top, so this is a green tick on a "
+            + "contact whose key just changed", View.INVISIBLE, verifiedVisibility(reused));
+    assertEquals("...and must show the unverified one", View.VISIBLE, unverifiedVisibility(reused));
+  }
 }

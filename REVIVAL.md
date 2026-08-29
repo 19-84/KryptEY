@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and eighteen sections, written in the order things were found rather than by subject, so the
+One hundred and nineteen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -174,6 +174,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The instruction that vanished when it was needed](#the-instruction-that-vanished-when-it-was-needed)
 - [Nothing was testing the number itself](#nothing-was-testing-the-number-itself)
 - [The tag fell off the bottom of the list](#the-tag-fell-off-the-bottom-of-the-list)
+- [The one thing a list actually does](#the-one-thing-a-list-actually-does)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6493,3 +6494,27 @@ what replaced the floor is a test asserting what the code actually does.
 That leaves one state this cannot fix, written down rather than papered over: with room for less than
 a single row there is no whole row to show, so the list keeps what it was given. Growing past its
 allowance would only hand the parent a view it has to clip anyway.
+
+## The one thing a list actually does
+
+**Every test of the contact adapter handed it a fresh row. `ListView` never does that.**
+
+A list reuses row views: the row that scrolled off the top is handed back as `convertView` for the
+row scrolling in at the bottom. Not one call in the suite passed a used row, so the single thing a
+list does to these views was untested — on the icon the user is told to act on.
+
+The failure direction is the bad one. The two badges are overlapping siblings and the verified one is
+declared second, so it draws on top: a row recycled from a verified contact shows a **green tick over
+an unverified one**. Measured — a mutant that sets the badges only when the row is newly inflated
+passes every other test in the file.
+
+**The reviewer's named mutant was wrong, and checking it is what found the right one.** They proposed
+deleting the line that hides the unverified badge in the verified branch, and said the suite would
+stay green. It does not: an existing test catches that in both directions on a fresh row. What is
+uncovered is narrower and more interesting — the *recycled* path specifically, which no assertion in
+the repository reaches. A finding that is wrong in its mechanism can still be right about the gap,
+and the only way to tell is to run it.
+
+The recycled view handed to the new test is one **the adapter itself returned**, not a hand-built
+row. A hand-built one would also pass against an adapter that ignored `convertView` entirely, which
+is a different bug — and the test would then be proving nothing about recycling while appearing to.
