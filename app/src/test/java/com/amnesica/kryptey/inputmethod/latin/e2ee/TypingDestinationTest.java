@@ -393,4 +393,58 @@ public class TypingDestinationTest {
             + "field that is no longer shown and the user's typing disappears into it",
         !connection.isUsingOtherIC());
   }
+
+  /**
+   * And the add-contact screen is the same defect through the one route with an adversary in it.
+   *
+   * <p>The sibling above walks to the contact list and back. This walks to the ADD-CONTACT screen
+   * and back, which is where the lowering lives — and its escape hatch asked
+   * {@code mInputEditText.hasFocus()}, a condition that can never be true there: the compose box
+   * lives inside the main wrapper, which is {@code GONE} for the whole life of that screen, and a
+   * GONE subtree cannot hold focus. So the lowering was unconditional, the draft was still on
+   * screen, and the only visible change was two small buttons going dark.
+   *
+   * <p>The attacker picks the moment. An invite from an unknown address routes the decrypt straight
+   * to this screen, and Cancel is the response this file elsewhere calls the correct one.
+   */
+  @Test
+  public void leavingTheAddContactScreenWithAdraftMustNotRedirectTypingIntoTheHostApp() {
+    assertTrue(compose.requestFocus());
+    connection.commitText("the meeting ", 1);
+
+    strip.showAddContactViewForTest();
+    strip.showMainViewForTest();
+
+    assertEquals("the draft is still on screen where the user left it", "the meeting ",
+        compose.getText().toString());
+
+    connection.commitText("is at nine", 1);
+
+    assertEquals("the rest of the message must not be committed into the messenger's own field",
+        "", hostField.received.toString());
+  }
+
+  /**
+   * And an EMPTY compose box still hands typing back, or the fix is the mirror defect.
+   *
+   * <p>Re-pointing unconditionally would take focus the user never gave the box, on a screen switch
+   * they made for another reason — so ordinary typing would start disappearing into the strip. The
+   * condition is "is there something to protect", not "did we come back to the main view".
+   */
+  @Test
+  public void leavingTheAddContactScreenWithNoDraftStillHandsTypingBack() {
+    strip.showAddContactViewForTest();
+    final android.widget.EditText firstName =
+        strip.findViewById(R.id.e2ee_add_contact_first_name_input_field);
+    assertTrue(firstName.requestFocus());
+    assertTrue("precondition: the redirect must be up", connection.isUsingOtherIC());
+    assertEquals("precondition: the compose box must be empty", "",
+        compose.getText().toString());
+
+    strip.showMainViewForTest();
+
+    assertTrue("with nothing in the compose box there is nothing to protect, and the user's typing "
+            + "belongs to the app they are in",
+        !connection.isUsingOtherIC());
+  }
 }

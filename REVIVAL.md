@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-two sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [The lowering nobody asked about, because three comments said it did not exist](#the-lowering-nobody-asked-about-because-three-comments-said-it-did-not-exist)
 - [Kept is not the same as inert](#kept-is-not-the-same-as-inert)
 - [Guards that ran in the wrong command, and claims nobody had crossed a boundary to check](#guards-that-ran-in-the-wrong-command-and-claims-nobody-had-crossed-a-boundary-to-check)
 - [The mutant is not a formality, and here is the tally](#the-mutant-is-not-a-formality-and-here-is-the-tally)
@@ -2018,6 +2019,41 @@ value — while the store still writes a `DEVICE_ID` row nothing reads, holding 
 would reach for. Now an assertion, and asserted *after a real load*: written first against a fresh
 in-memory account, where it passed with the invariant deliberately broken, because that path never
 reaches the constructor that makes it true.
+
+---
+
+## The lowering nobody asked about, because three comments said it did not exist
+
+The typing redirect is what makes the compose box private: while it is up, keystrokes go to the
+strip; while it is down, they go to the messenger's own field. So the set of places that lower it is
+the security-relevant enumeration on that surface.
+
+Four comments in `E2EEStripView` stated that set as "two" or "three". It is four. The one they
+omitted is `showOnlyUIViewInternal`'s, which runs when the add-contact screen is left — and it ran
+with the user's draft still rendered in the compose box, the only visible change being two small
+buttons going dark. The next keystroke went to the messenger in cleartext.
+
+Its escape hatch was already dead and had never been noticed. It asked
+`mInputEditText.hasFocus()`, and the compose box lives inside the main wrapper, which that same
+method sets `GONE` for the whole life of the add-contact screen — a GONE subtree cannot hold focus,
+so the condition could never be true and the lowering was unconditional.
+
+The attacker picks the moment. An invite from an unknown address routes the decrypt straight to the
+add-contact screen, and Cancel is the response this file elsewhere calls *the correct one*. The
+worst variant needs no draft: decrypt a message so the box holds the peer's plaintext, then let a
+second, attacker-supplied bundle arrive, cancel, and the user's reply goes to the messenger. That is
+the defect `ReplyAfterDecryptTest` exists for, re-opened through a route it does not drive.
+
+**Re-pointed, not cleared, and not always.** Clearing the box would make the screen honest and hand
+the messenger a draft-eraser — one relayed envelope destroying what the user typed, on demand and
+repeatably. Re-pointing unconditionally is the mirror: it would take focus the user never gave the
+box on a screen switch they made for another reason. So the question asked is "is there something to
+protect" — the box holds text — and only then is the redirect re-pointed at it. Both directions are
+mutant-checked: asking focus again turns one test red, re-pointing regardless turns two others red.
+
+**And the count is pinned now.** `TheloweringSitesAreAllAccountedForTest` fails if a fifth lowering
+appears without being written down beside the others. "Remember to update the comment" has already
+failed here, four times, and the site those comments omitted is the one that was leaking.
 
 ---
 

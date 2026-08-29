@@ -2773,8 +2773,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!uiView.equals(UIView.ADD_CONTACT_VIEW)
         && mLayoutE2EEAddContactView.getVisibility() == VISIBLE
         && mRichInputConnection != null) {
-      final boolean composeBoxHasIt = mInputEditText != null && mInputEditText.hasFocus();
-      if (!composeBoxHasIt) mRichInputConnection.setShouldUseOtherIC(false);
+      // Asked of the compose box's TEXT, not of its focus.
+      //
+      // It asked hasFocus(), and that condition is dead: the compose box lives inside the main
+      // wrapper, which this method sets GONE for the whole life of the add-contact screen, and a
+      // GONE subtree cannot hold focus. So the escape hatch never fired and the lowering was
+      // unconditional - including on the way back to the main view with the user's draft still
+      // rendered in the box. The only visible change was two small buttons going dark, and the
+      // next keystroke went to the messenger in cleartext. That is the state
+      // TypingDestinationTest exists to forbid, reached by a route it did not drive.
+      //
+      // The attacker picks the moment: an invite from an unknown address routes the decrypt to the
+      // add-contact screen, and Cancel is the response this file calls the correct one.
+      //
+      // Re-pointed rather than cleared. Clearing the box would make the screen honest and hand the
+      // messenger a draft-eraser - one relayed envelope destroying what the user typed, on demand
+      // and repeatably. And re-pointing only when there is something to protect, rather than
+      // always: raising the redirect on a return to an empty box would take focus the user had not
+      // given it, which is the mirror defect.
+      final boolean somethingToProtect = mInputEditText != null
+          && mInputEditText.getText() != null && mInputEditText.getText().length() > 0;
+      if (somethingToProtect && uiView.equals(UIView.MAIN_VIEW)) {
+        composeInsideTheKeyboard();
+      } else {
+        mRichInputConnection.setShouldUseOtherIC(false);
+      }
     }
 
     if (uiView.equals(UIView.MAIN_VIEW)) {
@@ -2914,8 +2937,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // draft, the only visible change being two small buttons disappearing. It also fired with no
       // adversary at all: opening any other strip screen sets this layout GONE, which clears focus.
       //
-      // Focus loss is not the user saying "type into the host now". The two things that are - a
-      // send, and the keyboard being dismissed - lower it explicitly.
+      // Focus loss is not the user saying "type into the host now". Four things are, and they
+      // lower it explicitly: a send, the keyboard being dismissed, the password-field guard, and
+      // leaving the add-contact screen with an empty compose box. See
+      // theloweringSitesAreAllAccountedForTest, which fails if a fifth appears without being
+      // written down - three comments in this file once said "two", and that is why nobody asked
+      // what the add-contact one did to a draft still on screen.
       changeVisibilityInputFieldButtons(hasFocus);
     });
 
@@ -2935,10 +2962,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // box's comment calls the app's central promise broken; no path was found that drives it
       // today, which is why it is written down as an invariant rather than as a fixed exploit.
       //
-      // What makes not lowering safe is that leaving this screen does lower it: showOnlyUIView
-      // hands the redirect back when the add-contact view goes away, so the redirect cannot be left
-      // up pointing at a hidden field - which would be a total functional break rather than a leak,
-      // and is the trap in copying the compose box's asymmetry without its lowering paths.
+      // What makes not lowering safe is that leaving this screen deals with the redirect:
+      // showOnlyUIView hands it back when the add-contact view goes away, so it cannot be left up
+      // pointing at a hidden field - which would be a total functional break rather than a leak,
+      // and is the trap in copying the compose box's asymmetry without its lowering paths. It
+      // hands it back only when there is nothing in the compose box; with a draft there it is
+      // re-pointed at the box instead, which is the same guarantee reached the other way.
       if (hasFocus) mRichInputConnection.setShouldUseOtherIC(true);
     });
   }
@@ -3943,7 +3972,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   public void onKeyboardHidden() {
     // The user is done with this keyboard session, so the next one types into the host until they
-    // choose the compose box again. This and the send path are the only two deliberate lowerings;
+    // choose the compose box again. This is one of four deliberate lowerings - the others are the
+    // send path, the password-field guard, and leaving the add-contact screen with nothing in the
+    // compose box. Three comments in this file used to say there were two or three, and that
+    // enumeration is why nobody asked what the add-contact one did to a draft;
     // see the focus listener for why focus loss is not one.
     if (mRichInputConnection != null) mRichInputConnection.setShouldUseOtherIC(false);
     clearDecryptedContent();
@@ -5162,7 +5194,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * Hands typing back to the host's field.
    *
    * <p>The counterpart of {@link #composeInsideTheKeyboard()}, and used by exactly one caller: the
-   * password-field guard. The other two lowerings - a send, and the keyboard being dismissed - do
+   * password-field guard. The other three lowerings - a send, the keyboard being dismissed, and
+   * leaving the add-contact screen with an empty compose box - do
    * it inline where they have other work to do in a particular order; see the compose box's focus
    * listener for why focus loss is not one of them.
    *
@@ -5223,8 +5256,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * every call site is not a rule.
    *
    * <p>Hiding them does NOT lower the redirect. That asymmetry is deliberate and is the property
-   * the focus listener's comment argues for at length - only a send and the keyboard being
-   * dismissed lower it.
+   * the focus listener's comment argues for at length - the four sites that do lower it are
+   * enumerated there and pinned by {@code theloweringSitesAreAllAccountedForTest}.
    */
   private void changeVisibilityInputFieldButtons(boolean shouldBeVisible) {
     if (shouldBeVisible) composeInsideTheKeyboard();
