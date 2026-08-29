@@ -164,3 +164,26 @@ a different identity at a **pinned** address is refused *without* spending a Kyb
 an accepted one spends exactly one. So `isTrustedIdentity` runs before `markKyberPreKeyUsed`, and
 the burn analysis recorded elsewhere — which assumes each burn costs the attacker a session
 establishment the app accepts — holds.
+
+## The deletion promise across an interrupted chat-log move
+
+A round left this as the one row of its deletion table it could not settle by reading: the chat log
+moves into its own file by copy-verify-delete, so a process kill between the copy and the delete
+leaves it in **both** files, and the account-file copy is then unreachable through the reader, which
+prefers the new location. A sweep operating on the loaded list would write the pruned log to the
+message store and leave the un-pruned copy in `protocol.xml` — with the help text saying the history
+is gone. An input-method process is killed as a matter of routine, so the interrupted state is
+ordinary.
+
+Measured now, through the real deletion path: the promise holds. The reader finishes the interrupted
+move before returning, so the account-file copy is removed on the first load after the kill, and a
+deletion is exactly such a load — `removeAllUnencryptedMessages` goes through the deferred loader.
+Both files end up without the plaintext, the message file itself survives (its existence is what
+says this device holds data), and another contact's messages are untouched. Deleting the cleanup
+turns the test red.
+
+Worth recording how the first version of that test lied: it seeded the log with
+`setUnencryptedMessages`, which marks the log **loaded**, so `getUnencryptedMessages` never called
+the loader — and the cleanup lives inside the loader. It failed, and it failed for the fixture's
+reason rather than the code's. The fixture has to reload the account so the log is deferred, which
+is the state a kill actually leaves.
