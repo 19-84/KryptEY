@@ -1184,4 +1184,65 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
             + "is not there, and nothing can answer it: " + bannerText(),
         !bannerText().contains("changed on the way here"));
   }
+
+  /**
+   * A refused invite must not make Reject the answer, because Reject brands an honest address.
+   *
+   * <p>The refusal stands at an address with <em>nothing pinned</em> — that is what the sentence
+   * says. On that verify screen Verify is dark because there is no number, and the escape hatch
+   * used to light Reject because an addressed warning stands. So the one lit control on the screen
+   * looked like the answer to the warning.
+   *
+   * <p>It is not. The warning says a bundle was altered in transit and its advice is "ask them to
+   * send another"; it is not a complaint about the peer's key, and there is no key to complain
+   * about. {@code rejectContactKey} marks the address whether or not anything was pinned, and that
+   * record is deliberately permanent — so the contact's next GENUINE invite is met with "you told
+   * this app not to trust keys arriving for them", which is untrue, and their row cannot show
+   * verified until a fresh comparison clears it.
+   *
+   * <p>This is the same argument the file already makes for the storage caution, which had Reject
+   * withdrawn from it for exactly these two outcomes. It became reachable here only when the
+   * refusal was made recomputable: before that it was a warning the next repaint removed.
+   */
+  @Test
+  public void arefusedInviteDoesNotOfferRejectAtAnaddressWithNoKey() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertTrue("precondition: the refusal must be standing: " + bannerText(),
+        bannerText().contains("changed on the way here"));
+    assertFalse("precondition: nothing may be pinned at that address, or this is a different cell",
+        SignalProtocolMain.hasPinnedKey(peerAddress));
+
+    strip.showVerifyContactForTest(strip.chosenContactForTest());
+
+    assertFalse("Verify is dark because there is no number to compare, and Reject must be dark too "
+            + "- it would brand an address the user has no complaint about, permanently, and the "
+            + "peer's next honest invite would be met with a warning that is simply untrue",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).isEnabled());
+  }
+
+  /**
+   * And that is not a dead end: deleting the row answers it, and clears both halves.
+   *
+   * <p>The response the warning asks for is out of band — ask them to send another. The in-app one
+   * is deletion, which the contact list offers and which takes down the warning and the record
+   * together. That is the same exit the storage caution was left with when Reject was withdrawn
+   * from it.
+   */
+  @Test
+  public void deletingTheRowAnswersArefusedInvite() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    final Contact refused = strip.chosenContactForTest();
+    assertTrue("precondition: the refusal must be standing", 
+        bannerText().contains("changed on the way here"));
+
+    strip.removeContact(refused);
+
+    assertTrue("deleting the row must clear the warning, or a warning with no live control on its "
+            + "own screen has no answer at all: " + bannerText(),
+        !bannerText().contains("changed on the way here"));
+  }
 }

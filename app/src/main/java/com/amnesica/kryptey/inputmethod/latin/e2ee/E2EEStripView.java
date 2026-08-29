@@ -1080,7 +1080,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // gated on the rejection landing. Both outcomes are worse than the dead end it was meant to
       // open, and the dead end has since been closed where it actually was: a failed deletion now
       // restores the row, so the contact and its verify screen stay reachable.
-      if (mWarningStanding && mVerifyContactRejectButton != null
+      // And NOT for a refused invite, by the same argument the paragraph above makes about a
+      // storage caution.
+      //
+      // That warning says a bundle was altered in transit and that nothing has been set up. Its own
+      // advice is "ask them to send another"; it is not a complaint about the peer's key, and there
+      // is no key here to complain about. Pressing Reject on it calls markKeyRejected on an address
+      // the user has nothing against, permanently - so that contact's next GENUINE invite is met
+      // with "you told this app not to trust keys arriving for them", which is simply untrue, and
+      // their row cannot show verified until a fresh comparison clears it.
+      //
+      // It became reachable when the refusal was made recomputable: before that it was a warning
+      // the next repaint removed, and now it stands until it is answered, which makes the one lit
+      // button on that screen look like the answer.
+      //
+      // Not a dead end. The response this warning asks for is out of band, and the in-app one is
+      // deleting the row, which the contact list offers and which clears both the warning and the
+      // record. That is the same exit the storage caution was left with when Reject was withdrawn
+      // from it.
+      if (mWarningStanding && !mStandingWarningIsInviteRefusal
+          && mVerifyContactRejectButton != null
           && (mStandingWarningAddress == null || mStandingWarningAddress
               .equals(String.valueOf(chosenContact.getSignalProtocolAddress())))) {
         mVerifyContactRejectButton.setEnabled(true);
@@ -2214,14 +2233,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final Map<String, String> mRefusedInvites = new LinkedHashMap<String, String>() {
     @Override
     protected boolean removeEldestEntry(final Map.Entry<String, String> eldest) {
-      // Bounded, because the addresses need not be contacts: a relay can staple a tampered bundle
-      // to messages from as many addresses as it likes, and an unbounded map here is one it fills.
+      // Bounded, though not for the reason first written here. That said "the addresses need not
+      // be contacts: a relay can staple a tampered bundle to as many addresses as it likes", and a
+      // reviewer showed it is false - both insertion sites record for a row that exists at the
+      // moment of insertion, so the map is self-bounded by the contact list and nothing can flood
+      // it. The cap stays because welding the map's size to an invariant that lives in three other
+      // dispatch methods is how a guard becomes wrong later, and because the cost of keeping it is
+      // one comparison. It is set well above any plausible contact list, so it is the sole
+      // eviction mechanism on a map nothing can fill - which is the honest description of it.
       return size() > REFUSED_INVITES_REMEMBERED;
     }
   };
 
   /** How many refused invites are re-derivable at once. See {@code mRefusedInvites}. */
-  private static final int REFUSED_INVITES_REMEMBERED = 32;
+  private static final int REFUSED_INVITES_REMEMBERED = 256;
 
   /**
    * A notice about the store rather than about a contact, kept apart from the caution slot.

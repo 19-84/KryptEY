@@ -1993,6 +1993,26 @@ into a single sentence, on the surface whose whole job is to be believed, is wor
 warning being lost. Three tests; overwriting turns one red, composing across subjects turns another
 red, and the third holds the composition idempotent so the banner cannot grow a copy per tap.
 
+**And it must not make Reject look like the answer.** The refusal stands at an address with nothing
+pinned — that is what the sentence says — so Verify is dark for want of a number, and the escape
+hatch lit Reject because an addressed warning stood. The one live control on the screen then looked
+like the response. It is not: the warning is about a bundle altered in transit, its own advice is
+"ask them to send another", and `rejectContactKey` marks the address whether or not anything was
+pinned, permanently. The peer's next *genuine* invite would be met with "you told this app not to
+trust keys arriving for them", which is untrue, and their row could not show verified until a fresh
+comparison cleared it. This file already withdrew Reject from the storage caution for exactly those
+two outcomes; the refusal became reachable in that cell only when it was made recomputable, because
+before that the next repaint removed it. Not a dead end: the response it asks for is out of band, and
+the in-app one is deleting the row, which clears the warning and the record together — the same exit
+the storage caution was left with.
+
+**And the cap's stated reason was false.** It said the addresses need not be contacts, so a relay
+could flood the map. A reviewer showed both insertion sites record for a row that exists at the
+moment of insertion, so the map is self-bounded by the contact list and nothing can fill it. The cap
+stays — welding a map's size to an invariant living in three other dispatch methods is how a guard
+becomes wrong later — but it is now set well above any plausible contact list and described as what
+it is: the sole eviction mechanism on a map nothing can flood.
+
 ---
 
 ## The one notice a later write does not settle
