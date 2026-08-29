@@ -27,7 +27,6 @@ import android.view.inputmethod.EditorInfo;
 
 import com.amnesica.kryptey.inputmethod.R;
 import com.amnesica.kryptey.inputmethod.event.Event;
-import com.amnesica.kryptey.inputmethod.keyboard.KeyboardLayoutSet.KeyboardLayoutSetException;
 import com.amnesica.kryptey.inputmethod.keyboard.internal.KeyboardState;
 import com.amnesica.kryptey.inputmethod.keyboard.internal.KeyboardTextsSet;
 import com.amnesica.kryptey.inputmethod.latin.InputView;
@@ -123,13 +122,22 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     builder.setShowSpecialChars(!settingsValues.mHideSpecialChars);
     builder.setShowNumberRow(settingsValues.mShowNumberRow);
     mKeyboardLayoutSet = builder.build();
-    try {
-      mState.onLoadKeyboard(currentAutoCapsState, currentRecapitalizeState);
-      mKeyboardTextsSet.setLocale(mRichImm.getCurrentSubtype().getLocaleObject(),
-          mThemeContext);
-    } catch (KeyboardLayoutSetException e) {
-      Log.w(TAG, "loading keyboard failed: " + e.mKeyboardId, e.getCause());
-    }
+    // No catch here, and the type it used to catch is gone.
+    //
+    // This caught KeyboardLayoutSetException and logged it, which read as "a failed keyboard build
+    // is a logged, survivable condition". Nothing has ever thrown that type: the AOSP wrapper that
+    // converted a RuntimeException from builder.load into it is not in this tree, and never was -
+    // the initial commit has no wrapper either. So an unchecked throw from the build killed the
+    // input-method process while a handler sat here implying otherwise.
+    //
+    // The dead type and its catch are removed rather than the wrapper restored. Restoring it would
+    // make a genuinely broken layout SILENT: loadKeyboard would log and return, the view would keep
+    // the previous keyboard or none, and the user would get a blank or stale keyboard with no
+    // signal. Every reachable cause of a build failure is this app's own XML, which is signed into
+    // the APK - the parser's input is never host-supplied, which a review round established by
+    // enumeration - so failing loudly during development is the behaviour worth having.
+    mState.onLoadKeyboard(currentAutoCapsState, currentRecapitalizeState);
+    mKeyboardTextsSet.setLocale(mRichImm.getCurrentSubtype().getLocaleObject(), mThemeContext);
   }
 
   public void saveKeyboardState() {

@@ -102,11 +102,17 @@ public final class RichInputConnection {
     mComposingText.setLength(0);
     // The third buffer on this object, and the one that is easy to forget: it is final, so it lives
     // as long as the service, and it holds a verbatim copy of the last commitText argument.
-    // Ordinary typing commits a character at a time, but two paths commit a whole message - the
-    // strip handing decrypted text to the host app via InputLogic.onTextInput, and recapitalising a
-    // selection, which commits the entire selection and can be 100KB. That second one is exactly
-    // the scenario PlaintextBufferClearingTest already covers: clearing RecapitalizeStatus left
-    // behind the copy the recapitalise had handed to the input connection on its way out.
+    // Ordinary typing commits a character at a time, but two paths commit a whole message. This
+    // used to name them as the strip handing DECRYPTED text to the host app and recapitalising a
+    // selection. The first half is wrong: the strip's one InputLogic.onTextInput call hands
+    // CIPHERTEXT, and decrypted text never goes through commitText at all - it is written straight
+    // into the compose box with setText. Left uncorrected it makes this buffer look like it holds
+    // plaintext by that route, which prices it wrongly in both directions.
+    //
+    // The genuinely-plaintext whole-message commit is the recapitalisation, which commits the
+    // entire selection and can be 100KB - so the clear still matters exactly as much. That is the
+    // scenario PlaintextBufferClearingTest covers: clearing RecapitalizeStatus left behind the copy
+    // the recapitalise had handed to the input connection on its way out.
     mTempObjectForCommitText.clear();
   }
   /**
@@ -357,8 +363,8 @@ public final class RichInputConnection {
         if (0 < spanEnd && spanEnd < mTempObjectForCommitText.length()) {
           final char spanEndChar = mTempObjectForCommitText.charAt(spanEnd - 1);
           final char nextChar = mTempObjectForCommitText.charAt(spanEnd);
-          if (UnicodeSurrogate.isLowSurrogate(spanEndChar)
-              && UnicodeSurrogate.isHighSurrogate(nextChar)) {
+          if (UnicodeSurrogate.isLeadingSurrogate(spanEndChar)
+              && UnicodeSurrogate.isTrailingSurrogate(nextChar)) {
             mTempObjectForCommitText.setSpan(span, spanStart, spanEnd + 1, spanFlags);
           }
         }

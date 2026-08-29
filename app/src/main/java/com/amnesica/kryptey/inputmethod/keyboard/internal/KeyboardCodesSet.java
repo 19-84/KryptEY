@@ -49,9 +49,20 @@ public final class KeyboardCodesSet {
       "key_action_previous",
       "key_shift_enter",
       "key_language_switch",
-      "key_left",
-      "key_right",
-      "key_unspecified",
+      // "key_left", "key_right" and "key_unspecified" were here, and there were no codes for them.
+      //
+      // getCode indexes DEFAULT with the ID_TO_NAME index, and the two arrays were 16 and 14 long -
+      // so "key_left" resolved to CODE_UNSPECIFIED, which PointerTracker drops, and the other two
+      // threw ArrayIndexOutOfBoundsException out of the layout parser. No shipped XML uses any of
+      // the three, so nothing was wrong; what was wrong was that the next person to write
+      // !code/key_unspecified - the idiomatic spelling for a key that does nothing - would have had
+      // the keyboard fail to build with an out-of-bounds error rather than a "no such code" one.
+      //
+      // Deleted rather than given invented codes: key_left and key_right would be two key codes
+      // nothing in handleFunctionalEvent handles, turning an unreachable parse-time exception into
+      // a reachable "Unknown key code" at a key press. The lengths are asserted equal by
+      // KeyboardCodesSetTest, which is a better guard than either, because it also catches the
+      // next divergence.
   };
 
   private static final int[] DEFAULT = {
@@ -68,7 +79,8 @@ public final class KeyboardCodesSet {
       Constants.CODE_ACTION_PREVIOUS,
       Constants.CODE_SHIFT_ENTER,
       Constants.CODE_LANGUAGE_SWITCH,
-      Constants.CODE_UNSPECIFIED,
+      // The trailing CODE_UNSPECIFIED went with "key_left" above: it was the value that name
+      // silently resolved to, and with the name gone it is an entry nothing can index.
   };
 
   static {

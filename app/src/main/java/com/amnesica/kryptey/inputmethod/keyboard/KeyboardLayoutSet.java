@@ -102,15 +102,11 @@ public final class KeyboardLayoutSet {
   private static final int MAX_CACHED_KEYBOARDS = 64;
   private static final UniqueKeysCache sUniqueKeysCache = UniqueKeysCache.newInstance();
 
-  @SuppressWarnings("serial")
-  public static final class KeyboardLayoutSetException extends RuntimeException {
-    public final KeyboardId mKeyboardId;
-
-    public KeyboardLayoutSetException(final Throwable cause, final KeyboardId keyboardId) {
-      super(cause);
-      mKeyboardId = keyboardId;
-    }
-  }
+  // KeyboardLayoutSetException was here. Nothing ever threw it - the AOSP wrapper that converted a
+  // RuntimeException from builder.load into it is not in this tree and never was - so its one
+  // catch, in KeyboardSwitcher, made a failed keyboard build look like a logged, survivable
+  // condition when it actually kills the process. Both are removed; see that call site for why the
+  // wrapper was not restored instead.
 
   private static final class ElementParams {
     int mKeyboardXmlId;

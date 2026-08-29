@@ -2068,6 +2068,42 @@ not followed by a cursor-move reset, so blanking the committed-text cache there 
 auto-capitalisation reasoning from an empty buffer until the next cursor move, on every language
 switch. This clears only what the reset does not.
 
+**And four latent traps, fixed while nothing depends on the wrong behaviour.**
+
+`KeyboardCodesSet` looked a name up in one array and indexed a second with the result, and the two
+were sixteen and fourteen long. `key_left` resolved to whatever sat at index 13 of the shorter one —
+`CODE_UNSPECIFIED`, silently wrong — and `key_right` and `key_unspecified` threw
+`ArrayIndexOutOfBoundsException` out of the layout parser. No shipped XML used any of the three. The
+trap was for whoever next writes `!code/key_unspecified`, which is the idiomatic spelling for a key
+that does nothing: they would have got a build failure with an out-of-bounds error rather than a "no
+such code" one. The orphans are deleted and the lengths are asserted equal, which is the better
+guard because it catches the next divergence rather than these three names.
+
+`insertAdditionalMoreKeys` advanced its loop index and not its subscript, so the first leftover
+additional key was appended once per leftover and the rest were dropped — `{"a","%"}` with
+`{"x","y","z"}` gave `[a,x,y,y]`. Unreachable from any shipped layout, because the branch needs a
+`%`-bearing key with three or more additional keys and every one in this tree has at most two. Fixed
+*because* of that: the change is a provable no-op today, and a locale added later would otherwise
+lose a character from a long-press menu and show a duplicate in its place, which reads as a
+translation problem rather than an index.
+
+`KeyboardLayoutSetException` was caught and logged in `KeyboardSwitcher`, and thrown by nothing —
+the AOSP wrapper that converts a build failure into it is not in this tree and never was. So a
+handler sat there saying "a failed keyboard build is logged and survivable" while an unchecked throw
+from the build actually kills the input-method process. The type and its catch are removed rather
+than the wrapper restored: restoring it makes a genuinely broken layout *silent*, leaving the user a
+blank or stale keyboard with no signal, and every reachable cause is this app's own XML, signed into
+the APK.
+
+And two comments that were simply false. `forgetCachedText`'s javadoc said the strip hands
+*decrypted* text to the host through `commitText`; it hands ciphertext, and decrypted text never
+goes through `commitText` at all. The genuinely-plaintext whole-message commit is the
+recapitalisation, so the clear matters exactly as much — but the sentence priced the buffer wrongly
+in both directions. `UnicodeSurrogate` called the leading range "low" and the trailing one "high",
+the opposite of Unicode's own terms; the single call site was correct, because the inverted names
+happened to spell the right question, so this is a rename with no behaviour in it — done because a
+reader checking it against the standard would conclude the code was wrong when it is not.
+
 ---
 
 ## The invariant that belonged to a pair, and the arm that did not hold it

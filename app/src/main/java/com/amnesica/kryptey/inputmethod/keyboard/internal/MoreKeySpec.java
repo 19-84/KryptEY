@@ -284,7 +284,16 @@ public final class MoreKeySpec {
       // Append remained additional more keys to the tail of more keys.
       out = CollectionUtils.arrayAsList(moreKeys, 0, moreKeysCount);
       for (int i = additionalIndex; i < additionalCount; i++) {
-        out.add(additionalMoreKeys[additionalIndex]);
+        // [i], not [additionalIndex]. The loop advanced and the subscript did not, so the first
+        // leftover additional key was appended once per leftover and the rest were dropped:
+        // {"a","%"} with {"x","y","z"} gave [a,x,y,y] instead of [a,x,y,z].
+        //
+        // Unreachable from any shipped layout - it needs a key whose moreKeys contains a '%' AND
+        // three or more additionalMoreKeys, and every '%'-bearing key in this tree has at most two.
+        // Fixed now precisely because of that: while nothing depends on the wrong output, the
+        // change is a provable no-op, and a locale added later would otherwise silently lose a
+        // character from a long-press menu and show a duplicate in its place.
+        out.add(additionalMoreKeys[i]);
       }
     }
     if (out == null && moreKeysCount > 0) {
