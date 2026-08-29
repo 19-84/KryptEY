@@ -3304,6 +3304,11 @@ in two different ways depending on the JDK.
   similar). The full test suite also passes on 21 — 958 tests, 0 failures — so the toolchain move is
   viable on its own terms.
 
+**Re-measured after this branch's later work:** the baseline now filters 100 errors and **502**
+warnings. One warning went away as a side effect of a change made for another reason; the errors are
+unchanged. The number above is left as it was measured at the time, with this note beside it, because
+a figure quietly edited to match a later run is a figure nobody can date.
+
 So the step cannot pass today on either JDK: on 17 the tool breaks, on 21 the code does. **Not fixed
 here, because the remaining choice is a project decision with real costs on each side:** accept a lint
 baseline (which is the standard mechanism and gates *new* problems, but freezes 100 unreviewed
