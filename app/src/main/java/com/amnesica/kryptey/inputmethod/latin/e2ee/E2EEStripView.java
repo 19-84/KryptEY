@@ -2148,7 +2148,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       for (final Contact contact : known) {
         live.add(String.valueOf(contact.getSignalProtocolAddress()));
       }
+      // Whatever this drops, its caution goes with it. Dropping the refusal alone left "Do not
+      // send them anything until you have added them again successfully" on the banner with
+      // Encrypt live beside it - the app offering exactly what its own durable surface forbids,
+      // which is the invariant TheButtonsNeverContradictTheBannerTest exists for. The reasoning
+      // that used to sit here asked only whether this could produce a FALSE REFUSAL and concluded
+      // it could not; the direction it does produce is the opposite one, and the sweep is reached
+      // by two production paths that replace the account - reloadAccount on a host-forced theme
+      // change, and the per-raise recovery re-read.
+      final List<String> vanished = new ArrayList<>();
+      for (final String address : mContactsNotOnDisk.keySet()) {
+        if (!live.contains(address)) vanished.add(address);
+      }
       mContactsNotOnDisk.keySet().retainAll(live);
+      for (final String address : vanished) {
+        retireTheStorageCautionFor(address);
+      }
       if (mContactsNotOnDisk.isEmpty()) return;
     }
     final long landed = mE2EEStrip.accountWritesLanded();
@@ -2188,15 +2203,32 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // longer exist. Two storage failures in sequence, and a later landed write erased "that
       // contact was not removed" while the contact, its pinned key and its plaintext were all still
       // there. The screen then read "No contact chosen", which is what a healthy app looks like.
-      if (address.equals(mStandingStorageCautionAddress) && !mStandingStorageCautionIsAboutAdeletion) {
-        mStandingStorageCaution = null;
-        mStandingStorageCautionAddress = null;
-        setInfoTextViewMessage(mInfoTextView,
-            aStandingItemHoldsTheBanner() ? warningWithRecipient()
-                : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
-                    : INFO_NO_CONTACT_CHOSEN);
-      }
+      retireTheStorageCautionFor(address);
     }
+  }
+
+  /**
+   * Takes down the storage caution for one address, and repaints what is left.
+   *
+   * <p>Called from both arms of the sweep, which is the point: a refusal and the sentence
+   * justifying it are one fact, and the arm that dropped the refusal without the sentence put "Do
+   * not send them anything" on the banner with Encrypt live beside it.
+   *
+   * <p>Never for a caution about a DELETION. A refusal is settled by a later landed write and a
+   * failed deletion is not: the row, its pinned key and its plaintext are all still there, so
+   * "that contact was not removed" stays until the deletion is actually done.
+   */
+  private void retireTheStorageCautionFor(final String address) {
+    if (!address.equals(mStandingStorageCautionAddress)
+        || mStandingStorageCautionIsAboutAdeletion) {
+      return;
+    }
+    mStandingStorageCaution = null;
+    mStandingStorageCautionAddress = null;
+    setInfoTextViewMessage(mInfoTextView,
+        aStandingItemHoldsTheBanner() ? warningWithRecipient()
+            : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
+                : INFO_NO_CONTACT_CHOSEN);
   }
 
   /** Records that this contact's row did not reach disk. */

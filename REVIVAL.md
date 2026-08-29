@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-one sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [A refusal and the sentence that justifies it are one fact](#a-refusal-and-the-sentence-that-justifies-it-are-one-fact)
 - [A control on a slot the adversary can overwrite is not a control](#a-control-on-a-slot-the-adversary-can-overwrite-is-not-a-control)
 - [Not verified on hardware, and most needing it](#not-verified-on-hardware-and-most-needing-it)
 
@@ -1951,6 +1952,39 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## A refusal and the sentence that justifies it are one fact
+
+`expireRefusalsSettledByAlaterWrite` drops `mContactsNotOnDisk` entries for contacts the account no
+longer holds. It dropped the entry and left the caution.
+
+So: a contact is added while writes are refused. The row never reaches disk, the refusal is
+recorded, and the banner reads *"Not saved: contact Bob Jones was set up here, but it could not be
+saved… Do not send them anything until you have added them again successfully."* Then anything
+replaces the account — `reloadAccount` on a theme change the host app can force, or the per-raise
+recovery re-read — and the row, having never been written, does not come back. The sweep drops the
+refusal, `sendingIsRefusedForTheChosenContact()` goes false, Encrypt lights up, and the sentence
+forbidding exactly that is still on the banner underneath it.
+
+The comment beside the sweep had reasoned about this case and got the direction wrong: *"It cannot
+produce a false refusal … so this is a leak rather than a hazard."* It cannot produce a false
+refusal. It produces a false *permission*, which is the invariant
+`TheButtonsNeverContradictTheBannerTest` was written for.
+
+That sweep's 128-state cross product missed it because none of its five interferences replaced the
+account — `NOTHING`, `HIDE_AND_RAISE`, `TAP_THE_BANNER`, `CLIPBOARD_TRAFFIC`, `REBUILD`, and the
+rebuild reuses the same one, so the row never leaves the list. A sixth, `RELOAD`, is added, and it
+fails on six of the sweep's cases before the fix.
+
+The fix is one method called from both arms: `retireTheStorageCautionFor(address)`. Not for a
+caution about a deletion — a refusal is settled by a later landed write and a failed deletion is
+not, because the row, its pinned key and its plaintext are all still there.
+
+Nothing leaves the device either way: `encrypt` returns null on `NoSessionException` and the strip
+renders the encryption-failed line. What was spent was the credibility of the durable surface, which
+is the only thing this app has to tell a user something the messenger cannot overwrite.
 
 ---
 

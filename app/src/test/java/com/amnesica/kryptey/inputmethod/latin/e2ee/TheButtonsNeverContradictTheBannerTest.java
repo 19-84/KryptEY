@@ -160,7 +160,19 @@ public class TheButtonsNeverContradictTheBannerTest {
      * and everything on it; whatever must survive has to be in {@code CarriedState}, and the
      * failure mode is silent - the new strip simply does not refuse, and looks correct.
      */
-    REBUILD
+    REBUILD,
+    /**
+     * A reload that no longer holds the contact's row.
+     *
+     * <p>Two production paths replace the account object outright: {@code reloadAccount} on a theme
+     * change, which the host app can force, and {@code reloadAccountIfStorageRecovered} on every
+     * keyboard raise while a store fault stands. A row whose own write was refused was never on
+     * disk, so the replacement does not have it — and the sweep that drops refusals for contacts
+     * that no longer exist ran without retiring the caution that justified them. The reasoning
+     * beside that sweep considered only whether it could produce a FALSE REFUSAL and concluded it
+     * could not; it produces the opposite, which is the invariant this file is for.
+     */
+    RELOAD
   }
 
   /** The states this cross product walks, named so a failure says which one broke. */
@@ -259,6 +271,29 @@ public class TheButtonsNeverContradictTheBannerTest {
         strip = rebuilt;
         // The recipient is deliberately not carried, so the user re-chooses - which is exactly
         // when a refusal that did not survive would show itself.
+        if (chosen != null) strip.selectContact(chosen);
+        break;
+      }
+      case RELOAD: {
+        // What a reload does that matters here: the account comes back without the row that never
+        // reached disk. The list is replaced rather than the whole account object because
+        // getContacts() is the only thing the sweep asks, and building a second account would put
+        // stores and a log in the way of a one-line fact.
+        final Account current = SignalProtocolMain.getInstance().getAccount();
+        final ArrayList<com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact> stored =
+            new ArrayList<>();
+        if (current.getContactList() != null) {
+          for (final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact contact
+              : current.getContactList()) {
+            if (chosen == null
+                || !String.valueOf(contact.getSignalProtocolAddress())
+                    .equals(String.valueOf(chosen.getSignalProtocolAddress()))) {
+              stored.add(contact);
+            }
+          }
+        }
+        current.setContactList(stored);
+        // The user is still standing on the row the adapter drew before the reload.
         if (chosen != null) strip.selectContact(chosen);
         break;
       }
