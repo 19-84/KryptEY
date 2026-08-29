@@ -33,6 +33,23 @@ public class E2EEInputConnection extends BaseInputConnection {
     mTextView = textview;
   }
 
+  /**
+   * Where the caret is in the view this connection actually writes to.
+   *
+   * <p>Exposed so {@code RichInputConnection} can answer a question about the caret with this
+   * view's numbers rather than the host application's. Returns -1 when there is nothing to measure.
+   */
+  public int selectionStart() {
+    final Editable text = getEditable();
+    return text == null ? -1 : android.text.Selection.getSelectionStart(text);
+  }
+
+  /** @see #selectionStart() */
+  public int selectionEnd() {
+    final Editable text = getEditable();
+    return text == null ? -1 : android.text.Selection.getSelectionEnd(text);
+  }
+
   @Override
   public Editable getEditable() {
     TextView tv = mTextView;

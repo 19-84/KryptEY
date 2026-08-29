@@ -673,11 +673,37 @@ public final class RichInputConnection {
     return true;
   }
 
+  /**
+   * Where the caret is in the field the user is actually typing into.
+   *
+   * <p>{@code mExpectedSelStart/End} are written only by {@code LatinIME.onUpdateSelection} - the
+   * host application describing ITS OWN field - so while typing is redirected they belong to a
+   * field the user is not in, and the messenger owns them. {@code hasSelection} has refused to
+   * answer with them since a review round found what one backspace did with them; these two did
+   * not, and they are what the pointer-slide handlers compute a caret move from before handing it
+   * to {@code setSelection}, which has no guard either. So the messenger got to choose where in the
+   * user's half-written private message the next characters land.
+   *
+   * <p>Answered from the strip's own view instead, rather than refused. Refusing - returning an
+   * invalid position - would disable the gestures inside the compose box and interact with
+   * {@code handleBackspaceEvent}, which reads a false from {@code setSelection} as "nothing
+   * happened" and skips its delete. Reading the right field's caret is what these were always
+   * supposed to mean.
+   */
   public int getExpectedSelectionStart() {
+    if (shouldUseOtherIC && mOtherIC != null) {
+      final int start = mOtherIC.selectionStart();
+      if (start >= 0) return start;
+    }
     return mExpectedSelStart;
   }
 
+  /** @see #getExpectedSelectionStart() */
   public int getExpectedSelectionEnd() {
+    if (shouldUseOtherIC && mOtherIC != null) {
+      final int end = mOtherIC.selectionEnd();
+      if (end >= 0) return end;
+    }
     return mExpectedSelEnd;
   }
 

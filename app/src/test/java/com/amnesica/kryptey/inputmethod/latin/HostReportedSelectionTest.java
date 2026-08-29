@@ -210,4 +210,54 @@ public class HostReportedSelectionTest {
           + "buffer the host asked for: " + e);
     }
   }
+
+  /**
+   * The caret question must be answered about the field the user is actually in.
+   *
+   * <p>{@code mExpectedSelStart/End} are written only by {@code onUpdateSelection} — the host
+   * describing its own field — so while typing is redirected they belong to a field the user is not
+   * in, and the messenger owns them. {@code hasSelection} has refused to answer with them since a
+   * review round found what one backspace did; {@code getExpectedSelection*} did not, and those are
+   * what the pointer-slide handlers compute a caret move from before handing it to
+   * {@code setSelection}, which has no guard either.
+   *
+   * <p>So the messenger got to choose where in the user's half-written private message the next
+   * characters land. No disclosure — the text still goes to the strip — but it garbles a draft the
+   * user is about to encrypt, at a moment the messenger picks.
+   *
+   * <p>Answered from the strip's own view rather than refused. Refusing would disable the gestures
+   * inside the compose box, and {@code handleBackspaceEvent} reads a false from
+   * {@code setSelection} as "nothing happened" and skips its delete.
+   */
+  @Test
+  public void thecaretQuestionIsAnsweredAboutTheFieldTheUserIsIn() {
+    final android.widget.EditText compose =
+        new android.widget.EditText(RuntimeEnvironment.getApplication());
+    compose.setText("the meeting is at nine");
+    android.text.Selection.setSelection(compose.getText(), 4);
+
+    final RichInputConnection connection = new RichInputConnection(ime);
+    connection.setOtherIC(compose);
+    connection.setShouldUseOtherIC(true);
+
+    // The host reports a selection for ITS OWN field, which is a number the messenger chooses.
+    connection.resetCachesUponCursorMoveAndReturnSuccess(900, 900);
+
+    assertEquals("while typing is redirected, the caret question must be answered about the "
+            + "compose box - the host's numbers describe a field the user is not in, and the "
+            + "pointer-slide handlers compute a caret move from these before applying it to the "
+            + "user's draft", 4, connection.getExpectedSelectionStart());
+    assertEquals(4, connection.getExpectedSelectionEnd());
+  }
+
+  /** And with the redirect down the host's numbers are the right answer, which is the point. */
+  @Test
+  public void thehostsNumbersAreStillUsedWhenTypingGoesToTheHost() {
+    final RichInputConnection connection = new RichInputConnection(ime);
+    connection.resetCachesUponCursorMoveAndReturnSuccess(7, 7);
+
+    assertEquals("with no redirect the host's own field is the field the user is in", 7,
+        connection.getExpectedSelectionStart());
+    assertEquals(7, connection.getExpectedSelectionEnd());
+  }
 }

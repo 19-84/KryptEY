@@ -2090,6 +2090,24 @@ Also removed: a log line that ran once per `<case>` element the keyboard parser 
 cache miss, under a tag that was a sentence; and two lines logging the `firstrun` flag on every
 raise. `minifyEnabled` is false, so nothing was stripping them from the shipped APK.
 
+**And the caret question, which was being answered about the wrong field.**
+`mExpectedSelStart/End` are written only by `onUpdateSelection` — the host application describing
+*its own* field — so while typing is redirected they belong to a field the user is not in, and the
+messenger owns them. `hasSelection` has refused to answer with them since a round found what one
+backspace did with them. `getExpectedSelectionStart/End` did not, and those are exactly what the
+pointer-slide handlers compute a caret move from before handing it to `setSelection`, which has no
+guard either.
+
+So with space-swipe or delete-swipe enabled, the messenger chose where in the user's half-written
+private message the next characters landed. No disclosure — the text still goes to the strip — but
+it garbles a draft the user is about to encrypt, at a moment the messenger picks. Both preferences
+default off, which is what keeps this below the redirect findings above.
+
+Answered from the strip's own view rather than refused, and the difference matters: refusing would
+disable the gestures inside the compose box, and `handleBackspaceEvent` reads a `false` from
+`setSelection` as "nothing happened" and skips its delete — so the two guards would interact.
+Reading the right field's caret is what these accessors were always supposed to mean.
+
 ---
 
 ## Kept is not the same as inert
