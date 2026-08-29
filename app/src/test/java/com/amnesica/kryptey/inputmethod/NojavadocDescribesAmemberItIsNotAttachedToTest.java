@@ -34,7 +34,7 @@ import java.util.stream.Stream;
  *
  * <h2>Why a ratchet rather than zero</h2>
  *
- * <p>Twenty-two of these remain, and re-homing them is twenty-two chances to attach the wrong block
+ * <p>What remains is re-homed a commit at a time, one chance per block to attach the wrong one
  * to the wrong member — the reviewer that found them said so, and recommended landing the check
  * first so it lists the sites and they move a commit at a time. So this pins the number and refuses
  * to let it grow. <b>When you fix some, lower {@link #KNOWN}.</b> It may never be raised: a new
@@ -51,7 +51,7 @@ public class NojavadocDescribesAmemberItIsNotAttachedToTest {
    * larger steps: the mechanical cases - two blocks describing the same member, or a doc stranded
    * above an unrelated field - are gone from everywhere else.
    */
-  private static final int KNOWN = 22;
+  private static final int KNOWN = 18;
 
   private static Path repositoryRoot() {
     Path here = Paths.get("").toAbsolutePath();

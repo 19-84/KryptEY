@@ -297,35 +297,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_INVITE_REFUSED = "That invite from %s could not be used - it does not verify, which means it was changed on the way here. Nothing has been set up. Ask them to send another, and if it keeps failing, send it a different way.";
 
   /**
-   * The same event where a session already exists, which the sentence above describes wrongly.
-   *
-   * <p>The refusal now fires on paths where {@code isSessionCreation} is false — the routine one
-   * being a signed-pre-key rotation, where an honest peer attaches a full bundle to an ordinary
-   * message. There the message decrypts under the existing session and the contact keeps working,
-   * so "Nothing has been set up" is false while the user is reading their reply in the compose box.
-   * It is false in the other direction too on the add-contact arm, where the attached ciphertext
-   * pins a key by trust-on-first-use even though the bundle was refused.
-   */
-  /**
-   * The third state: nothing existed before, and the refused bundle's own ciphertext pinned a key.
-   *
-   * <p>Neither other sentence is true here. "Nothing has been set up" is false — a key is pinned
-   * and the contact is usable — and "what you already had with them is unchanged" is worse, because
-   * there was nothing before and the thing that just happened is the one this app most needs to
-   * report: trust-on-first-use accepting a key the messenger supplied. The attached
-   * {@code PreKeySignalMessage} carries its own identity key, so refusing the bundle does not stop
-   * it, and on this arm the contact-creation caution does not fire either.
-   */
-  /**
    * A contact created in memory only, which the next raise will undo.
    *
    * <p>The last member of the write family that could not say this. The banner otherwise reads
    * "Contact X created … compare the security number by voice before sending anything private" and
    * sends the user to verify a contact that will not be there after the next keyboard raise — and
    * the host app decides when that happens.
-   */
-  /**
-   * Leads with the problem, and says nothing about when the contact disappears that is not true.
+   *
+   * <p>It leads with the problem, and says nothing about when the contact disappears that is not
+   * true.
    *
    * <p>It once said "the next time the keyboard opens". That event does not reload the account:
    * {@code reloadAccount} runs only from {@code LatinIME.setInputView}, whose only in-app caller
@@ -403,8 +383,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private final String INFO_MESSAGE_NOT_SAVED = "This message was read, but it could not be added to your saved history - the app could not store it. The message itself is fine and nothing needs to be sent again - only the record of it is missing.";
 
+  /**
+   * The third state: nothing existed before, and the refused bundle's own ciphertext pinned a key.
+   *
+   * <p>Neither other sentence is true here. "Nothing has been set up" is false — a key is pinned
+   * and the contact is usable — and "what you already had with them is unchanged" is worse, because
+   * there was nothing before and the thing that just happened is the one this app most needs to
+   * report: trust-on-first-use accepting a key the messenger supplied. The attached
+   * {@code PreKeySignalMessage} carries its own identity key, so refusing the bundle does not stop
+   * it, and on this arm the contact-creation caution does not fire either.
+   */
   private final String INFO_INVITE_REFUSED_BUT_KEY_PINNED = "The key update from %s could not be used - it does not verify, which means it was changed on the way here. The message it arrived with has set up a key for them anyway, and this app cannot tell whose it is - compare the security number by voice before sending anything private.";
 
+  /**
+   * The same event where a session already exists, which the sentence above describes wrongly.
+   *
+   * <p>The refusal now fires on paths where {@code isSessionCreation} is false — the routine one
+   * being a signed-pre-key rotation, where an honest peer attaches a full bundle to an ordinary
+   * message. There the message decrypts under the existing session and the contact keeps working,
+   * so "Nothing has been set up" is false while the user is reading their reply in the compose box.
+   * It is false in the other direction too on the add-contact arm, where the attached ciphertext
+   * pins a key by trust-on-first-use even though the bundle was refused.
+   */
   private final String INFO_INVITE_REFUSED_SESSION_KEPT = "A key update from %s could not be used - it does not verify, which means it was changed on the way here. It was ignored, and what you already had with them is unchanged. Ask them to send another, and if it keeps failing, send it a different way.";
 
   private final String INFO_NO_FINGERPRINT = "No security number is available for this contact yet. Ask them for a key bundle first.";
@@ -480,6 +480,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NOTHING_TO_REJECT = "There was no stored key for %s to forget - none had been stored yet. Nothing can be sent to them until they send an invite. When one arrives, compare the number with them by voice before sending anything private.";
 
   /**
+   * The rejection did not reach storage, so it will not survive the next raise.
+   *
+   * <p>Its own message because the alternative is printing "Forgot the stored key for %s" over a
+   * key that is still pinned on disk. Reads keep succeeding from the in-memory map, so nothing looks
+   * wrong until {@code reloadAccount} runs on the next {@code setInputView} - and then the key the
+   * user rejected is back, with no record that they rejected it.
+   */
+  private final String INFO_REJECTION_NOT_SAVED = "This could not be saved - the app could not write to its own storage, so it will not be remembered the next time the keyboard opens. Do not send anything to %s until you have compared the security number with them by voice.";
+
+  /**
    * The third state, which the previous two both described wrongly.
    *
    * <p>"No pin" is not one situation. It is "nothing was ever stored here" AND "you already
@@ -490,16 +500,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * as wrong. Swapping one false claim for its opposite is not a fix, and the distinguishing fact
    * was three lines away the whole time: {@code wasKeyRejected}.
    */
-  /**
-   * The rejection did not reach storage, so it will not survive the next raise.
-   *
-   * <p>Its own message because the alternative is printing "Forgot the stored key for %s" over a
-   * key that is still pinned on disk. Reads keep succeeding from the in-memory map, so nothing looks
-   * wrong until {@code reloadAccount} runs on the next {@code setInputView} - and then the key the
-   * user rejected is back, with no record that they rejected it.
-   */
-  private final String INFO_REJECTION_NOT_SAVED = "This could not be saved - the app could not write to its own storage, so it will not be remembered the next time the keyboard opens. Do not send anything to %s until you have compared the security number with them by voice.";
-
   private final String INFO_ALREADY_REJECTED = "You had already told this app not to trust keys arriving for %s, so there was nothing left to forget. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything private.";
 
   private final String INFO_KEY_REJECTED = "Forgot the stored key for %s. Nothing can be sent to them until they send a new invite. When one arrives, compare the number with them by voice before sending anything - this app has already been given a wrong key for them once.";
