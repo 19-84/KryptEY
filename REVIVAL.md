@@ -2083,9 +2083,25 @@ Three fixes, three tests, one mutant each and each kills exactly its own.
 while the record was written only when painted, a standing warning blocked the next entry, so the
 32-entry bound could not be filled. It can be now — but each entry still costs the attacker a user
 paste plus a Decrypt press at an address that already has a contact row, so 32 of them is 32
-deliberate user actions, not a relay's free move. The other gap is the add-contact arm: a *first*
-invite that is refused is reported by a plain banner write and recorded nowhere, so it is still
-un-re-derivable. That is the common case and the one the help text describes, and it is owed.
+deliberate user actions, not a relay's free move. The other gap was the add-contact arm.
+
+**That one is now closed too.** An invite from somebody not yet in the contact list goes to the
+add-contact screen, where a refused bundle was reported by a plain banner write — plain meaning
+anything that repaints destroys it and nothing puts it back. The update arms had been re-derivable
+since the record was added; the *first* invite from a new contact had not, and that is the common
+case, the one the help text describes, and the point where a substitution is cheapest and the user
+has least to compare against. The `!successful` arm now records the plain sentence, which is the
+true one there — `createSessionWithContact` returned false, so nothing was set up — and only when
+the identity-change warning did not fire, because that one is more specific, is already re-derived
+from the pending change, and two sentences about one envelope do not fit a slot that holds one. If
+the same paste then pins a key through its ciphertext arm, the transition detected there upgrades
+this to the sentence that tells the user to compare the number.
+
+And a reviewer's warning about that fix was taken: the add arm records against an address whose
+contact row may itself have failed to save, and the recovery re-read discards such a row. A record
+kept for a contact who is unselectable and undeletable could never be answered and never raised
+again, so it is dropped on exactly the terms the send refusal is dropped on — including staying
+while the user is still standing on the row it names.
 
 **A test measured the recovery route without using it.** The trade above rests on "the user gets the
 warning back by tapping the contact", and the test asserted it by calling `selectContact` directly.

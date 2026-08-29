@@ -1627,6 +1627,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // suppression protected nothing and cost the sentence: the user was told to "add them again
         // successfully" with an invite that will never work, and never told it had been refused.
         sessionCreationFailed = true;
+        // And recorded so it can be worked out again, which the counter above cannot do.
+        //
+        // This is the FIRST invite from a new contact - the common case, and the one the help text
+        // describes - and it was the arm the refusal record did not cover. The line below is a
+        // plain banner write, so anything that repaints destroys it and nothing puts it back; the
+        // update arms have been re-derivable since the record was added and this one was not.
+        //
+        // Only when the identity-change warning did not fire. That one is re-derived by
+        // warnIfIdentityChanged from the pending change itself, it is more specific, and recording
+        // a refusal beside it would put two sentences about the same envelope into a slot that
+        // holds one.
+        //
+        // The plain sentence, because it is the true one here: createSessionWithContact returned
+        // false, so nothing was set up. If the same paste then pins a key through its ciphertext
+        // arm below, the transition detected there upgrades this to the sentence that tells the
+        // user to compare the number.
+        if (!warned) {
+          rememberRefusedInvite(String.valueOf(recipientProtocolAddress),
+              String.format(INFO_INVITE_REFUSED, labelFor(chosenContact)));
+        }
         if (!warned && !aStandingItemHoldsTheBanner()) {
         // createSessionWithContact already writes INFO_IDENTITY_CHANGED when a change is pending,
         // and this used to overwrite it with INFO_SESSION_CREATION_FAILED - the same delete-and-
@@ -2378,6 +2398,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       mContactsNotOnDisk.keySet().removeAll(vanished);
       for (final String address : vanished) {
         retireTheStorageCautionFor(address);
+        // And a refusal remembered for a row that never reached disk goes with it. The add arm
+        // records one, and that row can be the one the recovery re-read discards - after which the
+        // contact is unselectable and undeletable, so the record could never be answered and could
+        // never be re-raised either. Kept on exactly the terms mContactsNotOnDisk is kept on, which
+        // includes staying while the user is standing on the row it names.
+        mRefusedInvites.remove(address);
       }
       if (mContactsNotOnDisk.isEmpty()) return;
     }

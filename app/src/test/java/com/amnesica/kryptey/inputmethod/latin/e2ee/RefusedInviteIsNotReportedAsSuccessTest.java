@@ -1118,4 +1118,70 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
     assertTrue("and it must still say the invite was changed in transit, which is still true: "
             + bannerText(), bannerText().contains("changed on the way here"));
   }
+
+  /**
+   * A refused FIRST invite is re-derivable too — the common case, and the arm that was missing.
+   *
+   * <p>An invite from somebody not yet in the contact list goes to the add-contact screen, where a
+   * refused bundle is reported by a plain banner write. Plain means anything that repaints destroys
+   * it, and nothing puts it back: the sentence telling the user to ask for a fresh invite is gone
+   * with no trace. The update arms have been re-derivable since the record was added; this one is
+   * where a substitution is cheapest and the user has least to compare against.
+   */
+  @Test
+  public void arefusedFirstInviteIsRecomputableToo() throws Exception {
+    // contactRowWithoutASession() IS the refused first invite: a stripped bundle through the real
+    // add-contact flow, leaving the row behind with no session.
+    contactRowWithoutASession();
+    final Contact added = victim.getContactList().get(0);
+
+    // Anything that repaints. Ordinary clipboard traffic is the messenger's cheapest move, and the
+    // banner write on that arm is not a standing item, so it does not survive.
+    strip.onClipboardChangedForTest();
+    strip.resetChosenContactAndInfoTextForTest();
+
+    strip.selectContact(added);
+
+    assertTrue("the first invite from a new contact is where a substitution is cheapest. A plain "
+            + "banner write there is destroyed by the next repaint and nothing re-derives it: "
+            + bannerText(),
+        bannerText().contains("changed on the way here"));
+  }
+
+  /**
+   * And a refusal for a row that never reached disk goes when the row does.
+   *
+   * <p>The add arm records against an address whose contact row may itself have failed to save. The
+   * recovery re-read then discards that row, and the contact becomes unselectable and undeletable -
+   * so a record kept for it could never be answered and could never be raised again either. It is
+   * kept on exactly the terms the send refusal is kept on, which includes staying while the user is
+   * still standing on the row it names.
+   */
+  @Test
+  public void arefusalGoesWithArowThatNeverReachedDisk() throws Exception {
+    // The row's own write fails too, which is how it comes to be a row that never reached disk.
+    SignalProtocolMain.getInstance().setStorageHelperForTest(
+        new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
+          @Override
+          public boolean storeAllInformationInSharedPreferences(final Account account) {
+            return false;
+          }
+        });
+    contactRowWithoutASession();
+    final Contact added = victim.getContactList().get(0);
+    assertTrue("precondition: the row must be recorded as not on disk",
+        strip.refusalCountForTest() > 0);
+
+    // What the recovery re-read does to a row that was never written: it is simply not there.
+    victim.setContactList(new ArrayList<>());
+    // And the user is somewhere else, which is when the sweep is allowed to drop it.
+    strip.resetChosenContactAndInfoTextForTest();
+    strip.refusalCountForTest();
+
+    strip.selectContact(added);
+
+    assertTrue("a refusal about a contact who is gone from the list points the user at a row that "
+            + "is not there, and nothing can answer it: " + bannerText(),
+        !bannerText().contains("changed on the way here"));
+  }
 }
