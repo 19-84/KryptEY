@@ -7,175 +7,206 @@
   android:orientation="vertical"
   android:visibility="gone">
 
-  <TextView
-    android:id="@+id/e2ee_verify_contact_info_text"
-    style="?attr/e2eeStripInfoTextStyle"
+  <!-- Scrolls, because in landscape this screen does not fit and the overflow leaves at the top.
+       Measured: the screen wants 240dp and a 360dp-tall landscape phone leaves 184dp above a 176dp
+       keyboard. The strip is a non-scrolling vertical stack inside a bottom-anchored input area, so
+       the 56dp that did not fit came off the FIRST child - the banner - while the twelve digits and
+       a live confirm button stayed on screen and pressable. On this screen the banner is where
+       "someone offered a different key" and "compare by voice, not through the messenger" are
+       written, so the clipped part was the reason to be careful and the visible part was the button.
+
+       Scrolled rather than shortened: the channel warning is carried by every state of this screen
+       on purpose, and a ScrollView starts at the top, so what the user sees first is the warning
+       and the digits come with a scroll. That is the right way round.
+
+       Safe here specifically because this screen holds no ListView. Wrapping the contact list or
+       the chat log the same way would measure their ListView UNSPECIFIED and expand it to full
+       content height, breaking the "never draw a partial row" invariant that keeps an address tag
+       from being cut in half - so this is not a pattern to copy across the other screens without
+       measuring each one. -->
+  <ScrollView
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="5dp"
-    android:layout_marginBottom="5dp"
-    android:gravity="center" />
+    android:fillViewport="true">
 
-  <LinearLayout
-    android:id="@+id/e2ee_verify_contact_layout"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginHorizontal="10dp"
-    android:layout_marginTop="0dp"
-    android:layout_marginBottom="10dp"
-    android:gravity="center"
-    android:orientation="horizontal">
-
-    <TableLayout
-      android:id="@+id/e2ee_verify_contact_number_table"
-      android:layout_width="wrap_content"
+    <LinearLayout
+      android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:clickable="true"
-      android:focusable="true">
+      android:orientation="vertical">
 
-      <TableRow
-        android:clickable="false"
-        android:focusable="false"
-        android:gravity="center_horizontal">
 
-        <TextView
-          android:id="@+id/code_first"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          tools:text="22934" />
+    <TextView
+      android:id="@+id/e2ee_verify_contact_info_text"
+      style="?attr/e2eeStripInfoTextStyle"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="5dp"
+      android:layout_marginBottom="5dp"
+      android:gravity="center" />
 
-        <TextView
-          android:id="@+id/code_second"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="56944" />
+    <LinearLayout
+      android:id="@+id/e2ee_verify_contact_layout"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginHorizontal="10dp"
+      android:layout_marginTop="0dp"
+      android:layout_marginBottom="10dp"
+      android:gravity="center"
+      android:orientation="horizontal">
 
-        <TextView
-          android:id="@+id/code_third"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="42738" />
+      <TableLayout
+        android:id="@+id/e2ee_verify_contact_number_table"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clickable="true"
+        android:focusable="true">
 
-        <TextView
-          android:id="@+id/code_fourth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="20038" />
-      </TableRow>
+        <TableRow
+          android:clickable="false"
+          android:focusable="false"
+          android:gravity="center_horizontal">
 
-      <TableRow android:gravity="center_horizontal">
+          <TextView
+            android:id="@+id/code_first"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            tools:text="22934" />
 
-        <TextView
-          android:id="@+id/code_fifth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          tools:text="34431" />
+          <TextView
+            android:id="@+id/code_second"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="56944" />
 
-        <TextView
-          android:id="@+id/code_sixth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="24922" />
+          <TextView
+            android:id="@+id/code_third"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="42738" />
 
-        <TextView
-          android:id="@+id/code_seventh"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="58594" />
+          <TextView
+            android:id="@+id/code_fourth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="20038" />
+        </TableRow>
 
-        <TextView
-          android:id="@+id/code_eighth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="24109" />
-      </TableRow>
+        <TableRow android:gravity="center_horizontal">
 
-      <TableRow android:gravity="center_horizontal">
+          <TextView
+            android:id="@+id/code_fifth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            tools:text="34431" />
 
-        <TextView
-          android:id="@+id/code_ninth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          tools:text="00257" />
+          <TextView
+            android:id="@+id/code_sixth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="24922" />
 
-        <TextView
-          android:id="@+id/code_tenth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="34956" />
+          <TextView
+            android:id="@+id/code_seventh"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="58594" />
 
-        <TextView
-          android:id="@+id/code_eleventh"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="32440" />
+          <TextView
+            android:id="@+id/code_eighth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="24109" />
+        </TableRow>
 
-        <TextView
-          android:id="@+id/code_twelth"
-          style="?attr/e2eeStripFingerprintStyle"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_marginStart="20dp"
-          tools:text="15774" />
-      </TableRow>
-    </TableLayout>
-  </LinearLayout>
+        <TableRow android:gravity="center_horizontal">
 
-  <LinearLayout
-    android:id="@+id/e2ee_verify_contact_button_strip"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:layout_marginBottom="5dp"
-    android:layout_weight="0"
-    android:gravity="center"
-    android:hapticFeedbackEnabled="false"
-    android:orientation="horizontal"
-    android:soundEffectsEnabled="false"
-    android:translationZ="10dp">
+          <TextView
+            android:id="@+id/code_ninth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            tools:text="00257" />
 
-    <ImageButton
-      android:id="@+id/e2ee_verify_contact_verify_button"
-      style="?attr/e2eeStripActionButtonAddContactStyle"
-      android:layout_width="50dp"
-      android:layout_height="50dp"
-      android:layout_gravity="center"
-      android:layout_marginRight="15dp" />
+          <TextView
+            android:id="@+id/code_tenth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="34956" />
 
-    <!-- "The number does not match." The mirror of confirm, and the only way to un-pin a key.
-         Deliberately reachable ONLY from this screen, where the user has just compared numbers -
-         never from a decryption-failure message, because those are attacker-inducible. -->
-    <ImageButton
-      android:id="@+id/e2ee_verify_contact_reject_button"
-      style="?attr/e2eeStripActionButtonCancelStyle"
-      android:layout_width="50dp"
-      android:layout_height="50dp"
-      android:layout_gravity="center"
-      android:layout_marginRight="15dp" />
+          <TextView
+            android:id="@+id/code_eleventh"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="32440" />
 
-    <ImageButton
-      android:id="@+id/e2ee_verify_contact_return_button"
-      style="?attr/e2eeStripActionButtonReturnStyle"
-      android:layout_width="50dp"
-      android:layout_height="50dp"
-      android:layout_gravity="center" />
-  </LinearLayout>
+          <TextView
+            android:id="@+id/code_twelth"
+            style="?attr/e2eeStripFingerprintStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            tools:text="15774" />
+        </TableRow>
+      </TableLayout>
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/e2ee_verify_contact_button_strip"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:layout_marginBottom="5dp"
+      android:layout_weight="0"
+      android:gravity="center"
+      android:hapticFeedbackEnabled="false"
+      android:orientation="horizontal"
+      android:soundEffectsEnabled="false"
+      android:translationZ="10dp">
+
+      <ImageButton
+        android:id="@+id/e2ee_verify_contact_verify_button"
+        style="?attr/e2eeStripActionButtonAddContactStyle"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_gravity="center"
+        android:layout_marginRight="15dp" />
+
+      <!-- "The number does not match." The mirror of confirm, and the only way to un-pin a key.
+           Deliberately reachable ONLY from this screen, where the user has just compared numbers -
+           never from a decryption-failure message, because those are attacker-inducible. -->
+      <ImageButton
+        android:id="@+id/e2ee_verify_contact_reject_button"
+        style="?attr/e2eeStripActionButtonCancelStyle"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_gravity="center"
+        android:layout_marginRight="15dp" />
+
+      <ImageButton
+        android:id="@+id/e2ee_verify_contact_return_button"
+        style="?attr/e2eeStripActionButtonReturnStyle"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_gravity="center" />
+    </LinearLayout>
+
+    </LinearLayout>
+  </ScrollView>
 </LinearLayout>

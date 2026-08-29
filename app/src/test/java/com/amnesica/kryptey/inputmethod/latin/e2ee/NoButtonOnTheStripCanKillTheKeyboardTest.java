@@ -168,11 +168,31 @@ public class NoButtonOnTheStripCanKillTheKeyboardTest {
    */
   private void pressEverythingAndReport(final String state, final BreakIt breakIt)
       throws Exception {
+    // The verify screen is loaded BEFORE the ids are collected, and that ordering is the whole
+    // point of these two lines.
+    //
+    // It used to be loaded inside the press loop below, after this list was frozen. The reject
+    // listener is attached by loadFingerprintInVerifyContactView, so until that runs the button has
+    // no listener, never enters `ids`, and is pressed in none of the four broken states - while the
+    // comment in the loop said the opposite and REVIVAL repeated it as "sixteen, plus the reject
+    // button". Measured by a reviewer: making the reject listener throw unconditionally left all
+    // four sweeps green while five other test classes went red, so the mutant was live and only
+    // this sweep could not see it.
+    strip.showVerifyContactForTest(bob);
+    strip.showMainViewForTest();
+
     final List<Integer> ids = new ArrayList<>();
     for (final View button : everyLiveButton()) ids.add(button.getId());
     assertTrue("this test walks the strip's view hierarchy for anything with a click listener; "
         + "finding almost none means the sweep has stopped sweeping and the greens below are "
         + "worthless. Found: " + ids.size(), ids.size() >= 14);
+    // Named, not counted. A floor of fourteen is satisfied with this button missing, which is
+    // exactly how it went missing: it is the one control that un-pins a key, so it is the one whose
+    // absence from a crash sweep matters most.
+    assertTrue("the reject button must be in the sweep - it is the only control that un-pins a "
+            + "key, and an IME crash is crash-on-tap in every app until the user reinstalls. Ids "
+            + "found: " + ids.size(),
+        ids.contains(R.id.e2ee_verify_contact_reject_button));
 
     final List<String> killed = new ArrayList<>();
     for (final int id : ids) {

@@ -2398,22 +2398,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /**
-   * Whether the account on disk cannot be decrypted.
-   *
-   * <p>Read live rather than cached at construction: the strip is built once and the state can only
-   * be discovered when storage is next touched.
-   */
-  /**
-   * Whether the standing caution forbids sending to whoever is chosen right now.
+   * Whether the app is refusing to send to whoever is chosen. A question, and only a question.
    *
    * <p>Scoped to the address, like every other deliberate response on this screen: a contact whose
    * row failed to save must not disable Encrypt for a different contact whose row is on disk. And
    * asked live rather than cached, so re-selecting the contact the caution is about brings the
    * refusal back with them - which is the whole point, since the messenger can move the recipient
    * off that contact whenever it likes.
-   */
-  /**
-   * Whether the app is refusing to send to whoever is chosen. A question, and only a question.
    *
    * <p>It briefly cleared the expired caution itself, and the short-circuit guard caught it: this is
    * called on the right of an {@code &&} in {@code refreshActionButtons}, so Java is free to skip
@@ -2425,20 +2416,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return mContactsNotOnDisk.containsKey(String.valueOf(chosenContact.getSignalProtocolAddress()));
   }
 
-  /**
-   * Drops refusals that a later successful write has settled, and the caution that justified them.
-   *
-   * <p>Both halves together, because separating them was the defect: the refusal expired on a later
-   * write while the sentence justifying it was cleared only by verify, reject or a landed delete, so
-   * the app returned to offering exactly what it was still telling the user not to do - permanently
-   * rather than for one repaint, on the surface it calls durable. Two halves of one fact must not
-   * have two lifetimes, which is the mistake this refusal has now made in three different shapes.
-   *
-   * <p>The account batch writes the whole contact list, so one landed write anywhere puts every
-   * in-memory row on disk. The one write that does NOT count is the write-back inside
-   * {@code reloadAccount}, which stores what it has just read and therefore cannot contain the row
-   * an earlier failure lost; it is excluded at the counter rather than here.
-   */
   /**
    * Posts a storage caution. It has its own slot, so there is nothing to merge and nothing to lose.
    *
@@ -2481,6 +2458,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
   }
 
+  /**
+   * Drops refusals that a later successful write has settled, and the caution that justified them.
+   *
+   * <p>Both halves together, because separating them was the defect: the refusal expired on a later
+   * write while the sentence justifying it was cleared only by verify, reject or a landed delete, so
+   * the app returned to offering exactly what it was still telling the user not to do - permanently
+   * rather than for one repaint, on the surface it calls durable. Two halves of one fact must not
+   * have two lifetimes, which is the mistake this refusal has now made in three different shapes.
+   *
+   * <p>The account batch writes the whole contact list, so one landed write anywhere puts every
+   * in-memory row on disk. The one write that does NOT count is the write-back inside
+   * {@code reloadAccount}, which stores what it has just read and therefore cannot contain the row
+   * an earlier failure lost; it is excluded at the counter rather than here.
+   */
   private void expireRefusalsSettledByAlaterWrite() {
     // Before the early return: a storage caution can stand with no refusal entry beside it, and
     // that is exactly the case that had no exit.
@@ -2680,6 +2671,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mE2EEStrip.accountWritesLanded());
   }
 
+  /**
+   * Whether the account on disk cannot be decrypted.
+   *
+   * <p>Read live rather than cached at construction: the strip is built once and the state can only
+   * be discovered when storage is next touched.
+   */
   private boolean storageIsUnreadable() {
     return SignalProtocolMain.storageState() == StorageHelper.StorageState.UNREADABLE;
   }
