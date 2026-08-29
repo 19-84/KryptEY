@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-two sections, written in the order things were found rather than by subject, so the
+One hundred and forty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -93,6 +93,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Four claims the documents made that the app does not keep](#four-claims-the-documents-made-that-the-app-does-not-keep)
 - [One class of comment drift that does have a test](#one-class-of-comment-drift-that-does-have-a-test)
 - [Two tests that could not see what they claimed to check](#two-tests-that-could-not-see-what-they-claimed-to-check)
+- [The one sentence the store listing gives to security](#the-one-sentence-the-store-listing-gives-to-security)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7922,3 +7923,39 @@ window closes on the first landed save, so the cost is bounded rather than perma
 The test for it passed the moment it was written, which is the state that most often means nothing
 was measured. It was mutant-checked in the direction that matters — applying the tempting fix — and
 went red, so it pins the behaviour rather than merely observing it.
+
+## The one sentence the store listing gives to security
+
+*"The existing security properties for the Signal Protocol are also valid for the keyboard."* That
+was the README's security section and, word for word, the whole of the store listing's — one
+sentence, nothing else under the heading.
+
+The app's own help says the opposite in as many words: *"Encryption on its own does not rule out the
+messenger, because the messenger is what delivered the key"*, and *"the comparison is the only step
+in this list that tells your chat partner apart from the messenger."* Both are shipped texts. They
+disagree.
+
+And the help is the one that is right. The cryptographic properties do carry over — same ratchet,
+same forward secrecy, same post-quantum agreement. What does not carry over is **authenticated key
+distribution**. Signal hands bundles to its own server; here they arrive through the messenger the
+user is defending against, and `IdentityKeyStoreImpl` pins whatever comes first because there is
+nothing yet to compare it against. That is the design this project chose deliberately and describes
+honestly in the help — it is simply not a Signal property that is "also valid for the keyboard".
+
+The README at least followed the flat sentence with a counterweight twenty lines below, naming the
+voice comparison as the step that establishes the key. The store listing had no such line, and the
+store listing is the widest-read text this project has: it is where somebody choosing this app for a
+chat-control threat model decides. They were told Signal's properties hold, installed, and skipped
+the one step the help calls load-bearing.
+
+Both are corrected to say what carries over and what does not, with the remedy beside the caveat
+rather than twenty lines away — because the caveat alone reads as "this is not really secure" and
+pushes people back to an unencrypted messenger, which is the worse outcome. The guard pins the
+conditional rather than banning the claim: a document may say the protocol's properties carry over,
+and if it does it must also name the voice comparison. Banning it would be wrong, since the
+cryptographic half is true and worth saying.
+
+This is the fifth claim this round has had to correct, and the pattern across all five is the same:
+the four user-facing documents disagree with each other far more readily than the code disagrees
+with itself, because nothing compiles them. Every one of these was found by reading a promise and
+asking what would have to be true — never by reading code.

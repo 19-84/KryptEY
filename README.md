@@ -88,7 +88,14 @@ Read our privacy statement [here](/PRIVACY.md)
 
 ## Security
 
-The existing security properties for the Signal Protocol are also valid for the keyboard.
+The Signal Protocol's cryptographic properties carry over to the keyboard: the same ratchet, the
+same forward secrecy, the same post-quantum key agreement.
+
+What does not carry over is how keys are distributed. Signal delivers them through its own server;
+here they travel through the messenger you are protecting yourself from, and a key arriving for the
+first time is accepted because there is nothing yet to compare it against. That is why comparing
+security numbers by voice matters, and it is the only step that tells your chat partner apart from
+the messenger.
 
 **Key agreement is PQXDH**, the post-quantum variant, using libsignal 0.86.5. Each handshake combines
 the elliptic curve X25519 with a Kyber-1024 key encapsulation, so an attacker who records traffic

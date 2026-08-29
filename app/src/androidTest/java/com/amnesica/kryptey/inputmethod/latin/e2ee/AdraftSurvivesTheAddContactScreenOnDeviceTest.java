@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 
@@ -181,6 +182,35 @@ public class AdraftSurvivesTheAddContactScreenOnDeviceTest {
 
       assertEquals("the draft must still be on screen where the user left it", composed,
           composeText(live));
+
+      // And the strip must AGREE that it is composing here.
+      //
+      // showOnlyUIViewInternal calls composeInsideTheKeyboard() while the main view is still GONE -
+      // the block is gated on the add-contact view being VISIBLE, and the flip to MAIN_VIEW happens
+      // seven lines below it. composeInsideTheKeyboard's own javadoc says requestFocus() "returns
+      // false silently whenever the view cannot take focus at that moment - a GONE ancestor", and
+      // it raises the redirect regardless of the return.
+      //
+      // If focus is refused there, typing lands in the compose box while the two buttons that
+      // changeVisibilityInputFieldButtons calls "the app's statement that the user is composing
+      // inside the keyboard" stay dark. That fails in the safe direction - no plaintext reaches the
+      // messenger - but it is the mirror of the defect that javadoc was written for, and in that
+      // state Clear and the encoding selector are both unreachable.
+      //
+      // Asserted on a device because Robolectric grants focus unconditionally, so the JVM suite
+      // cannot tell the two outcomes apart. This is the check that says which one the platform
+      // actually produces.
+      final EditText box = live.findViewById(R.id.e2ee_input_field);
+      assertNotNull("fixture: the compose box must exist", box);
+      assertTrue("the redirect is up and the draft is on screen, but the compose box does not hold "
+              + "focus - composeInsideTheKeyboard ran while the main view was still GONE, so "
+              + "requestFocus() was refused silently and the redirect was raised anyway",
+          box.hasFocus());
+      final View clear = live.findViewById(R.id.e2ee_button_clear_text);
+      assertNotNull("fixture: the clear button must exist", clear);
+      assertEquals("the app must say it is composing in the keyboard while it is doing so - these "
+              + "buttons are that statement, and they come back only through the focus listener",
+          View.VISIBLE, clear.getVisibility());
 
       pressTheAkey(view, keyboard);
       Thread.sleep(1_000L);

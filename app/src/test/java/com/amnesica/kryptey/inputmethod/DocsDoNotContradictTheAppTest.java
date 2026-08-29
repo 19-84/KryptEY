@@ -254,6 +254,44 @@ public class DocsDoNotContradictTheAppTest {
     }
   }
 
+  /**
+   * No document may claim Signal's properties carry over without naming the one that does not.
+   *
+   * <p>The README and the store listing both said, flatly: <em>"The existing security properties
+   * for the Signal Protocol are also valid for the keyboard."</em> The app's own help says the
+   * opposite in as many words - <em>"Encryption on its own does not rule out the messenger, because
+   * the messenger is what delivered the key"</em> - and the property that genuinely does not carry
+   * over is authenticated key distribution. Signal delivers bundles through its own server; here
+   * they arrive through the adversary, and {@code IdentityKeyStoreImpl} pins whatever comes first
+   * because there is nothing yet to compare against. That is the design, correctly described by the
+   * help, and it is not a Signal property that is "also valid for the keyboard".
+   *
+   * <p>In the README the flat sentence at least had a counterweight twenty lines below it. The
+   * store listing's Security section was that one sentence and nothing else - and the store listing
+   * is the widest-read text this project has, and where somebody choosing this app for a
+   * chat-control threat model decides. They were told Signal's properties hold, installed, and
+   * skipped the one step the help calls load-bearing.
+   *
+   * <p>Pinned as: if a document makes the carry-over claim, it must also name the voice comparison.
+   * Not as a ban on the claim, which is true of the cryptography and worth saying.
+   */
+  @Test
+  public void nodocumentClaimsSignalsPropertiesCarryOverWithoutTheStepThatMakesThemHold()
+      throws IOException {
+    for (final String doc : new String[] {
+        "README.md", "fastlane/metadata/android/en-US/full_description.txt"}) {
+      final String text = read(doc).replaceAll("\\s+", " ");
+      assertFalse(doc + " still makes the unqualified carry-over claim. What does not carry over "
+              + "is key DISTRIBUTION: Signal uses its own server, this uses the messenger being "
+              + "defended against",
+          text.contains("The existing security properties for the Signal Protocol are also valid"));
+      assertTrue(doc + " describes the protocol's properties but never names the voice comparison, "
+              + "which is the only step that tells the chat partner apart from the messenger. The "
+              + "claim without the remedy reads as 'you are already safe'",
+          !text.contains("Signal Protocol") || text.contains("by voice"));
+    }
+  }
+
   /** And the receiving side must be told to compare before its first send, in both copies. */
   @Test
   public void bothCopiesTellTheInviteeToCompareBeforeSending() throws IOException {

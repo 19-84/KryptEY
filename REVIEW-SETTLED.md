@@ -220,3 +220,37 @@ rather than bytes is recorded already, in the constant's own javadoc and twice i
 So this is a clean negative on the rest of the seam, and the value of it is the table: the next
 round that finds a host-declared input mishandled can check here whether the field was looked at
 before spending itself re-deriving one of these rows.
+
+## The add-contact re-point raises the redirect under a GONE ancestor, and focus is granted anyway
+
+**Refuted by measurement, on the platform this suite runs.** The mechanism is real and the
+consequence does not follow.
+
+`showOnlyUIViewInternal` calls `composeInsideTheKeyboard()` before the visibility flip: the block is
+gated on the add-contact view still being `VISIBLE`, and `mLayoutE2EEMainView.setVisibility(VISIBLE)`
+is seven lines below it. So `requestFocus()` runs while the compose box's ancestor is `GONE`, and
+`composeInsideTheKeyboard`'s own javadoc says that call *"returns false silently whenever the view
+cannot take focus at that moment — a GONE ancestor"*, then raises the redirect regardless of the
+return. The reviewer that found the ordering said plainly it could not settle the platform half by
+reading, and that `canTakeFocus` checks only the view's own visibility plus its measured size, so it
+might well succeed.
+
+It succeeds. Measured on the emulator: after the add-contact screen is shown and dismissed with a
+draft in the box, the compose box holds focus and the clear button is `VISIBLE` — so the app's
+statement that the user is composing inside the keyboard matches where the keystrokes actually go.
+The predicted failure was not a disclosure in any case (typing lands in the box either way; the cost
+would have been the app saying the opposite while Clear and the encoding selector were unreachable),
+but it does not happen.
+
+**The assertion is a live control rather than a passing observation.** Removing the `requestFocus()`
+call turns it red with exactly its own message, which is what distinguishes this from a test that
+happens to be true. That check now sits permanently in
+`AdraftSurvivesTheAddContactScreenOnDeviceTest`, so a platform or layout change that starts refusing
+focus there fails the device suite instead of shipping.
+
+**The limit, stated rather than left implicit.** This was measured at API 28, which is what the
+emulator image runs; the app's `targetSdk` is 33. Android's focus rules are not guaranteed stable
+across that gap, and nothing here has measured API 33. What the check buys is that the answer is
+now observed on every device run rather than assumed — and that if it ever changes, it changes
+loudly. Robolectric cannot substitute: it grants focus unconditionally, so the JVM suite cannot tell
+the two outcomes apart and would report success either way.
