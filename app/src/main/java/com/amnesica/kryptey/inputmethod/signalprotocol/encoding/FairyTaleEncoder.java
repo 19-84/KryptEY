@@ -68,8 +68,10 @@ public class FairyTaleEncoder {
    * up with the same message twice in their history.
    *
    * <p>Picking from the sentences that fit removes the coin flip. It narrows the pool for large
-   * messages, which is a real cost to the steganographic variety this encoder exists for - but a
-   * message that cannot be sent has no variety at all, and the pool only narrows near the cap.
+   * messages, which is a real cost - a small pool is itself a giveaway, which is why
+   * {@code FairyTaleGoldenTest.thedecoySentenceVaries} exists - but a message that cannot be sent
+   * has no variety at all, and the pool only narrows near the cap. Nothing here hides anything from
+   * the messenger; the mode is about a glance at the screen, and the app's help text says so.
    */
   // Nothing here logs the payload.
   //

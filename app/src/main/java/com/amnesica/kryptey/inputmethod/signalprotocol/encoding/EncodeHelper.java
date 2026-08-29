@@ -235,12 +235,33 @@ public class EncodeHelper {
     return simplifyJsonKeys(minifiedJSON);
   }
 
+  /**
+   * Compresses, and releases the native zlib stream rather than waiting for finalization.
+   *
+   * <p>{@code DeflaterOutputStream.close()} calls {@code end()} only on a deflater it constructed
+   * itself - {@code usesDefaultDeflater} is set only by the constructors that do {@code new
+   * Deflater()}. This one is handed a caller-built deflater, so closing the stream released
+   * nothing, and every FairyTale message sent left its zlib state in the native heap of a
+   * long-lived input-method process until the collector reached it. Encode-side and user-paced, so
+   * no attacker drives it, but {@code decompressString} one screen below already ends its inflater
+   * in a finally and this is the same obligation.
+   *
+   * <p>{@code end()} goes AFTER the close and in a finally. Ending a deflater before {@code
+   * finish()} completes, or touching one afterwards, raises unchecked exceptions out of native
+   * code, and this method sits on the send path inside a click listener that catches only
+   * {@code IOException}.
+   */
   public static byte[] compressString(final String message) throws IOException {
-    ByteArrayOutputStream stream = new ByteArrayOutputStream();
-    Deflater compresser = new Deflater(Deflater.BEST_COMPRESSION, true);
-    DeflaterOutputStream deflaterOutputStream = new DeflaterOutputStream(stream, compresser);
-    deflaterOutputStream.write(message.getBytes(StandardCharsets.UTF_8));
-    deflaterOutputStream.close();
+    final ByteArrayOutputStream stream = new ByteArrayOutputStream();
+    final Deflater compresser = new Deflater(Deflater.BEST_COMPRESSION, true);
+    try {
+      final DeflaterOutputStream deflaterOutputStream =
+          new DeflaterOutputStream(stream, compresser);
+      deflaterOutputStream.write(message.getBytes(StandardCharsets.UTF_8));
+      deflaterOutputStream.close();
+    } finally {
+      compresser.end();
+    }
     return stream.toByteArray();
   }
 
@@ -265,7 +286,7 @@ public class EncodeHelper {
    * INPUT at 8192 characters and capped nothing else, so a compression bomb went straight through:
    * measured end to end through {@code E2EEStrip.decodeMessage}, an 8192-character paste produced
    * 37,855,647 characters in 498ms - about 72MB as a UTF-16 String, an amplification of 4621x. Two
-   * stages compose, inflate then the 15 expanding replaceAll passes in {@code deSimplifyJsonKeys},
+   * stages compose, inflate then the 14 expanding replaceAll passes in {@code deSimplifyJsonKeys},
    * whose best amplifier is "a" to "signalProtocolAddressName".
    *
    * <p>What made it a crash rather than a slow decode: {@code decodeMessage} catches

@@ -8,7 +8,7 @@ import org.junit.Test;
 /**
  * The decompression budget must stay tied to what the codec downstream will accept.
  *
- * <p>Raising it from 16KiB to 1MiB survived the entire suite. At that size the fifteen expanding
+ * <p>Raising it from 16KiB to 1MiB survived the entire suite. At that size the fourteen expanding
  * {@code replaceAll} passes in {@code deSimplifyJsonKeys} can produce roughly 9MB downstream, so
  * the bomb the budget exists to stop comes most of the way back. Nothing pinned the value within a
  * factor of 64.

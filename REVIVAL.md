@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-three sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [The carrier, attacked and found sound, with four things worth fixing anyway](#the-carrier-attacked-and-found-sound-with-four-things-worth-fixing-anyway)
 - [The number on screen and the key the button acts on](#the-number-on-screen-and-the-key-the-button-acts-on)
 - [A refusal and the sentence that justifies it are one fact](#a-refusal-and-the-sentence-that-justifies-it-are-one-fact)
 - [A control on a slot the adversary can overwrite is not a control](#a-control-on-a-slot-the-adversary-can-overwrite-is-not-a-control)
@@ -1953,6 +1954,56 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## The carrier, attacked and found sound, with four things worth fixing anyway
+
+A round spent entirely on the FairyTale carrier and the encoders found **no reachable attack**. The
+decode budget is checked before every expensive step, the alphabet is golden-tested in both
+directions, `EnvelopeCodec.fromWire` never throws unchecked, and carrier malleability is already
+settled and pinned. What it found instead was four smaller things, all fixed here.
+
+**`compressString` never ended its `Deflater`.** `DeflaterOutputStream.close()` calls `end()` only
+on a deflater it built itself — `usesDefaultDeflater` is set only by the constructors that do `new
+Deflater()`. This one is handed a caller-built deflater, so closing the stream released nothing and
+every FairyTale message sent left its zlib state in the native heap of a long-lived input-method
+process until the collector got to it. Encode-side and user-paced, so no attacker drives it — but
+`decompressString` one screen below already ends its inflater in a finally, and this is the same
+obligation. The `end()` goes after the close and in a finally: ending a deflater before `finish()`
+completes raises unchecked exceptions out of native code, and this sits inside a click listener that
+catches only `IOException`.
+
+**Nothing checked that the decoy corpus contains no character from the payload alphabet.**
+`FairyTaleGoldenTest` writes those sixteen characters as escapes precisely because a stray edit to
+them would be invisible in a diff — and then twenty thousand characters of prose feed the same
+pipeline unchecked. One zero-width character anywhere in either story prepends stray nibbles to
+every payload: an odd count fails the byte-boundary check, an even one fails the inflate, and either
+way every recipient sees "could not decode message" for messages that encoded fine. Both stories are
+pure ASCII today, which is the point of writing it down rather than assuming it — the nearest
+existing coverage catches it only if the offending sentence happens to be drawn, and the draw is a
+fresh `Random`.
+
+**Three source comments still named the messenger as the party the mode fools.** The shipped
+strings, HELP.md, README.md, KRYPTEY.md and the store listing were all corrected and are pinned by
+tests; the `.java` comments were not, and one of them said outright that *"the messenger picks when
+rebuilds happen"* about the encoding choice. This file already records a round re-deriving the wrong
+threat model for this feature from its own description. No guard was added for them — grepping
+`.java` for `steg` would flag honest historical notes and is the substring-ban shape that produces
+vacuous passes. The three lines are simply correct now.
+
+**Two comments counted fifteen expanding `replaceAll` passes where there are fourteen.** The 9×
+expansion factor both arguments rest on is right, so the decompression budget's justification
+survives; the count did not, and one of them is the javadoc that is the whole argument for
+`MAX_DECOMPRESSED_BYTES`.
+
+**Left open, deliberately.** The decoy corpus runs 2 to 445 characters — the shortest is the bare
+word `'Ah'` and the longest a 445-character passage about Cinderella. The app's one surviving claim
+for the mode is that it "makes a message look unremarkable to somebody glancing at your screen", and
+neither of those is unremarkable. Trimming the pool is not free: `FairyTaleGoldenTest.thedecoySentenceVaries`
+exists because a small pool is itself the fingerprint, and `'Ah'` is the only sentence that fits a
+payload in the 21-to-49-character budget window, so removing it turns some sends into refusals.
+Recorded with the measurement rather than changed on a guess.
 
 ---
 

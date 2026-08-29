@@ -206,4 +206,59 @@ public class FairyTaleInitTest {
         FairyTaleEncoder.decode(FairyTaleEncoder.encode(found, context)));
   }
 
+
+  /**
+   * All sixteen nibbles, as escapes. Same string as {@code FairyTaleGoldenTest}, written out for
+   * the same reason it is written out there: these characters are invisible, so a literal would be
+   * unreviewable and a stray edit undetectable in a diff.
+   */
+  private static final String NIBBLES_0_TO_15 =
+      "\u200C\u200D\u2060\u2062"      // 0 1 2 3
+          + "\u200B\u200E\u200F\u2064"  // 4 5 6 7
+          + "\u206A\u206B\u206C\u206D"  // 8 9 A B
+          + "\u206E\u206F\uFEFF\u061C"; // C D E F
+
+  /**
+   * The decoy corpus must not contain a character from the payload alphabet.
+   *
+   * <p>{@code FairyTaleGoldenTest} writes those sixteen characters as escapes precisely because a
+   * stray edit to them would be undetectable in a diff — and then twenty thousand characters of
+   * prose feed the same pipeline with nothing checking them at all. One zero-width character
+   * anywhere in either story prepends stray nibbles to every payload: an odd count fails the
+   * byte-boundary check, an even one fails the inflate, and either way every recipient sees "could
+   * not decode message" for messages that encoded fine.
+   *
+   * <p>Both stories are pure ASCII today, so this passes — which is the point of writing it down
+   * rather than assuming it. The nearest existing coverage is
+   * {@code manyMessagesSurviveEncodeAndDecode}, which catches it only if the offending sentence
+   * happens to be drawn, and the draw is a fresh {@code Random}: randomly flaky rather than
+   * deterministic.
+   *
+   * <p>Asserted on the EXTRACTED sentences rather than on the raw resource. The raw text carries
+   * its own line breaks, which {@code extractSentencesAndPutInMap} collapses, so a check for any
+   * invisible character would fail on the shipped stories as they are.
+   */
+  @Test
+  public void nodecoySentenceCarriesAcharacterFromTheInvisibleAlphabet() throws IOException {
+    // Through encode, because that is what performs the lazy init that fills the map.
+    assertNotNull(FairyTaleEncoder.encode("{\"a\":1}", context));
+    assertTrue("the corpus must have been loaded, or this scans an empty map",
+        FairyTaleEncoder.mSentencesMap.size() > 100);
+
+    final StringBuilder offenders = new StringBuilder();
+    for (final String sentence : FairyTaleEncoder.mSentencesMap.values()) {
+      if (sentence == null) continue;
+      for (int i = 0; i < NIBBLES_0_TO_15.length(); i++) {
+        final char nibble = NIBBLES_0_TO_15.charAt(i);
+        if (sentence.indexOf(nibble) >= 0) {
+          offenders.append("U+").append(String.format("%04X", (int) nibble))
+              .append(" in: ").append(sentence).append('\n');
+        }
+      }
+    }
+
+    assertEquals("a decoy sentence contains a character the payload alphabet uses, so every "
+        + "FairyTale message would carry stray nibbles in front of its payload and no recipient "
+        + "could decode any of them:\n" + offenders, 0, offenders.length());
+  }
 }

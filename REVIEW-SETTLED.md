@@ -78,3 +78,32 @@ landmark, so rewording a log line would have made it pass vacuously.
 State the version or condition under which the measurement no longer holds, and the experiment that
 shows it. "The reasoning still looks right to me" is not new evidence — the reasoning is recorded
 above precisely because it looks right.
+
+## The FairyTale carrier and the encoders, attacked with nothing found
+
+Round 38 spent an entire agent on the carrier and the encoders and produced no reachable attack.
+Recorded so the next round does not re-spend it. Each of these was checked and is sound:
+
+- **The decompression budget is checked before the expensive step**, not after:
+  `out.size() + produced > MAX_DECOMPRESSED_BYTES` precedes every write, and `DecompressionBudgetTest`
+  pins it against literals rather than against the constant. Inflate input is bounded at 4096 bytes
+  by the 8192-character paste cap and two invisible characters per byte.
+- **Truncated streams are rejected rather than returned as a prefix**, covered by
+  `CompressionBombTest.atruncatedStreamIsRejectedRatherThanReturnedAsAPrefix` with half-, 4- and
+  1-byte prefixes. Deleting the guard turns it red.
+- **`EnvelopeCodec.fromWire` never throws unchecked**: both `Base64.decode` arms are wrapped,
+  `Base64.encodeBytes(byte[])` swallows its own `IOException`, and `BinaryEnvelope`'s cursor
+  bounds-checks every read.
+- **`deSimplifyJsonKeys` cannot throw on replacement syntax**: all fourteen replacements are literal,
+  `$`- and `\`-free, and `getMapKeyFromValue` returns non-null for every one of them.
+- **The `produced == 0` continue in the inflate loop cannot spin**: zlib reports no progress only
+  when input is exhausted, which is exactly when `needsInput()` is true.
+- **Crossing the encoders gains an adversary nothing.** One appended zero-width character makes a
+  genuine RAW paste undecodable; stripping the invisible run makes a FairyTale paste undecodable.
+  Both are denials of service already available to a messenger that can drop the message.
+- **All sixteen alphabet code points are `Cf`**, so the `\p{C}` router cannot miss a genuine payload.
+- **`Base64.encodeBytes` uses `NO_OPTIONS`** and never breaks lines, so `minifyJSON`'s whitespace
+  stripping is a genuine no-op on wire text.
+- **The near-cap decoy collapse does not ship.** The pool falls to one sentence only for payloads of
+  8171 to 8190 invisible characters — a 20-character window out of 8192 — and the measured rotation
+  path sits at 7904 with ~288 characters of headroom, where 171 of 173 sentences fit.

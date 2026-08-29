@@ -4444,8 +4444,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Before anything renders from it. adoptState re-raises the redirect with requestFocus(), whose
     // listener calls changeVisibilityInputFieldButtons, which reads encodingMethod to decide which
     // encoding indicator to show - so applying the carried value afterwards left the strip showing
-    // RAW while it would in fact encode FairyTale. No plaintext exposure; the app understating its
-    // own steganography to the user who chose it.
+    // RAW while it would in fact encode FairyTale. No plaintext exposure; the app naming the wrong
+    // encoding to the user who chose one.
     if (carried.encoding != null) encodingMethod = carried.encoding;
 
     if (mInputEditText != null && carried.draft.length() > 0) {
@@ -4562,8 +4562,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the strip went on saying encryption was off over a password box while the actions were back
     // on, which is the exact pairing setHostFieldIsPassword's own comment records as a defect.
     setHostFieldIsPassword(carried.hostFieldIsPassword);
-    // Choosing FairyTale is the user saying "do not let this look like ciphertext in the
-    // transcript". A rebuild put it back to RAW and the messenger picks when rebuilds happen.
+    // Choosing FairyTale is the user saying "do not let this look like ciphertext to somebody
+    // glancing at my screen", which is the only thing the mode does - the app's own help text says
+    // so, because every FairyTale message ends in a run of invisible characters nothing else
+    // produces. A rebuild put the choice back to RAW, and the host app picks when rebuilds happen.
 
 
     // The window's FLAG_SECURE decision belongs to whatever is on screen NOW. Nothing else tells
