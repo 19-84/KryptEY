@@ -1,7 +1,9 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.helper;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -188,4 +190,52 @@ public class MigrationOnPartialLoadTest {
 
   private static final javax.crypto.SecretKey KEY =
       new javax.crypto.spec.SecretKeySpec(new byte[32], "AES");
+
+  /**
+   * A chat-log write that FAILS must not let the marker through either.
+   *
+   * <p>The write order was chosen against a process kill between the two commits: the log first, so
+   * that what survives a kill is a re-keyed log with no marker, which the next load simply migrates
+   * again. It says nothing about the log commit returning false — an ordinary outcome on a full
+   * disk, and the reason {@code lastMessageLogWriteSucceeded()} exists at all. In that case the
+   * account batch was still committed, marker and all, and the result is the state the ordering
+   * exists to prevent: a store asserting every key in its log is a rendered address, over a log
+   * that never received the re-keying. Unreachable from every contact row for the life of the
+   * install, and unerasable, because erasing a conversation means deleting a contact and no contact
+   * owns those entries.
+   *
+   * <p>The whole save is refused rather than the one key dropped. Dropping the marker alone leaves
+   * the account batch landing over entries still flagged unresolved, and the next load re-asks
+   * "which single contact bears this address name?" against a contact list that landed batch has
+   * had a raise to change — the measured pass-two substitution this file records elsewhere.
+   */
+  @Test
+  public void alostChatLogWriteMustNotLetTheMarkerThrough() {
+    new StorageHelper(context, workingBox()).storeAllInformationInSharedPreferences(account);
+    context.getSharedPreferences("protocol", Context.MODE_PRIVATE).edit()
+        .remove(com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier
+            .KEY_SCHEMA_MIGRATED.toString())
+        .commit();
+
+    // The load migrates in memory. Then the log write fails - through the real mechanism, not an
+    // override: a stray cleartext key in the message file makes requireEncryptedOnly throw, so
+    // messageStore() returns null and storeMessageLog returns false. That file is written only by
+    // this branch and only through the encrypted store, so cleartext in it is never legitimate.
+    final Account migrated =
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences();
+    context.getSharedPreferences("protocol_messages", Context.MODE_PRIVATE).edit()
+        .putString("something-this-app-never-wrote", "in the clear").commit();
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    assertNotNull(migrated);
+    assertTrue("precondition: the load must have migrated in memory", migrated.keysAreRendered());
+
+    final boolean saved = helper.storeAllInformationInSharedPreferences(migrated);
+
+    assertFalse("the save must be refused outright, not partly committed", saved);
+    assertNull("and the marker must not be on disk: it would assert the log had been re-keyed when "
+            + "the write that would have re-keyed it failed",
+        context.getSharedPreferences("protocol", Context.MODE_PRIVATE).getString(
+            com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier
+                .KEY_SCHEMA_MIGRATED.toString(), null));
+  }
 }

@@ -219,6 +219,34 @@ public class Account {
    */
   private boolean contactsWereUnreadable = false;
 
+  /**
+   * Stored values that were present and could not be opened, and so must not be written over.
+   *
+   * <p>A sealed value that will not decrypt reads back as null, which is indistinguishable from one
+   * that was never stored - so the loader substituted a default and the write-back that follows
+   * every load persisted the substitution over ciphertext that may well have been recoverable. The
+   * contact list has had its own guard against exactly this since a review round found it; these
+   * are the two that did not.
+   *
+   * <p>Per key rather than a whole-store refusal, deliberately. Copying the contact list's
+   * treatment - refuse every write while any value is unreadable - would turn one corrupt row into
+   * a permanently read-only app: no contact added, no key pinned, no rejection recorded, and
+   * nothing to repair it. {@code putAll} clears nothing, so omitting one key leaves its stored
+   * bytes exactly as they were, and the cost is that the value stays wrong for the session instead
+   * of being made wrong for good.
+   */
+  private final java.util.Set<String> unreadableValues = new java.util.HashSet<>();
+
+  /** Marks a stored value as present-but-unopenable, so the next save leaves it alone. */
+  public void markValueUnreadable(final String key) {
+    if (key != null) unreadableValues.add(key);
+  }
+
+  /** @return whether this value must be left on disk untouched. */
+  public boolean valueWasUnreadable(final String key) {
+    return unreadableValues.contains(key);
+  }
+
   public void markContactsUnreadable() {
     this.contactsWereUnreadable = true;
   }
@@ -473,6 +501,25 @@ public class Account {
 
   public boolean keysAreRendered() {
     return keysAreRendered;
+  }
+
+  /**
+   * Whether the one-time key migration actually ran on this load.
+   *
+   * <p>Narrower than {@code keysAreRendered}, and the difference is the whole point: that is true
+   * in three cases, and only one of them means a chat log has just been re-keyed in memory and not
+   * yet written. A fresh install has it true from construction, so a save that keys off it alone
+   * refuses the first save of every new install whose log write happens to fail - which protects
+   * nothing, because there is no legacy log to protect.
+   */
+  private transient boolean keysWereJustMigrated;
+
+  public void markKeysWereJustMigrated() {
+    this.keysWereJustMigrated = true;
+  }
+
+  public boolean keysWereJustMigrated() {
+    return keysWereJustMigrated;
   }
 
   public Contact soleContactNamed(final String addressName) {

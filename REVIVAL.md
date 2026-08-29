@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-eight sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-nine sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [Two ways the store wrote a default over something it could not read](#two-ways-the-store-wrote-a-default-over-something-it-could-not-read)
 - [Three defects in three fixes, again](#three-defects-in-three-fixes-again)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
@@ -1958,6 +1959,53 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## Two ways the store wrote a default over something it could not read
+
+A round spent away from the banner, on storage, found two — both of the same shape as a defect this
+file already fixed for the contact list, in the two places that did not get the same treatment.
+
+**A chat-log write that fails still sealed the migration marker.** The write order — log first, then
+the account batch — was chosen against a process kill between the two commits: what survives a kill
+is a re-keyed log with no marker, and the next load simply migrates again. It says nothing about the
+log commit returning **false**, which is ordinary on a full disk and is the reason
+`lastMessageLogWriteSucceeded()` exists at all. The result computed on that line was never consulted,
+so the batch went in marker and all: a store asserting every key in its log is a rendered address,
+over a log that never received the re-keying. Those entries are then unreachable from every contact
+row for the life of the install **and unerasable**, because erasing a conversation means deleting a
+contact and no contact owns them.
+
+The whole save is refused rather than the one key dropped. Dropping the marker alone leaves the
+account batch landing over entries still flagged unresolved, and the next load re-asks "which single
+contact bears this address name?" against a contact list that landed batch has had a raise to change
+— the measured pass-two substitution recorded above, where pass one placed an entry with the genuine
+contact and pass two moved it into an impostor's row.
+
+**And the refusal had to be keyed off a migration that actually ran.** `keysAreRendered` is true in
+three cases and only one of them means a log has just been re-keyed in memory; a fresh install has
+it true from construction. Keyed off that alone, the guard refused the first save of every new
+install whose log write happened to fail. An existing test said so on the first full run, which is
+the value of running the whole suite rather than the file being edited.
+
+**Two stored values were replaced by defaults when they would not open.** Values are sealed per key,
+so one can fail while every other reads fine — this codebase says so in two places and built
+`contactsWereUnreadable` for exactly it. A sealed value that will not decrypt reads back as null,
+which is indistinguishable from one never stored, so the loader substituted and the write-back that
+follows every load persisted the substitution over ciphertext that may well have been recoverable.
+For the display-tag secret that means every contact's tag changes at once and can never come back,
+and a tag is only useful because it is the same next time you look. For the retired display names it
+means the record that keeps the duplicate-name warning alive after a deletion is silently emptied,
+so an invite carrying a deleted contact's name arrives unwarned — the hole that list was added to
+close.
+
+Per key, not per store. Copying the contact list's treatment — refuse every write while any value is
+unreadable — turns one corrupt row into a permanently read-only app: no contact added, no key
+pinned, no rejection recorded, and nothing to repair it. `putAll` clears nothing, so omitting one key
+leaves its bytes exactly as they were, and the cost is a value that is wrong for the session instead
+of wrong for good. Absent is still told from unreadable by the key's presence, which is the idiom
+`readMessageLog` already used and these two did not.
 
 ---
 

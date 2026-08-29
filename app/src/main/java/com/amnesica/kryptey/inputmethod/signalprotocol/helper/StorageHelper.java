@@ -223,6 +223,15 @@ public class StorageHelper {
     // cries-wolf failure this codebase argues against elsewhere.
     final String storedSecret = (String) getClassFromSharedPreferences(
         ProtocolIdentifier.DISPLAY_TAG_SECRET);
+    // Absent and unreadable are different, and only the key's presence tells them apart - the same
+    // idiom readMessageLog already uses, applied to the two values that did not have it. A sealed
+    // value that will not open reads back null, so this fell through to minting a fresh secret and
+    // the write-back that follows every load then persisted it over the stored bytes. Every tag
+    // changes at once, permanently, and a tag is only useful because it is the same next time.
+    if (storedSecret == null && rawValueIsPresent(ProtocolIdentifier.DISPLAY_TAG_SECRET)) {
+      Log.w(TAG, "the display-tag secret is present and unreadable; it will not be written over");
+      account.markValueUnreadable(String.valueOf(ProtocolIdentifier.DISPLAY_TAG_SECRET));
+    }
     if (storedSecret != null && !storedSecret.isEmpty()) {
       try {
         account.setDisplayTagSecret(com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64
@@ -240,6 +249,15 @@ public class StorageHelper {
     // and picked it up again, every time.
     final Object storedRetired = getClassFromSharedPreferences(
         ProtocolIdentifier.RETIRED_DISPLAY_NAMES);
+    // And the same question here, for a worse consequence: an empty list substituted for an
+    // unreadable one and then written back is the record that keeps the duplicate-name warning
+    // alive after a deletion, silently emptied - so an invite carrying a deleted contact's name
+    // arrives unwarned, which is the hole retiredDisplayNames was added to close.
+    if (storedRetired == null && rawValueIsPresent(ProtocolIdentifier.RETIRED_DISPLAY_NAMES)) {
+      Log.w(TAG, "the retired display names are present and unreadable; they will not be written "
+          + "over");
+      account.markValueUnreadable(String.valueOf(ProtocolIdentifier.RETIRED_DISPLAY_NAMES));
+    }
     if (storedRetired instanceof java.util.List) {
       final java.util.LinkedList<String[]> retired = new java.util.LinkedList<>();
       for (final Object entry : (java.util.List<?>) storedRetired) {
@@ -546,6 +564,18 @@ public class StorageHelper {
     return mLastMessageLogWriteSucceeded;
   }
 
+  /**
+   * Whether a key exists in the account file at all, regardless of whether its value opens.
+   *
+   * <p>Keys are stored in the clear and values are sealed, so this is the only thing that
+   * distinguishes "never stored" from "stored and unreadable" - and those two must not be treated
+   * the same by anything that would write a default over the second.
+   */
+  private boolean rawValueIsPresent(final ProtocolIdentifier identifier) {
+    final SharedPreferences preferences = preferencesNamed(mSharedPreferenceName);
+    return preferences != null && preferences.contains(String.valueOf(identifier));
+  }
+
   private boolean storeMessageLog(final Account account) {
     // Nothing to write is not a failure: a log that was never loaded cannot have changed, and the
     // stored value is already what would be written.
@@ -648,6 +678,9 @@ public class StorageHelper {
       return;
     }
     account.setKeysAreRendered(true);
+    // Narrower than the flag above, which is also true for a fresh install and for a store
+    // that already said so. Only this one means a log has just been re-keyed in memory.
+    account.markKeysWereJustMigrated();
 
     // The marker is NOT written here - it travels in the same batch as the data it describes, in
     // storeAllInformationInSharedPreferences. See the comment there.
@@ -708,6 +741,38 @@ public class StorageHelper {
     // write costs a message from the history, and the app says different things about each.
     mLastMessageLogWriteSucceeded = storeMessageLog(account);
 
+    // ...and the ordering alone is not enough when the log write FAILS and says so.
+    //
+    // The paragraph above reasons about a process kill between the two commits. It does not cover
+    // the log commit returning false, which is an ordinary outcome on a full disk - the accessor
+    // right beside it exists to report exactly that. In that case the batch below was still
+    // committed, marker and all: a store asserting "every key in this log is a rendered address"
+    // over a log that never received the re-keying. The migration then never runs again, and those
+    // entries are unreachable from every contact row for the life of the install AND unerasable,
+    // because erasing a conversation means deleting a contact and no contact owns them. That is the
+    // outcome the ordering exists to prevent, arrived at through the door the ordering does not
+    // cover.
+    //
+    // So the whole save is refused rather than the one key dropped. Dropping the marker alone would
+    // leave the account batch landing over entries still flagged unresolved, and the next load
+    // would re-ask "which single contact bears this address name?" against a contact list the
+    // landed batch has had a raise to change - which is the measured pass-two substitution recorded
+    // in REVIVAL.md, where pass one placed an entry with the genuine contact and pass two moved it
+    // into an impostor's row.
+    //
+    // Only while the marker would be NEWLY written. Once it is on disk the migration is done, and a
+    // lost log write is then an ordinary lost message, reported by its own accessor and not a
+    // reason to throw away a trust decision.
+    // Only when a migration actually ran on this load. keysAreRendered is also true for a fresh
+    // install, which has no legacy log to protect - keying off it alone refused the first save of
+    // every new install whose log write failed, and an existing test said so immediately.
+    if (!mLastMessageLogWriteSucceeded && account.keysWereJustMigrated()
+        && getClassFromSharedPreferences(ProtocolIdentifier.KEY_SCHEMA_MIGRATED) == null) {
+      Log.e(TAG, "the chat log write failed during the key migration; refusing the whole save so "
+          + "the migration marker cannot outrun the re-keyed log");
+      return false;
+    }
+
     final Map<String, String> batch = new LinkedHashMap<>();
     put(batch, ProtocolIdentifier.METADATA_STORE, account.getMetadataStore());
     put(batch, ProtocolIdentifier.UNIQUE_USER_ID, account.getName());
@@ -723,9 +788,16 @@ public class StorageHelper {
     // storeMessageLog - see there for why that order round.
     put(batch, ProtocolIdentifier.CONTACTS, account.getContactList());
 
-    put(batch, ProtocolIdentifier.RETIRED_DISPLAY_NAMES, account.getRetiredDisplayNames());
+    // Skipped when the stored value was present and unreadable. putAll clears nothing, so leaving
+    // the key out leaves its ciphertext exactly as it was - which is the whole difference between
+    // a value that is wrong for this session and one that is wrong for good.
+    if (!account.valueWasUnreadable(String.valueOf(ProtocolIdentifier.RETIRED_DISPLAY_NAMES))) {
+      put(batch, ProtocolIdentifier.RETIRED_DISPLAY_NAMES, account.getRetiredDisplayNames());
+    }
 
-    final byte[] secret = account.getDisplayTagSecret();
+    final byte[] secret =
+        account.valueWasUnreadable(String.valueOf(ProtocolIdentifier.DISPLAY_TAG_SECRET))
+            ? null : account.getDisplayTagSecret();
     if (secret != null) {
       batch.put(String.valueOf(ProtocolIdentifier.DISPLAY_TAG_SECRET),
           JsonUtil.toJson(com.amnesica.kryptey.inputmethod.signalprotocol.util.Base64
