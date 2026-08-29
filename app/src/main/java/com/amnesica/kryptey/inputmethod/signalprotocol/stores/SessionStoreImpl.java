@@ -43,12 +43,22 @@ public class SessionStoreImpl implements SessionStore {
   public synchronized List<SessionRecord> loadExistingSessions(List<SignalProtocolAddress> addresses) throws NoSessionException {
     List<SessionRecord> resultSessions = new LinkedList<>();
     for (SignalProtocolAddress remoteAddress : addresses) {
-      byte[] serialized = sessions.stream()
+      // Asked before the get(), not after. This called .get() first, so a missing address raised
+      // NoSuchElementException - unchecked - from a method whose signature declares
+      // NoSessionException, and the null check below could only ever fire for a stored Session
+      // holding a null record, which nothing produces. Unreachable today: this is libsignal's
+      // multi-session entry point and the app performs no group or multi-recipient send. Fixed
+      // because it costs two statements, and because an unchecked throw out of a store callback is
+      // the crash class this project names as its worst.
+      final java.util.Optional<Session> stored = sessions.stream()
           .filter(s -> s.getSignalProtocolAddress().equals(remoteAddress))
-          .findFirst()
-          .get().getSerializedSessionRecord();
-      if (serialized == null) {
+          .findFirst();
+      if (!stored.isPresent()) {
         throw new NoSessionException("no session for " + remoteAddress);
+      }
+      final byte[] serialized = stored.get().getSerializedSessionRecord();
+      if (serialized == null) {
+        throw new NoSessionException("no session record for " + remoteAddress);
       }
       try {
         resultSessions.add(new SessionRecord(serialized));
@@ -117,21 +127,13 @@ public class SessionStoreImpl implements SessionStore {
     return sessions.size();
   }
 
-  public synchronized IdentityKey getPublicKeyFromSession(SignalProtocolAddress remoteAddress) {
-    try {
-      if (containsSession(remoteAddress)) {
-        SessionRecord record = new SessionRecord(sessions.stream()
-            .filter(s -> s.getSignalProtocolAddress().equals(remoteAddress))
-            .findFirst()
-            .get().getSerializedSessionRecord());
-
-        return new IdentityKey(record.getRemoteIdentityKey().getPublicKey());
-      } else {
-        return null;
-      }
-    } catch (InvalidMessageException e) {
-      throw new StoredRecordUnreadableException(
-          "a stored session record could not be read back", e);
-    }
-  }
+  // getPublicKeyFromSession was here, and is deleted rather than left unused.
+  //
+  // It returned the session's own copy of the remote identity, which is the one thing
+  // SignalProtocolMain.createFingerprint says must never be consulted: "The session is not
+  // consulted at all, and that is the point ... Reading the pin first but keeping the session as a
+  // fallback does not fail closed." It had no caller anywhere in the app or the tests, so what it
+  // amounted to was a ready-made building block for the failure VerifyContactTest exists to
+  // prevent - a safety number derived from a key the messenger supplied - sitting in the store with
+  // no test able to notice if something started calling it.
 }

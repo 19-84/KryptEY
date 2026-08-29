@@ -2022,6 +2022,41 @@ the shape Jackson often cannot populate. Measured through the store's own refusa
 reading the map: it does survive, and "after a restart" understates it, since `reloadAccount` runs on
 every `setInputView`.
 
+**And the cheaper half of both reports, done rather than listed.**
+
+`IdentityKeyStoreImpl.addressKey` justified its null sentinel with "address names are UUIDs and the
+separator is a dot". Peer address names are not UUIDs — only the local account's is; a peer's is
+whatever the sender wrote, and the only wire validation is a printable-ASCII check that permits
+dots. The conclusion survives for a different reason (every rendered key ends in `.<digits>`, and
+the sentinel has no dot at all), and the sentence is worth correcting rather than leaving because it
+is load-bearing-looking: the tempting "harmonisation" is to re-key those three persisted collections
+onto the app's other separator, which with no migration makes `wasKeyRejected` answer false at every
+address the user has ever rejected.
+
+Two dead methods removed. `solePinnedAddressNamed` and `getPublicKeyFromSession` had no caller
+anywhere, and each carried a javadoc arguing for a behaviour another file explicitly refuses — a
+ready-made building block for the retirement-suppression attack `LegacyKeyMigration` rejects in
+writing, and one for the safety number derived from a messenger-supplied key that
+`createFingerprint` says must never be consulted. Deleted with their arguments, not moved: the
+refusal belongs where the refusal lives. An orphaned javadoc went back onto `markKeyRejected`, which
+had none.
+
+Two unchecked throws that the file's own stated discipline forbids. `IdentityKeyDeserializer`
+dereferenced an absent `publicKey` field into an NPE on the account-load path, two methods below the
+sibling whose comment states the rule; it raises `IOException` now, and not a null, because a null
+`IdentityKey` inside a `TrustedKey` would reach `isTrustedIdentity` and turn an unreadable pin into
+a first sighting. `SessionStoreImpl.loadExistingSessions` called `.get()` before its own null check,
+so a missing address raised `NoSuchElementException` from a method declaring `NoSessionException`.
+Both are unreachable today and both cost two statements.
+
+**And one gap left open deliberately, written down instead.** The clipboard listener is not released
+when the keyboard is hidden, so the strip decodes every clip the user copies anywhere while the
+keyboard is down. Releasing it there would break the workflow the app is built around — the listener
+is what raises "Keybundle detected", and the sequence is copy in the messenger *then* raise the
+keyboard, so a listener that is down while hidden misses exactly the copy that matters. The lifetime
+that matters is the strip's, not the window's, and `surrenderState` and `clear()` both release it.
+The trade is now beside `onKeyboardHidden` rather than waiting to be rediscovered.
+
 ---
 
 ## Two ways the store wrote a default over something it could not read

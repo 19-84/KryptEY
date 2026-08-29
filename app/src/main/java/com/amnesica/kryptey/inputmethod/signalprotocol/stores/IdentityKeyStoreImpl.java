@@ -230,28 +230,10 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
   /**
    * Records that the user un-pinned this address after comparing numbers and finding a mismatch.
    * Kept separately from the pin so it outlives {@link #removeIdentity}.
-   */
-  /**
-   * The single pinned address bearing this name, or null if none or more than one does.
    *
-   * <p>For the one-time key migration only. A display name is retired when its contact is deleted,
-   * and deletion deliberately KEEPS the pin - so after a delete-and-re-add the contact list no
-   * longer names the address but the identity store still does. Without this, a pre-upgrade
-   * retirement could not be re-keyed and its entry would be blanked, turning every legitimate
-   * re-add into a false alarm.
+   * <p>This javadoc was orphaned: a second one was inserted between it and this method, so it
+   * documented nothing and {@code markKeyRejected} had none at all.
    */
-  public SignalProtocolAddress solePinnedAddressNamed(final String addressName) {
-    if (addressName == null) return null;
-    SignalProtocolAddress found = null;
-    for (final TrustedKey trustedKey : trustedKeys) {
-      if (trustedKey == null || trustedKey.getSignalProtocolAddress() == null) continue;
-      if (!addressName.equals(trustedKey.getSignalProtocolAddress().getName())) continue;
-      if (found != null) return null;
-      found = trustedKey.getSignalProtocolAddress();
-    }
-    return found;
-  }
-
   public void markKeyRejected(final SignalProtocolAddress address) {
     if (address == null) return;
     final String key = addressKey(address);
@@ -299,9 +281,22 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
    *
    * <p>Null-tolerant on purpose. Every method here reaches this, and several used to do so without
    * a guard, so a null address became an NPE thrown out of the trust store — on this codebase that
-   * means a keyboard that dies mid-message rather than a refusal. The sentinel cannot collide with
-   * a real key: address names are UUIDs and the separator is a dot, so nothing legitimate produces
-   * a leading NUL. Note {@code saveIdentity} does NOT null-check — libsignal always supplies an
+   * means a keyboard that dies mid-message rather than a refusal.
+   *
+   * <p>The sentinel cannot collide with a real key, and this used to give the wrong reason: "address
+   * names are UUIDs and the separator is a dot". Peer address names are not UUIDs. Only the LOCAL
+   * account's name is one; a peer's is whatever the sender wrote, and the only validation on the
+   * wire is {@code BinaryEnvelope}'s printable-ASCII check, which permits dots. That is the same
+   * premise {@code ProtocolAddresses} spends a paragraph refuting, and it is worth correcting
+   * rather than leaving because it is load-bearing-looking: a maintainer either trusts it and
+   * widens name validation, or "harmonises" the separator - and these three collections are
+   * persisted strings, so re-keying them with no migration makes {@code wasKeyRejected} answer
+   * false at every address the user has ever rejected.
+   *
+   * <p>The reason that actually holds: every rendered key ends in {@code .&lt;digits&gt;} because a
+   * device id is a dot-free integer in {@code [1,127]}, and the sentinel contains no dot at all. So
+   * it is unreachable whatever a name contains - including a name planted in a pre-0.1.5 store the
+   * deserializer never validated. Note {@code saveIdentity} does NOT null-check — libsignal always supplies an
    * address, so it is unreachable, but an earlier version of this sentence claimed every mutating
    * method refuses a null and that was not true.
    */

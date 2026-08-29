@@ -169,4 +169,31 @@ public class SessionStoreImplTest {
     assertFalse(sessionStore.containsSession(signalProtocolAddress));
     assertTrue(sessionStore.containsSession(signalProtocolAddress2));
   }
+
+  /**
+   * A missing address must fail the way the signature says, not with an unchecked throw.
+   *
+   * <p>{@code loadExistingSessions} called {@code .findFirst().get()} before its own null check, so
+   * an address with no session raised {@code NoSuchElementException} from a method declaring
+   * {@code NoSessionException}. Unreachable today - this is libsignal's multi-session entry point
+   * and the app performs no group or multi-recipient send - but a store callback is a place where
+   * an unchecked throw lands in a caller that catches only checked types, which is the crash class
+   * this project names as its worst.
+   */
+  @Test
+  public void loadingAsessionThatIsNotThereThrowsTheDeclaredType() {
+    final SessionStoreImpl store = new SessionStoreImpl();
+    final SignalProtocolAddress absent = new SignalProtocolAddress("nobody-here", 1);
+
+    try {
+      store.loadExistingSessions(java.util.Collections.singletonList(absent));
+      org.junit.Assert.fail("a missing session must be refused, not returned");
+    } catch (final NoSessionException expected) {
+      assertTrue("the message should name the address it could not find: " + expected.getMessage(),
+          expected.getMessage() != null && expected.getMessage().contains("nobody-here"));
+    } catch (final RuntimeException unchecked) {
+      org.junit.Assert.fail("an unchecked throw out of a store callback lands in callers that "
+          + "catch only checked types: " + unchecked);
+    }
+  }
 }

@@ -120,7 +120,21 @@ public class JsonUtil {
       try {
         Log.d(TAG, "IdentityKeyDeserializer used");
         JsonNode node = p.getCodec().readTree(p);
-        return new IdentityKey(Base64.decodeWithoutPadding(node.get("publicKey").asText()), 0);
+        // Guarded, like every sibling deserializer in this file - which is what the sibling below
+        // says the rule is, while this one dereferenced an absent field straight into an NPE out
+        // of Jackson on the account-load path. Not reachable today: this JSON is app-private and
+        // sealed per value, so a flipped byte fails GCM outright rather than producing partial
+        // JSON. Fixed anyway, because the stated invariant should be true of the file that states
+        // it.
+        //
+        // An IOException and not a null: a null IdentityKey inside a TrustedKey would reach
+        // isTrustedIdentity and be compared against, turning an unreadable pin into a first
+        // sighting - which is the whole failure the pin exists to prevent.
+        final JsonNode publicKey = node == null ? null : node.get("publicKey");
+        if (publicKey == null) {
+          throw new IOException("an identity key was stored without its public key");
+        }
+        return new IdentityKey(Base64.decodeWithoutPadding(publicKey.asText()), 0);
       } catch (InvalidKeyException e) {
         throw new IOException(e);
       }

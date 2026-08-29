@@ -3922,6 +3922,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * does. It was two calls for about an hour, and in that hour the existing test for it was already
    * a stale copy of the old list - which is the failure this codebase keeps naming: a test that
    * re-implements the body proves only that the copy behaves.
+   *
+   * <p><b>The clipboard listener is deliberately NOT released here</b>, and this is a different list
+   * from {@code surrenderState}'s for that reason. A reviewer raised it as a gap: with the keyboard
+   * down and the user in an unrelated app, the strip still runs {@code EnvelopeCodec.fromWire} over
+   * every clip they copy anywhere on the device, so a password copied out of a manager passes
+   * through the decoder with this app's UI nowhere in sight.
+   *
+   * <p>Releasing it here would break the workflow the app is built around. The listener is what
+   * raises "Keybundle detected: click on decrypt", and the sequence is copy in the messenger and
+   * <em>then</em> raise the keyboard - so a listener that is down while hidden misses exactly the
+   * copy that matters, and the banner never appears. What the listener does with a clip is also
+   * narrow: it passes a {@code MessageType} on, retains no text, and the decoder it runs is the one
+   * four fuzz corpora already cover, in a process with no permission to send anything anywhere.
+   *
+   * <p>So the trade is taken deliberately and written down rather than left to be rediscovered. The
+   * lifetime that matters is the strip's, not the window's: {@code surrenderState} and
+   * {@code clear()} both release it, which is what stopped a discarded strip decoding clipboard
+   * traffic for the life of the process.
    */
   public void onKeyboardHidden() {
     // The user is done with this keyboard session, so the next one types into the host until they
