@@ -319,6 +319,12 @@ public class E2EEStrip {
     return SignalProtocolMain.getNameOfAccount();
   }
 
+  /** @see SignalProtocolMain#pinnedIdentityFor */
+  public org.signal.libsignal.protocol.IdentityKey pinnedIdentityFor(
+      final org.signal.libsignal.protocol.SignalProtocolAddress address) {
+    return SignalProtocolMain.pinnedIdentityFor(address);
+  }
+
   public Fingerprint getFingerprint(Contact contact) {
     return SignalProtocolMain.getFingerprint(contact);
   }

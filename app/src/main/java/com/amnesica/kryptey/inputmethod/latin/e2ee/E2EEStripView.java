@@ -117,6 +117,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private ImageButton mVerifyContactRejectButton;
   private TextView[] mCodes = new TextView[12];
 
+  /**
+   * The pinned key the digits currently on screen were derived from, and the address it was pinned
+   * at. Null whenever no number is painted.
+   *
+   * <p>The verify screen shows a number and offers two buttons that act on a key. Those were not
+   * the same thing. The digits are painted once, from the account held at that moment; the account
+   * object underneath is replaced by {@code reloadAccount} on a theme change the host app can
+   * force, and by the recovery re-read that runs on every keyboard raise while a store fault
+   * stands. Neither rebuilds the strip, neither repaints the digits, and neither disables anything
+   * - so the number the user compares by voice and the key their press lands on can be different
+   * keys, at a moment the messenger picks by presenting a text field.
+   *
+   * <p>Verify's whole meaning is "the user compared this key against the peer's own device". A
+   * verified badge recorded against a key that was never on screen is the one failure the trust
+   * model has no recovery from, because the badge is what the user checks instead of comparing
+   * again. Reject is worse in a different way: it is permanent, and it lands by address on whatever
+   * the store holds now.
+   */
+  private org.signal.libsignal.protocol.IdentityKey mCodesWereDerivedFrom;
+  private String mCodesWereDerivedForAddress;
+
   private Contact chosenContact;
 
   /**
@@ -599,6 +620,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         "The number does not match - forget this contact's key");
     mVerifyContactRejectButton.setOnClickListener(v -> {
       if (chosenContact == null) return;
+      // Same binding as Verify, and for a harsher reason: rejectContactKey acts purely by address
+      // on whatever the account holds now, and the record it writes is deliberately permanent. A
+      // press aimed at a key the user just read aloud must not land on a key that replaced it
+      // underneath. When no number is painted the guard passes, which keeps the deliberate
+      // escape hatch below working for a contact with nothing pinned.
+      if (!thenumberOnScreenIsStillTheKeyWeWouldActOn()) {
+        refuseThePressAndRepaintTheNumber();
+        return;
+      }
       // Capture the label before rejecting: the message names the contact whose key was just
       // forgotten, and reading it afterwards would describe post-rejection state.
       final String label = SignalProtocolMain.displayLabelFor(chosenContact);
@@ -651,6 +681,41 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     });
   }
 
+  /**
+   * Whether the key on screen is still the key the buttons would act on.
+   *
+   * <p>True when no number is painted: the Reject escape hatch is deliberately live in that state,
+   * for a contact with nothing pinned, and there is no comparison to invalidate.
+   *
+   * <p>Otherwise the store must still pin exactly the key the digits came from. Not "something is
+   * pinned", which is what {@code verifyContactInContactList} asks and is satisfied by any key at
+   * all - including one installed after the user started reading the number aloud.
+   */
+  private boolean thenumberOnScreenIsStillTheKeyWeWouldActOn() {
+    if (mCodesWereDerivedFrom == null || chosenContact == null) return true;
+    if (!mCodesWereDerivedForAddress
+        .equals(String.valueOf(chosenContact.getSignalProtocolAddress()))) {
+      return false;
+    }
+    return mCodesWereDerivedFrom
+        .equals(mE2EEStrip.pinnedIdentityFor(chosenContact.getSignalProtocolAddress()));
+  }
+
+  /**
+   * Refuses a press whose subject moved, and puts the current number on screen.
+   *
+   * <p>Repainting rather than only refusing, because a refusal with no next step is the dead end
+   * this screen has produced three times: the user is told something is wrong and finds nothing to
+   * press. After this the digits are the current ones and both buttons work again, so the response
+   * available is the right one - compare the number again.
+   */
+  private void refuseThePressAndRepaintTheNumber() {
+    Toast.makeText(getContext(),
+        String.format(INFO_NUMBER_MOVED_UNDER_THE_SCREEN, labelFor(chosenContact)),
+        Toast.LENGTH_LONG).show();
+    loadFingerprintInVerifyContactView();
+  }
+
   private void createVerifyContactVerifyButtonClickListener() {
     if (mVerifyContactVerifyButton == null) return;
     mVerifyContactVerifyButton.setOnClickListener(v -> {
@@ -660,6 +725,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // being true when verifyContact gained its no-pin refusal. Saying "a different security
         // number was offered" would fabricate a security claim out of a failed load, which is why
         // the message names neither cause.
+        // Before anything is recorded: the badge means "the user compared THIS key", and the
+        // account underneath can be replaced while this screen is up.
+        if (!thenumberOnScreenIsStillTheKeyWeWouldActOn()) {
+          refuseThePressAndRepaintTheNumber();
+          return;
+        }
         if (!mE2EEStrip.verifyContact(chosenContact)) {
           Toast.makeText(getContext(), INFO_VERIFY_UNAVAILABLE, Toast.LENGTH_LONG).show();
           return;
@@ -959,6 +1030,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
               : INFO_NO_FINGERPRINT);
       return;
     }
+    // Recorded BEFORE the buttons go live, so there is no window in which they are pressable
+    // without a binding.
+    mCodesWereDerivedFrom =
+        mE2EEStrip.pinnedIdentityFor(chosenContact.getSignalProtocolAddress());
+    mCodesWereDerivedForAddress = String.valueOf(chosenContact.getSignalProtocolAddress());
     if (mVerifyContactVerifyButton != null) mVerifyContactVerifyButton.setEnabled(true);
     if (mVerifyContactRejectButton != null) mVerifyContactRejectButton.setEnabled(true);
     // Tell the user a key was offered BEFORE they compare, so they compare attentively. The digits
@@ -1017,8 +1093,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /** Blanks the safety-number digits and disables confirmation. */
+  /**
+   * Said when a press is refused because the key moved while the screen was open.
+   *
+   * <p>Names what happened rather than blaming the user or the store: the number changed, nothing
+   * was recorded, and the number now on screen is the current one. "Nothing was recorded" is the
+   * clause that matters - without it a user who pressed Verify has no way to know whether the badge
+   * they were about to earn exists.
+   */
+  static final String INFO_NUMBER_MOVED_UNDER_THE_SCREEN = "The safety number for %s changed while "
+      + "this screen was open, so nothing was recorded. The number below is the current one - "
+      + "compare it with them by voice again before verifying or rejecting.";
+
   private void clearFingerprintViews() {
     cancelCodeAnimations();
+    // With the digits, not separately: the binding describes what is on screen, and blanking the
+    // screen without it would leave both buttons refusing against a number nobody can see.
+    mCodesWereDerivedFrom = null;
+    mCodesWereDerivedForAddress = null;
     for (final TextView code : mCodes) {
       if (code != null) code.setText("");
     }

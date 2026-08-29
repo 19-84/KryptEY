@@ -425,6 +425,21 @@ public class SignalProtocolMain {
     return accepted;
   }
 
+  /**
+   * The identity key currently pinned for this address, or null if nothing is pinned.
+   *
+   * <p>Exposed so the verify screen can bind what it PAINTED to what its buttons act on. The digits
+   * are derived from this key at the moment the screen is drawn; the account object underneath can
+   * be replaced afterwards, by a theme change or by the recovery re-read that runs on every
+   * keyboard raise while a store fault stands. Without the binding, Verify records "the user
+   * compared this" against whatever is pinned when the button is pressed, which need not be the key
+   * whose number was on screen.
+   */
+  public static IdentityKey pinnedIdentityFor(final SignalProtocolAddress address) {
+    if (address == null || sInstance == null || sInstance.mAccount == null) return null;
+    return sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore().getIdentity(address);
+  }
+
   /** The identity key offered for this address and refused, or null if no change is pending. */
   public static IdentityKey getPendingIdentity(final SignalProtocolAddress address) {
     if (address == null || sInstance.mAccount == null) return null;

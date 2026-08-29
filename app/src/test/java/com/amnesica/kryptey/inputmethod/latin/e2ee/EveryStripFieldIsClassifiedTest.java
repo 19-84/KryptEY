@@ -121,7 +121,14 @@ public class EveryStripFieldIsClassifiedTest {
       // of every attempt and read once, a few lines later, by the arm that decides whether there is
       // anything to undo. It describes one press, and a press does not survive the view it was made
       // on - carrying it would mean a rebuild answering a question about an attempt that is over.
-      "mLastDecryptShowedAmessage"));
+      "mLastDecryptShowedAmessage",
+      // What the digits currently on screen were derived from, and the address they belong to.
+      // Dropped with mCodes and for the same reason: they describe THIS view's twelve digit views,
+      // and surrenderState blanks those through clearFingerprintViews, which now nulls these in the
+      // same call. Carrying them without the digits would be the worse half of either choice - a
+      // rebuilt strip refusing Verify and Reject against a number nobody can see, which is the dead
+      // end this screen has produced three times.
+      "mCodesWereDerivedFrom", "mCodesWereDerivedForAddress"));
 
   /** Types whose contents cannot change, so a final field of that type cannot hold state. */
   private static boolean isImmutable(final Class<?> type) {

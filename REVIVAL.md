@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-two sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-three sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [The number on screen and the key the button acts on](#the-number-on-screen-and-the-key-the-button-acts-on)
 - [A refusal and the sentence that justifies it are one fact](#a-refusal-and-the-sentence-that-justifies-it-are-one-fact)
 - [A control on a slot the adversary can overwrite is not a control](#a-control-on-a-slot-the-adversary-can-overwrite-is-not-a-control)
 - [Not verified on hardware, and most needing it](#not-verified-on-hardware-and-most-needing-it)
@@ -1952,6 +1953,51 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## The number on screen and the key the button acts on
+
+The verify screen shows a safety number and offers two buttons that act on a key. Nothing bound them
+to each other.
+
+The digits are painted once, from the account held at that moment. The account object underneath is
+replaced by `reloadAccount` on a theme change the host app can force, and by the recovery re-read
+that now runs on every keyboard raise while a store fault stands. `onStartInputViewInternal` runs on
+any `restartInput` or focus move — the window need not hide, and `onWindowHidden`, which is what
+clears the digits, does not run. So the messenger picks the moment, mid voice-call, by presenting a
+text field. Neither path rebuilds the strip, repaints the digits, or disables anything.
+
+`verifyContactInContactList`'s only key check is `getIdentity(address) != null` — *something* is
+pinned, never *the pinned key is the one these digits were built from*. So a user can read a number
+aloud, hear it match, press Verify, and record "I compared this" against a key that was never on
+screen. That is the one failure this trust model has no recovery from, because the badge is what the
+user checks **instead of** comparing again. `rejectContactKey` is worse in the other direction: it
+acts purely by address on whatever the account holds now, and its record is deliberately permanent.
+
+The strip now records the pinned `IdentityKey` the digits were derived from, and the address it
+belonged to, at the moment the number is painted — before the buttons go live, so there is no window
+in which they are pressable without a binding. Both listeners refuse unless the store still pins
+exactly that key. Cleared with the digits by `clearFingerprintViews`, which is what keeps the Reject
+escape hatch working for a contact with nothing pinned: no number painted, no comparison to
+invalidate.
+
+A refusal that only refuses is the dead end this screen has produced three times, so the refusal
+repaints: the digits become the current ones, both buttons come back, and the response the screen
+asks for — compare it again — is available immediately. `INFO_NUMBER_MOVED_UNDER_THE_SCREEN` says
+that nothing was recorded, which is the clause that matters; without it a user who pressed Verify
+has no way to know whether the badge exists.
+
+Four tests. Removing the binding turns both harm tests red; removing the repaint alone turns the
+dead-end test red.
+
+**What was not fixed, and why it is a decision rather than an omission.** The contact-list and
+message-list adapters also hold `Contact` objects from the account that was replaced. Every action
+on them resolves by address, or by address plus device id, and `Contact.equals` is field-based, so
+nothing matches by object identity and nothing observable changes today. The one substitution it
+allows is `updateContactInContactList` writing a stale object over a freshly loaded row, whose only
+mutable field is `verified` — which is exactly what the caller is setting. If `Contact` ever gains a
+field the store owns, that becomes a live rollback.
 
 ---
 
