@@ -4235,14 +4235,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return true;
   }
 
-  /** Clears a standing warning. Only call this from a deliberate user action. */
-  /**
-   * Clears a standing warning only when this contact is who it was about.
-   *
-   * <p>A warning with no address still clears: {@code INFO_STORAGE_UNREADABLE} and
-   * {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} are posted without one, and a deliberate response is
-   * their only exit.
-   */
   /**
    * Shows a caution that must not be dropped, without taking down a warning that must not be lost.
    *
@@ -4585,6 +4577,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     clearStandingWarningIfAbout(contact);
   }
 
+  /**
+   * Clears a standing warning only when this contact is who it was about.
+   *
+   * <p>A warning with no address still clears: {@code INFO_STORAGE_UNREADABLE} and
+   * {@code INFO_SAME_ADDRESS_DIFFERENT_NAME} are posted without one, and a deliberate response is
+   * their only exit.
+   */
   private void clearStandingWarningIfAbout(final Contact contact) {
     if (!mWarningStanding) return;
     if (mStandingWarningAddress == null || (contact != null && mStandingWarningAddress
@@ -4593,6 +4592,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
+  /** Clears a standing warning. Only call this from a deliberate user action. */
   private void clearStandingWarning() {
     mStandingWarningIsInviteRefusal = false;
     mStandingWarningText = null;

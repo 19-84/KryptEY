@@ -270,6 +270,31 @@ public class SignalProtocolMain {
   }
 
   /**
+   * Whether a session exists with this address — i.e. whether anything can actually be sent.
+   *
+   * <p>Exposed because "the invite worked" was being inferred from the absence of a decrypted
+   * message, which is also what a REFUSED invite looks like on the bundle-only path. The UI needs a
+   * fact rather than an inference.
+   */
+  public static boolean hasSessionWith(final SignalProtocolAddress address) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore().containsSession(address);
+  }
+
+  /**
+   * Whether an identity key is currently pinned at this address.
+   *
+   * <p>Exists so a caller can tell "a key was rejected here" from "a key was rejected here and
+   * another has since been pinned". Those are different states and only the second is a warning
+   * about a key: after a bare rejection there is nothing at the address at all.
+   */
+  public static boolean hasPinnedKey(final SignalProtocolAddress address) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    return sInstance.mAccount.getSignalProtocolStore()
+        .getIdentityKeyStore().getIdentity(address) != null;
+  }
+
+  /**
    * Forgets a contact's pinned key, because the user compared safety numbers and they did NOT
    * match.
    *
@@ -316,31 +341,6 @@ public class SignalProtocolMain {
    *
    * @return true if a pinned key was forgotten.
    */
-  /**
-   * Whether an identity key is currently pinned at this address.
-   *
-   * <p>Exists so a caller can tell "a key was rejected here" from "a key was rejected here and
-   * another has since been pinned". Those are different states and only the second is a warning
-   * about a key: after a bare rejection there is nothing at the address at all.
-   */
-  /**
-   * Whether a session exists with this address — i.e. whether anything can actually be sent.
-   *
-   * <p>Exposed because "the invite worked" was being inferred from the absence of a decrypted
-   * message, which is also what a REFUSED invite looks like on the bundle-only path. The UI needs a
-   * fact rather than an inference.
-   */
-  public static boolean hasSessionWith(final SignalProtocolAddress address) {
-    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
-    return sInstance.mAccount.getSignalProtocolStore().containsSession(address);
-  }
-
-  public static boolean hasPinnedKey(final SignalProtocolAddress address) {
-    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
-    return sInstance.mAccount.getSignalProtocolStore()
-        .getIdentityKeyStore().getIdentity(address) != null;
-  }
-
   public static boolean rejectContactKey(final Contact contact) {
     // Cleared at entry, not only on the path that writes. The early return below leaves the flag
     // holding the PREVIOUS rejection's outcome, so a caller asking "did this one land" would be

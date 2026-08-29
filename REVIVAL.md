@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty sections, written in the order things were found rather than by subject, so the
+One hundred and forty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -91,6 +91,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The guard that read as coverage, and the state it let through](#the-guard-that-read-as-coverage-and-the-state-it-let-through)
 - [Preserving the old value stopped persisting the new one](#preserving-the-old-value-stopped-persisting-the-new-one)
 - [Four claims the documents made that the app does not keep](#four-claims-the-documents-made-that-the-app-does-not-keep)
+- [One class of comment drift that does have a test](#one-class-of-comment-drift-that-does-have-a-test)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7845,3 +7846,41 @@ unreachable.
 What is worth taking from the round is the shape of the question. Every one of these is a sentence
 the app shows a user, checked against what the app does — and the four documents disagree with each
 other more readily than the code disagrees with itself, because nothing compiles them.
+
+## One class of comment drift that does have a test
+
+This file's entry on comment drift says the problem has no mechanical test, and for drift in general
+that is right: whether a sentence still describes what the code does needs a reader. It is not right
+for one class of it, which is purely positional — and a review round found **thirty-six** instances.
+
+When two javadoc blocks are adjacent with no declaration between them, javac attaches only the last.
+Every earlier block then sits above, and reads as documentation for, a member it does not describe.
+That is worse than staleness rather than a milder version of it: a stale comment gets checked against
+its subject and found wrong, and a misattached one gets checked against the wrong subject and found
+irrelevant, so a reader skips it instead of fixing it.
+
+The sharpest instance was three blocks stacked in `E2EEStripView`, where the top one said a caution
+is *"scoped to that contact — verifying, rejecting or deleting somebody else says nothing"* directly
+above `clearAstoreNoticeThatHasBeenResolved`, whose own javadoc says *"the condition cannot be
+resolved by anything the user does to a contact, which is why sharing the contact-addressed caution
+slot was wrong in the first place."* Two comments from the same week, contradicting each other about
+the same method, and the one javac attached was the second. That method is the one this round had
+just changed.
+
+Five are fixed. `soleContactNamed` and both warning-clearers had no javadoc at all while their own
+sat three hundred lines away above unrelated members; `rejectContactKey` and `hasPinnedKey` were a
+cleanly reversed stack — the comments in one order, the methods in the exact opposite, which is what
+inserting a method by prepending its doc and appending its body produces. One pair was not a
+re-homing at all but two blocks describing the **same** method, written a year apart, and was merged.
+
+The remaining thirty-one are pinned by a ratchet rather than fixed in one pass, and the reason is the
+one the reviewer gave: re-homing thirty-one blocks by hand is thirty-one chances to attach the wrong
+one, and a wrong re-homing is invisible — it produces exactly the defect being fixed. So the check
+lands first, refuses to let the number grow, and they move a commit at a time.
+
+Worth recording a negative result about the *method*: the obvious automation does not work. The
+first pass assumed the reversed-stack pattern was general and would have re-filed by position, and
+the very first group refutes it — two of its four blocks belong to constants declared ninety lines
+further down, not to the adjacent ones. A script that pairs by position would have produced
+plausible, wrong attributions in bulk, which is strictly worse than the thirty-one that are at least
+visibly stacked.

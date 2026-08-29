@@ -313,15 +313,12 @@ public class Account {
   }
 
   /**
-   * Remove one message this account sent, identified by recipient and exact timestamp.
+   * Remove one message this account sent, identified by the full address and exact timestamp.
    *
    * <p>Exists so a send that was refused after the plaintext had already been recorded can be
    * undone. Matching on the timestamp rather than removing "the last" entry matters: a message from
    * the contact can arrive between the two, and removing that instead would delete something the
    * user actually received.
-   */
-  /**
-   * Removes one logged message, identified by the full address rather than the bare name.
    *
    * <p>The device id is load-bearing here, and its absence was the odd one out: every other log
    * operation identifies an entry by the rendered address through {@code belongsTo}, and only this
@@ -537,14 +534,6 @@ public class Account {
   }
 
   /**
-   * The single contact bearing this address name, or null if none or more than one does.
-   *
-   * <p>Used ONCE, by the one-time key migration, and deliberately nowhere else. Asked at read time
-   * this is a question the messenger can change the answer to, by adding or removing a contact
-   * between the write and the read; asked at the first load after upgrade it is a question about a
-   * contact list the pre-upgrade binary wrote, which nothing since has been able to touch.
-   */
-  /**
    * Whether every key in this account is known to be a rendered full address.
    *
    * <p>Decides whether the schema marker is written when the account is saved, and it has to be a
@@ -586,6 +575,14 @@ public class Account {
     return keysWereJustMigrated;
   }
 
+  /**
+   * The single contact bearing this address name, or null if none or more than one does.
+   *
+   * <p>Used ONCE, by the one-time key migration, and deliberately nowhere else. Asked at read time
+   * this is a question the messenger can change the answer to, by adding or removing a contact
+   * between the write and the read; asked at the first load after upgrade it is a question about a
+   * contact list the pre-upgrade binary wrote, which nothing since has been able to touch.
+   */
   public Contact soleContactNamed(final String addressName) {
     if (contactList == null || addressName == null) return null;
     Contact found = null;
