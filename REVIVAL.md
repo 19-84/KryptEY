@@ -1988,6 +1988,37 @@ guard. Its siblings guard; adding one here would turn a null-contact deletion fr
 into a silent no-op, hiding a caller's bug rather than this method's. This is a one-line algorithm
 change, not the deferred chat-log cap, which is a policy question about history.
 
+**And three from the wire-format round, which otherwise found the layout sound.** That round walked
+every length prefix, every optional field and the whole signature coverage and could not construct a
+second spelling of one envelope or a field the signature misses; what it found instead were three
+claims and a type.
+
+`MAX_WIRE_CHARS` justified itself with "the send side caps bundles at 4096". That cap is real and is
+reached only from the invite-only path — `checkMessageLengthForEncodingMethod` returns inside its
+`isPreKeyResponse` branch before the message branches, so 4096 and the message limits are mutually
+exclusive and neither applies to a wire text carrying a bundle *and* a ciphertext. That is the
+ordinary shape whenever the signed pre-key rotation falls due, and this repo's own figure for it is
+5584 characters. Believing the sentence would mean tightening the constant toward 4096 and refusing
+every rotation-attached message on the receiver, silently, for an ordinary send. The fact is now an
+assertion rather than a comment: that envelope is larger than the invite cap and smaller than the
+decoder's.
+
+`VERSION` was a `byte` compared against a `u8`. Any future value from 128 up sign-extends to a
+negative number, so the comparison fails for every envelope — including ones the encoder has just
+written, since `write(int)` emits the low eight bits either way. The decoder would refuse its own
+output on a routine bump. Nothing is wrong at 2 and nothing would be up to 127; the trap springs on
+the bump after next. It is an `int` now, and not fixed by masking on the write side, which would
+make the wire byte right and leave the comparison signed.
+
+And an invariant the encoder now depends on that nothing wrote down: an account carries its device
+id twice, the two envelope builders read different copies, and `encode` refuses anything outside
+libsignal's range. They agree only because both `new Account(...)` sites pass an already-folded
+value — while the store still writes a `DEVICE_ID` row nothing reads, holding the unfolded
+`nextInt(10000)` value on a 0.1.5 store, sitting there looking exactly like the field a third caller
+would reach for. Now an assertion, and asserted *after a real load*: written first against a fresh
+in-memory account, where it passed with the invariant deliberately broken, because that path never
+reaches the constructor that makes it true.
+
 ---
 
 ## Kept is not the same as inert

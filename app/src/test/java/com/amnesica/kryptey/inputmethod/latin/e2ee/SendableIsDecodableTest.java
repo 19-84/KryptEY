@@ -10,6 +10,7 @@ import static org.junit.Assert.fail;
 import android.content.Context;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
+import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.Encoder;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
@@ -155,6 +156,42 @@ public class SendableIsDecodableTest {
             + encoded.length() + " characters, past the " + E2EEStrip.MAX_DECODABLE_CHARS
             + " the recipient will accept - it would send and fail on their device",
         encoded.length() <= E2EEStrip.MAX_DECODABLE_CHARS);
+  }
+
+
+  /**
+   * The bundle-plus-ciphertext envelope is not bounded by the invite cap, and never was.
+   *
+   * <p>{@code MAX_WIRE_CHARS} used to justify itself with "the send side caps bundles at 4096".
+   * That cap is real, and it is reached only from the invite-only path:
+   * {@code checkMessageLengthForEncodingMethod} returns inside its {@code isPreKeyResponse} branch
+   * before the message branches, so 4096 and the message limits are mutually exclusive and neither
+   * applies to a wire text carrying a bundle AND a ciphertext. That is the ordinary shape whenever
+   * the signed pre-key rotation falls due.
+   *
+   * <p>Believing the sentence would mean tightening {@code MAX_WIRE_CHARS} toward 4096, which
+   * refuses every rotation-attached message on the receiver, silently, for an ordinary send. So the
+   * fact is pinned rather than left in a comment: this envelope is larger than the invite cap and
+   * smaller than the decoder's.
+   */
+  @Test
+  public void therotationAttachedEnvelopeExceedsTheInviteCapAndStillDecodes() throws Exception {
+    alice.getMetadataStore().setNextSignedPreKeyRefreshTime(1L);   // rotation overdue
+
+    final MessageEnvelope withBundle = SignalProtocolMain.encryptMessage(plaintext(500), bobAddress);
+    assertNotNull("fixture: the rotation-attached envelope must be produced", withBundle);
+    assertNotNull("fixture: it must actually carry a bundle - that is what makes it the large one",
+        withBundle.getPreKeyResponse());
+
+    final String wire = EnvelopeCodec.toWire(withBundle);
+
+    assertTrue("this envelope is larger than the cap the comment claimed bounds it (" 
+            + E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE + "), at " + wire.length()
+            + " characters - nothing on its path is measured against that number",
+        wire.length() > E2EEStrip.CHAR_THRESHOLD_PRE_KEY_RESPONSE);
+    assertTrue("and it must still fit what the decoder accepts, which is the bound that is real: "
+            + wire.length(), wire.length() <= EnvelopeCodec.MAX_WIRE_CHARS);
+    assertNotNull("and it must decode", EnvelopeCodec.fromWire(wire));
   }
 
   /**

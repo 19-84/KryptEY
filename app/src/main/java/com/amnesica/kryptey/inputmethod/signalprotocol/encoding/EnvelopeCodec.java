@@ -30,7 +30,20 @@ public final class EnvelopeCodec {
     return Base64.encodeBytes(BinaryEnvelope.encode(envelope));
   }
 
-  /** Anything larger than this did not come from a peer; the send side caps bundles at 4096. */
+  /**
+   * Anything larger than this did not come from a peer.
+   *
+   * <p>This used to justify itself with "the send side caps bundles at 4096". That cap is real but
+   * it is reached only from the invite-only path, where {@code checkMessageLengthForEncodingMethod}
+   * returns before the message branches. The larger envelope - a bundle AND a ciphertext, which is
+   * the ordinary shape whenever the signed pre-key rotation falls due - is measured against nothing
+   * but this constant, and this repo's own figure for it is 5584 characters. So the sentence argued
+   * for a number 4096 does not support, and believing it would mean tightening this toward 4096 and
+   * refusing every rotation-attached message on the receiver, silently, for an ordinary send.
+   *
+   * <p>The bound that matters is the one the decoder needs: 8192 characters of base64 is about 6144
+   * bytes, which is what {@code BinaryEnvelope.decode}'s cursor arithmetic is safe for.
+   */
   public static final int MAX_WIRE_CHARS = 8192;
 
   /**

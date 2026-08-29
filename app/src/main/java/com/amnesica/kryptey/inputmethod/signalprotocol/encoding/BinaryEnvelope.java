@@ -85,7 +85,21 @@ public final class BinaryEnvelope {
    * Mixed-version compatibility is not a requirement here, so the decoder refuses version one
    * outright rather than accepting an unsigned bundle from an older build.
    */
-  static final byte VERSION = 2;
+  /**
+   * An {@code int}, not a {@code byte}, and the difference is a trap rather than a preference.
+   *
+   * <p>{@code decode} compares this against {@code c.u8("version")}, which returns 0 to 255. As a
+   * {@code byte} any future value from 128 up sign-extends to a negative number, so the comparison
+   * fails for every envelope - including ones this encoder has just written, since
+   * {@code write(int)} emits the low eight bits either way. The decoder would refuse its own output
+   * and every message from every peer would read as "not a valid envelope", on a routine version
+   * bump. Nothing is wrong at 2, and nothing would be up to 127; the trap only springs on the
+   * bump after next, which is exactly the kind that gets made quickly.
+   *
+   * <p>Not fixed by masking on the write side. That makes the wire byte right and leaves the
+   * comparison signed, so the refusal stays and the cause moves.
+   */
+  static final int VERSION = 2;
   private static final int FLAG_PRE_KEY_RESPONSE = 0x01;
   private static final int FLAG_CIPHERTEXT = 0x02;
 

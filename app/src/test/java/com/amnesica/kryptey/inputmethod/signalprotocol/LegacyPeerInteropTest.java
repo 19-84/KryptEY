@@ -131,4 +131,5 @@ public class LegacyPeerInteropTest {
     assertTrue(ProtocolAddresses.isValidDeviceId(first.getDeviceId()));
     assertTrue("the same peer must map to the same address", first.equals(second));
   }
+
 }

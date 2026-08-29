@@ -208,4 +208,41 @@ public class ArejectionThatDidNotLandIsForgottenTest {
             + "deletion, which rolls back and is NOT completed by a later write",
         SignalProtocolMain.wasKeyRejected(bobAddress));
   }
+
+  /**
+   * The account's two device ids must agree after a load, because the encoder depends on it.
+   *
+   * <p>An account carries the id twice: the scalar {@code getDeviceId()} and the one inside
+   * {@code getSignalProtocolAddress()}. The two envelope builders read different ones — the message
+   * envelope takes the scalar, the invite envelope takes the address's — and
+   * {@code BinaryEnvelope.encode} refuses any envelope whose top-level id is outside libsignal's
+   * {@code [1,127]}.
+   *
+   * <p>They agree only because both {@code new Account(...)} sites pass an already-folded value,
+   * and nothing said so. The store still writes a {@code DEVICE_ID} row that nothing reads, which
+   * on a 0.1.5 store holds the unfolded {@code nextInt(10000)} value — sitting there looking exactly
+   * like the field a future third caller would reach for. If one ever does, every migrated user's
+   * ordinary send fails inside {@code encode} while the Invite button keeps working, and the caller
+   * catches that {@code IOException} and rolls the chat-log entry back, so the user is told
+   * "encryption failed" with nothing naming the cause.
+   *
+   * <p>Asserted after a real load, because the load-time constructor is what makes it true. Written
+   * against a fresh in-memory account first, where it passed with the invariant broken — that path
+   * never reaches the constructor under test.
+   */
+  @Test
+  public void anaccountsTwoDeviceIdsAgreeAfterAload() {
+    helper().storeAllInformationInSharedPreferences(victim);
+
+    final Account loaded = helper().getAccountFromSharedPreferences();
+    assertNotNull("precondition: the store must reload", loaded);
+
+    assertEquals("the scalar device id and the one inside the protocol address must be the same "
+            + "number: the message envelope is built from one and the invite envelope from the "
+            + "other, and encode refuses anything outside libsignal's range",
+        loaded.getDeviceId(), loaded.getSignalProtocolAddress().getDeviceId());
+    assertTrue("and it must be a value libsignal accepts, or neither envelope can be built: "
+            + loaded.getDeviceId(),
+        loaded.getDeviceId() >= 1 && loaded.getDeviceId() <= 127);
+  }
 }
