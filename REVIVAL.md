@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and nineteen sections, written in the order things were found rather than by subject, so the
+One hundred and twenty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -175,6 +175,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Nothing was testing the number itself](#nothing-was-testing-the-number-itself)
 - [The tag fell off the bottom of the list](#the-tag-fell-off-the-bottom-of-the-list)
 - [The one thing a list actually does](#the-one-thing-a-list-actually-does)
+- [Which kind of hollow](#which-kind-of-hollow)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6518,3 +6519,34 @@ and the only way to tell is to run it.
 The recycled view handed to the new test is one **the adapter itself returned**, not a hand-built
 row. A hand-built one would also pass against an adapter that ignored `convertView` entirely, which
 is a different bug — and the test would then be proving nothing about recycling while appearing to.
+
+## Which kind of hollow
+
+**Swept the suite for guards that could pass without measuring anything, expecting to find work.
+There is none of that kind left, and the result is worth more than the fix would have been.**
+
+Thirty-five tests read source or walk files at run time. **All thirty-five carry an anti-vacuity
+floor** — "found only N", "no seams were found at all", "the naming convention this scan relies on
+has changed", or an outright count. Five state it in prose rather than in a comparison, which is why
+two passes of pattern-matching under-counted them; they are floors all the same.
+
+So the discipline that produces floors is complete, and adding more would be motion rather than work.
+That matters because the hollowness this project keeps actually finding is a **different species**,
+and mistaking one for the other wastes a round:
+
+- **A guard matching a spelling rather than a property.** The contact-logging regex required the
+  literal text `.toString()` and missed the one call that existed, which used implicit
+  concatenation. The verify-screen guard read the *source of a constant* and could not tell whether
+  the sentence reached the screen. A bare `assertThrows(IOException)` cannot tell which refusal it
+  caught, and two hand-built frames were being refused for their version byte rather than for the
+  thing under test.
+- **A guard that never exercises the path.** Nothing ever handed the contact adapter a recycled row —
+  the only thing a list actually does to those views. Nothing measured the list with a bounded
+  height, which is the only condition under which a row can be clipped.
+- **A floor that is dead code.** The one I wrote myself: a minimum-row guard that computed a larger
+  height and then skipped the assignment, because the assignment only ever shrinks.
+
+A floor answers "did this scan see anything?". None of the above is a failure to see; each is seeing
+the wrong thing, or seeing it in the wrong state. The remedy is not another count — it is to assert
+against the rendered view, the parsed object, the recycled row: **the thing the user or the attacker
+actually meets**, rather than the text that produces it.
