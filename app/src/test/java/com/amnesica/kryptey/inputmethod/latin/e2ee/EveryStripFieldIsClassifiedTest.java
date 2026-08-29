@@ -87,6 +87,12 @@ public class EveryStripFieldIsClassifiedTest {
       // while only the deletion needed protecting; with two, one flag would let a landed rejection
       // end a deletion's notice, which it says nothing about.
       "mStandingStorageCautionKind",
+      // The account-write count when that caution went up, so it can retire when a later write
+      // lands - which is what settles every kind of it except the failed deletion. Carried for the
+      // same reason the store notice's count is: a fresh strip starts below every real count, so
+      // dropping it would either retire the caution on the first repaint after a rotation or never
+      // retire it at all.
+      "mAccountWritesLandedWhenStorageCautionRaised",
       "mStandingStoreNotice",
       // The log-write count when that notice went up. Carried with it: a fresh strip starts this
       // below every real count, so dropping it would clear the notice on the first repaint after a

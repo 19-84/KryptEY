@@ -169,4 +169,43 @@ public class ArejectionThatDidNotLandIsForgottenTest {
             + "to prevent, arrived at from the other side",
         SignalProtocolMain.wasKeyRejected(bobAddress));
   }
+
+  /**
+   * And a later landed write persists it, which is what makes this unlike a failed deletion.
+   *
+   * <p>The two look like the same failure and are not. {@code removeContact} rolls the row, its
+   * messages and its session back into memory when the write fails, so a later write persists the
+   * <em>restored</em> contact — nothing a later write does completes the deletion.
+   * {@code rejectContactKey} has no rollback: the identity is removed, the address marked and the
+   * session deleted in memory, and only the write failed. So the state the user asked for is
+   * already there, and the very next account write that lands puts it on disk.
+   *
+   * <p>That difference decides how the notice about it must be ended, so it is measured rather than
+   * argued.
+   */
+  @Test
+  public void alaterLandedWritePersistsArejectionThatDidNotLand() {
+    helper().storeAllInformationInSharedPreferences(victim);
+    assertNotNull("precondition: a key must be pinned",
+        SignalProtocolMain.pinnedIdentityFor(bobAddress));
+
+    SignalProtocolMain.getInstance().setStorageHelperForTest(refusingHelper());
+    assertTrue(SignalProtocolMain.rejectContactKey(bob));
+    assertFalse("precondition: the rejection must not have reached disk",
+        SignalProtocolMain.lastRejectionReachedDisk());
+
+    // The disk frees up, and anything at all writes the account out.
+    SignalProtocolMain.getInstance().setStorageHelperForTest(helper());
+    assertTrue("precondition: a write must land",
+        helper().storeAllInformationInSharedPreferences(
+            SignalProtocolMain.getInstance().getAccount()));
+
+    SignalProtocolMain.getInstance().setAccount(helper().getAccountFromSharedPreferences());
+
+    assertNull("the refused key must be gone from disk now - the rejection was already in memory, "
+            + "so the write that landed carried it", SignalProtocolMain.pinnedIdentityFor(bobAddress));
+    assertTrue("and the mark with it. This is what makes a failed rejection unlike a failed "
+            + "deletion, which rolls back and is NOT completed by a later write",
+        SignalProtocolMain.wasKeyRejected(bobAddress));
+  }
 }

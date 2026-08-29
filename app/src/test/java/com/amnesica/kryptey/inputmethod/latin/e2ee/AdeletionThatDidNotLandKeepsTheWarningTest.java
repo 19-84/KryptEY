@@ -593,30 +593,110 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
   }
 
   /**
-   * And a landed REJECTION does not end a failed DELETION's notice.
+   * A failed rejection does not displace a failed deletion's notice.
    *
-   * <p>This is why the kind is carried rather than a single flag. Both notices are ended by exactly
-   * one event each, and with one boolean the escape that lets a landed deletion end its own would
-   * let a landed rejection end it too - and a landed rejection says nothing about whether a contact
-   * was removed. The row, its key and its plaintext are all still there.
+   * <p>The rejection notice was first classified as a second protected kind, and that was wrong
+   * twice over. It made two protected notices compete in one slot with neither yielding, so a
+   * failed rejection during the same disk-full episode overwrote "that contact was not removed"
+   * and nothing ever re-raised it. And it stranded the rejection notice itself: rejecting removes
+   * the pin, so that contact's verify screen has no number and both buttons go dark, and "reject
+   * again" - the exit the protection demanded - could not be reached.
+   *
+   * <p>Measured instead: {@code rejectContactKey} has no rollback, so the state the user asked for
+   * is already in memory and the next landed write puts it on disk. A failed rejection is settled
+   * by a later landed write, like the rest of the family, and yields to the one notice that is not.
    */
   @Test
-  public void alandedRejectionDoesNotEndAfailedDeletionsNotice() {
+  public void afailedRejectionDoesNotDisplaceAfailedDeletionsNotice() {
     makeTheWriteFail();
     strip.removeContact(bob);
     assertTrue("precondition: the deletion notice must be standing: " + banner(),
         banner().contains("was not removed"));
 
-    // The trouble ends, and the user rejects the key of the contact they failed to delete.
-    makeTheWriteLand();
+    // The same episode: the user rejects the key of the contact they failed to delete, and that
+    // write fails too.
     strip.showVerifyContactForTest(bob);
+    assertTrue("precondition: the reject button must be live",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).isEnabled());
     strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
-    assertTrue("precondition: this rejection must have landed",
+    assertFalse("precondition: this rejection must NOT have landed",
         SignalProtocolMain.lastRejectionReachedDisk());
     strip.selectContact(bob);
 
-    assertTrue("only a deletion that lands ends a deletion notice. A rejection landing says "
-            + "nothing about whether the contact was removed: " + banner(),
+    assertTrue("the deletion notice is the one nothing a later write settles, so it outranks a "
+            + "notice that a later write does settle. Overwritten here, it is never re-raised - "
+            + "removeContact is its only writer and it posts only on a fresh failed attempt: "
+            + banner(),
         banner().contains("was not removed"));
+  }
+
+  /**
+   * And an ordinary storage caution comes down when a later write lands, which is its exit.
+   *
+   * <p>Until now the only thing that retired one was the refusal sweep, and that acts only on an
+   * address that also has a not-on-disk entry. A caution raised without one could be ended only by
+   * acting on the contact it names - and after a failed rejection those controls are gone, because
+   * rejecting removed the pin, so the verify screen has no number and both buttons are dark. That
+   * is the dead end this file has closed twice, arrived at from a new direction.
+   */
+  @Test
+  public void anordinaryStorageCautionRetiresWhenAlaterWriteLands() throws Exception {
+    makeTheWriteFail();
+    strip.showVerifyContactForTest(bob);
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    strip.selectContact(bob);
+    assertTrue("precondition: the rejection notice must be standing: " + banner(),
+        banner().contains("could not write to its own storage"));
+
+    // The disk frees up and the user does the next ordinary thing - pressing Invite, which
+    // allocates a one-time pre-key and saves the account. For a rejection that is not incidental:
+    // the decision was already in memory, so the write that lands is what puts it on disk.
+    makeTheWriteLand();
+    final long before = SignalProtocolMain.accountWritesLanded();
+    SignalProtocolMain.exportOwnKeyBundle();
+    assertTrue("precondition: a write must have landed",
+        SignalProtocolMain.accountWritesLanded() > before);
+    strip.selectContact(bob);
+
+    assertFalse("a caution a later landed write settles must come down when one does, or it is a "
+            + "sentence with no exit holding the banner for the life of the process: " + banner(),
+        banner().contains("could not write to its own storage"));
+  }
+
+  /**
+   * A failed rejection at an address already marked on disk says nothing, because nothing was lost.
+   *
+   * <p>The notice claims "it will not be remembered the next time the keyboard opens". Pressing
+   * Reject again at an address whose mark already reached disk changes nothing, so that clause is
+   * false: the earlier mark is on disk and will be remembered. The toast beside it already asks
+   * both questions - whether there was a key to forget, and whether the address was already
+   * rejected - and the durable sentence has to ask them too, precisely because it is durable and
+   * protected from being painted over.
+   */
+  @Test
+  public void asecondFailedRejectionAtAmarkedAddressSaysNothing() {
+    makeTheWriteLand();
+    strip.showVerifyContactForTest(bob);
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    assertTrue("precondition: the first rejection must have landed",
+        SignalProtocolMain.lastRejectionReachedDisk());
+    assertTrue("precondition: the address must be marked on disk",
+        SignalProtocolMain.wasKeyRejected(bob.getSignalProtocolAddress()));
+
+    // A warning about Bob stands again, which is what keeps Reject reachable with no pin - the
+    // deliberate escape hatch, so a standing warning always has a response available.
+    strip.setWarningMessageAboutForTest(WARNING, bob);
+    makeTheWriteFail();
+    strip.showVerifyContactForTest(bob);
+    assertTrue("precondition: the escape hatch must have kept Reject live",
+        strip.findViewById(R.id.e2ee_verify_contact_reject_button).isEnabled());
+
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    strip.selectContact(bob);
+
+    assertFalse("nothing was lost: there was no key to forget and the mark was already on disk, so "
+            + "'it will not be remembered the next time the keyboard opens' is false. A durable "
+            + "sentence the user can catch out is one they stop believing: " + banner(),
+        banner().contains("could not write to its own storage"));
   }
 }

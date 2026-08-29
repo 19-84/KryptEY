@@ -1994,6 +1994,38 @@ silent trust-on-first-use `markKeyRejected` exists to prevent, reached from the 
 performed this app's strongest deliberate refusal, was told for three and a half seconds that it had
 not stuck, and had no way to check afterwards. It now says so on the surface that lasts.
 
+**And the kind it was first given was the wrong one, which produced two defects at once.** A
+reviewer found both. Classified as a second *protected* kind, the rejection notice collided with the
+deletion notice in the single slot — neither yields to the other, so a failed rejection during the
+same disk-full episode overwrote "that contact was not removed", and nothing re-raises it because
+`removeContact` posts only on a fresh failed attempt. And it stranded itself: rejecting removes the
+pin from memory, so that contact's verify screen has no number, both its buttons go dark, and
+"reject again" — the exit the protection demanded — could not be reached. My own comment claimed the
+exit was reachable "because the contact is still in the list"; the contact being in the list is not
+what gates Reject, the pin is, and the raise itself removed it.
+
+The classification was wrong because the two failures look alike and are not, and the difference is
+measurable. `removeContact` rolls the row, its messages and its session back into memory when the
+write fails, so a later write persists the *restored* contact — nothing a later write does completes
+the deletion. `rejectContactKey` has no rollback: the state the user asked for is already in memory
+and only the write failed, so the next landed account write puts it on disk.
+`ArejectionThatDidNotLandIsForgottenTest` measures that directly. A failed rejection is therefore
+settled by a later landed write like the rest of the family, and yields to the one notice that is
+not.
+
+Which exposed something the family had been missing all along: an ordinary storage caution had no
+write-based exit. The only thing that retired one was the refusal sweep, which acts only on an
+address that also has a not-on-disk entry — so a caution raised without one could be ended only by
+acting on the contact it names, and after a failed rejection those controls are gone. It now retires
+when the account-write count advances past the value recorded when it went up, which is the same
+idiom the store notice already used.
+
+**And the durable sentence now asks what the toast beside it always asked.** Pressing Reject at an
+address already marked on disk changes nothing, so "it will not be remembered the next time the
+keyboard opens" would be false. Reachable through the escape hatch, which needs a standing warning
+and no pin. A sentence the user can catch out is one they stop believing, and this one is durable
+and hard to clear.
+
 **Which forced the flag to become a kind.** A boolean was enough while only the deletion needed
 protecting. With two, the escape that lets a landed deletion end its own notice would also let a
 landed *rejection* end it — and a landed rejection says nothing about whether a contact was removed;
