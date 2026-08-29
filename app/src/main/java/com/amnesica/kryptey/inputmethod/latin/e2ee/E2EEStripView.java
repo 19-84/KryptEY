@@ -48,6 +48,7 @@ import org.signal.libsignal.protocol.fingerprint.Fingerprint;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Comparator;
 import java.util.List;
@@ -2141,6 +2142,40 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final Map<String, Long> mContactsNotOnDisk = new HashMap<>();
 
   /**
+   * Addresses whose last attached bundle was refused, and the sentence that was said about it.
+   *
+   * <p>This exists because the invite-refusal warning was the one warning nothing could work out
+   * again. The banner holds one warning and any other writer takes it - including the condition
+   * warning that a keyboard raise re-raises on every raise while a store fault stands. The other
+   * three warnings survive that: {@code selectContact} re-derives the shared name, the rejection
+   * and the identity change, and the last also re-raises on every decrypt from that sender. So
+   * painting over them is a displacement. Painting over this one was an erasure, and what it erased
+   * is "that invite was changed on the way here" - the notice bought back from a relay that
+   * otherwise gets silence for one stripped unsigned byte per message.
+   *
+   * <p>The SENTENCE is stored, not a flag. Three outcomes have three texts and they are not
+   * interchangeable: one says nothing was set up, one says a key was pinned anyway and to compare
+   * the number, one says what you already had is unchanged. Re-deriving from a flag would have to
+   * pick, and picking wrong writes a false sentence onto the one durable surface this app has -
+   * "nothing has been set up" over a session that is fine, or the reassuring one over a first pin.
+   *
+   * <p>Not persisted, deliberately. The fact is about a paste in this session, and it is retracted
+   * by a later good invite at the same address; carrying it across process death would mean
+   * re-asserting a refusal the user may already have resolved by asking for another invite.
+   */
+  private final Map<String, String> mRefusedInvites = new LinkedHashMap<String, String>() {
+    @Override
+    protected boolean removeEldestEntry(final Map.Entry<String, String> eldest) {
+      // Bounded, because the addresses need not be contacts: a relay can staple a tampered bundle
+      // to messages from as many addresses as it likes, and an unbounded map here is one it fills.
+      return size() > REFUSED_INVITES_REMEMBERED;
+    }
+  };
+
+  /** How many refused invites are re-derivable at once. See {@code mRefusedInvites}. */
+  private static final int REFUSED_INVITES_REMEMBERED = 32;
+
+  /**
    * A notice about the store rather than about a contact, kept apart from the caution slot.
    *
    * <p>There is one thing that goes here: a deletion whose account write landed and whose message
@@ -3489,21 +3524,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    *   <li>Whereas the warnings it displaces are, with one exception, recomputable - the property
    *       this file relies on everywhere else. {@code selectContact} re-derives exactly three:
    *       {@code warnIfNameIsShared}, {@code warnIfKeyWasRejected} and
-   *       {@code warnIfIdentityChanged}, and the last also re-raises on every decrypt from that
-   *       sender. All three are actions the warnings' own text asks for. An eviction the subject
+   *       {@code warnIfIdentityChanged} - four now, with {@code warnIfLastInviteWasRefused} - and
+   *       the identity change also re-raises on every decrypt from that sender. All three are actions the warnings' own text asks for. An eviction the subject
    *       re-derives is a displacement.</li>
    * </ul>
    *
-   * <p><b>The exception, named because it is the load-bearing gap.</b> The invite-refusal warning
-   * ({@code setInviteRefusalWarning}) is not re-derived by anything: nothing records per-address
-   * that the last attached bundle was refused, and its only lowering is a retraction by a later
-   * good invite. So a raise during a fault can repaint over "that invite was changed on the way
-   * here" and leave only the 3.5-second toast, which is the silence the refusal warning exists to
-   * buy back. The route is narrow - the refusal yields to a standing warning unless that warning is
-   * about a shared name, so it has to be raised into a free-or-shared-name slot first - and it is
-   * INFERRED rather than reproduced. The fix is to make the refusal recomputable rather than to
-   * yield here, because yielding is what reopens the re-invite hazard above; it is recorded in
-   * REVIVAL.md as owed rather than done.
+   * <p><b>There was a fourth warning, and it was the exception.</b> The invite-refusal warning was
+   * re-derived by nothing: no per-address record said the last attached bundle had been refused, so
+   * a raise during a fault repainted over "that invite was changed on the way here" and left only a
+   * 3.5-second toast - the silence the refusal warning exists to buy back from a relay that pays
+   * one stripped unsigned byte per message. It is recomputable now, from {@code mRefusedInvites},
+   * and {@code selectContact} raises it second of four. Made recomputable rather than given a
+   * yield, because yielding is what reopens the re-invite hazard above.
    *
    * <p>So the ordering is deliberate and the cost is stated rather than hidden: while a fault
    * stands, a key-substitution warning is repainted away on raises the messenger can trigger, and
@@ -4072,6 +4104,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setInviteRefusalWarning(final String message, final String aboutAddress) {
     setWarningMessage(message, aboutAddress);
     mStandingWarningIsInviteRefusal = true;
+    // Remembered so it can be worked out again. See mRefusedInvites: this is the warning a raise
+    // used to erase outright, because it was the only one with nothing behind it.
+    if (aboutAddress != null) mRefusedInvites.put(aboutAddress, message);
+  }
+
+  /**
+   * Re-raises the refusal for a contact whose last attached bundle was refused.
+   *
+   * <p>An EVENT raiser: a bundle that was changed in transit does not stop having been changed, so
+   * this never lowers anything. What ends it is the retraction - a later good invite at the same
+   * address - or the contact being deleted.
+   *
+   * <p>Deliberately silent when there is nothing recorded, so it cannot blank a banner.
+   */
+  private boolean warnIfLastInviteWasRefused(final Contact contact) {
+    if (contact == null) return false;
+    final String remembered =
+        mRefusedInvites.get(String.valueOf(contact.getSignalProtocolAddress()));
+    if (remembered == null) return false;
+    setInviteRefusalWarning(remembered, String.valueOf(contact.getSignalProtocolAddress()));
+    return true;
   }
 
   /**
@@ -4082,6 +4135,13 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * those must survive it.
    */
   private void clearInviteRefusalIfAbout(final Contact contact) {
+    // The record goes first and unconditionally. It is retracted by the same event that retracts
+    // the warning - a later good invite at this address - and gating its removal on a warning
+    // happening to be standing would leave a refusal that comes back on the next selection after
+    // the user has already fixed it.
+    if (contact != null) {
+      mRefusedInvites.remove(String.valueOf(contact.getSignalProtocolAddress()));
+    }
     if (!mWarningStanding || !mStandingWarningIsInviteRefusal) return;
     clearStandingWarningIfAbout(contact);
   }
@@ -4408,6 +4468,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
      */
     private final Map<String, Long> contactsNotOnDisk;
     /**
+     * The refused invites, so a rebuild does not make the one warning nothing re-derives
+     * un-re-derivable again. A configuration change is host-forceable, so dropping this would hand
+     * the erasure straight back by a different route.
+     */
+    private final Map<String, String> refusedInvites;
+    /**
      * The store notice and the log-write count when it went up.
      *
      * <p>Carried because the condition it reports survives a rebuild and nothing re-asserts it: the
@@ -4429,6 +4495,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final String standingWarningText, final String standingWarningAddress,
         final boolean standingWarningIsInviteRefusal, final String standingCaution,
         final String standingCautionAddress, final Map<String, Long> contactsNotOnDisk,
+        final Map<String, String> refusedInvites,
         final String standingStorageCaution, final String standingStorageCautionAddress,
         final boolean standingStorageCautionIsAboutAdeletion,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
@@ -4443,6 +4510,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.standingCaution = standingCaution;
       this.standingCautionAddress = standingCautionAddress;
       this.contactsNotOnDisk = contactsNotOnDisk;
+      this.refusedInvites = refusedInvites;
       this.standingStorageCaution = standingStorageCaution;
       this.standingStorageCautionAddress = standingStorageCautionAddress;
       this.standingStorageCautionIsAboutAdeletion = standingStorageCautionIsAboutAdeletion;
@@ -4525,6 +4593,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     return new CarriedState(draft, wasComposing, banner, mWarningStanding, mStandingWarningText,
         mStandingWarningAddress, mStandingWarningIsInviteRefusal, mStandingCaution,
         mStandingCautionAddress, new HashMap<>(mContactsNotOnDisk),
+        new LinkedHashMap<>(mRefusedInvites),
         mStandingStorageCaution, mStandingStorageCautionAddress,
         mStandingStorageCautionIsAboutAdeletion,
         mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
@@ -4638,6 +4707,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the host app can force.
     mContactsNotOnDisk.clear();
     if (carried.contactsNotOnDisk != null) mContactsNotOnDisk.putAll(carried.contactsNotOnDisk);
+    mRefusedInvites.clear();
+    if (carried.refusedInvites != null) mRefusedInvites.putAll(carried.refusedInvites);
     mStandingStorageCaution = carried.standingStorageCaution;
     mStandingStorageCautionAddress = carried.standingStorageCautionAddress;
     mStandingStorageCautionIsAboutAdeletion = carried.standingStorageCautionIsAboutAdeletion;
@@ -4897,9 +4968,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // So: shared name, then rejection, then identity change. A detected key substitution outranks
     // everything and is written last.
     final boolean sharedName = warnIfNameIsShared(contact);
+    // Second of four, which is where the refusal already sat by severity: it outranks a warning
+    // derived from the contact list, and it yields to a rejection and to a detected substitution.
+    // Adding it here is what makes painting over it a displacement rather than an erasure - the
+    // property the no-yield trade in refreshOpeningMessage rests on, and the one warning that did
+    // not hold it.
+    final boolean inviteRefused = warnIfLastInviteWasRefused(contact);
     final boolean rejected = warnIfKeyWasRejected(contact);
     final boolean identityChanged = warnIfIdentityChanged(contact);
-    final boolean warnedAboutThisContact = sharedName || rejected || identityChanged;
+    final boolean warnedAboutThisContact =
+        sharedName || inviteRefused || rejected || identityChanged;
     if (mWarningStanding) {
       // Do not write OVER the warning - that is the same erasure whether or not the flag comes down
       // with it, because what the user reads is the banner. Repaint it with the new recipient named
@@ -5008,6 +5086,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // Nothing left to refuse about: the row is gone from disk as well as from memory.
       if (contact != null) {
         mContactsNotOnDisk.remove(String.valueOf(contact.getSignalProtocolAddress()));
+        // And the refused-invite record, for the same reason: a warning about a contact who no
+        // longer exists points the user at a row that is gone.
+        mRefusedInvites.remove(String.valueOf(contact.getSignalProtocolAddress()));
       }
       // AFTER the clear, which is the only place it survives.
       //

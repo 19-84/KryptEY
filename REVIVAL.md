@@ -1988,9 +1988,21 @@ every decrypt from that sender — so painting over them is a displacement. Noth
 only exit is a retraction by a later good invite. A raise during a fault can therefore repaint over
 *"that invite was changed on the way here"* and leave only the 3.5-second toast, which is exactly
 the silence that warning exists to buy back. INFERRED, not reproduced — the route needs the refusal
-raised into a free-or-shared-name slot first. The claim is now narrowed to what holds, the gap is
-named beside it, and the fix is **owed**: make the refusal recomputable, not yield here, because
-yielding is what reopens the re-invite hazard.
+raised into a free-or-shared-name slot first.
+
+**Since fixed, the way the finding said to fix it.** `mRefusedInvites` records, per address, the
+sentence that was said, and `selectContact` raises it second of four — the position it already held
+by severity, above a warning derived from the contact list and below a rejection or a detected
+substitution. So painting over it is now a displacement like the others. The *sentence* is stored
+rather than a flag, deliberately: the three outcomes have three texts and they are not
+interchangeable — one says nothing was set up, one says a key was pinned anyway and to compare the
+number, one says what you already had is unchanged. Re-deriving from a flag would have to pick, and
+picking wrong writes a false sentence onto the only durable surface this app has. Carried across a
+rebuild, because a configuration change is host-forceable and would otherwise hand the erasure back
+by another route; bounded at 32, because the addresses need not be contacts and a relay chooses how
+many it staples a tampered bundle to; not persisted, because the fact is about a paste in this
+session and is retracted by a later good invite. Removing the re-derivation turns one new test red;
+keeping the record past the retraction turns the other red.
 
 **A test measured the recovery route without using it.** The trade above rests on "the user gets the
 warning back by tapping the contact", and the test asserted it by calling `selectContact` directly.

@@ -89,7 +89,13 @@ public class EveryStripFieldIsClassifiedTest {
       // The log-write count when that notice went up. Carried with it: a fresh strip starts this
       // below every real count, so dropping it would clear the notice on the first repaint after a
       // rotation - silently, and the condition is never re-asserted.
-      "mLogWritesLandedWhenNoticeRaised"));
+      "mLogWritesLandedWhenNoticeRaised",
+      // The refused invites, by address, with the sentence that was said. Carried because it exists
+      // precisely to make that warning re-derivable, and a rebuild is host-forceable: dropping it
+      // would hand back the erasure it was added to close, by a different route. The other three
+      // warnings are re-derived from the account, which survives a rebuild on its own; this one is
+      // re-derived from here, so here has to survive too.
+      "mRefusedInvites"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

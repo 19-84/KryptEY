@@ -4,6 +4,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import android.content.ClipData;
@@ -927,5 +928,67 @@ public class RefusedInviteIsNotReportedAsSuccessTest {
         org.robolectric.shadows.ShadowToast.getTextOfLatestToast() != null
             && org.robolectric.shadows.ShadowToast.getTextOfLatestToast()
                 .contains("changed on the way here"));
+  }
+
+  /**
+   * And it comes back when the user looks at the contact, like every other warning here.
+   *
+   * <p>This was the one warning nothing re-derived. The banner holds a single warning and any other
+   * writer takes it — including the condition warning that a keyboard raise re-raises on every
+   * raise while a store fault stands, which is a rate the messenger sets by presenting a text
+   * field. {@code selectContact} re-derives the shared name, the rejection and the identity change,
+   * so painting over those is a displacement; painting over this one was an erasure, and what it
+   * erased is the notice bought back from a relay that otherwise gets silence for one stripped
+   * unsigned byte per message.
+   *
+   * <p>The sentence is remembered rather than a flag, because the three outcomes have three texts
+   * and they are not interchangeable — one says nothing was set up, one says a key was pinned
+   * anyway, one says what you already had is unchanged. Re-deriving from a flag would have to pick,
+   * and picking wrong writes a false sentence onto the only durable surface this app has.
+   */
+  @Test
+  public void arefusedInviteComesBackWhenTheContactIsLookedAt() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    final String said = bannerText();
+    assertTrue("precondition: the refusal must be standing: " + said,
+        said.contains("changed on the way here"));
+
+    // Anything else takes the slot. A raise while a store fault stands does this on its own.
+    strip.setWarningMessageForTest("Careful: something else entirely.");
+    assertTrue("precondition: the slot must have been taken",
+        !bannerText().contains("changed on the way here"));
+
+    strip.selectContact(strip.chosenContactForTest());
+
+    assertTrue("looking at the contact must work it out again. Without that, one cheap warning "
+            + "erases 'that invite was changed on the way here' for good - and the raise that "
+            + "re-raises a storage warning does it on a schedule the messenger picks: "
+            + bannerText(),
+        bannerText().contains("changed on the way here"));
+    assertEquals("and it must be the sentence that was actually said, not a re-guess at which of "
+            + "the three outcomes applied", said, bannerText());
+  }
+
+  /** And a later good invite retracts it, so it does not come back after the user has fixed it. */
+  @Test
+  public void agoodInviteStopsTheRefusalComingBack() throws Exception {
+    contactRowWithoutASession();
+    paste(strippedInvite());
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+    assertTrue("precondition: the refusal must be standing",
+        bannerText().contains("changed on the way here"));
+
+    // They send another, and this one arrives intact.
+    paste(EnvelopeCodec.fromWire(genuineBundle));
+    strip.findViewById(R.id.e2ee_button_decrypt).performClick();
+
+    strip.selectContact(strip.chosenContactForTest());
+
+    assertTrue("a refusal the user has already resolved must not be re-asserted on every "
+            + "selection: the record is retracted by the same event that retracts the warning: "
+            + bannerText(),
+        !bannerText().contains("changed on the way here"));
   }
 }

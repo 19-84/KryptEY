@@ -62,6 +62,10 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
    */
   private static final Set<String> EVENT_RAISERS = new LinkedHashSet<>(Arrays.asList(
       "warnIfIdentityChanged",       // a different key was offered at a pinned address
+      // A bundle that was changed in transit does not stop having been changed. Re-derived from
+      // mRefusedInvites rather than lowered: what ends it is the retraction by a later good invite,
+      // or the contact being deleted.
+      "warnIfLastInviteWasRefused",
       "warnIfKeyWasRejected",        // a key was pinned where the user had reported a mismatch
       "addContact",                  // the duplicate-name and same-address refusals, at add time
       "decryptMessageAndShowMessageInMainInputField",  // the invite-refusal outcomes
