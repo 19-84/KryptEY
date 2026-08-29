@@ -98,16 +98,34 @@ public final class LegacyKeyMigration {
         final com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact owner =
             account.soleContactNamed(key);
         if (owner == null) {
-          // Kept, not deleted.
+          // Kept, not deleted - and neutralised, which the "kept" alone was not.
           //
           // Deleting was chosen when an unattributed entry could still be matched by a bare-name
-          // reader and handed to whichever row survived. No reader does that any more - belongsTo
-          // compares the full rendered address and nothing produces a bare name to match - so an
-          // un-re-keyed entry is inert: invisible to every contact including the attacker's. That
-          // turned deletion from a safety measure into a destruction primitive, one ordinary invite
-          // sent before the upgrade being enough to have a genuine conversation classed ambiguous
-          // and erased with no prompt and no way back.
-          Log.w(TAG, "Leaving a chat-log entry whose address name identifies no single contact");
+          // reader and handed to whichever row survived. No reader does that any more, so deleting
+          // turned from a safety measure into a destruction primitive: one ordinary invite sent
+          // before the upgrade is enough to have a genuine conversation classed ambiguous and
+          // erased with no prompt and no way back. That still holds, and this arm still keeps.
+          //
+          // What did NOT hold is the sentence that used to follow it: "an un-re-keyed entry is
+          // inert: invisible to every contact including the attacker's". It is invisible only when
+          // the bare key cannot be produced by chatLogKey - and a 0.1.5 store was never held to the
+          // wire's name check, so the messenger could pick the address name "bob-uuid<SEP>5", which
+          // IS Bob's rendered key. Two pre-upgrade invites under that name at different device ids
+          // make soleContactNamed ambiguous, so the entry lands here and is kept verbatim - and
+          // belongsTo(bob-uuid, 5) then matches it. The attacker's own pre-upgrade plaintext is
+          // rendered inside Bob's conversation, under Bob's name, tag and badge. That is the
+          // substitution the re-keying exists to remove, reached through the arm that declines to
+          // re-key.
+          //
+          // So the key is made unproducible rather than trusted to be. chatLogKey always renders
+          // name + SEPARATOR + deviceId, and a name is never empty - the wire refuses a zero-length
+          // sender name and ProtocolAddresses refuses one too - so a value whose FIRST character is
+          // the separator cannot be any contact's key. Prefixing is chosen over deleting or
+          // blanking because it destroys nothing: the original key is still there to read, one
+          // character in, if a later version ever learns to attribute these.
+          message.setContactUUID(com.amnesica.kryptey.inputmethod.signalprotocol.util
+              .ProtocolAddresses.SEPARATOR + key);
+          Log.w(TAG, "Neutralised a chat-log entry whose address name identifies no single contact");
         } else {
           message.setContactUUID(com.amnesica.kryptey.inputmethod.signalprotocol.util
               .ProtocolAddresses.key(owner.getSignalProtocolAddress()));

@@ -64,8 +64,12 @@ public class LegacySeparatorSmugglingTest {
    * Nothing here constructs the crafted name through a path the current code controls.
    */
   private Contact attackerRowFromStoredJson() throws Exception {
+    return attackerRowFromStoredJson(9);
+  }
+
+  private Contact attackerRowFromStoredJson(final int deviceId) throws Exception {
     final ArrayList<Contact> shape = new ArrayList<>();
-    shape.add(new Contact("Carol", "Smith", PLACEHOLDER, 9, false));
+    shape.add(new Contact("Carol", "Smith", PLACEHOLDER, deviceId, false));
     final String stored = JsonUtil.toJson(shape).replace(PLACEHOLDER, "bob-uuid\\u001F5");
     @SuppressWarnings("unchecked")
     final ArrayList<Contact> raw =
@@ -128,6 +132,62 @@ public class LegacySeparatorSmugglingTest {
             + "conversation, because the migration read a peer-chosen stored name as an address it "
             + "had already rendered: " + logOf(genuineBob),
         logContains(logOf(genuineBob), ATTACKER_WORDS));
+  }
+
+
+  /**
+   * And the arm that declines to attribute must leave the entry genuinely inert.
+   *
+   * <p>The single-row case above is re-keyed onto the attacker. This is its intersection with the
+   * other half of the design: {@code soleContactNamed} returns null when **two** rows bear the
+   * name, not only when none does — so two pre-upgrade invites under the crafted name, at different
+   * device ids, land the entry in the keep-don't-delete arm, where it used to be left verbatim.
+   *
+   * <p>Verbatim is not inert here. The crafted key IS Bob's rendered key, so
+   * {@code belongsTo("bob-uuid", 5)} matches it and the attacker's pre-upgrade plaintext is
+   * rendered inside Bob's conversation, under Bob's name, tag and badge. That is the substitution
+   * the re-keying removes, reached through the arm that declines to re-key — and neither existing
+   * test covers the intersection: one puts a single crafted row in the list, the other uses a
+   * shared name containing no separator.
+   *
+   * <p>Two pre-upgrade invites is the standard pretext this codebase already names: the second
+   * arrives as "my phone died, here is my new invite". 0.1.5 warned about neither.
+   */
+  @Test
+  public void anambiguousLegacyEntryIsNeutralisedRatherThanLeftMatchable() throws Exception {
+    final ArrayList<Contact> contacts = new ArrayList<>();
+    contacts.add(genuineBob);
+    // TWO rows bearing the crafted name, which is what makes soleContactNamed answer null.
+    contacts.add(attackerRowFromStoredJson(9));
+    contacts.add(attackerRowFromStoredJson(10));
+    final Contact bystander = new Contact("Dave", "Brown", "dave-uuid", 11, false);
+    contacts.add(bystander);
+    account.setContactList(contacts);
+
+    account.getUnencryptedMessages().add(new StorageMessage(craftedName, craftedName,
+        account.getSignalProtocolAddress().getName(), Instant.ofEpochSecond(1_700_000_000L),
+        ATTACKER_WORDS, false));
+
+    LegacyKeyMigration.apply(account);
+
+    assertFalse("control: an ordinary row must see nothing",
+        logContains(logOf(bystander), ATTACKER_WORDS));
+    assertFalse("the entry the migration declined to attribute is still matched by the genuine "
+            + "contact, because the crafted key IS their rendered key. Kept is not the same as "
+            + "inert: " + logOf(genuineBob),
+        logContains(logOf(genuineBob), ATTACKER_WORDS));
+    assertFalse("and not by either attacker row either",
+        logContains(logOf(contacts.get(1)), ATTACKER_WORDS)
+            || logContains(logOf(contacts.get(2)), ATTACKER_WORDS));
+
+    // Kept, not deleted - the whole reason this arm exists. Deleting would be a destruction
+    // primitive: one ordinary pre-upgrade invite is enough to have a genuine conversation classed
+    // ambiguous and erased.
+    assertEquals("the entry must still be in the log, just unattributable", 1,
+        account.getUnencryptedMessages().size());
+    assertEquals("and its original key must still be readable, one character in, so a later "
+            + "version could attribute it", craftedName,
+        account.getUnencryptedMessages().get(0).getContactUUID().substring(1));
   }
 
   /**

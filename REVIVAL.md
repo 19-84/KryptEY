@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-one sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [Kept is not the same as inert](#kept-is-not-the-same-as-inert)
 - [Guards that ran in the wrong command, and claims nobody had crossed a boundary to check](#guards-that-ran-in-the-wrong-command-and-claims-nobody-had-crossed-a-boundary-to-check)
 - [The mutant is not a formality, and here is the tally](#the-mutant-is-not-a-formality-and-here-is-the-tally)
 - [Two ways the store wrote a default over something it could not read](#two-ways-the-store-wrote-a-default-over-something-it-could-not-read)
@@ -1961,6 +1962,41 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## Kept is not the same as inert
+
+The one-time key migration has an arm that declines to attribute an entry and keeps it rather than
+deleting it. Deleting was tried and reverted for a good reason, recorded above: no reader matches a
+bare name any more, so an unattributed entry cannot be handed to the wrong row — and deleting turned
+into a destruction primitive, one ordinary pre-upgrade invite being enough to have a genuine
+conversation classed ambiguous and erased with no prompt and no way back.
+
+The sentence that followed was wrong. *"An un-re-keyed entry is inert: invisible to every contact
+including the attacker's"* holds only when the bare key is something `chatLogKey` cannot produce. A
+0.1.5 store was never held to the wire's name check, and the chat log was keyed by the peer-supplied
+address name — so the messenger could pick `bob-uuid<SEP>5`, which **is** Bob's rendered key.
+
+`soleContactNamed` answers null when **two** rows bear the name, not only when none does. So two
+pre-upgrade invites under that crafted name, at different device ids — the second arriving as "my
+phone died, here is my new invite", which this file already names as the standard pretext — put the
+entry in the keep arm, where it was left verbatim. `belongsTo("bob-uuid", 5)` then matched it, and
+the attacker's own pre-upgrade plaintext rendered inside Bob's conversation, under Bob's name, tag
+and badge, indistinguishable from what Bob actually said. 0.1.5 warned about neither invite: it had
+no duplicate-name check, no duplicate-address check, and no name validation at all.
+
+Neither existing test covered it, and they missed it from opposite sides: one puts a *single*
+crafted row in the list, so the entry is re-keyed onto the attacker rather than reaching this arm;
+the other uses a shared name containing no separator, so the key is genuinely unproducible. The
+intersection is where it lives.
+
+The key is now made unproducible rather than trusted to be, by prefixing the separator: every
+`chatLogKey` output is `name + SEPARATOR + deviceId`, and a name is never empty, so no contact's key
+can begin with that character. Prefixing rather than blanking or deleting, because it destroys
+nothing — the original key is still readable one character in, if a later version ever learns to
+attribute these. Reverting it turns the new test red; the single-row test stays green either way,
+which is why it never saw this.
 
 ---
 

@@ -72,10 +72,16 @@ public class LegacyKeyMigrationTest {
    * passes both add-path checks silently and has the genuine conversation erased at the next load,
    * with no prompt and no way back.
    *
-   * <p>So it is kept, and inert: invisible to every contact row including the attacker's.
+   * <p>So it is kept — and made inert rather than assumed to be. "Left exactly as it was" is what
+   * this used to assert, and a review round showed the difference matters: the bare key is inert
+   * only when {@code chatLogKey} cannot produce it, and a 0.1.5 store was never held to the wire's
+   * name check, so a peer-chosen address name can BE a rendered key. Two pre-upgrade invites under
+   * such a name make {@code soleContactNamed} ambiguous, the entry lands in this arm, and kept
+   * verbatim it is matched by the genuine contact it names. The separator prefix makes it
+   * unproducible; the original key is still readable one character in.
    */
   @Test
-  public void anambiguousLegacyEntryIsKeptBecauseItIsNowInert() {
+  public void anambiguousLegacyEntryIsKeptAndMadeInert() {
     addContact("Bob", "peer-uuid", 7);
     addContact("Bob", "peer-uuid", 8);   // same address name, different device
     writeLegacyMessage("peer-uuid", "the whole conversation");
@@ -87,8 +93,13 @@ public class LegacyKeyMigrationTest {
     assertEquals("an entry no single contact can claim must be KEPT - nothing can read it, and "
         + "deleting it is a destruction primitive one pre-upgrade invite away", 1,
         account.getUnencryptedMessages().size());
-    assertEquals("and left exactly as it was, not half-rewritten", "peer-uuid",
+    assertEquals("and neutralised rather than left matchable: the prefix is a character no "
+            + "chatLogKey output can begin with, because a contact's address name is never empty",
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses.SEPARATOR
+            + "peer-uuid",
         account.getUnencryptedMessages().get(0).getContactUUID());
+    assertEquals("with the original key still readable, so a later version could attribute it",
+        "peer-uuid", account.getUnencryptedMessages().get(0).getContactUUID().substring(1));
   }
 
   /** And an entry exactly one contact can claim is re-keyed rather than dropped. */
