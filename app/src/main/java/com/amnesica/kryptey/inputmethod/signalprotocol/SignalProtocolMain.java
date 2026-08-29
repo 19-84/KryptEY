@@ -2450,13 +2450,6 @@ public class SignalProtocolMain {
     return null;
   }
 
-  /**
-   * Create signature from identity private key and create pre key bundle
-   *
-   * @return PreKeyBundle
-   * @throws InvalidKeyIdException InvalidKeyIdException
-   * @throws InvalidKeyException   InvalidKeyException
-   */
   /** Whether the last exported invite's private halves reached disk. */
   private boolean mLastBundleExportReachedDisk = true;
 
@@ -2464,6 +2457,13 @@ public class SignalProtocolMain {
     return sInstance.mLastBundleExportReachedDisk;
   }
 
+  /**
+   * Create signature from identity private key and create pre key bundle
+   *
+   * @return PreKeyBundle
+   * @throws InvalidKeyIdException InvalidKeyIdException
+   * @throws InvalidKeyException   InvalidKeyException
+   */
   private PreKeyBundle getPreKeyBundle() throws InvalidKeyIdException, InvalidKeyException {
     // Cleared per attempt, so a caller asking about THIS invite is never told about a previous one.
     mLastBundleExportReachedDisk = true;
@@ -2559,13 +2559,6 @@ public class SignalProtocolMain {
   }
 
   /**
-   * Instantiate a SessionBuilder for a remote recipientId + deviceId tuple
-   *
-   * @param preKeyBundle                   PreKeyBundle
-   * @param recipientSignalProtocolAddress SignalProtocolAddress
-   * @return true only if the session was actually established and the bundle's signatures held.
-   */
-  /**
    * Whether the last accepted bundle's session and pinned key reached storage.
    *
    * <p>Cleared at the top of {@code processPreKeyResponse} AND of {@code decrypt}, rather than only
@@ -2581,6 +2574,13 @@ public class SignalProtocolMain {
     return sInstance.mLastSessionWriteReachedDisk;
   }
 
+  /**
+   * Instantiate a SessionBuilder for a remote recipientId + deviceId tuple
+   *
+   * @param preKeyBundle                   PreKeyBundle
+   * @param recipientSignalProtocolAddress SignalProtocolAddress
+   * @return true only if the session was actually established and the bundle's signatures held.
+   */
   private boolean buildSession(final PreKeyBundle preKeyBundle, final SignalProtocolAddress recipientSignalProtocolAddress) {
     try {
       SessionBuilder sessionBuilder = new SessionBuilder(mAccount.getSignalProtocolStore(), recipientSignalProtocolAddress);
@@ -2638,9 +2638,10 @@ public class SignalProtocolMain {
   }
 
   /**
-   * Initializes the protocol by generating and storing all necessary keys and stores
+   * Initializes the protocol by generating and storing all necessary keys and stores.
+   *
+   * @return whether the freshly generated identity actually reached storage.
    */
-  /** @return whether the freshly generated identity actually reached storage. */
   private boolean initializeProtocol() {
     final String uniqueUserId = UUID.randomUUID().toString();
     final int deviceId = ProtocolAddresses.generateDeviceId();
@@ -2702,9 +2703,6 @@ public class SignalProtocolMain {
    *
    * <p>Callers that report "this could not be recorded" to the user want this question, not the
    * other one.
-   */
-  /**
-   * Whether the write this operation depends on actually reached storage.
    *
    * <p>Fails closed. It used to return true when there was no storage helper at all, which is the
    * one state where nothing can possibly have been written - so every trust decision the user made

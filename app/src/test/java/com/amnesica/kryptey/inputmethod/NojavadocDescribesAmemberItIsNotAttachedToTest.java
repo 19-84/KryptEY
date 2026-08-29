@@ -34,7 +34,7 @@ import java.util.stream.Stream;
  *
  * <h2>Why a ratchet rather than zero</h2>
  *
- * <p>Thirty-one of these remain, and re-homing them is thirty-one chances to attach the wrong block
+ * <p>Twenty-two of these remain, and re-homing them is twenty-two chances to attach the wrong block
  * to the wrong member — the reviewer that found them said so, and recommended landing the check
  * first so it lists the sites and they move a commit at a time. So this pins the number and refuses
  * to let it grow. <b>When you fix some, lower {@link #KNOWN}.</b> It may never be raised: a new
@@ -46,9 +46,12 @@ public class NojavadocDescribesAmemberItIsNotAttachedToTest {
   /**
    * How many stacked blocks are known to remain. Lower this as they are fixed; never raise it.
    *
-   * <p>Was thirty-six when the check was written; thirty-one when it landed.
+   * <p>Was thirty-six when the check was written, thirty-one when it landed, and twenty-six
+   * after the first sweep. What remains is all in one file, which is why the number now moves in
+   * larger steps: the mechanical cases - two blocks describing the same member, or a doc stranded
+   * above an unrelated field - are gone from everywhere else.
    */
-  private static final int KNOWN = 26;
+  private static final int KNOWN = 22;
 
   private static Path repositoryRoot() {
     Path here = Paths.get("").toAbsolutePath();
