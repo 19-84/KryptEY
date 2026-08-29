@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-one sections, written in the order things were found rather than by subject, so the
+One hundred and forty-two sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -92,6 +92,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Preserving the old value stopped persisting the new one](#preserving-the-old-value-stopped-persisting-the-new-one)
 - [Four claims the documents made that the app does not keep](#four-claims-the-documents-made-that-the-app-does-not-keep)
 - [One class of comment drift that does have a test](#one-class-of-comment-drift-that-does-have-a-test)
+- [Two tests that could not see what they claimed to check](#two-tests-that-could-not-see-what-they-claimed-to-check)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7884,3 +7885,40 @@ the very first group refutes it — two of its four blocks belong to constants d
 further down, not to the adjacent ones. A script that pairs by position would have produced
 plausible, wrong attributions in bulk, which is strictly worse than the thirty-one that are at least
 visibly stacked.
+
+## Two tests that could not see what they claimed to check
+
+Two findings from the same round, both about the reach of a check rather than about code, and worth
+one entry because they are the same mistake in different clothes.
+
+**The lowering-sites test read one file.** It counts `setShouldUseOtherIC(false)` in
+`E2EEStripView.java` and pins the number at four, and the enumeration it exists to protect is a
+property of `RichInputConnection.shouldUseOtherIC` rather than of the strip. The mutant is one line
+— a lowering added anywhere else — and it stayed green while the four comments in the strip still
+said "four". `E2EEStripView` is the only caller today, so this was a hollowness in what the test
+could *see* rather than a live gap; the point is that a test reading one file cannot report that
+fact, it can only assume it. It walks all of `app/src/main/java` now and asserts which files lower
+the redirect, which is the question, rather than how many times one file does. The declaration never
+matches — it is `setShouldUseOtherIC(final boolean …)`, so the literal `(false)` finds calls only —
+and the remaining limit is stated rather than papered over: a lowering written as
+`setShouldUseOtherIC(someVariable)` is still invisible.
+
+**And the migration's marker check reads `null` as "absent".** `getClassFromSharedPreferences`
+answers `null` for absent, for a value that will not decrypt, and for a parse failure alike — the
+exact conflation `rawValueIsPresent` was added to that file to remove, two hundred lines above the
+guard that does not use it. So a `KEY_SCHEMA_MIGRATED` marker that is present and unopenable reads
+as absent, and the migration runs again: the whole chat log parsed on the IME UI thread on every
+raise, which is the cost the deferred loader exists to avoid.
+
+**Not fixed, and this is the interesting half.** Asking `rawValueIsPresent` here would treat an
+unreadable marker as "already migrated" and seal `keysAreRendered` over a log that was never
+re-keyed — stranding every pre-upgrade entry unreachable and unerasable, which is the permanent
+state the ordering below it exists to prevent. Re-running a one-shot pass is recoverable; sealing
+the wrong answer is not. The behaviour is the safe direction and what was wrong is the comment,
+which claimed *"once per install, ever — every subsequent raise returns at that check without
+touching the log."* The comment is corrected and the behaviour is now pinned, including that the
+window closes on the first landed save, so the cost is bounded rather than permanent.
+
+The test for it passed the moment it was written, which is the state that most often means nothing
+was measured. It was mutant-checked in the direction that matters — applying the tempting fix — and
+went red, so it pins the behaviour rather than merely observing it.

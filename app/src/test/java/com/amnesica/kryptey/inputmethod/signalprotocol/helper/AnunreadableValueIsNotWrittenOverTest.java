@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.signalprotocol.helper;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -162,6 +163,62 @@ public class AnunreadableValueIsNotWrittenOverTest {
             + "tell apart, and one that differs every time the keyboard comes up is noise rather "
             + "than a comparison",
         tagFirst, tagSecond);
+  }
+
+  /**
+   * An unreadable schema marker makes the migration run again on every raise.
+   *
+   * <p>Pinned rather than fixed, because the behaviour is the safe direction and the comment
+   * describing it was the wrong half. {@code migrateLegacyKeys} returns early when
+   * {@code getClassFromSharedPreferences(KEY_SCHEMA_MIGRATED)} is non-null, and that call returns
+   * null for absent, for a value that will not decrypt, and for a parse failure alike - the exact
+   * conflation {@code rawValueIsPresent} was added to this file to remove, two hundred lines above.
+   *
+   * <p>Its comment claims: <em>"we only get here on the ONE load that actually performs the
+   * migration - once per install, ever. Every subsequent raise returns at that check without
+   * touching the log."</em> With an unreadable marker that is false, and the cost is the one the
+   * deferred loader exists to avoid: the whole chat log parsed on the IME UI thread on every
+   * {@code setInputView}.
+   *
+   * <p>Deliberately NOT fixed by asking {@code rawValueIsPresent} here. That would treat an
+   * unreadable marker as "already migrated" and seal {@code keysAreRendered} over a log that was
+   * never re-keyed - stranding every pre-upgrade entry unreachable and unerasable, which is the
+   * permanent state the ordering below it exists to prevent. Re-running a one-shot pass is
+   * recoverable; sealing the wrong answer is not.
+   *
+   * <p>It also self-heals: the first save that lands rewrites the marker. So this asserts the
+   * bounded window rather than a leak - re-read while broken, quiet once written.
+   */
+  @Test
+  public void anunreadableSchemaMarkerCostsAlogParseUntilTheNextSaveLands() {
+    final Account seeded = storedAccount();
+    seeded.setKeysAreRendered(true);
+    assertTrue(helper().storeAllInformationInSharedPreferences(seeded));
+
+    final Account healthy = helper().getAccountFromSharedPreferences();
+    assertNotNull(healthy);
+    assertFalse("precondition: with a readable marker the log stays deferred - the migration "
+            + "returns at the marker check without touching it",
+        healthy.messageLogIsLoaded());
+
+    store().edit()
+        .putString(String.valueOf(ProtocolIdentifier.KEY_SCHEMA_MIGRATED), "not a sealed marker")
+        .commit();
+
+    final Account broken = helper().getAccountFromSharedPreferences();
+    assertNotNull("one unreadable marker is not a lost account", broken);
+    assertTrue("an unreadable marker reads as absent, so the migration runs again and forces the "
+            + "whole chat log to be parsed - on the IME UI thread, on every keyboard raise, which "
+            + "is the cost the deferred loader was built to avoid",
+        broken.messageLogIsLoaded());
+
+    // And the window closes on its own: the save rewrites the marker.
+    assertTrue(helper().storeAllInformationInSharedPreferences(broken));
+    final Account healed = helper().getAccountFromSharedPreferences();
+    assertNotNull(healed);
+    assertFalse("the first landed save rewrites the marker, so the next raise defers the log "
+            + "again - the cost is bounded by one save rather than permanent",
+        healed.messageLogIsLoaded());
   }
 
   /** And the retired names, whose loss is a security control rather than a comparison aid. */

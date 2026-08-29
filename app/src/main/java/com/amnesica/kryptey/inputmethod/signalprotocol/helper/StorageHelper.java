@@ -668,11 +668,23 @@ public class StorageHelper {
     }
 
     // This forces the chat log to be read, and that is correct rather than a regression of the
-    // laziness above. The marker check at the top of this method means we only get here on the ONE
-    // load that actually performs the migration - once per install, ever. Every subsequent raise
-    // returns at that check without touching the log. Deferring the migration itself was the other
-    // option and it is not worth it: LegacyKeyMigration is the component on this branch with the
-    // worst record for being changed, and one parse once is not a cost worth that risk.
+    // laziness above. Deferring the migration itself was the other option and it is not worth it:
+    // LegacyKeyMigration is the component on this branch with the worst record for being changed,
+    // and one parse is not a cost worth that risk.
+    //
+    // This used to say "once per install, ever - every subsequent raise returns at that check
+    // without touching the log", and that is not true of one state. The marker check above asks
+    // getClassFromSharedPreferences, which answers null for absent, for a value that will not
+    // decrypt, and for a parse failure alike - the conflation rawValueIsPresent was added to this
+    // file to remove. So a marker that is present and unreadable reads as absent, and the log is
+    // parsed again on every raise, on the IME UI thread, until a save lands and rewrites it.
+    //
+    // Left that way deliberately. Asking rawValueIsPresent here would treat an unreadable marker as
+    // "already migrated" and seal keysAreRendered over a log that was never re-keyed, stranding
+    // every pre-upgrade entry unreachable and unerasable - the permanent state the ordering below
+    // exists to prevent. Re-running a one-shot pass is recoverable; sealing the wrong answer is not.
+    // Pinned by AnunreadableValueIsNotWrittenOverTest, including that the window closes on the
+    // first landed save.
     try {
       LegacyKeyMigration.apply(account);
     } catch (final RuntimeException e) {
