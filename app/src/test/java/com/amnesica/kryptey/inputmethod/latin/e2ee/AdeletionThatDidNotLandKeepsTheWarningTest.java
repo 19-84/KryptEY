@@ -103,6 +103,27 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
    * - so "a deletion that landed" was never being tested, and had the production gate been wrong in
    * the other direction nothing here would have noticed.
    */
+
+  /**
+   * What {@code reloadAccount} does: the stored account replaces the one in memory.
+   *
+   * <p>Built rather than read back, because the helper under test refuses writes, so nothing was
+   * ever stored. The account this produces is the one the store still holds - Bob's key pinned, no
+   * rejection recorded - which is exactly what the user's un-persisted decision is discarded in
+   * favour of.
+   */
+  private void theAccountOnDiskReplacesTheOneInMemory() throws Exception {
+    SignalProtocolMain.initialize(null);
+    final Account onDisk = SignalProtocolMain.getInstance().getAccount();
+    onDisk.setMessageLogLoader(ArrayList::new);
+    assertTrue("fixture: the stored account still pins Bob's key",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(peerBundle), bob.getSignalProtocolAddress()));
+    final ArrayList<Contact> contacts = new ArrayList<>();
+    contacts.add(bob);
+    onDisk.setContactList(contacts);
+  }
+
   private void makeTheWriteLand() {
     SignalProtocolMain.getInstance().setStorageHelperForTest(
         new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
@@ -698,5 +719,91 @@ public class AdeletionThatDidNotLandKeepsTheWarningTest {
             + "'it will not be remembered the next time the keyboard opens' is false. A durable "
             + "sentence the user can catch out is one they stop believing: " + banner(),
         banner().contains("could not write to its own storage"));
+  }
+
+  /**
+   * A later write settles the rejection notice only if it carried the rejection.
+   *
+   * <p>The whole argument for classifying a failed rejection as settled-by-a-later-write is that
+   * {@code rejectContactKey} leaves the decision in memory, so the next landed write persists it.
+   * That holds until the in-memory account is replaced — and {@code reloadAccount} does exactly
+   * that on a theme change the host app can force, restoring the pinned key and emptying the
+   * rejected set. Its write-back is deliberately not counted, so the reload is invisible to the
+   * counter, and the caution and its captured count are both carried across the same rebuild.
+   *
+   * <p>The caution then survived the event that made it permanently true, and the next unrelated
+   * landed write retired it — taking away the only durable sentence saying the refused key had come
+   * back, at the moment it actually had.
+   */
+  @Test
+  public void awriteThatDidNotCarryTheRejectionDoesNotRetireItsNotice() throws Exception {
+    makeTheWriteFail();
+    strip.showVerifyContactForTest(bob);
+    strip.findViewById(R.id.e2ee_verify_contact_reject_button).performClick();
+    strip.selectContact(bob);
+    assertTrue("precondition: the rejection notice must be standing: " + banner(),
+        banner().contains("could not write to its own storage"));
+
+    // The reload the host app can force: the on-disk account replaces memory, so the rejection the
+    // user made is gone and the key they refused is pinned again. Built rather than read back,
+    // because the failing helper never wrote anything - this is the account reloadAccount would
+    // load, which is one that never saw the rejection.
+    theAccountOnDiskReplacesTheOneInMemory();
+    makeTheWriteLand();
+    assertFalse("precondition: the reload must have discarded the rejection",
+        SignalProtocolMain.wasKeyRejected(bob.getSignalProtocolAddress()));
+    assertTrue("precondition: and the refused key must be pinned again",
+        SignalProtocolMain.hasPinnedKey(bob.getSignalProtocolAddress()));
+
+    // Any later write at all.
+    final long before = SignalProtocolMain.accountWritesLanded();
+    SignalProtocolMain.exportOwnKeyBundle();
+    assertTrue("precondition: a write must land",
+        SignalProtocolMain.accountWritesLanded() > before);
+    strip.selectContact(bob);
+
+    assertTrue("the write did not carry the rejection - the reload had already thrown it away - so "
+            + "it settles nothing. Retiring here removes the only durable sentence saying the "
+            + "refused key is back, exactly when it is: " + banner(),
+        banner().contains("could not write to its own storage"));
+  }
+
+  /**
+   * Retiring a caution must leave the banner saying what every other path says.
+   *
+   * <p>The count half of the store notice's idiom was copied into the new exit and the repaint half
+   * was not. {@code warningWithRecipient} returns null when nothing stands and no contact is
+   * chosen, so a bare {@code setText} painted the banner blank — and an empty banner matches no
+   * prefix in {@code disablesActionButtons}, so the buttons came back on over an empty strip.
+   *
+   * <p>The no-recipient case is not a corner: the Invite path posts its caution with a null
+   * contact, and giving that caution an exit is what the method was added for. The existing
+   * retirement test cannot see this because it selects a contact before reading the banner, which
+   * repaints over the damage.
+   */
+  @Test
+  public void retiringAcautionLeavesTheBannerSayingWhatItShould() throws Exception {
+    // The Invite path's caution, which is the one that names no contact: "the Invite button on the
+    // contact list is the flow for a NEW contact", so chosenContact is null there. Giving that
+    // caution an exit is what the retirement was added for, and it is the case where the repaint
+    // had nothing to fall back on.
+    makeTheWriteFail();
+    strip.setStorageCautionForTest("Your invite could not be saved - the app could not write to "
+        + "its own storage.", null);
+    strip.resetChosenContactAndInfoTextForTest();
+    assertTrue("precondition: a caution with no contact must be standing: " + banner(),
+        banner().contains("could not write to"));
+
+    makeTheWriteLand();
+    SignalProtocolMain.exportOwnKeyBundle();
+    // The sweep itself, with nothing writing the banner after it - so what is asserted is the
+    // retirement's own repaint rather than whatever the next line happens to paint over it.
+    strip.refusalCountForTest();
+
+    assertFalse("the banner must never be left empty: nothing matches an empty string in "
+            + "disablesActionButtons, so the buttons come back on over a strip with no recipient",
+        banner().trim().isEmpty());
+    assertTrue("and it must say what every other no-recipient path says, so the buttons follow it: "
+        + banner(), banner().contains("No contact chosen"));
   }
 }

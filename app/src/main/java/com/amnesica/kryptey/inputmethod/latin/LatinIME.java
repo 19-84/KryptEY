@@ -650,9 +650,22 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
    * <p>Applied only while such a screen is up, not for the keyboard's whole life, so ordinary
    * typing elsewhere still screenshots normally.
    *
-   * <p>NOT verified on hardware. Window flags on an IME window behave differently across vendors
-   * and nothing in this environment can run the keyboard; this is the one change in the branch that
-   * most needs a device before it is trusted.
+   * <p>Verified on a device, and this note used to say the opposite - that nothing here could run
+   * the keyboard and that this was the change most needing hardware before it was trusted. Both
+   * halves stopped being true when the instrumentation suite started running under QEMU, and a
+   * stale claim like that is read as evidence by the next person to look.
+   *
+   * <p>{@code FlagSecureReachesTheWindowOnDeviceTest} binds the real keyboard over a real text
+   * field, finds the live strip inside the running IME - not one the test constructed, because the
+   * flag is applied here to this window and only the real one has a window at all - and reads
+   * {@code dumpsys window}. With the chat log on screen the input-method window block carries
+   * {@code SECURE}; with the ordinary keyboard up it does not, which is the assertion that makes
+   * the first mean something, because a platform marking every IME window secure would satisfy it
+   * with the flag never applied. It comes back off when the sensitive screen closes.
+   *
+   * <p>One platform, not all of them. Window flags on an IME window still behave differently across
+   * vendors, so what is settled is that the request reaches the window manager, not that it does
+   * everywhere.
    */
   @Override
   public void onSensitiveContentVisibilityChanged(final boolean sensitive) {

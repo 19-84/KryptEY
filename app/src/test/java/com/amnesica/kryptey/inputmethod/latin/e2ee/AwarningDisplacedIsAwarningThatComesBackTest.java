@@ -456,4 +456,48 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
             + banner(),
         !banner().contains("a different one - not a replacement"));
   }
+
+  /**
+   * The fold ending must take down the fold's sentence, not the one composed with it.
+   *
+   * <p>Composing put the shared-name text in front of the refusal, so the stored warning starts
+   * with the shared-name warning's opening words — and {@code standingWarningIsAboutAsharedName}
+   * tests exactly that prefix. So the lowering branch read a composed warning as its own and
+   * cleared the whole thing, refusal included. A relayed message reaches it:
+   * {@code setChosenContact} re-derives only the shared-name warning when the recipient changes.
+   *
+   * <p>That is the two-readers-disagree hazard the predicate's own javadoc names, arrived at by
+   * composing. The fold ending means the fold is gone; it does not mean the invite was fine.
+   */
+  @Test
+  public void endingTheFoldReducesTheComposedWarningRatherThanClearingIt() {
+    strip.rememberRefusedInviteForTest(impostor, "That invite from Bob Jones could not be used - "
+        + "it does not verify, which means it was changed on the way here.");
+    strip.selectContact(impostor);
+    assertTrue("precondition: both must be composed: " + banner(),
+        banner().contains("a different one - not a replacement")
+            && banner().contains("changed on the way here"));
+
+    // The user resolves the fold by deleting the other row, so the names no longer collide.
+    final java.util.ArrayList<Contact> remaining = new java.util.ArrayList<>();
+    for (final Contact c : victim.getContactList()) {
+      if (!String.valueOf(c.getSignalProtocolAddress())
+          .equals(String.valueOf(bob.getSignalProtocolAddress()))) {
+        remaining.add(c);
+      }
+    }
+    victim.setContactList(remaining);
+
+    // The recipient moves the way an arriving message moves it, not by a tap. That route re-derives
+    // ONLY the shared-name warning - which is what makes this reachable: after a tap, the refusal
+    // is re-raised by the writer that runs next, so the loss is invisible there.
+    strip.moveRecipientTheWayAmessageDoesForTest(null);
+    strip.moveRecipientTheWayAmessageDoesForTest(impostor);
+
+    assertTrue("the fold is gone, so its sentence must be: " + banner(),
+        !banner().contains("a different one - not a replacement"));
+    assertTrue("but the invite really was changed in transit, and nothing about the fold ending "
+            + "makes that untrue: " + banner(),
+        banner().contains("changed on the way here"));
+  }
 }

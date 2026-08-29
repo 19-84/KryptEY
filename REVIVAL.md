@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-seven sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [Three defects in three fixes, again](#three-defects-in-three-fixes-again)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -1957,6 +1958,48 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## Three defects in three fixes, again
+
+The round after the last three commits found one defect in each of them. Recorded together because
+the pattern is now the most reliable thing this file records: a fix lands, and the next round finds
+what it opened.
+
+**The write-based exit retired a notice on a write that did not settle it.** The argument for
+reclassifying a failed rejection was that `rejectContactKey` leaves the decision in memory, so the
+next landed write persists it. That holds until the in-memory account is replaced — and
+`reloadAccount` does exactly that on a host-forceable theme change, restoring the pinned key and
+emptying the rejected set. Its write-back is deliberately *not* counted, so the reload is invisible
+to the counter, and `adoptState` carries the caution and its captured count across the same rebuild.
+The caution therefore survived the event that made it permanently true and was retired by the next
+unrelated write — removing the only durable sentence saying the refused key had come back, exactly
+when it had. The exit now asks the decision rather than the counter: if the caution names an address
+whose rejection is no longer held, nothing was persisted and the sentence stays. When the recipient
+is gone it cannot ask, and keeps the sentence — which is load-bearing rather than cautious, because
+the recipient is deliberately not carried across the rebuild that causes this.
+
+**The retirement repainted the banner unguarded.** Both siblings guard that repaint; this one copied
+the store notice's count and not its repaint. `warningWithRecipient` returns null when nothing stands
+and no contact is chosen, so a bare `setText` painted the banner *blank* — and an empty banner
+matches no prefix in `disablesActionButtons`. The no-recipient case is not a corner: the Invite path
+posts its caution with a null contact, and giving that caution an exit is what the retirement was
+added for.
+
+**The composed warning was read by the wrong rule.** Composing put the shared-name text in front of
+the refusal, so the stored string starts with the shared-name warning's opening words — which is
+exactly what `standingWarningIsAboutAsharedName` tests. Its lowering branch then read a composed
+warning as its own and cleared the whole thing, refusal included. `standingWarningIsAboutAsharedName`'s
+own javadoc names this hazard: *two readers disagreeing about which warning is standing is how a
+warning gets silenced by the wrong rule.* Composing created the disagreement. The fold ending now
+*reduces* the composed warning to the refusal alone rather than clearing it, which is what the
+condition ending actually means.
+
+**And the test for that one had to change route to see it.** Written against `selectContact`, it
+passed with the fix reverted — because that path re-derives the refusal one writer later, so the loss
+is invisible there. The reachable route is a recipient moved by an arriving message, which re-derives
+only the shared-name warning. The mutant is what said so.
 
 ---
 

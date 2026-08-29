@@ -2537,10 +2537,60 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mStandingStorageCaution == null) return;
     if (!mStandingStorageCautionKind.isSettledByAnyLaterWrite()) return;
     if (mE2EEStrip.accountWritesLanded() <= mAccountWritesLandedWhenStorageCautionRaised) return;
+    // A later write settles one of these only if it carried the thing that was lost.
+    //
+    // The whole argument for reclassifying a failed rejection was that rejectContactKey leaves the
+    // decision in memory, so the next landed write persists it. That holds until the in-memory
+    // account is replaced - and reloadAccount does exactly that, on a theme change the host app can
+    // force, restoring the pinned key and emptying rejectedAddresses. Its write-back is deliberately
+    // not counted, so the reload is invisible here, and adoptState carries the caution AND its
+    // captured count across the same rebuild. The caution then survived the event that made it
+    // permanently true and was retired by the next unrelated write - taking away the only durable
+    // sentence saying the refused key had come back, at the moment it actually had.
+    //
+    // So the question is asked of the decision rather than of the counter: if this caution names an
+    // address the user rejected and that rejection is no longer in memory, nothing has been
+    // persisted and the sentence stays.
+    if (mStandingStorageCautionAddress != null && aRejectionWasLostAt(mStandingStorageCautionAddress)) {
+      return;
+    }
     mStandingStorageCaution = null;
     mStandingStorageCautionAddress = null;
     mAccountWritesLandedWhenStorageCautionRaised = -1;
-    setInfoTextViewMessage(mInfoTextView, warningWithRecipient());
+    // Guarded like both siblings, and evaluated AFTER the caution is nulled so this cannot repaint
+    // the sentence it just removed. The count half of the store notice's idiom was copied here and
+    // the repaint half was not: warningWithRecipient returns null when nothing stands and no
+    // contact is chosen, so a bare setText painted the banner blank - and an empty banner matches
+    // no prefix in disablesActionButtons, so Encrypt and Decrypt lit up on a strip with no
+    // recipient. The chosenContact == null case is not a corner: the Invite path posts its caution
+    // with a null contact, and closing that caution's missing exit is what this method was added
+    // for.
+    setInfoTextViewMessage(mInfoTextView, aStandingItemHoldsTheBanner()
+        ? warningWithRecipient()
+        : chosenContact != null ? "Chosen contact: " + labelFor(chosenContact)
+            : INFO_NO_CONTACT_CHOSEN);
+  }
+
+  /**
+   * Whether this caution is about a rejection the app no longer holds.
+   *
+   * <p>True only for the sentence the failed-reject arm posts, and only when the address is no
+   * longer marked - which is what a reload that discarded the un-persisted decision leaves behind.
+   * Matched on the sentence rather than a kind because the kind is what settles it, and this is not
+   * a different settlement: it is the same one, asked correctly.
+   */
+  private boolean aRejectionWasLostAt(final String address) {
+    if (mStandingStorageCaution == null
+        || !mStandingStorageCaution.startsWith(literalPrefixOf(INFO_REJECTION_NOT_SAVED))) {
+      return false;
+    }
+    if (chosenContact == null
+        || !address.equals(String.valueOf(chosenContact.getSignalProtocolAddress()))) {
+      // Cannot ask without the address object the store keys on; keep the sentence rather than
+      // retire one that might be about a lost rejection.
+      return true;
+    }
+    return !mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress());
   }
 
   /** Records that this contact's row did not reach disk. */
@@ -3984,6 +4034,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     rememberRefusedInvite(String.valueOf(about.getSignalProtocolAddress()), message);
   }
 
+  /**
+   * Moves the recipient the way the decrypt path does, for tests.
+   *
+   * <p>Distinct from {@code selectContact}, and the distinction is the point: a tap re-derives all
+   * four warnings, while a recipient moved by an arriving message re-derives only the shared-name
+   * one. Warnings that are only correct after the four-writer pass are wrong on this route.
+   */
+  void moveRecipientTheWayAmessageDoesForTest(final Contact contact) {
+    setChosenContact(contact);
+  }
+
   /** Posts a warning, for tests that drive the strip. */
   void setWarningMessageForTest(final String message) {
     setWarningMessage(message);
@@ -4241,12 +4302,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       //
       // Scoped to this contact's own address and to this warning's own text, so it cannot take down
       // an identity change or a rejection that happens to be standing about the same person.
+      //
+      // ...and a COMPOSED warning is reduced rather than cleared. Once the refusal began composing
+      // itself onto this sentence, the composed string still starts with this one's opening words,
+      // so this branch read it as "a shared-name warning" and took the refusal half down with it -
+      // which a relayed message can trigger, because setChosenContact re-derives only this warning
+      // when the recipient changes. That is the two-readers-disagree hazard
+      // standingWarningIsAboutAsharedName's own javadoc names, arrived at by composing.
+      //
+      // Reducing is what the condition ending actually means: the fold is gone, the refusal is not.
       if (mWarningStanding
           && String.valueOf(contact.getSignalProtocolAddress()).equals(mStandingWarningAddress)
           && standingWarningIsAboutAsharedName()) {
-        clearStandingWarning();
-        setInfoTextViewMessage(mInfoTextView, aStandingItemHoldsTheBanner()
-            ? warningWithRecipient() : "Chosen contact: " + labelFor(contact));
+        final String refusalAlone =
+            mRefusedInvites.get(String.valueOf(contact.getSignalProtocolAddress()));
+        if (refusalAlone != null) {
+          setInviteRefusalWarning(refusalAlone,
+              String.valueOf(contact.getSignalProtocolAddress()));
+        } else {
+          clearStandingWarning();
+          setInfoTextViewMessage(mInfoTextView, aStandingItemHoldsTheBanner()
+              ? warningWithRecipient() : "Chosen contact: " + labelFor(contact));
+        }
       }
       return false;
     }
