@@ -192,6 +192,68 @@ public class DocsDoNotContradictTheAppTest {
     }
   }
 
+  /**
+   * No document may promise that fairytale mode fits inside a 3500-byte message.
+   *
+   * <p>The README and the store listing both said: <em>"To stay under the 3500 bytes limit, only
+   * 500 characters are allowed for raw and fairytale mode."</em> The 500 is a cap on the user's
+   * plaintext; what the messenger carries is the encrypted envelope. Measured by
+   * {@code SendableIsDecodableTest#whattravelsIsMeasuredInBytesAgainstThePromisedLimit}: a full
+   * 500-byte message is 3068 bytes in raw mode and 13,827 in fairytale, because every character
+   * fairytale emits is drawn from U+200B-U+206F and costs three UTF-8 bytes.
+   *
+   * <p>The cost of the old sentence was a user following the app's stated limit, having the app
+   * accept and encode the message, and the messenger truncating or refusing it - with the sender's
+   * history already holding the plaintext and the recipient holding an undecodable paste. Nothing
+   * on the sender's side went wrong, which is the shape this project already identifies as the
+   * worst one on this path.
+   *
+   * <p>This pins the claim rather than the number: the documents may say what they like about
+   * sizes, but not that fairytale mode stays under that limit. Phrased as a scan for the two
+   * spellings of the old sentence, and its limit is the usual one - it cannot catch a promise
+   * worded in a way nobody has used yet.
+   */
+  @Test
+  public void nodocumentPromisesFairytaleModeFitsTheSmallestMessengerLimit() throws IOException {
+    for (final String doc : new String[] {
+        "README.md", "fastlane/metadata/android/en-US/full_description.txt"}) {
+      final String text = read(doc).replaceAll("\\s+", " ");
+      assertFalse(doc + " promises that 500 characters keeps BOTH modes under the 3500-byte "
+              + "limit. Measured, fairytale sends 13,827 bytes for a 500-byte message - nearly "
+              + "four times it. Raw is the mode that claim is true of",
+          text.contains("only 500 characters are allowed for raw and fairytale mode"));
+      assertFalse(doc + " still ties the 500-byte input cap to staying under the 3500-byte limit; "
+              + "the cap is on the plaintext, and the envelope is several times larger",
+          text.contains("To stay under the 3500 bytes limit"));
+    }
+  }
+
+  /**
+   * And both help copies must actually CARRY the fairytale disclaimer, not merely lack the bad
+   * phrasings.
+   *
+   * <p>The scan beside this one asserts the absence of three phrasings across four documents, and
+   * it passed on {@code HELP.md} vacuously for as long as that file had no text-modes section at
+   * all: nothing to contain the banned strings, so nothing to catch. The mutant that shows it is
+   * re-adding a fairytale section worded as concealment without reusing any of the three - the
+   * scan stays green and the claim ships.
+   *
+   * <p>An absence check can only ever be as strong as the presence of the text it scans. This is
+   * the presence half, on the two copies that are the app's actual explanation of the mode.
+   */
+  @Test
+  public void bothCopiesOfTheHelpCarryTheFairytaleDisclaimer() throws IOException {
+    for (final String doc : new String[] {"HELP.md", "app/src/main/res/values/strings.xml"}) {
+      final String text = read(doc).replaceAll("\\s+", " ");
+      assertTrue(doc + " must explain what fairytale mode is, or the check that it is not described "
+              + "as concealment has nothing to read", text.contains("Fairy Tale mode"));
+      assertTrue(doc + " must say, in the section that explains the mode, that it conceals nothing "
+              + "from the messenger. Without this sentence a reader takes 'looks unremarkable' for "
+              + "'the messenger cannot tell', which is the one thing it does not buy",
+          text.contains("does not conceal anything from the messenger"));
+    }
+  }
+
   /** And the receiving side must be told to compare before its first send, in both copies. */
   @Test
   public void bothCopiesTellTheInviteeToCompareBeforeSending() throws IOException {

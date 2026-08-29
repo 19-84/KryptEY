@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-nine sections, written in the order things were found rather than by subject, so the
+One hundred and forty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -90,6 +90,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A notice that retired on the write that made the leak permanent](#a-notice-that-retired-on-the-write-that-made-the-leak-permanent)
 - [The guard that read as coverage, and the state it let through](#the-guard-that-read-as-coverage-and-the-state-it-let-through)
 - [Preserving the old value stopped persisting the new one](#preserving-the-old-value-stopped-persisting-the-new-one)
+- [Four claims the documents made that the app does not keep](#four-claims-the-documents-made-that-the-app-does-not-keep)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7800,3 +7801,47 @@ mechanism correctly and had simply not been asked whether the mechanism was want
 defect as firmly as it pins a property, and it looks identical from the outside; what tells them
 apart is a sentence saying why the observed thing is the desired thing, which that precondition
 never had.
+
+## Four claims the documents made that the app does not keep
+
+A round took the app's own user-facing promises and tried to falsify each one, which is a different
+question from "is the code right" and found things no code review had. Four held up.
+
+**The size promise was false by a factor of four, and measurable.** The README and the store listing
+both said *"To stay under the 3500 bytes limit, only 500 characters are allowed for raw and
+fairytale mode."* The 500 is a cap on the user's plaintext; what the messenger carries is the
+encoded envelope, and every character FairyTale emits is drawn from U+200B–U+206F at **three** UTF-8
+bytes each. Measured, for a full 500-byte message: raw 3068 bytes, FairyTale **13,827**. Raw fits;
+FairyTale is nearly four times the limit the sentence promises. The cost is specific — a Threema
+user follows the app's stated limit, the app accepts and encodes, the messenger truncates or
+refuses, and the sender's history already holds the plaintext while the recipient holds an
+undecodable paste. Nothing on the sender's side went wrong, which is the shape this file already
+calls the worst one on this path. Corrected in both documents, and the constant was left alone
+deliberately: lowering it would make FairyTale nearly unusable and would not help an invite or an
+update message at all, whose size comes from the protocol rather than from anything the user typed.
+
+**`HELP.md` had drifted from the in-app copy on deletion** — still promising, without condition,
+that deleting a contact deletes the history, which is the sentence two notices exist to say failed.
+Synced.
+
+**A test that scanned four documents was passing on one of them vacuously.** The fairytale check
+asserts the *absence* of three phrasings, and `HELP.md` had no text-modes section at all, so there
+was nothing for the banned strings to appear in. The mutant is easy: re-add a section worded as
+concealment without reusing any of the three, and the scan stays green while the claim ships. An
+absence check is only ever as strong as the presence of the text it scans, so the section was added
+and a presence half written beside it. This generalises past this one test.
+
+**The verify screen's mismatch branch was undocumented.** The help walkthrough had one outcome —
+*"If they match, click the done button"* — and never mentioned the reject control, which is the only
+thing in the app that un-pins a key and which wears the same circle-X drawable the add-contact
+screen uses for "abort, nothing happens". So the app's strongest deliberate refusal was
+undiscoverable at the moment it is needed, and a user who opened the screen to look and tapped the X
+to back out would silently destroy the session and the pin for a contact whose key was fine. Both
+copies now name the control, say what it does, and say which button is the one that leaves without
+changing anything. Deliberately not fixed by adding a confirmation dialog: a standing warning must
+always leave one deliberate response available, and an extra step is one more place for it to become
+unreachable.
+
+What is worth taking from the round is the shape of the question. Every one of these is a sentence
+the app shows a user, checked against what the app does — and the four documents disagree with each
+other more readily than the code disagrees with itself, because nothing compiles them.

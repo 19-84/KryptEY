@@ -30,7 +30,7 @@ The keyboard was designed as a POC and only allows 1-to-1 conversations. However
 
 Text messages in Telegram are getting copied as HTML and not as plain text. When decoding the message with the fairytale mode the copied message is compromised and can't be read properly. Therefore, it can't be decoded at all. However, the raw mode works properly. When using KryptEY with Telegram we recommend the raw mode.
 
-Some messengers like Threema only allows up to 3500 bytes per message. Therefore, different character input limitations apply. To stay under the 3500 bytes limit, only 500 characters are allowed for raw and fairytale mode. For convenience these limitation applies for all messengers.
+Some messengers cap how much one message may carry - Threema, for example, at 3500 bytes. KryptEY caps what you type at 500 bytes in both raw and fairytale mode, and that is a cap on your plaintext, not on what the messenger carries. What travels is the encrypted envelope, which is several times larger: measured, a full 500-byte message sends 3068 bytes in raw mode and about 13,800 in fairytale mode, because every character fairytale mode emits is an invisible one costing three bytes. An invite or an update message is larger again, and its size comes from the protocol rather than from anything you typed. On a messenger with a limit that low, use raw mode.
 
 <b>Demo</b>
 For a demonstration on how KryptEY is used see https://github.com/amnesica/KryptEY/tree/master#demo 

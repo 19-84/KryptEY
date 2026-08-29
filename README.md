@@ -121,9 +121,18 @@ message with the fairytale mode the copied message is compromised and can't be r
 Therefore, it can't be decoded at all. However, the raw mode works properly. When using KryptEY
 with Telegram we recommend the raw mode.
 
-Some messengers like Threema only allows up to 3500 bytes per message. Therefore, different
-character input limitations apply. To stay under the 3500 bytes limit, only 500 characters are
-allowed for raw and fairytale mode. For convenience these limitation applies for all messengers.
+Some messengers cap how much one message may carry - Threema, for example, at 3500 bytes.
+KryptEY caps what you type at 500 bytes in both raw and fairytale mode, and that is a cap on your
+plaintext, not on what the messenger carries. What travels is the encrypted envelope, which is
+several times larger.
+
+Measured, for a full 500-byte message: raw sends 3068 bytes, which fits. Fairytale sends about
+13,800 bytes, which does not - every character it emits is an invisible one costing three bytes
+each. An invite or an update message is larger again, and its size comes from the protocol rather
+than from anything you typed.
+
+So on a messenger with a limit that low, use raw mode. Fairytale mode is for messengers that will
+carry it.
 
 ## Used libraries
 

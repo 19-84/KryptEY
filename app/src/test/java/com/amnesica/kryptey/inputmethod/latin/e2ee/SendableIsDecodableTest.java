@@ -139,6 +139,45 @@ public class SendableIsDecodableTest {
     }
   }
 
+  /**
+   * What actually travels, in BYTES, against the figure the README and the store listing promise.
+   *
+   * <p>Both say: <em>"Some messengers like Threema only allows up to 3500 bytes per message …
+   * To stay under the 3500 bytes limit, only 500 characters are allowed for raw and fairytale
+   * mode."</em> The 500 is a cap on the user's plaintext, checked by
+   * {@code checkMessageLengthForEncodingMethod} against {@code message.getBytes(UTF_8).length};
+   * what the messenger carries is the encoded wire envelope, and for FairyTale every payload
+   * character is drawn from U+200B-U+206F, which is <b>three</b> UTF-8 bytes each.
+   *
+   * <p>So this measures the thing the sentence is about rather than the thing the cap is about.
+   * It does not assert the promise holds - it is a measurement, printed into the failure message,
+   * so the documents can be corrected against a number rather than an estimate. The bound it does
+   * assert is the one that is genuinely load-bearing here: RAW must stay under 3500, because that
+   * is the only mode the sentence is true of and a regression there would break a real messenger.
+   */
+  @Test
+  public void whattravelsIsMeasuredInBytesAgainstThePromisedLimit() throws Exception {
+    final int PROMISED = 3500;
+    final String message = plaintext(500);
+
+    final CharSequence raw = strip.encryptMessage(message, bobAddress, Encoder.RAW);
+    assertNotNull(raw);
+    final int rawBytes = raw.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+
+    final CharSequence fairy = strip.encryptMessage(message, bobAddress, Encoder.FAIRYTALE);
+    assertNotNull(fairy);
+    final int fairyBytes =
+        fairy.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+
+    System.out.println("MEASURED 500-byte plaintext: raw=" + raw.length() + " chars / " + rawBytes
+        + " bytes; fairytale=" + fairy.length() + " chars / " + fairyBytes + " bytes");
+
+    assertTrue("a 500-byte plaintext in RAW mode encoded to " + rawBytes + " bytes, past the "
+            + PROMISED + " the README and the store listing promise. That sentence is the only "
+            + "guidance a Threema user gets, and RAW is the mode it is true of",
+        rawBytes <= PROMISED);
+  }
+
   private void assertSendableOrRefused(final String message, final Encoder encoder,
                                        final String situation) throws Exception {
     final CharSequence encoded;
