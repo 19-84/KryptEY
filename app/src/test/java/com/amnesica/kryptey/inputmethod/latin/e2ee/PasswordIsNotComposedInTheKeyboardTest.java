@@ -9,6 +9,9 @@ import android.content.Context;
 import android.inputmethodservice.InputMethodService;
 import android.view.ContextThemeWrapper;
 import android.view.View;
+
+import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.InputConnection;
 import android.widget.EditText;

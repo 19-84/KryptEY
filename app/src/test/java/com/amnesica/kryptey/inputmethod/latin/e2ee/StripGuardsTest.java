@@ -10,6 +10,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
+import android.view.View;
 import android.widget.TextView;
 
 import com.amnesica.kryptey.inputmethod.R;
@@ -470,6 +471,43 @@ public class StripGuardsTest {
 
     assertEquals("and that warning must survive the messenger's next post", warned,
         infoField().getText().toString());
+  }
+
+  /**
+   * A password field must not abort the safety-number comparison, and must not do it repeatedly.
+   *
+   * <p>The arming arm of {@code setHostFieldIsPassword} has no transition test - its sibling
+   * {@code else if (wasPassword)} does - so it re-runs its whole destructive block on <em>every</em>
+   * input session start, not only on a change. That block ends in {@code clearDecryptedContent},
+   * which bounces to the main view whenever {@code isShowingSensitiveContent()} is true, and that
+   * is true whenever the verify screen or the contact list is up.
+   *
+   * <p>{@code InputMethodManager.restartInput} is unprivileged and available to the focused app for
+   * its own view, and {@code LatinIME.onStartInputViewInternal} calls this setter on every one
+   * including a restart. So the messenger can close the verify screen whenever the user opens it,
+   * from inside the app they are talking to their contact in - and comparing the safety number is
+   * this app's only defence against key substitution and the only thing that clears a standing
+   * warning. An adversary who has just substituted a key can abort the check every time.
+   *
+   * <p>The bounce itself is right for the event it was written for: the keyboard being dismissed
+   * must not leave the contact list on screen when it next rises in another app. Over a password
+   * field the keyboard is not going anywhere, and a safety number is derived from public keys, so
+   * there is nothing to hide from a field the user is not typing into. The screens stay.
+   */
+  @Test
+  public void apasswordFieldMustNotCloseTheVerifyScreen() {
+    final Contact bob = bob();
+    strip.showVerifyContactForTest(bob);
+    final View verify = strip.findViewById(R.id.e2ee_verify_contact_wrapper);
+    assertNotNull("fixture: the verify screen must inflate", verify);
+    assertEquals("precondition: the verify screen is open", View.VISIBLE, verify.getVisibility());
+
+    strip.setHostFieldIsPassword(true);
+
+    assertEquals("a host-declared password field closed the safety-number screen. The messenger "
+            + "declares the inputType of every field it presents and may restart input at will, so "
+            + "it can abort the one comparison that detects a substituted key, every time the user "
+            + "opens it", View.VISIBLE, verify.getVisibility());
   }
 
   /**

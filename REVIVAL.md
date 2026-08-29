@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-four sections, written in the order things were found rather than by subject, so the
+One hundred and forty-five sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -95,6 +95,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Two tests that could not see what they claimed to check](#two-tests-that-could-not-see-what-they-claimed-to-check)
 - [The one sentence the store listing gives to security](#the-one-sentence-the-store-listing-gives-to-security)
 - [The guard that armed once, and the three ways back in](#the-guard-that-armed-once-and-the-three-ways-back-in)
+- [One clear written for a different event](#one-clear-written-for-a-different-event)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -8020,3 +8021,42 @@ passed, and both passed for the fixture's reason. It took an anti-vacuity contro
 field this path must put the plaintext in the box* — to show the test was measuring nothing, and the
 envelope had to come from an address with nothing pinned, which is exactly the state the add-contact
 screen exists for.
+
+## One clear written for a different event
+
+`clearDecryptedContent()` is written for the keyboard going away. Its three parts say so: drop the
+chat-log adapter, blank the safety-number digits and cancel their animators, and bounce off any
+sensitive screen — all because the IME view is not recreated when the user switches apps, so
+whatever was on screen is still there when the keyboard next rises, in whatever app that is.
+
+The password guard called it, and a password field is not that event. The keyboard is not going
+anywhere: same app, same session, and the user is typing into a field of the app they are already
+in. Worse, the arming arm has **no transition test** while its sibling `else if (wasPassword)` does,
+so the whole block ran on every input session start rather than on a change.
+
+`InputMethodManager.restartInput` is unprivileged and available to the focused app for its own view,
+and `onStartInputViewInternal` calls the setter on every session including a restart. So the
+messenger could close the safety-number screen whenever the user opened it, from inside the app they
+are talking to their contact in — and comparing that number is this app's only defence against a
+substituted key, and the only thing that clears a standing warning. An adversary who has just
+substituted a key could abort the check every time it was attempted. The contact list went with it.
+
+Fixed by splitting on cause rather than on symptom: the password arm now clears the draft and the
+IME's copies of it — which is what the capture guard is actually about — and leaves the screens
+alone. Nothing is hidden by keeping them, because a safety number is derived from public keys and
+the user is not typing into the strip. The three other callers still get the full clear, because for
+them the keyboard really is leaving.
+
+Deliberately not fixed by bouncing only when the compose box has something in it, which was the
+tempting shape: the contact list holds the user's whole correspondent set, and the reason it must go
+is the app switch rather than the draft. And not by keeping the screen while still blanking the
+digits, which produces the dead end this file keeps closing — a screen refusing to act on a number
+nobody can see.
+
+**Both attempts to measure it were wrong first, in opposite directions.** The test was written in the
+password fixture, which has no account at all, so it died on a `NullPointerException` inside
+`getContactList()` — and the run reported only "FAILED", which reads exactly like the finding
+reproducing. Printing the value under test is what showed the assertion was never reached. Moved to
+a fixture with a real contact it passes, and reverting the production change to the old
+`clearDecryptedContent()` call turns it red, which is what makes it a control rather than an
+observation.

@@ -935,7 +935,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mHostFieldIsPassword = isPassword;
     if (!isPassword) stripInputsCanTakeFocus(true);
     if (isPassword) {
-      clearDecryptedContent();
+      // The compose box and the caches, and NOT the screens.
+      //
+      // This used to call clearDecryptedContent(), which is written for a different event: the
+      // keyboard going away, where the chat log, the safety-number digits and the contact list must
+      // not survive into whatever app the keyboard rises in next. A password field is not that. The
+      // keyboard is not going anywhere - it is the same app, the same session - and the whole block
+      // ran on EVERY input session start rather than on a change, because this arm has no
+      // transition test while its sibling below does.
+      //
+      // So the messenger could close the safety-number screen whenever the user opened it, from
+      // inside the app they are talking to their contact in: it declares the inputType of every
+      // field it presents and InputMethodManager.restartInput is unprivileged. Comparing that
+      // number is this app's only defence against a substituted key and the only thing that clears
+      // a standing warning, so an adversary who had just substituted one could abort the check
+      // every time. The contact list went the same way.
+      //
+      // Nothing is hidden by keeping them: a safety number is derived from public keys, and the
+      // user is not typing into the strip. What must still go is what the capture guard is about -
+      // the draft and the IME's copies of it - and that is what stays here.
+      if (mInputEditText != null && mInputEditText.getText().length() > 0) {
+        clearComposeFieldAndCaches();
+      }
       // And stop collecting what the user types here.
       //
       // The guard's own javadoc gives both halves: decrypting "would hand a decrypted message to
