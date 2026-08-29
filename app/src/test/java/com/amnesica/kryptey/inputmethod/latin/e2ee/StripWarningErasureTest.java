@@ -161,6 +161,16 @@ public class StripWarningErasureTest {
    */
   @Test
   public void anewContactsSuccessBannerDoesNotEraseAStandingWarning() throws Exception {
+    // A store whose write lands, or this test never reaches the line it is about.
+    //
+    // Without one, addContact's row does not reach disk, so it takes its !rowReachedDisk arm and
+    // ends in postStorageCaution - which repaints the banner from the standing items AFTER the
+    // success line has been written. The assertion then reads the repaint, not the success line,
+    // and holds no matter what that line did. Measured by a reviewer: turning
+    // cautionThatAkeyWasPinned's setCautionBesideAnyWarning into a plain banner write - the exact
+    // defect this class exists for - left this test green while five other classes went red.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
+
     final String warned = standingSubstitutionWarning();
 
     type(R.id.e2ee_add_contact_first_name_input_field, "Carol");

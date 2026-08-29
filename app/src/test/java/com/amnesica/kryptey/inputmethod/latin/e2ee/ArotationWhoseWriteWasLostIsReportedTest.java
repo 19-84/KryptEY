@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -263,9 +264,26 @@ public class ArotationWhoseWriteWasLostIsReportedTest {
 
     final String shown = banner();
     final int copies = shown.split("could not save the change", -1).length - 1;
-    assertTrue("the storage sentence must appear once however many messages arrive; five pastes "
-            + "produced " + copies + " copies, and the messenger chooses how many arrive. Banner "
-            + "length " + shown.length(), copies <= 1);
+    // Exactly one, not "at most one".
+    //
+    // `copies <= 1` is satisfied by zero, and zero is a real regression rather than an
+    // impossibility: it is what a change that stops reporting the lost write on this arm produces,
+    // and this test is the one that would have to catch it. Both failures - saying it five times
+    // and not saying it at all - are wrong in the same place, so the assertion has to name the
+    // number.
+    assertEquals("the storage sentence must appear exactly once however many messages arrive; five "
+            + "pastes produced " + copies + ". Zero is not a pass here: it means the lost write "
+            + "stopped being reported at all. Banner length " + shown.length(), 1, copies);
+
+    // And the caution the composition exists to preserve must still be there.
+    //
+    // The append branch was written because the replace branch destroyed this sentence, so a
+    // revert to replace gives copies == 1 and passes the assertion above while losing the reason
+    // the user was told to compare the number. That is the defect this test is named for, and
+    // counting alone cannot see it.
+    assertTrue("appending the storage sentence must not destroy the pin caution it was appended "
+            + "to - that caution is why the user compares the number at all: " + shown,
+        shown.contains("compare the security number by voice"));
   }
 
   /**
