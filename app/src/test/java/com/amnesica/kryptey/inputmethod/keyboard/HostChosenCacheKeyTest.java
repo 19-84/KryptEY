@@ -1,5 +1,7 @@
 package com.amnesica.kryptey.inputmethod.keyboard;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.Bundle;
@@ -8,6 +10,7 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 
 import com.amnesica.kryptey.inputmethod.latin.LatinIME;
+import com.amnesica.kryptey.inputmethod.latin.common.Constants;
 
 import org.junit.After;
 import org.junit.Before;
@@ -151,5 +154,65 @@ public class HostChosenCacheKeyTest {
         + cache().size() + " entries after " + SESSIONS + " identical sessions",
         cache().size() < cap());
     assertTrue("and it must actually be caching something", cache().size() > 0);
+  }
+
+  /**
+   * The host's action label is bounded before it becomes a key label.
+   *
+   * <p>{@code EditorInfo.actionLabel} is the application's to choose, and it was copied verbatim
+   * into the enter key's drawn label. The keyboard view is hardware-accelerated, so {@code onDraw}
+   * redraws every key rather than the invalidated ones — the label was measured with
+   * {@code getTextBounds} and painted with {@code drawText} over its whole length on every frame,
+   * on the IME's UI thread. That process serves every application on the device, so the cost is the
+   * user's keyboard everywhere, not just in the messenger.
+   *
+   * <p>Bounded at the copy, not at the point of drawing, because this value is part of the cache
+   * key: truncating for display while keying on the full string would let two hosts whose labels
+   * share a prefix render each other's keyboards. Truncated here, a collision shows the same label
+   * it keyed on.
+   */
+  @Test
+  public void thehostsActionLabelIsBoundedBeforeItBecomesAkeyLabel() {
+    final StringBuilder enormous = new StringBuilder();
+    for (int i = 0; i < 50_000; i++) enormous.append("send ");
+
+    ime.onStartInputView(fieldLabelled(enormous.toString()), false);
+    ShadowLooper.idleMainLooper();
+
+    // Read off the cache keys, the way the sibling tests in this file read them: those keys ARE
+    // KeyboardIds, and mCustomActionLabel is the value that is both the key and the string
+    // Key.mLabel is assigned from - so it is the one place both costs are decided, the per-frame
+    // measure-and-draw and the retention.
+    String carried = null;
+    for (final Object key : cache().keySet()) {
+      final String label = ((KeyboardId) key).mCustomActionLabel;
+      if (label != null) {
+        carried = label;
+        break;
+      }
+    }
+    assertNotNull("the keyboard must have carried the host's label, or this measures nothing",
+        carried);
+    assertTrue("a label the host chose is measured and painted on every frame; 250,000 characters "
+            + "of it is the user's keyboard, in every app, for as long as that field has focus. "
+            + "Length was " + carried.length(),
+        carried.length() <= 128);
+  }
+
+  /** And an ordinary label is untouched, so the bound is not quietly mangling real ones. */
+  @Test
+  public void anordinaryActionLabelIsUnchanged() {
+    ime.onStartInputView(fieldLabelled("Send"), false);
+    ShadowLooper.idleMainLooper();
+
+    boolean found = false;
+    for (final Object key : cache().keySet()) {
+      final String label = ((KeyboardId) key).mCustomActionLabel;
+      if (label != null) {
+        assertEquals("a real action label must survive the bound exactly", "Send", label);
+        found = true;
+      }
+    }
+    assertTrue("no keyboard carried the label, so this asserts nothing", found);
   }
 }

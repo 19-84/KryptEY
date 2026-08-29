@@ -6,6 +6,8 @@ import static org.junit.Assert.assertNull;
 import com.amnesica.kryptey.inputmethod.latin.utils.RecapitalizeStatus;
 
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
 
 import java.lang.reflect.Field;
 import java.util.Locale;
@@ -22,6 +24,7 @@ import java.util.Locale;
  * user switches apps, so a decrypted message left in these buffers is still in memory behind
  * whatever they open next - which in this threat model may be the messenger itself.
  */
+@RunWith(RobolectricTestRunner.class)
 public class PlaintextBufferClearingTest {
 
   private static Object field(final Object target, final String name) throws Exception {
@@ -52,5 +55,47 @@ public class PlaintextBufferClearingTest {
     final RecapitalizeStatus status = new RecapitalizeStatus();
     status.stop();
     assertNull(field(status, "mStringBefore"));
+  }
+
+  /**
+   * And a field change must empty it, not merely disable it.
+   *
+   * <p>The test above pins that {@code stop()} clears. It does not pin that anything calls
+   * {@code stop()} when the user moves to another field — and nothing did. {@code startInput()}
+   * called {@code disable()}, which sets one boolean, while the two strings held up to
+   * {@code MAX_CHARACTERS_FOR_RECAPITALIZATION} (100KB) of the field just left.
+   * {@code forgetCachedText()}, which does call {@code stop()}, is reached only from
+   * {@code onWindowHidden}, and a focus move does not hide the window.
+   *
+   * <p>Same callback and same argument as the verify screen's digits, which this branch already had
+   * to fix once: {@code onStartInputViewInternal} runs on any {@code restartInput} or focus move,
+   * and the window need not hide. The residue is not readable from outside the IME process — the
+   * state machine cannot be re-entered across the field change — but it is the previous field's
+   * text sitting in memory behind whatever the user opened next, which in this threat model may be
+   * the messenger.
+   */
+  @Test
+  public void afieldChangeEmptiesTheRecapitalisationBuffer() throws Exception {
+    final org.robolectric.android.controller.ServiceController<
+        com.amnesica.kryptey.inputmethod.latin.LatinIME> controller =
+        org.robolectric.Robolectric.buildService(
+            com.amnesica.kryptey.inputmethod.latin.LatinIME.class);
+    final com.amnesica.kryptey.inputmethod.latin.LatinIME ime = controller.create().get();
+
+    final Object logic = field(ime, "mInputLogic");
+    final RecapitalizeStatus status =
+        (RecapitalizeStatus) field(logic, "mRecapitalizeStatus");
+    status.enable();
+    status.start(0, 33, "meet me at the safe house at nine", Locale.ENGLISH);
+    assertEquals("precondition: the text must be held", "meet me at the safe house at nine",
+        field(status, "mStringBefore"));
+
+    // What onStartInputViewInternal calls on every restartInput and every focus move.
+    logic.getClass().getMethod("startInput").invoke(logic);
+
+    assertNull("the previous field's text must not survive a move to another field: this callback "
+            + "runs without the window hiding, and the only thing that emptied this buffer was the "
+            + "window hiding", field(status, "mStringBefore"));
+    assertNull(field(status, "mStringAfter"));
   }
 }

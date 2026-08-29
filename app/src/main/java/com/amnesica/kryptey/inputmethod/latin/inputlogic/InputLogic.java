@@ -80,6 +80,21 @@ public final class InputLogic {
    */
   public void startInput() {
     mRecapitalizeStatus.disable(); // Do not perform recapitalize until the cursor is moved once
+    // ...and EMPTY it, which disable() does not.
+    //
+    // disable() sets one boolean; stop() nulls the two strings, which hold up to
+    // MAX_CHARACTERS_FOR_RECAPITALIZATION - 100KB - of the field the user just left. Nothing else
+    // on this path clears them: forgetCachedText, which does call stop(), is reached only from
+    // onWindowHidden, and a focus move does not hide the window. That is the same callback and the
+    // same argument as the verify screen's digits, which this branch already had to fix once: this
+    // method runs on any restartInput or focus move, and the window need not hide.
+    //
+    // stop() rather than forgetCachedText(). startInput is also called from onSubtypeChanged, which
+    // is not followed by resetCachesUponCursorMoveAndReturnSuccess - so blanking
+    // mCommittedTextBeforeComposingText here would leave auto-capitalisation reasoning from an
+    // empty buffer until the next cursor move, on every language switch. This clears only what the
+    // reset does not.
+    mRecapitalizeStatus.stop();
     mCurrentlyPressedHardwareKeys.clear();
   }
 

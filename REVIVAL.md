@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-four sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,8 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [A label the host chooses, painted on every frame](#a-label-the-host-chooses-painted-on-every-frame)
+- [The buffer a field change disabled without emptying](#the-buffer-a-field-change-disabled-without-emptying)
 - [The invariant that belonged to a pair, and the arm that did not hold it](#the-invariant-that-belonged-to-a-pair-and-the-arm-that-did-not-hold-it)
 - [The lowering nobody asked about, because three comments said it did not exist](#the-lowering-nobody-asked-about-because-three-comments-said-it-did-not-exist)
 - [Kept is not the same as inert](#kept-is-not-the-same-as-inert)
@@ -2020,6 +2022,51 @@ value — while the store still writes a `DEVICE_ID` row nothing reads, holding 
 would reach for. Now an assertion, and asserted *after a real load*: written first against a fresh
 in-memory account, where it passed with the invariant deliberately broken, because that path never
 reaches the constructor that makes it true.
+
+---
+
+## A label the host chooses, painted on every frame
+
+`EditorInfo.actionLabel` is the application's to set, and it was copied verbatim into the enter
+key's drawn label with no bound. The keyboard view is hardware-accelerated, which means `onDraw`
+redraws *every* key rather than the invalidated ones — so that label was measured with
+`Paint.getTextBounds` and painted with `Canvas.drawText` over its whole length on every frame, on
+the input method's UI thread. The IME process serves every application on the device, so a
+messenger that sets a very long label costs the user their keyboard everywhere, not only in the
+messenger. An `OutOfMemoryError` on that path is an `Error`, so none of the `catch (Exception)`
+handlers this branch added around the keyboard's callbacks would stop it.
+
+Bounded at 128 characters — generous against any real label — and bounded **at the copy**, which is
+the whole design of it. The value is part of the keyboard cache key, so truncating for display while
+keying on the full string would let two hosts whose labels share a prefix render each other's
+keyboards: a field labelled "Send to Alice…" reusing the one built for "Send to Bob…", which is a
+wrong label on screen and worse than a long one. Truncating at the copy keeps the key and the drawn
+label the same value, so two hosts that collide there also display the same thing.
+
+**What is bounded and what is not.** The cache holds at most 64 keyboards, and that bound counts
+entries, not bytes — each `KeyboardId` still retains the host's whole `EditorInfo`, including its
+arbitrary extras `Bundle`. That is the same "bounded the number the host announces, not the bytes it
+sends" shape this branch has already found three times on `RichInputConnection`, and the label was
+the part of it that reached a per-frame cost. The retention half is recorded, not fixed: evicting by
+bytes rather than clearing the map re-opens what the recorded cache fix rejected, because
+`sUniqueKeysCache` is cleared only by the whole-map clear.
+
+## The buffer a field change disabled without emptying
+
+`RecapitalizeStatus` holds up to 100KB of the text being recapitalised — genuinely the user's
+plaintext, since recapitalising is something you do to a message you are writing.
+`InputLogic.startInput()` called `disable()`, which sets one boolean. `stop()`, which nulls the two
+strings, is reached only from `forgetCachedText`, and that is reached only from `onWindowHidden`.
+
+A focus move does not hide the window. That is the same callback and the same argument as the verify
+screen's digits, which this branch already had to fix once: `onStartInputViewInternal` runs on any
+`restartInput` or focus move. So the previous field's text stayed in memory behind whatever the user
+opened next — which in this threat model may be the messenger.
+
+`stop()` and not `forgetCachedText()`: `startInput` is also called from `onSubtypeChanged`, which is
+not followed by a cursor-move reset, so blanking the committed-text cache there would leave
+auto-capitalisation reasoning from an empty buffer until the next cursor move, on every language
+switch. This clears only what the reset does not.
 
 ---
 

@@ -74,12 +74,47 @@ public final class KeyboardId {
     mElementId = elementId;
     mEditorInfo = params.mEditorInfo;
     mLanguageSwitchKeyEnabled = params.mLanguageSwitchKeyEnabled;
-    mCustomActionLabel = (mEditorInfo.actionLabel != null)
-        ? mEditorInfo.actionLabel.toString() : null;
+    mCustomActionLabel = boundedActionLabel(mEditorInfo.actionLabel);
     mShowMoreKeys = params.mShowMoreKeys;
     mShowNumberRow = params.mShowNumberRow;
 
     mHashCode = computeHashCode(this);
+  }
+
+  /**
+   * How much of the host's action label this keyboard will carry.
+   *
+   * <p>Generous against any real one - "Send", "Search", "Go", "Weiterleiten" - and a bound where
+   * there was none.
+   */
+  private static final int MAX_CUSTOM_ACTION_LABEL_CHARS = 128;
+
+  /**
+   * The host's action label, bounded.
+   *
+   * <p>{@code EditorInfo.actionLabel} is chosen entirely by the application the keyboard is typing
+   * into, and it was copied verbatim into the enter key's drawn label. The keyboard view is
+   * hardware-accelerated, which means {@code onDraw} redraws every key rather than the invalidated
+   * ones - so the label was measured with {@code Paint.getTextBounds} and painted with
+   * {@code Canvas.drawText} over its whole length on every frame, on the input method's UI thread.
+   * The IME process serves every application on the device, so a messenger that sets a very long
+   * label costs the user their keyboard everywhere, not just in the messenger. An
+   * {@code OutOfMemoryError} on that path is an {@code Error}, so none of the {@code catch
+   * (Exception)} handlers around the keyboard's callbacks stop it either.
+   *
+   * <p>Bounded HERE, at the copy, rather than at the point of drawing - and that is the whole
+   * design of it. This value is part of the cache key ({@code computeHashCode} and {@code equals}),
+   * so truncating for display while keying on the full string would let two hosts whose labels
+   * share a prefix render each other's keyboards: a field labelled "Send to Alice..." reusing the
+   * one built for "Send to Bob...", which is a wrong label on screen and worse than a long one.
+   * Truncating at the copy keeps the key and the drawn label the same value, so two hosts that
+   * collide here also display the same thing, which is consistent rather than wrong.
+   */
+  private static String boundedActionLabel(final CharSequence actionLabel) {
+    if (actionLabel == null) return null;
+    final String label = actionLabel.toString();
+    return label.length() <= MAX_CUSTOM_ACTION_LABEL_CHARS
+        ? label : label.substring(0, MAX_CUSTOM_ACTION_LABEL_CHARS);
   }
 
   private static int computeHashCode(final KeyboardId id) {
