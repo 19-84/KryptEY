@@ -1963,6 +1963,31 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
 
+**And the one chat-log operation nobody had timed.** `removeAllUnencryptedMessages` collected the
+doomed entries and then called `ArrayList.removeAll`, which probes that collection once per
+surviving element — O(n·m), and for a log dominated by one correspondent O(n²), with a full
+`StorageMessage.equals` inside each probe. Every number in the chat-log table above is a linear
+operation; this was the one quadratic step and it was not in the table.
+
+Measured on a desktop JVM by `ChatLogRaiseCostHarness.deletionCost`, added for the purpose:
+
+| messages, all one contact | `removeAll` | `removeIf` |
+|---|---|---|
+| 1,000 | 8 ms | 1 ms |
+| 5,000 | 69 ms | 5 ms |
+| 20,000 | **986 ms** | 17 ms |
+
+A phone is slower, and this runs from a click listener on the input-method process's main thread —
+so deleting a heavily-used contact freezes the keyboard in whatever app the user is typing in. Not a
+hypothetical moment either: deleting a contact is this app's own standard advice after a decryption
+failure, and a messenger can provoke one by replaying a message. The attacker picks when the freeze
+happens, on a log it helped grow.
+
+The predicate is unchanged, deliberately — including that `contact` is still dereferenced without a
+guard. Its siblings guard; adding one here would turn a null-contact deletion from a visible NPE
+into a silent no-op, hiding a caller's bug rather than this method's. This is a one-line algorithm
+change, not the deferred chat-log cap, which is a policy question about history.
+
 ---
 
 ## Kept is not the same as inert

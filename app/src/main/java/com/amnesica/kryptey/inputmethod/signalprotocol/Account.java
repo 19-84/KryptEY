@@ -462,14 +462,33 @@ public class Account {
     while (retired.size() > RETIRED_DISPLAY_NAME_LIMIT) retired.removeFirst();
   }
 
+  /**
+   * Removes every logged message belonging to this contact.
+   *
+   * <p>{@code removeIf} rather than collect-then-{@code removeAll}. The latter probes the doomed
+   * collection once per surviving element - O(n*m) with a full {@code StorageMessage.equals} inside
+   * each probe, and for a log dominated by one correspondent that is O(n^2). Measured on a desktop
+   * JVM by {@code ChatLogRaiseCostHarness.deletionCost}: 1000 messages 8ms, 5000 69ms, 20000
+   * <b>986ms</b>, against 1ms / 5ms / 17ms for the linear form. A phone is slower, and this runs
+   * from a click listener on the input-method process's main thread - so deleting a heavily-used
+   * contact freezes the keyboard in whatever app the user is typing in.
+   *
+   * <p>That is not a hypothetical moment: deleting a contact is this app's own standard advice
+   * after a decryption failure, and a messenger can provoke one by replaying a message. So the
+   * attacker chooses when the freeze happens, on a log it helped grow. Every other number in
+   * REVIVAL's chat-log table is a linear operation; this was the one quadratic step and it was not
+   * in the table.
+   *
+   * <p>The predicate is exactly the one that was there. In particular {@code contact} is still
+   * dereferenced without a guard: its siblings guard, and adding one here would turn a null-contact
+   * deletion from a visible NPE into a silent no-op, hiding a caller's bug rather than this
+   * method's.
+   */
   public void removeAllUnencryptedMessages(Contact contact) {
     final ArrayList<StorageMessage> messages = getUnencryptedMessages();
     if (messages == null) return;
-    List<StorageMessage> operatedList = new ArrayList<>();
-    messages.stream()
-        .filter(m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId()))
-        .forEach(operatedList::add);
-    messages.removeAll(operatedList);
+    messages.removeIf(
+        m -> m.belongsTo(contact.getSignalProtocolAddressName(), contact.getDeviceId()));
   }
 
   /**

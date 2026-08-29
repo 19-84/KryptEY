@@ -102,6 +102,51 @@ public class ChatLogRaiseCostHarness {
     }
   }
 
+
+  /**
+   * What deleting a contact costs, which is the one chat-log operation nobody had timed.
+   *
+   * <p>{@code Account.removeAllUnencryptedMessages} uses {@code ArrayList.removeAll(List)}, which
+   * probes the collection once per element - O(n*m), and for a log dominated by one correspondent
+   * that is O(n^2) with a full {@code StorageMessage.equals} inside each probe. Every number in
+   * REVIVAL's chat-log table is a linear operation; this one is not in it.
+   *
+   * <p>Run by lifting the {@code @Ignore}. Numbers rather than a threshold, for the reason the
+   * siblings give: a timing assertion tight enough to mean something is flaky, and one loose enough
+   * to be stable means nothing.
+   */
+  @Ignore("measurement harness, not a test - see the class javadoc")
+  @Test
+  public void deletionCost() {
+    for (final int size : new int[] {1000, 5000, 20000}) {
+      final Contact bob = new Contact("Bob", "Jones", "bobAddress", 7, false);
+      final String key = StorageMessage.chatLogKey("bobAddress", 7);
+
+      final ArrayList<StorageMessage> messages = new ArrayList<>();
+      for (int i = 0; i < size; i++) {
+        messages.add(new StorageMessage(key, "bobAddress", "me", Instant.now(),
+            "message number " + i + " with some ordinary sentence length to it"));
+      }
+
+      final ArrayList<StorageMessage> asWritten = new ArrayList<>(messages);
+      long start = System.nanoTime();
+      final ArrayList<StorageMessage> doomed = new ArrayList<>();
+      for (final StorageMessage m : asWritten) {
+        if (m.belongsTo(bob.getSignalProtocolAddressName(), bob.getDeviceId())) doomed.add(m);
+      }
+      asWritten.removeAll(doomed);
+      final long removeAllMs = (System.nanoTime() - start) / 1_000_000;
+
+      final ArrayList<StorageMessage> linear = new ArrayList<>(messages);
+      start = System.nanoTime();
+      linear.removeIf(m -> m.belongsTo(bob.getSignalProtocolAddressName(), bob.getDeviceId()));
+      final long removeIfMs = (System.nanoTime() - start) / 1_000_000;
+
+      System.out.println("DELETE " + size + " messages, all one contact: removeAll " + removeAllMs
+          + " ms, removeIf " + removeIfMs + " ms");
+    }
+  }
+
   /**
    * Where the cost that laziness does NOT remove actually lives.
    *

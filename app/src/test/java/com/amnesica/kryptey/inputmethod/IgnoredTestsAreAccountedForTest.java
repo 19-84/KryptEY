@@ -65,7 +65,11 @@ public class IgnoredTestsAreAccountedForTest {
       // Measures what a chat-log cap would buy, at sizes a person could reach. Ignored for the same
       // reason as its two siblings: it is a measurement harness, it takes minutes, and its output is
       // numbers for a decision rather than a pass or a fail. Run it by lifting the @Ignore.
-      "whatAcapWouldBuy"));
+      "whatAcapWouldBuy",
+      // What deleting a contact costs. The one chat-log operation with a quadratic step, and the
+      // one not in REVIVAL's table. Ignored for the same reason as its three siblings: numbers for
+      // a decision rather than a pass or a fail.
+      "deletionCost"));
 
   /**
    * The test those two rejections rest on.
