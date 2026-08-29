@@ -25,7 +25,13 @@
     android:gravity="center"
     android:orientation="horizontal">
 
-    <ListView
+    <!--
+      A list that never draws a partial row. The address tag is the bottom-most element of a row, so
+      a partial last row cuts the tag and leaves the name whole - which is the one state the tag
+      exists to prevent, and with divider="@null" nothing on screen says the row is cut.
+      See WholeRowsListView.
+    -->
+    <com.amnesica.kryptey.inputmethod.latin.e2ee.WholeRowsListView
       android:id="@+id/e2ee_contact_list"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"

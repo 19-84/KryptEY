@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and seventeen sections, written in the order things were found rather than by subject, so the
+One hundred and eighteen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -173,6 +173,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A hole that was not there](#a-hole-that-was-not-there)
 - [The instruction that vanished when it was needed](#the-instruction-that-vanished-when-it-was-needed)
 - [Nothing was testing the number itself](#nothing-was-testing-the-number-itself)
+- [The tag fell off the bottom of the list](#the-tag-fell-off-the-bottom-of-the-list)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6461,3 +6462,34 @@ expected value — which is the one change that must never be made quietly. The 
 stated once in a test, so changing it in production is a visible decision rather than a silent one.
 
 Both mutants now die, each on the assertion that names its failure.
+
+## The tag fell off the bottom of the list
+
+**A row could show a whole, legible name and no address tag — which is the row reading as the plain,
+unambiguous original, and the one state the tag exists to prevent.**
+
+Two contacts the user has given the same name are told apart by their tags; the pin cannot cover that
+case, which is why the tag is ungated and shown on every row. The tag is also the **bottom-most**
+element of a row, and `ListView` deliberately draws a partial last child when its height is bounded
+and not a whole number of rows. So the cut falls on the tag while the name above it survives intact,
+and with `divider="@null"` there is no rule and no ellipsis — nothing on screen says the row was cut.
+
+**Measured**: a 322-pixel screen budget against 92-pixel rows produced a list 261 pixels tall, with
+the third row's bottom at 276. Reproduced before the fix, gone after it.
+
+The list now refuses to draw a partial row. Not by putting the tag back beside the name — that
+reinstates the horizontal clipping a previous round fixed, where at large font scales both name views
+measured narrower than the ellipsis glyph and drew nothing. Not by a hard-coded height either, which
+reintroduces the negative-column class at large font scales.
+
+**Two mistakes of mine on the way, both caught by tests I wrote against my own fix.** The first
+snapped against the height the list *wanted* rather than the height it was *given* — the screen's
+budget is shared with the info line and the button strip — so it dropped a row that would have fitted.
+The second was worse in kind: a "minimum one row" floor that was **dead code**. It computed a larger
+height and then skipped the assignment, because the assignment is conditional on shrinking. It looked
+like a floor, and the test I wrote for it asserted an outcome that never happened. Both are gone, and
+what replaced the floor is a test asserting what the code actually does.
+
+That leaves one state this cannot fix, written down rather than papered over: with room for less than
+a single row there is no whole row to show, so the list keeps what it was given. Growing past its
+allowance would only hand the parent a view it has to clip anyway.
