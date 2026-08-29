@@ -151,16 +151,17 @@ public class SelectingAcontactDoesNotEraseAwarningTest {
     final Contact bob = contact("Bob", "bob-address");
     strip.setWarningMessageAboutForTest("Careful: Bob's key changed.", bob);
 
-    strip.removeContact(contact("Alice", "alice-address"));
-    assertTrue("deleting a different contact must not clear a warning about Bob: " + banner(),
-        banner().contains("Bob's key changed"));
-
-    // A store whose write lands, which is what "deleting the contact" means here.
+    // A store whose write lands, installed BEFORE either deletion.
     //
-    // Without it this fixture's default write fails, so removeContact returns false and the
-    // deletion has NOT reached disk - the contact and its pinned key come back at the next raise.
-    // The clear used to be unconditional, so the assertion below passed while describing a state
-    // the app should not be in; gating the clear on the write landing made that visible.
+    // It used to be installed between them, and that made the first half of this test measure
+    // nothing. Without a landing store this fixture's write fails, so removeContact returns false,
+    // takes its rollback branch and restores everything - and the clear is gated on `deleted &&`,
+    // which short-circuits. So "deleting Alice must not clear Bob's warning" held because deleting
+    // Alice did not happen, not because the clear is scoped to the address.
+    //
+    // Measured by a reviewer: replacing the address scoping with a bare `if (deleted &&
+    // mWarningStanding)` left all 1412 tests green. The property this test is named for was
+    // enforced by nothing.
     SignalProtocolMain.getInstance().setStorageHelperForTest(
         new StorageHelper(RuntimeEnvironment.getApplication(), (ctx, has) -> null) {
           @Override
@@ -169,6 +170,18 @@ public class SelectingAcontactDoesNotEraseAwarningTest {
             return true;
           }
         });
+
+    final Contact alice = contact("Alice", "alice-address");
+    strip.removeContact(alice);
+    // Asserted by its effect, because removeContact returns void. A deletion whose write does not
+    // land is rolled back wholesale - list, messages and session - so a surviving row is exactly
+    // the signal that this half measured nothing.
+    assertFalse("precondition: deleting Alice must actually happen, or the assertion below holds "
+            + "because nothing did",
+        SignalProtocolMain.getInstance().getAccount().getContactList().stream()
+            .anyMatch(c -> "Alice".equals(c.getFirstName())));
+    assertTrue("deleting a different contact must not clear a warning about Bob: " + banner(),
+        banner().contains("Bob's key changed"));
 
     strip.removeContact(bob);
     assertFalse("deleting the contact a warning names must clear it - its verify screen is gone, "

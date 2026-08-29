@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-five sections, written in the order things were found rather than by subject, so the
+One hundred and forty-six sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -96,6 +96,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The one sentence the store listing gives to security](#the-one-sentence-the-store-listing-gives-to-security)
 - [The guard that armed once, and the three ways back in](#the-guard-that-armed-once-and-the-three-ways-back-in)
 - [One clear written for a different event](#one-clear-written-for-a-different-event)
+- [A guard that checked a list of names, not the thing the names are about](#a-guard-that-checked-a-list-of-names-not-the-thing-the-names-are-about)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -8079,3 +8080,44 @@ reproducing. Printing the value under test is what showed the assertion was neve
 a fixture with a real contact it passes, and reverting the production change to the old
 `clearDecryptedContent()` call turns it red, which is what makes it a control rather than an
 observation.
+
+## A guard that checked a list of names, not the thing the names are about
+
+A round pointed at the test suite instead of the code, and it is the most productive brief this
+branch has run. Its method was the one this file already argues for, applied at scale: apply a
+mutant to production, run all 1412 tests, and see which named test stays green.
+
+**The strip's carry guard was checking strings.** `EveryStripFieldIsClassifiedTest` exists because
+"remember to add it to `CarriedState`" had failed twice and has no mechanical answer; it gave it
+one, and only half. The test compares `getDeclaredFields()` against two hand-written name sets and
+reads neither `CarriedState`, `surrenderState` nor `adoptState`. So a field can be listed as carried
+while nothing carries it, and the guard says the question was answered. Measured: deleting
+`mAccountReloadsWhenNoticeRaised = carried.accountReloadsWhenNoticeRaised` from `adoptState` left
+the whole suite green — on a field added three days earlier, to stop a storage notice retiring on
+the write that makes a leak permanent, whose whole point is surviving a rotation the messenger can
+force.
+
+The other half now exists: plant a distinguishable value in every name in `CARRIED`, surrender,
+adopt into a fresh strip, read them back. It drives the *same* set, so the two cannot drift — a name
+added to the list is immediately required to survive. The reviewer's mutant now fails, and the
+name-list guard still passes, which is the clearest possible statement of what it could never see.
+
+A static scan was considered and rejected, and the reason is worth keeping: "every name in `CARRIED`
+is assigned in `adoptState`" looks equivalent and is not. Five of the carried names are legitimately
+restored through setters or through `clear()+putAll` rather than by assignment, so that check fails
+on correct code — and would then be "fixed" by loosening it back to a name list.
+
+**And a fixture that measured nothing for the same reason three times over.** In
+`SelectingAcontactDoesNotEraseAwarningTest`, the landing store was installed *between* the two
+deletions. The first — "deleting Alice must not clear a warning about Bob", the half that names the
+property — ran without it, so the write failed, `removeContact` took its rollback branch and
+restored everything, and the clear is gated on `deleted &&`, which short-circuited. The assertion
+held because the deletion did not happen. Measured: replacing the address scoping with a bare
+`if (deleted && mWarningStanding)` left all 1412 tests green, so the scoping that stops deleting one
+contact erasing a warning about another was enforced by nothing.
+
+The shape generalises and the reviewer found it independently in three packages: **a fixture with no
+landing store, calling a production method that reports whether its write landed, and discarding the
+answer.** The two write reporters in `SignalProtocolMain` disagree on a null helper — one answers
+true, the other false — which is exactly why such fixtures look healthy. The remaining instances are
+listed in that report and are the next thing to sweep.

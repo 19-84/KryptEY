@@ -37,7 +37,7 @@ import java.util.Set;
 public class EveryStripFieldIsClassifiedTest {
 
   /** Carried across a rebuild by {@code surrenderState}/{@code adoptState}. */
-  private static final Set<String> CARRIED = new HashSet<>(Arrays.asList(
+  static final Set<String> CARRIED = new HashSet<>(Arrays.asList(
       "encodingMethod",        // the user's choice of wire encoding; a rebuild reset it to RAW
       "mHostFieldIsPassword",  // armed by onStartInputViewInternal, which then rebuilds the strip
       "mWarningStanding",      // its javadoc says the messenger cannot clear it; a rebuild could
