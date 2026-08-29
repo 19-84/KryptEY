@@ -134,4 +134,41 @@ public class ChatLogRaiseCostHarness {
     }
     return total / 5 / 1_000_000;
   }
+
+  /**
+   * What a cap would actually buy, at sizes a person could reach.
+   *
+   * <p>The chat-log cap is a deferred product decision, and it has been deferred without numbers:
+   * the trade is between losing old history and paying for it on every message. This measures the
+   * paying half at several sizes, so the choice can be made against evidence rather than intuition.
+   *
+   * <p>Measured on the DECRYPT path, not the raise path, because that is where the cost lands: the
+   * raise is lazy and the first decrypt of a session forces the load, after which every message
+   * re-serialises and re-seals the whole log.
+   */
+  @Ignore("measurement harness, not a test - see the class javadoc")
+  @Test
+  public void whatAcapWouldBuy() throws Exception {
+    final Context context = RuntimeEnvironment.getApplication();
+    for (final int size : new int[] {0, 500, 2000, 10000, 20000, 50000}) {
+      seed(context, size);
+      final long firstWrite = writeOnce(context);
+      final long steadyWrite = writeOnce(context);
+      final int stored = context.getSharedPreferences("protocol_messages", Context.MODE_PRIVATE)
+          .getString("UNENCRYPTED_MESSAGES", "").length();
+      System.out.println("CAP " + size + " messages: first save " + firstWrite
+          + " ms, next save " + steadyWrite + " ms, stored " + stored + " bytes");
+    }
+  }
+
+  /** One account save with the log loaded, which is what a decrypt or a send performs. */
+  private long writeOnce(final Context context) {
+    final StorageHelper helper = new StorageHelper(context, BOX);
+    final Account account = helper.getAccountFromSharedPreferences();
+    if (account == null) return -1;
+    account.getUnencryptedMessages();   // force the lazy load, as a decrypt does
+    final long start = System.nanoTime();
+    helper.storeAllInformationInSharedPreferences(account);
+    return (System.nanoTime() - start) / 1_000_000;
+  }
 }

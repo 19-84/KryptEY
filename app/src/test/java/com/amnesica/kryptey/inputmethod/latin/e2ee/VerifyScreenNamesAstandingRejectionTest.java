@@ -526,4 +526,70 @@ public class VerifyScreenNamesAstandingRejectionTest {
             + "Shown: " + shown,
         shown.contains("Detected contact"));
   }
+
+  /**
+   * Every state of this screen must say which channel to compare over, and why.
+   *
+   * <p>The instruction used to carry that sentence, and the two state notices REPLACE the
+   * instruction — so a pending change, which one forged bundle produces, left the screen saying "if
+   * it still matches what they read out" with no mention of a channel and no reason. A user
+   * satisfies that by pasting the digits into the chat they are already in, which is the one thing
+   * the sentence exists to prevent, on the screen the app's own warnings send them to.
+   *
+   * <p>Asserted on the rendered view in all three states rather than on the constant: a source scan
+   * cannot tell whether the sentence survived the branch that runs.
+   */
+  @Test
+  public void everyStateOfTheVerifyScreenNamesTheChannelAndTheReason() throws Exception {
+    // Plain: a pinned contact, nothing standing.
+    strip.showVerifyContactForTest(bob());
+    assertChannelSentencePresent("with nothing standing");
+
+    // A rejection standing, with a key in use again - which is the state the notice is written for
+    // ("The number below is the key in use now"). A bare rejection removes the pin, so there is no
+    // number at all; that state is the floor asserted at the end.
+    rejectThenLetItBeRePinned();
+    strip.showVerifyContactForTest(bob());
+    assertChannelSentencePresent("with a rejection standing and a key re-pinned");
+
+    // And a pending change, which is the cheapest state for an attacker to produce: one bundle.
+    SignalProtocolMain.initialize(null);
+    final String attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(victim);
+    SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(attackerBundle), peerAddress);
+    strip.showVerifyContactForTest(bob());
+    assertChannelSentencePresent("with a key change pending");
+  }
+
+  /**
+   * And the screen does NOT tell the user to compare a number that is not there.
+   *
+   * <p>The floor for the test above. A bare rejection removes the pin, so the screen says there is
+   * no security number until they send a new invite - and an instruction to read digits out by
+   * voice, appended to every state unconditionally, would be telling the user to compare nothing.
+   * Appending is the obvious fix and this is where it would have been wrong.
+   */
+  @Test
+  public void thescreenWithNoNumberDoesNotAskForAcomparison() {
+    assertTrue("fixture: the rejection must take", SignalProtocolMain.rejectContactKey(bob()));
+
+    strip.showVerifyContactForTest(bob());
+
+    final String shown = verifyScreenText();
+    assertTrue("precondition: this is the no-number state: " + shown,
+        shown.contains("no security number"));
+    assertTrue("a screen with no digits must not ask the user to read them out: " + shown,
+        !shown.contains("Read them out by voice"));
+  }
+
+  private void assertChannelSentencePresent(final String situation) {
+    final String shown = verifyScreenText();
+    assertTrue("the verify screen " + situation + " must say to compare by voice: " + shown,
+        shown.contains("by voice"));
+    assertTrue("...and must warn against sending the numbers through the messenger " + situation
+        + ": " + shown, shown.contains("Do not send the numbers through the messenger"));
+    assertTrue("...and must give the reason, or it reads as an arbitrary rule " + situation + ": "
+        + shown, shown.contains("could change those numbers"));
+  }
 }

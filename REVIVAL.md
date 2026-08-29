@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and fifteen sections, written in the order things were found rather than by subject, so the
+One hundred and sixteen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -171,6 +171,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Three fields that were offering their text away](#three-fields-that-were-offering-their-text-away)
 - [A line that was doing security work without saying so](#a-line-that-was-doing-security-work-without-saying-so)
 - [A hole that was not there](#a-hole-that-was-not-there)
+- [The instruction that vanished when it was needed](#the-instruction-that-vanished-when-it-was-needed)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6392,3 +6393,41 @@ produced a finding. A stale note does not merely misinform a reader — it is *r
 next person to look, including a reviewer whose whole job is to be suspicious. The cost is not the
 minute it takes to write; it is a round spent confirming something the codebase asserted about
 itself.
+
+## The instruction that vanished when it was needed
+
+**Every warning this app raises ends by telling the user to compare the safety number. The screen
+that comparison happens on stopped saying how — in exactly the states an attacker produces.**
+
+The instruction carries three things: compare **by voice**, do **not** send the numbers through the
+messenger you are chatting in, and the reason — *anything that could change your keys could change
+those numbers to match*. Two state notices **replace** it: one when a key change is pending, one when
+a rejection stands. A pending change costs an attacker one forged bundle. In that state the screen
+said "if it still matches what they read out" and named no channel and no reason at all — and a user
+satisfies that sentence by pasting the digits into the chat they are already in, which is the single
+thing the instruction exists to prevent.
+
+The clause is its own constant now, appended rather than embedded, because **a sentence that must
+survive every branch cannot live inside one of them**.
+
+**Two things this turned up that the report did not.** There are two base writes of the verify text,
+in different methods, and only one is on the live path — so my first fix went to the dead one and the
+test caught it. That is its own small hazard: a sentence added to one and not the other is a screen
+that says different things depending on how it was opened.
+
+And appending unconditionally would have been wrong. After a bare rejection the pin is gone, so there
+is **no number at all** and the screen says so — telling the user to read digits out by voice there
+is telling them to compare nothing. The obvious fix is the one that breaks it, so that state is now
+the floor: the screen with no number must **not** ask for a comparison. Both mutants die — dropping
+the clause from the pending-change branch, and appending it where there is nothing to read.
+
+**The guard that was supposed to hold this read the constant's source text**, which cannot tell
+whether the sentence reaches the screen — the same shape as three other hollow guards this file
+records. It still exists, doing the cheap half; the durable half asserts the rendered view in all
+three states.
+
+**And the chat-log cap now has numbers rather than adjectives**, measured on the path where the cost
+actually lands — the save that follows every decrypt once the log is loaded. 500 messages: 65 ms.
+2,000: 87 ms. 10,000: 222 ms. 20,000: 207 ms. 50,000: 412 ms, 15 MB stored. The decision is still
+yours; what changed is that it can now be made against evidence, and the harness that produced these
+is written down beside the two it sits with.

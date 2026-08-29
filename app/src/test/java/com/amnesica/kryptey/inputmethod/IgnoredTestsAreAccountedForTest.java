@@ -61,7 +61,11 @@ public class IgnoredTestsAreAccountedForTest {
       // ChatLogLoadsLazilyTest: the log is not read to load an account, and a raise leaves its
       // stored bytes byte-identical.
       "raiseCost",
-      "fileLayerCost"));
+      "fileLayerCost",
+      // Measures what a chat-log cap would buy, at sizes a person could reach. Ignored for the same
+      // reason as its two siblings: it is a measurement harness, it takes minutes, and its output is
+      // numbers for a decision rather than a pass or a fail. Run it by lifting the @Ignore.
+      "whatAcapWouldBuy"));
 
   /**
    * The test those two rejections rest on.

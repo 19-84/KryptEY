@@ -203,8 +203,14 @@ public class OpeningMessageTest {
     final String source = new String(java.nio.file.Files.readAllBytes(strip),
         java.nio.charset.StandardCharsets.UTF_8);
 
-    final int at = source.indexOf("INFO_VERIFY_CONTACT =");
-    assertTrue("the verify-screen instruction must still exist", at > 0);
+    // The channel sentence has its own constant now, because the two state notices REPLACE the
+    // instruction they follow - so it was being dropped in exactly the states an attacker produces.
+    // This still reads the source, which is the weakness a review round named: it cannot tell
+    // whether the sentence reaches the screen. VerifyScreenNamesAstandingRejectionTest asserts that
+    // on the rendered view, in all three states; this keeps the cheap half - that the sentence
+    // exists and still carries its reason.
+    final int at = source.indexOf("INFO_VERIFY_CHANNEL =");
+    assertTrue("the verify-screen channel instruction must still exist", at > 0);
     final String instruction = source.substring(at, source.indexOf(";", at));
 
     assertTrue("it must say to compare by voice: " + instruction,

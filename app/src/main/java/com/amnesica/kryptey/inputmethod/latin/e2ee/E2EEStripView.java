@@ -236,7 +236,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * believes their history is gone is exactly the user who stops trying to clean it up.
    */
   private final String INFO_SAVED_MESSAGES_UNREADABLE = "Your saved messages with this contact cannot be opened right now, so they cannot be shown or deleted. They are still on this device - this is not an empty history. Try again after unlocking the device; if it keeps happening, do not assume anything here has been removed.";
-  private final String INFO_VERIFY_CONTACT = "To check your encryption with %s, read the numbers above out to them by voice - in person or on a call - and have them read theirs back. Do not send the numbers through the messenger you are chatting in: anything that could change your keys could change those numbers to match.";
+  private final String INFO_VERIFY_CONTACT = "To check your encryption with %s, read the numbers above out to them and have them read theirs back.";
+
+  /**
+   * How to compare, and why it has to be that way - carried by every state of this screen.
+   *
+   * <p>It used to live inside {@code INFO_VERIFY_CONTACT}, which the two notices below REPLACE. So
+   * the states an attacker produces - a pending change needs one forged bundle - were exactly the
+   * states in which the screen stopped saying which channel to use and why. A user satisfies "if it
+   * still matches what they read out" by pasting the digits into the chat they are already in,
+   * which is the failure the sentence exists to prevent, reappearing on the screen the app's own
+   * warnings route them to.
+   *
+   * <p>Its own constant, appended rather than embedded, so no notice can overwrite it: a sentence
+   * that must survive every branch cannot live inside one of them.
+   */
+  static final String INFO_VERIFY_CHANNEL = "Read them out by voice - in person or on a call. Do not send the numbers through the messenger you are chatting in: anything that could change your keys could change those numbers to match.";
   /**
    * A re-invite that was refused, said out loud on the arm that used to say nothing.
    *
@@ -570,7 +585,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     loadFingerprintInVerifyContactView();
 
     if (chosenContact == null) return;
-    setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, labelFor(chosenContact)));
+    setInfoTextViewMessage(mVerifyContactInfoTextView,
+        String.format(INFO_VERIFY_CONTACT, labelFor(chosenContact)) + "\n\n" + INFO_VERIFY_CHANNEL);
   }
 
   /**
@@ -869,7 +885,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     createVerifyContactReturnButtonClickListener();
     createVerifyContactRejectButtonClickListener();
-    setInfoTextViewMessage(mVerifyContactInfoTextView, String.format(INFO_VERIFY_CONTACT, labelFor(chosenContact)));
+    // With the channel sentence, like every other write on this screen. There are two of these
+    // base writes, in different methods, and only one of them is the live path - which is its own
+    // small hazard: a sentence added to one and not the other is a screen that says different
+    // things depending on how it was opened.
+    setInfoTextViewMessage(mVerifyContactInfoTextView,
+        String.format(INFO_VERIFY_CONTACT, labelFor(chosenContact)) + "\n\n" + INFO_VERIFY_CHANNEL);
 
     final Fingerprint fingerprint = mE2EEStrip.getFingerprint(chosenContact);
     if (fingerprint == null) {
@@ -959,15 +980,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // in the both-hold case left a dead first write, which reads as though two notices are being
       // shown in sequence.
       final String pending = String.format(INFO_VERIFY_PENDING_CHANGE, labelFor(chosenContact));
-      setInfoTextViewMessage(mVerifyContactInfoTextView,
-          mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())
-              ? pending + "\n\n" + String.format(INFO_VERIFY_AFTER_REJECTION,
-                  labelFor(chosenContact))
-              : pending);
+      final String notice = mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())
+          ? pending + "\n\n" + String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact))
+          : pending;
+      // With the channel sentence, which this branch used to drop. See INFO_VERIFY_CHANNEL.
+      setInfoTextViewMessage(mVerifyContactInfoTextView, notice + "\n\n" + INFO_VERIFY_CHANNEL);
     } else if (mE2EEStrip.wasKeyRejected(chosenContact.getSignalProtocolAddress())) {
-      // A rejection with no pending change.
+      // A rejection with no pending change - and the channel sentence, which this dropped too.
       setInfoTextViewMessage(mVerifyContactInfoTextView,
-          String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact)));
+          String.format(INFO_VERIFY_AFTER_REJECTION, labelFor(chosenContact))
+              + "\n\n" + INFO_VERIFY_CHANNEL);
     }
     setFingerprintViews(fingerprint, true);
   }
