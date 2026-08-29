@@ -187,3 +187,36 @@ Worth recording how the first version of that test lied: it seeded the log with
 the loader — and the cleanup lives inside the loader. It failed, and it failed for the fixture's
 reason rather than the code's. The fixture has to reload the account so the log is deferred, which
 is the state a kill actually leaves.
+
+## Every input the host declares, enumerated
+
+A review round died mid-sweep with four findings, and all four were the same shape: a value the
+host application declares about its own field, trusted without a bound or an order. They were
+`inputType` read through the narrow password predicate, the `initialSelStart`/`initialSelEnd` pair
+read unordered, `actionLabel` retained unbounded in a cache key, and — one level along — the
+password-field notice erased by a clipboard event. All four are fixed and under test.
+
+Four findings of one shape is a reason to enumerate rather than to keep hunting, so the sweep was
+finished: every field of `EditorInfo` that `app/src/main` reads at all, and what bounds it.
+
+| Field | Disposition |
+| --- | --- |
+| `inputType` | `isAnyPasswordInputType` — the disjunction, so `textVisiblePassword` counts |
+| `initialSelStart` / `initialSelEnd` | ordered at the write site with `Math.min`/`Math.max` |
+| `actionLabel` | `boundedActionLabel`, 128 chars, bounded **at the copy** so key and label agree |
+| `imeOptions` | an `int` read only through bitmask tests |
+| `actionId` | an `int` handed to `performEditorAction` |
+| `privateImeOptions` | read only by `containsInCommaSplittableText` and by equality |
+| `packageName` | assigned to one field, read only by `toString()`; one live reference per session |
+| `hintText`, `label`, `extras` | read nowhere |
+
+Nothing new fell out of the four that had not already been recorded. The one that looks alarming
+and is not: `KeyboardId` retains the whole `EditorInfo`, so a cache key drags in the host's
+arbitrary `extras` `Bundle` even though `mCustomActionLabel` beside it is carefully bounded — but
+the `SoftReference` on the value is not what saves it, since the *keys* are strong. What saves it is
+`MAX_CACHED_KEYBOARDS`, which drops the whole map at 64 entries. That the bound counts entries
+rather than bytes is recorded already, in the constant's own javadoc and twice in REVIVAL.
+
+So this is a clean negative on the rest of the seam, and the value of it is the table: the next
+round that finds a host-declared input mishandled can check here whether the field was looked at
+before spending itself re-deriving one of these rows.
