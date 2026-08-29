@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [A control on a slot the adversary can overwrite is not a control](#a-control-on-a-slot-the-adversary-can-overwrite-is-not-a-control)
 - [Not verified on hardware, and most needing it](#not-verified-on-hardware-and-most-needing-it)
 
 **Defect classes this review found**
@@ -1950,6 +1951,62 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## A control on a slot the adversary can overwrite is not a control
+
+The keyboard re-reads the store on every raise. That re-read is the only thing that replaces an
+account carrying `contactsWereUnreadable`, and `StorageHelper` refuses **every** write while one is
+carried — so it is not a cosmetic path that lowers a banner, it is the app's only way back to
+persisting anything after the device is unlocked.
+
+It was gated on `hasStandingConditionWarning()`, which asks what the banner is currently saying.
+
+The banner holds one warning and any other writer takes the slot. A relayed message offering a
+different key at a pinned address does it; so does tapping a contact whose name is shared, and a
+refused invite. After that the gate answered no, the store was never re-read again, and the fault
+latched for the life of the process: contacts added, keys pinned, verifications, rejections and the
+whole chat log living in RAM until the process died, on a keyboard that looks entirely healthy. Each
+individual write still reports its own failure — but its advice ("free up space or unlock the
+device") has become false, because the state is latched in memory, and the one durable sentence that
+explained it, including *do NOT re-invite anyone, because re-inviting replaces keys you have already
+checked*, was removed by the party that benefits from removing it.
+
+Reachable, and cheaply: the fault begins with the device locked; Decrypt stays live on the contacts
+arm, so one relayed envelope carrying a different key for a pinned address raises the
+identity-change warning and takes the slot. The user then resolves that warning the way its text
+tells them to, and the banner goes quiet. Everything after that is memory-only, silently.
+
+**The gate now asks the fact.** `theStoreMustBeRereadOnThisRaise()` is
+`hasStandingConditionWarning() || contactsAreUnreadable() || storageIsUnreadable()`. The first is a
+field read on the account in hand — no store read, no Keystore work — and the third is a trial
+decryption `refreshActionButtons` already performs on ordinary clipboard traffic, against a store
+cached on the helper, so it is not a new class of cost.
+
+**The test that should have caught it was hollow in the way this branch had already fixed one step
+along.** `AwarningDisplacedIsAwarningThatComesBackTest.thestorageWarningComesBackOnTheNextRaise`
+displaced the warning and then called `refreshOpeningMessage()` directly, commented *"What LatinIME
+does on every setInputView."* LatinIME does not do that; it asks the gate first, and after the
+displacement the gate said no. That is verbatim the defect this file records about the *lowering*
+direction — same file, same sentence, opposite direction, left standing. The sibling
+`onlyTheconditionWarningsAreOfferedToThePerRaisePath` went further and asserted the wrong answer as
+desirable. Both now ask the gate.
+
+**The trade this opens, taken deliberately.** With the gate on the fact, `refreshOpeningMessage` runs
+on every raise while a fault stands, so it repaints the storage sentence over a key-substitution
+warning at moments the messenger picks by presenting a field. A yield was written for that and
+reverted, because it is worse: during a contacts fault the contact list *appears empty*, this
+sentence is the only thing between the user and re-inviting everybody, and it cannot be recovered by
+anything the user can do while the fault stands — Verify and Reject clear a standing warning only
+once the response reaches disk, which is exactly what the fault refuses. The warning it displaces,
+by contrast, is recomputed on every decrypt from that sender and on every selection of that contact,
+both of which its own text asks the user to do. An eviction the subject re-derives is a
+displacement. `AstorageFaultOutlivesTheSentenceThatDescribesItTest` pins the ordering and the
+recomputation together, so a later round cannot re-open it by reading only half.
+
+Three tests, two of which go red when the gate is put back to asking the banner. The third is about
+the ordering and correctly survives that mutant.
 
 ---
 

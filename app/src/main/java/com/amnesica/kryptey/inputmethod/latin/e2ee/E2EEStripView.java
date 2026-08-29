@@ -3206,8 +3206,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   /**
    * Whether the banner is holding one of the two warnings raised from a CONDITION.
    *
-   * <p>Asked by {@code LatinIME.onStartInputViewInternal} — every keyboard raise — because these
-   * two are the only warnings with no other way down. A review round found that the lowering path
+   * <p>One half of {@code theStoreMustBeRereadOnThisRaise}, which is what the keyboard raise asks.
+   * It used to be the whole of it, and the other half is there because this one can be overwritten
+   * by any other warning. These two are still the only warnings with no other way down. A review round found that the lowering path
    * inside {@code refreshOpeningMessage} could not execute in production at all: its only callers
    * are {@code setInputView} on a freshly inflated strip and {@code adoptState} guarded on the same
    * flag, and {@code setInputView} runs once per process unless the theme changes. So a keyboard
@@ -3223,10 +3224,74 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * store, which is worth paying for exactly when the answer on file is "it could not be read".
    */
   public boolean hasStandingConditionWarning() {
-    return mWarningStanding && (INFO_STORAGE_UNREADABLE.equals(mStandingWarningText)
-        || INFO_CONTACTS_UNREADABLE.equals(mStandingWarningText));
+    return mWarningStanding && isAconditionWarning(mStandingWarningText);
   }
 
+  private boolean isAconditionWarning(final String text) {
+    return INFO_STORAGE_UNREADABLE.equals(text) || INFO_CONTACTS_UNREADABLE.equals(text);
+  }
+
+  /**
+   * Whether the keyboard raise must re-read the store. Asked by
+   * {@code LatinIME.onStartInputViewInternal} on every raise.
+   *
+   * <p>This used to BE {@code hasStandingConditionWarning()}, and that was a control on a slot the
+   * adversary can overwrite. The banner holds one warning; any other writer takes it - a relayed
+   * message offering a different key, a shared name, a refused invite - and after that the question
+   * was answered by asking what the banner happened to be saying, which was no longer about the
+   * store. The re-read stopped for the life of the process.
+   *
+   * <p>What that cost was not cosmetic. The account carrying {@code contactsWereUnreadable} is
+   * replaced only by this re-read, and {@code StorageHelper} refuses every write while it is
+   * carried. So a messenger that could hold the fault open and then take the banner left the
+   * keyboard looking entirely healthy and persisting nothing - contacts, pins, verifications,
+   * rejections and the chat log all in RAM until the process died - with the sentence explaining it
+   * removed by the party who benefits from removing it. The device being unlocked did not help,
+   * which is precisely what that sentence promised would happen.
+   *
+   * <p>So it asks the fact as well. {@code contactsAreUnreadable()} is a field read on the account
+   * in hand, not a probe: no store read, no Keystore work, nothing to pay for on a healthy raise.
+   *
+   * <p>Both arms are asked, not just the one that latches. {@code storageIsUnreadable()} does cost a
+   * trial decryption - but {@code refreshActionButtons} already asks it on ordinary clipboard
+   * traffic, and the store it decrypts is cached on the helper, so this is not a new class of cost.
+   * On a healthy install both facts are false and the raise pays a field read and a single AES-GCM
+   * open; on an unreadable store the re-read already ran on every raise, because nothing displaces
+   * that arm's banner in practice.
+   */
+  public boolean theStoreMustBeRereadOnThisRaise() {
+    return hasStandingConditionWarning() || mE2EEStrip.contactsAreUnreadable()
+        || storageIsUnreadable();
+  }
+
+  /**
+   * Which warning wins the slot while a store fault stands, and why it is this one.
+   *
+   * <p>The per-raise re-read now fires on the FACT, so this method runs on every raise while a
+   * fault stands - including while a key-substitution warning is on screen, which it then paints
+   * over, again on the next raise, at moments the messenger picks by presenting a field. That was
+   * examined and a yield was written for it, then reverted, because the yield is worse:
+   *
+   * <ul>
+   *   <li>During a contacts-unreadable fault the contact list <em>appears empty</em>. This sentence
+   *       is the only thing standing between the user and re-inviting everybody, which discards
+   *       every pin they have already checked and reopens trust-on-first-use for all of them. It
+   *       has no other way onto the screen.</li>
+   *   <li>And it cannot be recovered by anything the user does while the fault stands: Verify and
+   *       Reject clear a standing warning only once the response reaches disk, which is exactly
+   *       what the fault refuses. So a yield hides it until the device is unlocked - and unlocking
+   *       is the thing the user does not know to do, because the sentence saying so is hidden.</li>
+   *   <li>Whereas the warning it displaces is recomputable, which is the property this file relies
+   *       on everywhere else. {@code warnIfIdentityChanged} re-raises on every decrypt from that
+   *       sender and on every {@code selectContact} - both actions the warning's own text asks for.
+   *       An eviction that the subject re-derives is a displacement.</li>
+   * </ul>
+   *
+   * <p>So the ordering is deliberate and the cost is stated rather than hidden: while a fault
+   * stands, a key-substitution warning is repainted away on raises the messenger can trigger, and
+   * the user gets it back by tapping the contact. Pinned by
+   * {@code AstorageFaultOutlivesTheSentenceThatDescribesItTest}.
+   */
   public void refreshOpeningMessage() {
     if (mInfoTextView == null) return;
     // Asked first, because it is invisible to storageState(): the protocol store opens, so that

@@ -127,7 +127,14 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
     assertTrue("precondition: the slot must have been taken",
         !banner().contains(E2EEStripView.INFO_STORAGE_UNREADABLE));
 
-    // What LatinIME does on every setInputView.
+    // Not "what LatinIME does on every setInputView", which is what this comment used to say and
+    // what it was not. LatinIME asks theStoreMustBeRereadOnThisRaise() first, and after the
+    // displacement above the old gate answered no - so production never reached this call and the
+    // control was hollow, in exactly the way this file already records for the LOWERING direction.
+    // The gate is asked here for that reason.
+    assertTrue("the raise must still reconsider the store after the slot was taken; gated on the "
+            + "sentence it did not, and the fault latched for the life of the process",
+        strip.theStoreMustBeRereadOnThisRaise());
     strip.refreshOpeningMessage();
 
     assertTrue("the storage warning is the one thing between the user and re-inviting everybody "
@@ -195,6 +202,15 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
     assertTrue("an event warning is not a condition warning: a key substitution does not stop "
             + "having happened, and re-deriving it on every raise would cost a store read forever",
         !strip.hasStandingConditionWarning());
+
+    // And the answer this test used to end on was read as desirable when it was the defect. With
+    // no fault standing there is genuinely nothing to re-read, so the raise asks nothing - but the
+    // reason is that the fact is false, not that an event warning is in the slot. The fault case is
+    // measured in AstorageFaultOutlivesTheSentenceThatDescribesItTest, where the same event warning
+    // is standing and the answer must be yes.
+    assertTrue("with no store fault there is nothing for the raise to re-read, whatever is on the "
+            + "banner - that is where the store read is saved",
+        !strip.theStoreMustBeRereadOnThisRaise());
   }
 
   /**

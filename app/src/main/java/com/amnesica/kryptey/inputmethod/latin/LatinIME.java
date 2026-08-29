@@ -521,7 +521,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     // difference matters: a plain reload on the contacts arm installs a replacement account with
     // the contact list substituted empty, destroying whatever the session did while writes were
     // refused - on every raise, at a moment the messenger chooses. See its javadoc.
-    if (mE2EEStripView != null && mE2EEStripView.hasStandingConditionWarning()) {
+    if (mE2EEStripView != null && mE2EEStripView.theStoreMustBeRereadOnThisRaise()) {
       SignalProtocolMain.reloadAccountIfStorageRecovered(this);
       mE2EEStripView.refreshOpeningMessage();
     }

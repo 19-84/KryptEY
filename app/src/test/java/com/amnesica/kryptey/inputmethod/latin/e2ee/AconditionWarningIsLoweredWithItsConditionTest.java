@@ -138,9 +138,15 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
     }
     final String body = latinIme.substring(bodyStart, Math.min(i, latinIme.length()));
 
-    assertTrue("the per-raise path must ask whether a condition warning is standing, or the two "
-            + "warnings with no other way down are lowered only by a theme change: " + body.length()
-            + " characters scanned", body.contains("hasStandingConditionWarning"));
+    // The name matters, and it changed for a reason. This asked hasStandingConditionWarning, which
+    // reads the banner - a slot any other warning takes, after which the store was never re-read
+    // again and the fault latched for the life of the process. The per-raise path must ask the
+    // question that is answered from the FACT.
+    assertTrue("the per-raise path must ask whether the store needs re-reading, or the two "
+            + "warnings with no other way down are lowered only by a theme change - and, far worse, "
+            + "an account marked contacts-unreadable is never replaced, so every write stays "
+            + "refused after the unlock: " + body.length()
+            + " characters scanned", body.contains("theStoreMustBeRereadOnThisRaise"));
     assertTrue("...and re-derive it when one is. Asking without re-deriving leaves the same "
             + "permanent banner", body.contains("refreshOpeningMessage"));
     assertTrue("...after re-reading the store, since whether the contact list could be read is a "
@@ -154,7 +160,7 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
 
     // And BEFORE the method's first early return, or a raise over a field the framework describes
     // with a null EditorInfo skips it - a shape the messenger picks by presenting that field.
-    final int reconsider = body.indexOf("hasStandingConditionWarning");
+    final int reconsider = body.indexOf("theStoreMustBeRereadOnThisRaise");
     final int firstEarlyReturn = body.indexOf("Null EditorInfo");
     assertTrue("the per-raise entry point must be found to contain both", reconsider > 0);
     // Not "or the marker is missing". A review round pointed out that reading the ordering off a
