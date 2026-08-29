@@ -2001,6 +2001,24 @@ could have stopped being measured with the suite still saying OK. All three are 
 the device suite still passes with them hard, which means the property was genuinely being measured
 and can no longer stop quietly.
 
+**And the archive window, asserted on an invite rather than on the store.** A review round named this
+as the test it could not construct. `PreKeyRotationTest` pins which records survive a rotation and
+which are retired once the window passes — that is the mechanism. The reason it exists is
+user-visible: somebody was handed an invite, and by the time they answer it the sender's keys have
+rotated. Nothing crossed from "the record is still in the store" to "the answer still opens".
+
+Both directions, because only one of them is a trap. An answer composed against the previous bundle
+must still open after a rotation — without that, everyone invited shortly before one is simply
+unreachable. And an answer older than the window must *not*, because "keep everything" passes the
+first assertion while quietly retiring the forward secrecy the rotation exists to provide. Restoring
+the original comparison defect — measuring against the duration rather than the stored deletion
+timestamp — kills the new test with the user-visible symptom rather than a store assertion.
+
+The refusal is a checked `InvalidKeyIdException`, which I measured rather than assumed: my first
+version expected a null return and was wrong. That the refusal is *checked* matters as much as that
+it refuses, since an unchecked throw on that path is the crash class this project names as its
+worst.
+
 **Two claims about the protocol stores that no test had crossed a serialization boundary to check.**
 Both turned out true, and both are one plausible edit from silently reverting.
 
