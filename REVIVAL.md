@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirteen sections, written in the order things were found rather than by subject, so the
+One hundred and fourteen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -169,6 +169,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Cannot, and cannot right now](#cannot-and-cannot-right-now)
 - [What the shipped thing actually contains](#what-the-shipped-thing-actually-contains)
 - [Three fields that were offering their text away](#three-fields-that-were-offering-their-text-away)
+- [A line that was doing security work without saying so](#a-line-that-was-doing-security-work-without-saying-so)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6332,3 +6333,34 @@ add-contact screen is the choke point, so that is where it is handed back.
 only focusable view in a container hands focus straight back, so no blur ever happened. The test now
 drives the production listener with the argument the framework delivers, and says why in the place
 someone would otherwise re-introduce a `clearFocus()`.
+
+## A line that was doing security work without saying so
+
+**Nothing in the strip refuses the selection toolbar. What refuses it is the scroll behaviour, and
+nobody had written that down.**
+
+A long-press on an editable field offers Copy, Share and `ACTION_PROCESS_TEXT` — the clipboard the
+messenger reads, and an `Intent` extra to any installed app. There is no
+`setCustomSelectionActionModeCallback` and no `textIsSelectable="false"` anywhere in this file. What
+stops it is that `TextView` builds a selection controller only when its movement method can select
+arbitrarily, and `ScrollingMovementMethod` cannot.
+
+That line was written to scroll a tall message. Swapping it for `ArrowKeyMovementMethod` — the
+ordinary fix for "tapping cannot place the cursor" — would reopen both paths with nothing to notice,
+which is what makes an accidental property worth pinning rather than admiring. The mutant is exactly
+that swap, and it now fails two tests: the property, and the floor that says the box must still
+scroll — because a *null* movement method also cannot select arbitrarily, and would satisfy the
+first while making a long message unreadable.
+
+Deliberately not fixed with a selection-ActionMode callback. That suppresses the selection toolbar
+without touching the *insertion* one, so it would be easy to add, believe the field is closed, and
+then feel free to change the movement method.
+
+**And two exception messages carried identity into a sink neither logging guard inspects.** One named
+the contact, one named the address, and every catch of both ends in `printStackTrace` — which on
+Android reaches logcat, while both guards match `Log.*` call sites. Neither is reachable today, which
+is why the fix is the message rather than a new control: the caller already knows which contact it
+passed, and a log reader does not need to.
+
+One existing test had pinned the old sentence *including the name*. It now asserts the property —
+that the refusal says what happened and does not carry the name — which is what it was always for.

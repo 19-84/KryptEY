@@ -497,7 +497,11 @@ public class Account {
 
   public void addContactToContactList(Contact contact) throws DuplicateContactException {
     if (this.contactList.contains(contact))
-      throw new DuplicateContactException("Error: Contact " + contact.getFirstName() + " " + contact.getLastName() + " already exists in contact list and will not be saved!");
+      // Without the name. Every catch of this ends in printStackTrace, which on Android goes to
+      // logcat - a sink neither logging guard inspects, because they match Log.* call sites. The
+      // caller already knows which contact it passed; a reader of the log does not need to.
+      throw new DuplicateContactException(
+          "Error: that contact already exists in the contact list and will not be saved");
     this.contactList.add(contact);
   }
 

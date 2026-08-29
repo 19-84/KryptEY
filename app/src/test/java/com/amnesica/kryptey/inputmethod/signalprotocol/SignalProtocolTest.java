@@ -380,7 +380,14 @@ public class SignalProtocolTest {
 
     // test duplicate exception
     DuplicateContactException thrown = assertThrows(DuplicateContactException.class, () -> SignalProtocolMain.addContact("bob", "lastName", bob.getSignalProtocolAddress().getName(), bob.getDeviceId()));
-    assertEquals("Error: Contact bob lastName already exists in contact list and will not be saved!", thrown.getMessage());
+    // The message must say what happened WITHOUT naming the contact. Every catch of this ends in
+    // printStackTrace, which on Android reaches logcat - a sink neither logging guard inspects,
+    // because both match Log.* call sites. This assertion used to pin the name into the message.
+    assertTrue("the refusal must say what happened: " + thrown.getMessage(),
+        thrown.getMessage().contains("already exists"));
+    assertTrue("and must not carry the contact's name into a message that ends up in logcat: "
+        + thrown.getMessage(),
+        !thrown.getMessage().contains("bob") && !thrown.getMessage().contains("lastName"));
 
     putAllInformationInMapSharedPreferences(alice, ALICE_USERNAME);
   }

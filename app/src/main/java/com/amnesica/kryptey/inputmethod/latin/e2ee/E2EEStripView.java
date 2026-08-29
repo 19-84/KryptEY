@@ -2447,6 +2447,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private void setupMessageInputEditTextField() {
+    // Scrolling, and it is doing security work as well as scrolling.
+    //
+    // A movement method that cannot select arbitrarily leaves TextView unable to build a selection
+    // controller, so the Copy / Share / PROCESS_TEXT toolbar never appears over this field. That is
+    // the only thing stopping a long-press putting a decrypted message on the system clipboard -
+    // which the messenger reads - or handing it to any installed app in an Intent extra. Nothing
+    // else refuses those: there is no setCustomSelectionActionModeCallback and no
+    // textIsSelectable="false" anywhere in this file.
+    //
+    // Written down because the property is accidental: this line was added to scroll a tall
+    // message, and swapping it for ArrowKeyMovementMethod - an ordinary fix for "tapping cannot
+    // place the cursor" - would reopen both paths silently. NoTextIsSelectableOutOfTheStripTest
+    // pins it.
     mInputEditText.setMovementMethod(new ScrollingMovementMethod());
     // The FLAG_SECURE decision must be revised when this field's content changes.
     //

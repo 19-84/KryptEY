@@ -2349,7 +2349,10 @@ public class SignalProtocolMain {
     }
 
     if (!recipient.isPresent())
-      throw new InvalidContactException("No contact found with signalProtocolAddress: " + signalProtocolAddress);
+      // Without the address, for the same reason as its sibling in Account: this is caught where
+      // the handler is printStackTrace, so the message reaches logcat, and an address is the
+      // durable identity of somebody the user talks to.
+      throw new InvalidContactException("No contact found at the address this message came from");
 
     // Filed under the full address. See StorageMessage.chatLogKey: the address NAME is public and
     // the device id beside it is the sender's to choose, so a name-keyed log put an impostor's
