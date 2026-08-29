@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and fourteen sections, written in the order things were found rather than by subject, so the
+One hundred and fifteen sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -170,6 +170,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [What the shipped thing actually contains](#what-the-shipped-thing-actually-contains)
 - [Three fields that were offering their text away](#three-fields-that-were-offering-their-text-away)
 - [A line that was doing security work without saying so](#a-line-that-was-doing-security-work-without-saying-so)
+- [A hole that was not there](#a-hole-that-was-not-there)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
@@ -6364,3 +6365,30 @@ passed, and a log reader does not need to.
 
 One existing test had pinned the old sentence *including the name*. It now asserts the property —
 that the refusal says what happened and does not carry the name — which is what it was always for.
+
+## A hole that was not there
+
+**A review round reported that Robolectric's `android-all` jars run unverified in the job that builds
+the release APK. The reasoning was sound, the mechanism is real for the versions it describes, and it
+does not happen here — measured.**
+
+Dependency verification pins 386 artifacts. Older Robolectric fetches a ~100 MB `android-all` jar at
+test time into `~/.m2`, outside Gradle's resolution and therefore outside verification, and that jar
+executes arbitrary code in the same job that produces the release artifact. The reviewer did not
+invent the mechanism: **this repository's own CI comment asserted it**, which is where the finding
+came from, and I repeated the assertion in a note last tick without checking it.
+
+Measured against Robolectric 4.16.1 as pinned: the suite runs to completion with `--rerun-tasks` in
+a container started with `--network none`. No `android-all` jar exists anywhere in the image before
+or after, and no `~/.m2` is created at all. The Android runtime comes from `nativeruntime` and
+`shadows-framework`, both of which are pinned and verified like everything else.
+
+So the correction is to the **comment**, in both places it appears, and the cache step stays — a
+cache that hits nothing costs nothing, and a future Robolectric could reintroduce the fetch. What
+the comment now carries is what to re-measure if it ever starts hitting.
+
+Worth recording as a pattern rather than an incident: this is the third time a false comment has
+produced a finding. A stale note does not merely misinform a reader — it is *read as evidence* by the
+next person to look, including a reviewer whose whole job is to be suspicious. The cost is not the
+minute it takes to write; it is a round spent confirming something the codebase asserted about
+itself.

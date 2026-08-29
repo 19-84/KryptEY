@@ -51,6 +51,18 @@ runner uses, not the minimum this project supports (`minSdk` is 26, and on 26–
 and no on-device measurement either) — and the test asserts the survival, so a platform that changes it fails loudly rather than
 losing a user's history quietly.
 
+**Robolectric's `android-all` jars execute unverified in the build that produces the release APK.**
+Dependency verification pins 386 artifacts, and older Robolectric fetches a ~100 MB `android-all` jar
+at test time into `~/.m2`, outside Gradle's resolution — so a substituted one could make the whole
+suite report whatever it liked, in the job that builds the release artifact. The mechanism is real
+for the versions it describes, and the CI workflow's own comment said it applied here.
+*Measured against Robolectric 4.16.1 as pinned: the suite runs to completion with `--rerun-tasks` in
+a container started with `--network none`; no `android-all` jar exists anywhere in the image before
+or after, and no `~/.m2` is created.* Its Android runtime comes from `nativeruntime` and
+`shadows-framework`, both pinned and verified.
+**Version-dependent** — a future Robolectric could reintroduce the fetch, and the workflow comment
+now says what to re-measure.
+
 ## Refuted — the code already does what the finding asks
 
 **The per-raise reachability guard is satisfied by the comment naming the safe call.**

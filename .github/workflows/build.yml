@@ -34,8 +34,19 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
 
-      # Robolectric fetches android-all jars at runtime into ~/.m2 rather than the Gradle cache,
-      # so without this every run re-downloads them.
+      # Kept, and no longer true of the pinned version - which matters, because a review round read
+      # this comment and reported that those jars run unverified in the job that builds the release
+      # APK. The reasoning was right about older Robolectric: an android-all jar fetched at test time
+      # lands outside Gradle's resolution and so outside dependency verification.
+      #
+      # Measured against Robolectric 4.16.1 as pinned here: the suite runs to completion with
+      # --rerun-tasks in a container started with --network none, no android-all jar exists anywhere
+      # in the image before or after, and no ~/.m2 is created at all. Its Android runtime comes from
+      # nativeruntime and shadows-framework, both pinned and verified.
+      #
+      # The step stays because a future Robolectric could reintroduce the fetch, and because a cache
+      # that hits nothing costs nothing. If it ever starts hitting, this comment is where to check
+      # whether what it caches is verified.
       - name: Cache Robolectric android-all jars
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
