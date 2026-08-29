@@ -2007,6 +2007,28 @@ leaves its bytes exactly as they were, and the cost is a value that is wrong for
 of wrong for good. Absent is still told from unreadable by the key's presence, which is the idiom
 `readMessageLog` already used and these two did not.
 
+**And two things the same round listed as unchecked, now measured.** Both turned out sound, and both
+are pinned rather than left as an argument.
+
+A contact carries its address three ways — the name, the scalar device id, and the assembled
+address — and all three are serialized, so a stored disagreement was a real question: the contact
+list matches on the scalar and the identity and session stores on the address. It cannot survive a
+load, but not for the reason the creator's comment suggests. The `@JsonCreator` rebuilds the address
+from the name and the folded id, and then Jackson assigns the *stored* nested address afterwards,
+through a setter that syncs the other two from it. So the stored address wins and the other two
+follow — the setter and the creator each look like the deciding writer and neither is, which is why
+this needed a measurement rather than a reading. An out-of-range legacy id in that nested value is
+folded too, by the address's own deserializer, before the setter ever sees it. Three tests; removing
+the setter's resync turns two of them red.
+
+And `hasExistingProtocolData`'s javadoc read as though asking both files closed the
+generate-over-an-identity hole. It closes it for a user who *has* a second file. Somebody who has an
+identity and has never exchanged a message has no `protocol_messages` at all, so a corrupt account
+file still reads as a fresh install for them — the users with the least on disk to lose and the
+least chance of noticing. The sibling is a witness, not a guarantee. Said so in the javadoc and
+pinned in both directions, because the honest fix is a durable "an identity exists here" marker
+outside both files, which is a schema change with its own migration.
+
 ---
 
 ## Three defects in three fixes, again

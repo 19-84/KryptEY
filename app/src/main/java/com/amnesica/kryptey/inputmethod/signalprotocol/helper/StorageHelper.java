@@ -84,6 +84,15 @@ public class StorageHelper {
    * account's empty log is written straight over the history that survived. Before the split the log
    * lived in the file that was lost, so there was nothing left to destroy; the split created the
    * survivor, and this is the gate learning about it.
+   *
+   * <p><b>What this does NOT close, said plainly because the paragraph above reads as if it did.</b>
+   * The second file only helps a user who has one. Somebody who has installed the app, generated an
+   * identity and never sent or received a message has no {@code protocol_messages} file at all, so
+   * a corrupt account file still reads as "fresh install" for them and {@code initialize} generates
+   * over the identity. The sibling is a witness, not a guarantee, and it is absent for exactly the
+   * users with the least on disk to lose - which is also the least reason to notice. Recorded rather
+   * than fixed: the honest fix is a separate durable "an identity exists here" marker outside both
+   * files, and that is a schema change with its own migration.
    */
   public boolean hasExistingProtocolData() {
     if (identityReachedDisk()) return true;
