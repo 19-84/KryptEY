@@ -84,9 +84,8 @@ public final class BinaryEnvelope {
    * <p>A version bump rather than an optional field: an optional signature is one an attacker omits.
    * Mixed-version compatibility is not a requirement here, so the decoder refuses version one
    * outright rather than accepting an unsigned bundle from an older build.
-   */
-  /**
-   * An {@code int}, not a {@code byte}, and the difference is a trap rather than a preference.
+   *
+   * <p>An {@code int}, not a {@code byte}, and the difference is a trap rather than a preference.
    *
    * <p>{@code decode} compares this against {@code c.u8("version")}, which returns 0 to 255. As a
    * {@code byte} any future value from 128 up sign-extends to a negative number, so the comparison
@@ -104,14 +103,6 @@ public final class BinaryEnvelope {
   private static final int FLAG_CIPHERTEXT = 0x02;
 
   /**
-   * The parser is the right place to enforce protocol constraints, because everything downstream
-   * takes these values on trust. libsignal validates them too — but it does so by throwing
-   * <em>unchecked</em> {@code IllegalArgumentException} ("device ID is out of range", "integer
-   * overflow during conversion"), and no caller on the clipboard path catches unchecked exceptions.
-   * A hostile bundle with an inner deviceId of 0, or a registrationId with the high bit set, decoded
-   * cleanly here and then killed the IME process inside {@code new PreKeyBundle(...)}.
-   */
-  /**
    * A presence flag is 0 or 1 and nothing else.
    *
    * <p>Read as {@code != 0}, the 254 other values all meant "present" - so every envelope carrying
@@ -126,6 +117,14 @@ public final class BinaryEnvelope {
     return value == 1;
   }
 
+  /**
+   * The parser is the right place to enforce protocol constraints, because everything downstream
+   * takes these values on trust. libsignal validates them too — but it does so by throwing
+   * <em>unchecked</em> {@code IllegalArgumentException} ("device ID is out of range", "integer
+   * overflow during conversion"), and no caller on the clipboard path catches unchecked exceptions.
+   * A hostile bundle with an inner deviceId of 0, or a registrationId with the high bit set, decoded
+   * cleanly here and then killed the IME process inside {@code new PreKeyBundle(...)}.
+   */
   private static void requireValidDeviceId(final int deviceId) throws IOException {
     if (deviceId < 1 || deviceId > 127) {
       throw new IOException("device id out of libsignal's range [1,127]: " + deviceId);

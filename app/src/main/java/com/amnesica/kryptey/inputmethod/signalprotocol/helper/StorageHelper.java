@@ -122,14 +122,6 @@ public class StorageHelper {
   }
 
   /**
-   * Loads the account, or returns {@code null} when there is nothing readable to load.
-   *
-   * <p>Previously this dereferenced the protocol store without checking it, so any storage read
-   * failure became an NPE thrown out of {@code LatinIME.setInputView()} — the keyboard crashed
-   * every time it was raised, in every app, with no way for the user to recover. Callers must now
-   * handle {@code null} explicitly.
-   */
-  /**
    * Why there is no account, when there is no account.
    *
    * <p>These three look identical to every caller today, and two of them mean opposite things.
@@ -177,6 +169,14 @@ public class StorageHelper {
     }
   }
 
+  /**
+   * Loads the account, or returns {@code null} when there is nothing readable to load.
+   *
+   * <p>Previously this dereferenced the protocol store without checking it, so any storage read
+   * failure became an NPE thrown out of {@code LatinIME.setInputView()} — the keyboard crashed
+   * every time it was raised, in every app, with no way for the user to recover. Callers must now
+   * handle {@code null} explicitly.
+   */
   public Account getAccountFromSharedPreferences() {
     final String name = (String) getClassFromSharedPreferences(ProtocolIdentifier.UNIQUE_USER_ID);
     if (name == null) {
@@ -549,22 +549,6 @@ public class StorageHelper {
     return store;
   }
 
-  /**
-   * Writes the chat log to its own file, if anything has actually read it.
-   *
-   * <p>Two conditions, not one. "Loaded" alone was enough to write once, and a null log reports
-   * itself loaded - so a failed read produced a save of JSON "null" over the whole history. The
-   * account no longer reaches that state, and this is the second lock on the same door.
-   */
-  /**
-   * @return whether the log reached disk, or there was nothing to write.
-   *
-   * <p>It used to return nothing and swallow the failure, and the caller then returned true on the
-   * strength of the account batch alone. So a failed log commit produced exactly the outcome
-   * {@code mLastChatLogWriteFailed} exists to report — the message delivered and absent from the
-   * history — with the notice never firing, because the flag only ever covered the log being
-   * unREADable.
-   */
   /** Whether the last {@code storeAllInformationInSharedPreferences} got the log to disk. */
   private boolean mLastMessageLogWriteSucceeded = true;
 
@@ -585,6 +569,21 @@ public class StorageHelper {
     return preferences != null && preferences.contains(String.valueOf(identifier));
   }
 
+  /**
+   * Writes the chat log to its own file, if anything has actually read it.
+   *
+   * <p>Two conditions, not one. "Loaded" alone was enough to write once, and a null log reports
+   * itself loaded - so a failed read produced a save of JSON "null" over the whole history. The
+   * account no longer reaches that state, and this is the second lock on the same door.
+   *
+   * <p>It used to return nothing and swallow the failure, and the caller then returned true on the
+   * strength of the account batch alone. So a failed log commit produced exactly the outcome
+   * {@code mLastChatLogWriteFailed} exists to report — the message delivered and absent from the
+   * history — with the notice never firing, because the flag only ever covered the log being
+   * unREADable.
+   *
+   * @return whether the log reached disk, or there was nothing to write.
+   */
   private boolean storeMessageLog(final Account account) {
     // Nothing to write is not a failure: a log that was never loaded cannot have changed, and the
     // stored value is already what would be written.

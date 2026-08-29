@@ -46,9 +46,9 @@ public class NojavadocDescribesAmemberItIsNotAttachedToTest {
   /**
    * How many stacked blocks are known to remain. Lower this as they are fixed; never raise it.
    *
-   * <p>Was thirty-six when the check was written.
+   * <p>Was thirty-six when the check was written; thirty-one when it landed.
    */
-  private static final int KNOWN = 31;
+  private static final int KNOWN = 26;
 
   private static Path repositoryRoot() {
     Path here = Paths.get("").toAbsolutePath();
