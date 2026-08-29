@@ -147,8 +147,14 @@ Two things are easy to trip over:
 StrongBox. The emulator has none, so the top rung of the key ladder is only ever exercised as a
 refusal that gets stepped down from. What a StrongBox-backed device actually does remains untested.
 
-Nothing here drives the keyboard through a real messenger either. The IME tests establish that the
-system binds the keyboard and opens an input connection to a field, and that autofill does not
-receive the compose box; no test types a message, encrypts it, and reads it back out of another app.
-Nor does anything drive the strip's own UI - reaching its compose box needs a tap at coordinates
-that depend on which screen the strip is showing.
+No real messenger. This paragraph used to say more than that - "no test types a message, encrypts
+it, and reads it back out of another app. Nor does anything drive the strip's own UI" - and both
+clauses have since become false without the sentence being re-read. The suite now types on the real
+key surface, drives the strip through the add-contact screen and back, and sends across a genuine
+process boundary into `ForeignAppActivity`, which lives in the test APK under a different package.
+
+What remains true is narrower and worth stating exactly: the far side of that boundary is an
+activity written for the test, not Signal or Telegram or WhatsApp. Nothing here has ever been driven
+against a shipping messenger, so what no test covers is a real app's own field behaviour - its
+input types, its `restartInput` habits, its autofill and its clipboard use - which is precisely the
+surface this app's threat model calls the adversary.

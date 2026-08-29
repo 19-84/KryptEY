@@ -1009,11 +1009,24 @@ moves text through a real messenger.
 
 **What this still is not.** An emulator is not a phone. There is no StrongBox on it, so the top rung
 of the key ladder is exercised only in the sense that it is correctly refused and stepped down from;
-what a StrongBox device does still has no test here. Eleven of the suite's seventeen tests are about
-the crypto box; three bind the keyboard and three watch what autofill is handed, but none of them
-types anything. Nothing here drives the IME through a real messenger, and nothing drives the strip's
-own UI. What changed is that the category "cannot be run in this environment" is smaller than
-it was, and it was worth an hour to find out that it was never as large as the document said.
+what a StrongBox device does still has no test here. What changed is that the category "cannot be
+run in this environment" is smaller than it was, and it was worth an hour to find out that it was
+never as large as the document said.
+
+**The sentence that stood here went stale, which is worth more than the correction.** It read
+"eleven of the suite's seventeen tests are about the crypto box… none of them types anything.
+Nothing here drives the IME through a real messenger, and nothing drives the strip's own UI." That
+was true when written and every clause of it is now false. The suite is thirty-four tests: eleven
+still exercise the crypto box, but others type on the real key surface, drive the strip through the
+add-contact screen and back, watch text and ciphertext cross into a foreign app, and check that
+`FLAG_SECURE` reaches the window. A reader deciding whether the UI is covered on hardware would have
+read this and concluded no.
+
+It is the same failure this file records against its own mutation-testing entry — a sentence that
+was accurate, was not re-read when the thing it described grew, and stayed at HEAD telling readers a
+gap existed after it had been closed. `tools/README.md` carries the live count and
+`DocsDoNotContradictTheAppTest` checks it against the real number, which is why that copy did not
+drift and this one did: **the figure belongs where something asserts it.**
 
 ## The release APK built here is not the one users would get
 
@@ -7877,17 +7890,23 @@ cleanly reversed stack — the comments in one order, the methods in the exact o
 inserting a method by prepending its doc and appending its body produces. One pair was not a
 re-homing at all but two blocks describing the **same** method, written a year apart, and was merged.
 
-The remaining thirty-one are pinned by a ratchet rather than fixed in one pass, and the reason is the
-one the reviewer gave: re-homing thirty-one blocks by hand is thirty-one chances to attach the wrong
-one, and a wrong re-homing is invisible — it produces exactly the defect being fixed. So the check
-lands first, refuses to let the number grow, and they move a commit at a time.
+The rest are pinned by a ratchet rather than fixed in one pass, and the reason is the one the
+reviewer gave: re-homing them by hand is one chance per block to attach the wrong one, and a wrong
+re-homing is invisible — it produces exactly the defect being fixed. So the check lands first,
+refuses to let the number grow, and they move a commit at a time.
+
+**The count is deliberately not written here.** It was thirty-one when this entry was first written
+and is lower now, and a figure restated in prose is one that goes stale silently — the failure this
+file has paid for twice, most recently in a store listing that promised a byte limit the app had
+never met. `NojavadocDescribesAmemberItIsNotAttachedToTest.KNOWN` is the number, it is checked on
+every build, and it may only ever be lowered. Later sweeps cleared every other file; what is left is
+all in `E2EEStripView`, which is why it now moves in larger steps.
 
 Worth recording a negative result about the *method*: the obvious automation does not work. The
 first pass assumed the reversed-stack pattern was general and would have re-filed by position, and
 the very first group refutes it — two of its four blocks belong to constants declared ninety lines
 further down, not to the adjacent ones. A script that pairs by position would have produced
-plausible, wrong attributions in bulk, which is strictly worse than the thirty-one that are at least
-visibly stacked.
+plausible, wrong attributions in bulk, which is strictly worse than leaving them visibly stacked.
 
 ## Two tests that could not see what they claimed to check
 
