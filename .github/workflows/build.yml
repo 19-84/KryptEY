@@ -71,9 +71,13 @@ jobs:
       # Stripping needs the NDK. If this step fails here with "release APKs carry unstripped native
       # libraries", the fix is to make an NDK available to the runner - NOT to pass
       # -Pkryptey.allowUnstrippedNatives=true. That flag exists for environments which cannot strip
-      # at all, such as this project's own container, and it is an explicit statement that the
-      # artifact is not for distribution. CI is the one place that statement must never be made
-      # quietly.
+      # at all, and it is an explicit statement that the artifact is not for distribution. CI is the
+      # one place that statement must never be made quietly.
+      #
+      # This used to name "this project's own container" as such an environment. It is not one, and
+      # has not been since tools/Dockerfile started installing the NDK - tools/README.md gives the
+      # opposite instruction, rebuild the image rather than pass the flag. Left uncorrected, the one
+      # document somebody reads when this step goes red was telling them the flag is expected here.
       - name: Assemble release
         run: ./gradlew --no-daemon assembleRelease
 

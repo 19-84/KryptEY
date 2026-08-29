@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.CryptoBox;
+import com.amnesica.kryptey.inputmethod.signalprotocol.stores.SignalProtocolStoreImpl;
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.GcmCryptoBox;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 
@@ -189,5 +190,62 @@ public class InviteAcrossReloadTest {
             + "The app's own advice on a decryption failure is to delete and re-invite, which is "
             + "the only thing that recovers - and it discards the message",
         "hello from carol", recovered);
+  }
+
+  /**
+   * And the consumption ORDER that decides which invite survives a prune must survive a reload too.
+   *
+   * <p>{@code PreKeyWithStatus.usedAt} is what makes retention count consumption order rather than
+   * id order — without it the lowest id is dropped first, so an invite that took a recycled id is
+   * the first thing pruned and the person holding it can never establish a session. Every test of
+   * that ordering runs inside one process, and {@code PreKeyWithStatus.equals} omits the field, so
+   * a round-trip comparison could not see it go missing either.
+   *
+   * <p>That is one plausible edit away from silently reverting: annotate {@code getUsedAt()}
+   * {@code @JsonIgnore}, or reduce it to package-private — both its callers are in that package, so
+   * an IDE will suggest it — and every reloaded record carries {@code usedAt == 0}, all used
+   * records tie, and the tiebreak drops the lowest id first. Exactly the behaviour the fix removed,
+   * with the whole suite still green.
+   *
+   * <p>{@code reloadAccount} runs on every {@code setInputView}, so production crosses this
+   * boundary constantly and no test did.
+   */
+  @Test
+  public void theconsumptionOrderThatDecidesRetentionSurvivesAreload() throws Exception {
+    // Fill the retention window, then let an old invite be answered so its id is recycled - the
+    // state in which id order and consumption order disagree.
+    for (int i = 0; i < 55; i++) {
+      assertNotNull("fixture: every invite must carry a bundle",
+          SignalProtocolMain.exportOwnKeyBundle());
+    }
+    final SignalProtocolStoreImpl before =
+        SignalProtocolMain.getInstance().getAccount().getSignalProtocolStore();
+    int oldestRetained = -1;
+    for (int id = 0; id < 4000 && oldestRetained < 0; id++) {
+      if (before.getPreKeyStore().containsPreKey(id)) oldestRetained = id;
+    }
+    assertTrue("fixture: the store must hold pre-keys", oldestRetained >= 0);
+    before.getPreKeyStore().removePreKey(oldestRetained);
+    com.amnesica.kryptey.inputmethod.signalprotocol.util.KeyUtil
+        .generateAndStoreOneTimePreKey(before, oldestRetained);
+
+    // The next invite takes the recycled id, and persists everything - including the recycle,
+    // which until now existed only in memory. Ordering matters here and cost me a wrong first
+    // version of this test: reloading before that save discarded the recycle, so the test failed
+    // for a reason that was mine and not the code's.
+    assertNotNull(SignalProtocolMain.exportOwnKeyBundle());
+
+    // NOW the keyboard is put away and raised again, which is all setInputView does to the account.
+    SignalProtocolMain.reloadAccount(context);
+
+    // And the invite after it mints and prunes - on the reloaded store.
+    assertNotNull(SignalProtocolMain.exportOwnKeyBundle());
+
+    assertTrue("the most recently issued invite carried the lowest id, and after a reload it was "
+            + "the first thing pruned - so retention counted id order, not consumption order. The "
+            + "person holding that invite can never establish a session and nothing tells either "
+            + "of them",
+        SignalProtocolMain.getInstance().getAccount().getSignalProtocolStore()
+            .getPreKeyStore().containsPreKey(oldestRetained));
   }
 }

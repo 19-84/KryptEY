@@ -2,7 +2,6 @@ package com.amnesica.kryptey.inputmethod.signalprotocol.storage;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 
 import android.app.KeyguardManager;
 import android.content.Context;
@@ -70,13 +69,21 @@ public class AlockBoundKeyAcrossLockRemovalTest {
 
     final KeyguardManager keyguard =
         (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
-    assumeTrue("this test needs a keyguard service", keyguard != null);
+    // Asserted, not assumed. An assumption that fails is reported as a skip, and the
+    // instrumentation runner's summary counts a skip as a pass - so the property this class
+    // measures, a lock-bound key refusing to open while the device is locked, could stop being
+    // measured with the suite still saying OK. If the environment cannot support it, that is a
+    // failure of the run, not a quiet exemption.
+    assertNotNull("this test needs a keyguard service; without one nothing here is measured",
+        keyguard);
 
     if (!keyguard.isDeviceSecure()) {
       shell("locksettings set-pin " + PIN);
       weSetThePin = true;
     }
-    assumeTrue("a secure lock screen is required to generate a lock-bound key",
+    assertTrue("a secure lock screen is required to generate a lock-bound key, and this test sets "
+            + "a PIN itself when there is none - if that did not take, the run must say so rather "
+            + "than skip",
         keyguard.isDeviceSecure());
   }
 
@@ -141,7 +148,9 @@ public class AlockBoundKeyAcrossLockRemovalTest {
     for (int waited = 0; waited < 40 && !keyguard.isDeviceLocked(); waited++) {
       Thread.sleep(250);
     }
-    assumeTrue("the emulator did not actually lock, so there is nothing to measure",
+    assertTrue("the device did not actually lock, so there is nothing to measure - and a skip here "
+            + "is indistinguishable from a pass in the runner's summary, which is how a security "
+            + "property stops being checked without anyone noticing",
         keyguard.isDeviceLocked());
 
     boolean refused = false;

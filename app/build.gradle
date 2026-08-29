@@ -350,7 +350,13 @@ tasks.register('verifyReleaseArtifactContents') {
                     offenders << "release manifest requests ${name}; this app is meant to have no "                        + "way to reach the network or anything outside itself"
                 }
             }
-            ['RecordingAutofillService', 'EditableFieldActivity', 'ForeignAppActivity'].each { name ->
+            // ForeignAppActivity is deliberately absent from this list. It is declared in the
+            // androidTest manifest, which merges into com.amnesica.kryptey.test - a separate
+            // package with no path into the release manifest - so checking for it here was a name
+            // that could not appear in the file being scanned. A check that cannot fail reads as
+            // coverage it does not provide, and ReleaseManifestHasNoTestScaffoldingTest already
+            // derives the real set from src/debug/java rather than from a hand-written array.
+            ['RecordingAutofillService', 'EditableFieldActivity'].each { name ->
                 if (text.contains(name)) {
                     offenders << "release manifest declares test scaffolding: ${name}"
                 }
@@ -360,6 +366,30 @@ tasks.register('verifyReleaseArtifactContents') {
             }
             if (!text.contains('android:allowBackup="false"')) {
                 offenders << 'release manifest does not set allowBackup="false"'
+            }
+            // allowBackup="false" disables cloud backup and, on Android 12+, does NOT disable
+            // device-to-device transfer - that needs the extraction rules. minSdk is 26, so
+            // allowBackup covers 26 to 30 and this attribute is the only thing covering 31 and up.
+            // It was asserted by nothing: NothingLeavesTheDeviceTest reads the rules FILE off the
+            // filesystem and never the manifest, so deleting the attribute left every check green
+            // while the transferred store arrived with its firstrun flag intact - a permanently
+            // non-functional keyboard with no reset path, which is what the rules file's own
+            // comment spends a paragraph on.
+            if (!text.contains('android:dataExtractionRules=')) {
+                offenders << 'release manifest sets no dataExtractionRules; allowBackup="false" '
+                    + 'does not stop device-to-device transfer on Android 12 and up'
+            }
+            // The two manifest facts this app's threat model rests on, checked against the variant
+            // that actually ships. Both were asserted only against the DEBUG merged manifest, which
+            // is the gap this whole task was written for.
+            if (!text.contains('android:permission="android.permission.BIND_INPUT_METHOD"')) {
+                offenders << 'release manifest does not bind the IME service to '
+                    + 'BIND_INPUT_METHOD; any app could bind it'
+            }
+            def exported = (text =~ /android:exported="true"/).count
+            if (exported != 1) {
+                offenders << "release manifest exports ${exported} components; exactly one "
+                    + '(SettingsActivity, for the launcher) is intended'
             }
         }
 

@@ -117,8 +117,19 @@ until docker exec "$NAME" $ADB shell service check input_method 2>/dev/null | gr
 done
 
 # x86_64 is not a shipped ABI, so it has to be asked for explicitly - see the splits block.
-echo "==> building the x86_64 APKs"
+#
+# IgnoredTestsAreAccountedForTest runs in the same invocation, deliberately. It is the only thing
+# that catches a device test disabled by an @Ignore or an assumption, and it lives in the JVM suite
+# - which this script never ran. So "==> PASSED" from here meant "at least one device test passed",
+# and an @Ignore on a whole device class would have left it saying exactly that while the class it
+# silenced held a security property. The guard is the right one; it was running in the wrong
+# command.
+#
+# Not a hard-coded expected count. That figure already exists in four places this repo has had to
+# unpick twice, and a legitimately added test would then fail the harness for the wrong reason.
+echo "==> building the x86_64 APKs, and checking no device test is quietly disabled"
 tools/build-in-docker assembleDebug assembleDebugAndroidTest -PemulatorAbi
+tools/build-in-docker testDebugUnitTest --tests '*IgnoredTestsAreAccountedFor*' 
 
 echo "==> installing"
 docker cp app/build/outputs/apk/debug/app-x86_64-debug.apk "$NAME":/tmp/app.apk

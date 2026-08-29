@@ -77,7 +77,12 @@ public class DependencyVerificationIsOnTest {
   public void nothingTurnsVerificationOffOnTheWayPast() throws IOException {
     final List<String> offenders = new ArrayList<>();
     for (final String file : new String[] {
-        "gradle.properties", "tools/build-in-docker", ".github/workflows/build.yml"}) {
+        "gradle.properties", "tools/build-in-docker", ".github/workflows/build.yml",
+        // The script whose whole purpose is an honest cold verification, and which forwards its
+        // arguments to ./gradlew like the others. Omitted from this list until a reviewer noticed:
+        // nothing disables verification there today, and a list that stops one file short of the
+        // one place a disable would be least expected is worth exactly as much as no list.
+        "tools/verify-cold"}) {
       final Path path = repoRoot().resolve(file);
       if (!Files.exists(path)) continue;
       for (final String line : new String(Files.readAllBytes(path), StandardCharsets.UTF_8)

@@ -76,18 +76,41 @@ public class IgnoredTestsAreAccountedForTest {
    */
   private static final String JUSTIFICATION = "r0TheDiscardedStripMustBecomeUnreachable";
 
-  private static Path testSources() {
-    for (final String candidate : new String[] {"src/test/java", "app/src/test/java"}) {
+  /**
+   * Both suites, because a skipped test reads as a pass in either.
+   *
+   * <p>This scanned only the JVM tree. The device suite had three {@code assumeTrue} calls in
+   * {@code AlockBoundKeyAcrossLockRemovalTest} - on a keyguard service, on a secure lock screen, and
+   * on the emulator having actually locked - and the instrumentation runner reports "OK (33 tests)"
+   * whether those hold or not, so the property they measure could stop being measured with the
+   * suite still saying OK.
+   *
+   * <p>Those three are assertions now: the device suite still passes with all of them hard, so the
+   * property was genuinely being measured and can no longer stop being measured quietly. The scan
+   * stays because it is the only thing that would catch the next one - an {@code @Ignore} on a
+   * device test, or a new assumption - and because there is nothing left for it to find is the
+   * state a guard should be in, not a reason to remove it.
+   */
+  private static List<Path> testSourceRoots() {
+    final List<Path> roots = new ArrayList<>();
+    for (final String candidate : new String[] {
+        "src/test/java", "app/src/test/java",
+        "src/androidTest/java", "app/src/androidTest/java"}) {
       final Path path = Paths.get(candidate);
-      if (Files.isDirectory(path)) return path;
+      if (Files.isDirectory(path)) roots.add(path);
     }
-    throw new IllegalStateException("could not locate the test source tree");
+    if (roots.isEmpty()) throw new IllegalStateException("could not locate the test source tree");
+    return roots;
   }
 
   private static List<Path> sources() throws IOException {
-    try (Stream<Path> walk = Files.walk(testSources())) {
-      return walk.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList());
+    final List<Path> all = new ArrayList<>();
+    for (final Path root : testSourceRoots()) {
+      try (Stream<Path> walk = Files.walk(root)) {
+        walk.filter(p -> p.toString().endsWith(".java")).forEach(all::add);
+      }
     }
+    return all;
   }
 
   /**

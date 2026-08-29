@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-nine sections, written in the order things were found rather than by subject, so the
+One hundred and thirty sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [Guards that ran in the wrong command, and claims nobody had crossed a boundary to check](#guards-that-ran-in-the-wrong-command-and-claims-nobody-had-crossed-a-boundary-to-check)
 - [Two ways the store wrote a default over something it could not read](#two-ways-the-store-wrote-a-default-over-something-it-could-not-read)
 - [Three defects in three fixes, again](#three-defects-in-three-fixes-again)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
@@ -1959,6 +1960,67 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## Guards that ran in the wrong command, and claims nobody had crossed a boundary to check
+
+Two rounds away from the banner, on the build and on the libsignal stores.
+
+**The one manifest attribute that stops Android 12+ device-to-device transfer was asserted by
+nothing.** `allowBackup="false"` disables cloud backup and does *not* disable D2D transfer;
+`dataExtractionRules` is the only thing covering API 31 and up, and minSdk is 26. Deleting it from
+the manifest left every check green: `NothingLeavesTheDeviceTest` reads the rules *file* off the
+filesystem and never the manifest, the release gate checked `allowBackup` and stopped, and the lint
+entry is baselined — removing the attribute removes the warning rather than adding one. The harm is
+not disclosure (the store is sealed under a key that cannot leave the device) but the outcome the
+rules file's own comment spends a paragraph on: the firstrun flag transfers with everything else,
+nothing re-initialises, and the user lands on a permanently non-functional keyboard with no reset
+path. Now asserted in the packaged manifest, where the string match is already the idiom — along
+with `BIND_INPUT_METHOD` and the exported-component count, both of which were checked only against
+the **debug** merged manifest, which is not what ships. That gap is the reason the release gate was
+written in the first place.
+
+One of its three scaffolding names was also a check that could not fail: `ForeignAppActivity` is
+declared in the androidTest manifest, which merges into a separate package with no path into the
+release manifest. A check that cannot fail reads as coverage it does not provide.
+
+**And the guard that catches a silently disabled device test ran in a command the device run never
+issued.** `IgnoredTestsAreAccountedForTest` scans for `@Ignore` and assumptions across both suites —
+but it lives in the JVM suite, and `tools/test-on-emulator` only ever built the APKs. So `==> PASSED`
+meant "at least one device test passed", and an `@Ignore` on a whole device class would have left it
+saying exactly that. The script now runs that one guard in the same invocation. Not a hard-coded
+expected count: that figure already exists in four places this repo has had to unpick twice.
+
+Its scan had also only ever covered the JVM tree, and the device suite was where the quiet mechanism
+actually lived — three `assumeTrue` calls, on a keyguard service, a secure lock screen, and the
+emulator having actually locked. An assumption that fails is reported as a skip and a skip counts as
+a pass, so the property they guard — a lock-bound key refusing to open while the device is locked —
+could have stopped being measured with the suite still saying OK. All three are assertions now, and
+the device suite still passes with them hard, which means the property was genuinely being measured
+and can no longer stop quietly.
+
+**Two claims about the protocol stores that no test had crossed a serialization boundary to check.**
+Both turned out true, and both are one plausible edit from silently reverting.
+
+`PreKeyWithStatus.usedAt` is what makes pre-key retention count consumption order rather than id
+order — without it the lowest id is pruned first, so an invite that took a recycled id is the first
+thing dropped and the person holding it can never establish a session. Every test of that ordering
+ran inside one process, and `PreKeyWithStatus.equals` omits the field, so a round-trip comparison
+could not have seen it go missing either. Annotating `getUsedAt()` `@JsonIgnore` — or reducing it to
+package-private, which an IDE will suggest, since both callers are in that package — reverts the fix
+with the suite green. It is now crossed: that mutant turns the new test red while the in-memory one
+stays green, exactly as predicted.
+
+Writing it cost a wrong first version worth recording. I put the reload before the save, so the
+recycle existed only in memory and was discarded — the test failed for my reason rather than the
+code's, and I nearly read that as the defect.
+
+The Kyber replay set makes the same kind of claim in its javadoc — "persisted so that a replay is
+still detected after the keyboard process is restarted" — on a `private final Map`, which is exactly
+the shape Jackson often cannot populate. Measured through the store's own refusal rather than by
+reading the map: it does survive, and "after a restart" understates it, since `reloadAccount` runs on
+every `setInputView`.
 
 ---
 
