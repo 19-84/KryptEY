@@ -84,7 +84,7 @@ round already covered.
 
 ## Instrumentation tests
 
-`tools/test-on-emulator` runs them. There are 32, and the count in this sentence is checked against
+`tools/test-on-emulator` runs them. There are 33, and the count in this sentence is checked against
 the source by `DocsDoNotContradictTheAppTest` — it said 17 for several rounds after the suite had
 grown past it, which is the kind of claim this project treats as a defect rather than as tidying.
 
@@ -101,7 +101,9 @@ three establish that the decrypted-message compose box is never handed to an aut
 Three run a protocol round trip on real hardware and two run the strip's own round trip; the
 remaining five are single assertions that only a device can make — ciphertext and plain text
 crossing into a foreign app, typing on the key surface, `FLAG_SECURE` actually reaching the window,
-and the banner not clipping the recipient line. Until recently none of them had ever executed
+the banner not clipping the recipient line, and one that only a real frame loop can answer: that
+switching contacts on the verify screen does not let the previous contact's safety number paint
+itself in late, under the new contact's name. Until recently none of them had ever executed
 anywhere.
 
 The last two groups need device state that only shell can set - a selected input method, a

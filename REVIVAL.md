@@ -1955,6 +1955,9 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
 
 ## Not verified on hardware, and most needing it
 
+*Resolved on both counts; the section title is left as it was written, because it was true when it
+was written. The original reasoning stands below and the measurements follow it.*
+
 `FLAG_SECURE` is applied to the IME window while the strip shows decrypted plaintext, the chat log,
 the verify screen or the contact list. Window flags on an IME window behave differently across
 vendors, and nothing in this environment can run the keyboard — so *which* screens are protected is
@@ -1965,9 +1968,30 @@ The same *was* true of one smaller change, and is now only half true. The safety
 up over a second, and nothing cancelled those animators, so switching contacts left the previous
 contact's animation to finish painting its number into the views a moment later — under the new contact's name, on the one
 screen whose whole purpose is comparing that number by voice. The animators are now cancelled when
-the digits are blanked and when a new number is loaded. It has no test: under Robolectric an
-un-cancelled animator delivers no further frames once the looper is idled past the view change, so
-the late repaint never happens and a test of it passes either way.
+the digits are blanked and when a new number is loaded. It had no test, because a Robolectric one
+would have been worthless: under Robolectric an un-cancelled animator delivers no further frames
+once the looper is idled past the view change, so the late repaint never happens and a test of it
+passes either way.
+
+**Both measured, on the emulator the device suite now runs on.**
+`FlagSecureReachesTheWindowOnDeviceTest.asensitiveScreenMakesTheImeWindowSecure` binds the real
+keyboard over a real text field, finds the live strip *inside the running IME* — not one the test
+constructed, because the flag is applied by `LatinIME` to its own window and only the real one has a
+window at all — and reads `dumpsys window`. With the chat log on screen the input-method window
+block carries `SECURE`. With the ordinary keyboard up it does not, and that is the assertion that
+makes the first one mean something: a platform marking every IME window secure would satisfy the
+first with the flag never applied at all. It comes back off when the sensitive screen closes, so
+ordinary typing does not stop screenshotting for the rest of the keyboard's life. The request
+reaches the window manager here. One platform, not all of them — the vendor-variance worry is
+narrowed, not answered.
+
+The animator has a device test now, and it exists precisely because the Robolectric version would
+pass either way. `AcontactSwitchDoesNotRepaintThePreviousNumberTest` opens contact A's verify screen,
+waits 200 ms — long enough that the count-up is mid-flight, short enough that it has not finished —
+switches to contact B, waits two seconds, and reads the twelve `code_*` views. They must hold B's
+number. Reverting the `cancelCodeAnimations()` call in `setFingerprintViews` turns it red; without
+that check it would be one more test that passes either way, which is the whole reason the property
+sat here undefended for so long.
 
 **A second device question, since answered on a device.** *Resolved: autofill never sees the
 compose box, and the mitigation is still not added — now because it was measured to be unnecessary
