@@ -107,3 +107,60 @@ Recorded so the next round does not re-spend it. Each of these was checked and i
 - **The near-cap decoy collapse does not ship.** The pool falls to one sentence only for payloads of
   8171 to 8190 invisible characters — a 20-character window out of 8192 — and the measured rotation
   path sits at 7904 with ~288 characters of headroom, where 171 of 173 sentences fit.
+
+## The binary wire format, attacked field by field
+
+A round spent entirely on `BinaryEnvelope`, `EnvelopeCodec` and the issuing signature — a different
+surface from the FairyTale carrier settled above — found no reachable attack on the layout. What it
+produced instead were three claims, all fixed. The negative results are worth not re-spending:
+
+- **Absence versus zero-length is decidable at every field that has both states.** Ciphertext and
+  bundle signature refuse length 0 explicitly; a zero-length key fails `new ECPublicKey` /
+  `new KEMPublicKey` before any length check; the sender name and identity key likewise. The
+  signature is not optional — it is written unconditionally with the bundle and read unconditionally
+  — so there is no "omit the signature" spelling.
+- **One envelope, one byte string.** `writeBundle` and `readBundle` were walked field by field: same
+  order, same widths, nothing written that is not read or read that is not written. Every key field
+  is pinned to its own canonical encoding, the signature fields are copied verbatim so re-encoding
+  is the identity, and `requireExhausted` plus the text layer's canonical check close the tail.
+- **Signature coverage is complete.** Every field of `PreKeyResponse`, `PreKeyResponseItem`,
+  `PreKeyEntity`, `SignedPreKeyEntity` and `KyberPreKeyEntity` is inside `canonicalBundleBytes`.
+  `git log` on the encoding and prekey packages shows no field added since the signature landed, so
+  there is no "added later and missed" gap.
+- **Cross-protocol signature reuse is not reachable.** The identity key signs three message shapes
+  and their lengths are disjoint by construction; the attacker-controllable slack is two ≤255-byte
+  signature fields, which cannot close any gap.
+- **Bounds hold.** `Cursor.require` cannot overflow (lengths are `u8`/`u16`), `bytes()` allocates
+  after the bounds check so a declared length cannot drive an allocation, and no loop is
+  attacker-counted — `deviceCount` is forced to exactly 1.
+- **`ciphertextType` is deliberately unconstrained** and must stay that way: both consumers branch
+  on it consistently, libsignal validates the body independently, and every out-of-range value lands
+  in a handled branch. Constraining it at the parser would turn a peer on a newer libsignal into
+  "not a valid envelope", and the decoder is the boundary the two sides upgrade through
+  independently.
+- **The encoder is looser than the decoder in three places**, all in the harmless direction and all
+  unreachable from production inputs.
+
+## The chat log's deferred loader
+
+Attacked for a path that reads, mutates and writes back losing entries, and for one that leaves the
+account reporting itself loaded while holding nothing. Both are closed, verified rather than taken
+from the comments: the loader is cleared only on the success line, so a throwing read leaves the
+account deferred and the write path then skips the key; the only two "loaded while empty"
+constructions are guarded; and nothing inside the read path re-enters `getUnencryptedMessages`, so
+the re-entrancy guard is unreachable. Worth remembering for any change that makes the loader call
+back into the account — that guard throws unchecked, and the chat-log screen catches only two
+checked types.
+
+Message ordering is also sound: the display sorts a copy by timestamp, and the timestamp is not
+attacker-supplied — the wire format does not carry one, so a received message is stamped at local
+decode time. A messenger that delays delivery reorders the log, but the times shown agree with the
+order, so the display is not lying about itself.
+
+## The Kyber replay-set burn needs an unpinned address
+
+Measured rather than argued, because the ordering lives in the Rust layer: a first message carrying
+a different identity at a **pinned** address is refused *without* spending a Kyber base key, while
+an accepted one spends exactly one. So `isTrustedIdentity` runs before `markKyberPreKeyUsed`, and
+the burn analysis recorded elsewhere — which assumes each burn costs the attacker a session
+establishment the app accepts — holds.
