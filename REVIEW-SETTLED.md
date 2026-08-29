@@ -287,3 +287,95 @@ metadata, not content — so even a build with the flag flipped would not print 
 **What this does not say.** It is a negative result about one question. The rendering and layout
 correctness of `keyboard/`, and everything in `latin/utils/` beyond its logging, remain unexamined
 and stay on the open list. This narrows that entry rather than closing it.
+
+## Ordering and re-entrancy: what was attacked and held
+
+A round took the angle no previous one had — not what values arrive, but *when things happen
+relative to each other*: the IME lifecycle, re-entrancy, callbacks landing mid-transition, and
+threading. It found real defects (recorded in REVIVAL), and it also cleared a lot of ground. These
+are the negative results, so the next round does not re-spend them.
+
+**Nothing in this app runs off the IME main thread.** A sweep for `Thread`, `Executor`, `AsyncTask`,
+`HandlerThread`, `runOnUiThread` and `.post(` across `latin/e2ee` and `signalprotocol` returns only
+`ValueAnimator`, which is driven by the main-thread Choreographer. Every `SharedPreferences` write in
+the storage layer is `commit()`, never `apply()`. There is no field written on one thread and read on
+another, and the only re-entrancy available anywhere is synchronous — focus listeners, text watchers,
+visibility changes. That is a strong result: it removes an entire class of finding from this
+codebase, and it is why the re-entrancy that does exist is traceable by reading.
+
+**A clipboard change cannot land mid-transition.** `ClipboardManager` dispatches
+`OnPrimaryClipChangedListener` through a handler on the process main looper, so a clip arriving during
+`showOnlyUIViewInternal` or `setInputView` queues behind it rather than interleaving. The window
+between the strip's constructor registering the listener and `LatinIME.setInputView` wiring the
+connection is therefore not reachable by a clipboard event.
+
+**`refreshActionButtons` is genuinely re-entrant, and genuinely terminates.** The cycle is
+`expireRefusalsSettledByAlaterWrite` → `retireTheStorageCautionFor` → `setInfoTextViewMessage` → the
+banner's `TextWatcher` → `refreshActionButtons`. Both repainting helpers null their state *before*
+the repaint and the outer call computes its state *after* both expiries, so the outer paint wins and
+the depth is two. Worth writing down precisely because of how it terminates: `setInfoTextViewMessage`
+has no equality guard, so the watcher fires even for an identical string — termination comes from the
+state mutation, not from the text differing. **An edit that repaints before mutating would recurse
+without bound.**
+
+**The `FLAG_SECURE` notification covers all three of its inputs.** `notifySensitiveVisibility` is
+reached from `setChosenContact` (after the assignment), the compose `TextWatcher`, the `finally` of
+`showOnlyUIView` and `adoptState`. The specific worry chased and refuted: "`forgetChosenRecipient` is
+the last statement of `onKeyboardHidden`, so the flag is left stuck on" — it is not, because
+`setChosenContact(null)` notifies. `mWarningStanding` has no notifier of its own, but every path that
+raises a contact-naming warning goes through `setChosenContact` first.
+
+**The `MSG_PENDING_IMS_CALLBACK` suppressor really is dead code**, as its comment claims:
+`mIsOrientationChanging` is never assigned `true` anywhere, so the message is never posted, so
+`onStartInputViewInternal` — and with it the password guard — runs on every raise. That matters
+because the whole password-guard family depends on it.
+
+**The chat-log loader is not re-entrant in production.** `readMessageLog` and its helpers touch only
+`SharedPreferences` and the crypto box; nothing calls back into `Account`.
+
+**`getIC()` returning null while the redirect is up** is reachable only between `surrenderState`'s
+`setOtherIC(null)` and `adoptState`'s re-point — synchronous, inside `setInputView`, with no input
+possible — and after `clear()` on the `onDestroy` path, where the service is going away.
+
+One shape was found that the code no longer matches, and is recorded rather than fixed:
+`Account.equals` and `hashCode` both call `getUnencryptedMessages()`, which forces the deferred log
+load and can throw unchecked, while the sibling `toString()` was deliberately guarded against exactly
+that. There is no production caller of either — no `Account` is put in a `Set` or `Map`, or compared —
+so this is a trap for a future caller, not a live defect.
+
+## A send hands typing back and then takes it again
+
+**Refuted by measurement on the device.** The mechanism is described correctly and the consequence
+does not follow.
+
+`sendEncryptedMessageToApplication` lowers the redirect and then, three statements later, calls
+`mInputEditText.clearFocus()`. Clearing focus inside a focusable container does not leave nothing
+focused — the container re-grants it to the next candidate, and on the main view the compose box is
+the only `focusableInTouchMode` view up at that moment. Its focus listener calls
+`composeInsideTheKeyboard()`, which raises the redirect again. So on paper the send is the one of the
+four enumerated lowerings that does not survive its own method, and `TypingDestinationTest` records
+the platform half from the other direction: *"Measured: `clearFocus()` on the only focusable view in
+a container hands focus straight back."*
+
+Measured after a real send on the emulator: the compose box does **not** hold focus, so nothing
+re-raises the redirect. The lowering survives.
+
+**Why the JVM suite could not answer this, stated because it is the reusable part.** A Robolectric
+test was written first and passed — and it passed for the fixture's reason. Instrumented, that
+fixture reports `composeHasFocus=false` immediately after the same call, so it never produces the
+re-grant at all and would have reported success whatever the platform did. That is the second time
+this session a JVM test has looked like a result and been vacuous, and both times the thing that
+exposed it was printing the intermediate value rather than trusting the assertion.
+
+**The device assertion is a live control**, not a passing observation: deleting the `clearFocus()`
+call turns it red with its own message. It stays in
+`AdraftSurvivesTheAddContactScreenOnDeviceTest`, so if a layout change ever adds a second focusable
+view to the main view — which is what would make the re-grant land on something with a listener —
+the device suite says so.
+
+Two fixture hazards were paid for on the way, and both are worth remembering for anything else
+added to that class. Splicing a check into the middle of an existing test broke its later assertions,
+because the send empties the compose box the rest of the test is about. And swapping the strip's
+listener for a recording one leaks: it is the LIVE strip in a shared process, so the next test
+inherits it — which broke the following test's anti-vacuity control, that control doing exactly its
+job.

@@ -223,6 +223,61 @@ public class TypingDestinationTest {
   }
 
   /**
+   * A send must actually hand typing back, not hand it back and take it again.
+   *
+   * <p>{@code sendEncryptedMessageToApplication} lowers the redirect and then, three statements
+   * later, calls {@code mInputEditText.clearFocus()}. Clearing focus inside a focusable container
+   * does not leave nothing focused — the container re-grants it to the next candidate, and on the
+   * main view the compose box is the only {@code focusableInTouchMode} view up at that moment. Its
+   * focus listener then calls {@code composeInsideTheKeyboard()}, which raises the redirect again.
+   *
+   * <p>This file already records the platform half of that, from the other direction: "Measured:
+   * {@code clearFocus()} on the only focusable view in a container hands focus straight back." So
+   * the send is one of the four enumerated lowerings, and it is the one that does not survive its
+   * own method.
+   *
+   * <p>Not a disclosure — it fails safe, since text goes to the strip rather than the messenger.
+   * What it costs is that the app's stated invariant is false, and that after a send the user's
+   * next message is composed inside the keyboard rather than in the chat box, so the messenger's
+   * own Send does nothing until they notice.
+   */
+  @Test
+  public void asendHandsTypingBackAndLeavesItThere() throws Exception {
+    assertTrue(compose.requestFocus());
+    connection.commitText(SECRET, 1);
+    assertTrue("precondition: the redirect must be up while composing",
+        connection.isUsingOtherIC());
+
+    strip.setListener(new E2EEStripView.Listener() {
+      @Override
+      public void onTextInput(final String rawText) {
+        connection.commitText(rawText, 1);
+      }
+
+      @Override
+      public void onSensitiveContentVisibilityChanged(final boolean showing) { }
+    }, new View(RuntimeEnvironment.getApplication()));
+
+    assertTrue("precondition: the box must hold focus going in, or the clearFocus() this test is "
+        + "about is a no-op and the assertion below passes for the wrong reason", compose.hasFocus());
+
+    strip.sendEncryptedMessageToApplicationForTest("ciphertext-goes-to-the-host");
+
+    // Stated because it decides what this test is worth. If focus came back here, the re-grant
+    // happened and the redirect assertion below is measuring the thing it names. If it did not,
+    // this fixture cannot produce the re-grant at all and the question belongs on a device - which
+    // is what AsendHandsTypingBackOnDeviceTest answers.
+    System.out.println("MEASURED after send: composeHasFocus=" + compose.hasFocus()
+        + " redirectUp=" + connection.isUsingOtherIC());
+
+    assertFalse("a send is one of the four places that hand typing back to the host, and after it "
+            + "the redirect is up again - clearFocus() re-granted focus to the compose box and its "
+            + "listener raised it. The next thing the user types goes into the keyboard rather "
+            + "than into the chat box they think they are typing in",
+        connection.isUsingOtherIC());
+  }
+
+  /**
    * Sending must not leave the plaintext in the keyboard's own text caches.
    *
    * <p>While typing is redirected, the IME's caches fill with the DRAFT - that is what they are for.

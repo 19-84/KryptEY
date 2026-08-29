@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -221,6 +222,32 @@ public class AdraftSurvivesTheAddContactScreenOnDeviceTest {
           hostBefore, hostText(host));
       assertTrue("and it must have gone to the compose box instead",
           composeText(live).length() > composed.length());
+
+      // A send must hand typing back and LEAVE it there.
+      //
+      // sendEncryptedMessageToApplication lowers the redirect and three statements later calls
+      // mInputEditText.clearFocus(). Clearing focus inside a focusable container does not leave
+      // nothing focused - the container re-grants it to the next candidate, and on the main view
+      // the compose box is the only focusableInTouchMode view up at that moment. Its focus
+      // listener then calls composeInsideTheKeyboard(), which raises the redirect again.
+      //
+      // Asked on a device because the JVM suite cannot see it. Measured there: the Robolectric
+      // fixture leaves composeHasFocus=false after the same call, so it never produces the
+      // re-grant and would report success whatever the platform does.
+      //
+      // The strip's real listener is left in place. Swapping it for a recording one works and then
+      // leaks: this is the LIVE strip in a shared process, and the next test inherits whatever it
+      // was left pointing at. Measured the hard way - doing so broke the following test's
+      // anti-vacuity control, which is that control doing its job.
+      instrumentation.runOnMainSync(
+          () -> live.sendEncryptedMessageToApplicationForTest("ciphertext-goes-to-the-host"));
+      instrumentation.waitForIdleSync();
+
+      assertFalse("a send is one of the four places that hand typing back to the host, and the "
+              + "compose box holds focus again afterwards - so its listener has raised the "
+              + "redirect and the user's next message is composed inside the keyboard rather than "
+              + "in the chat box they think they are typing in",
+          live.<android.widget.EditText>findViewById(R.id.e2ee_input_field).hasFocus());
     } finally {
       // The device suite shares one process and one live IME, so this has to hand the keyboard
       // back in the state it found it. Leaving a draft in the compose box leaves the strip
