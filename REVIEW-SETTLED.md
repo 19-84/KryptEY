@@ -254,3 +254,36 @@ across that gap, and nothing here has measured API 33. What the check buys is th
 now observed on every device run rather than assumed — and that if it ever changes, it changes
 loudly. Robolectric cannot substitute: it grants focus unconditionally, so the JVM suite cannot tell
 the two outcomes apart and would report success either way.
+
+## Nothing in the keyboard writes the user's text anywhere
+
+REVIVAL's open list names `latin/settings/`, `latin/utils/` and the bulk of `keyboard/` as
+genuinely unexamined, with the caveat that the debug switches were looked at "because they are
+keyloggers in this app specifically". That is a large surface and most of it is rendering, so the
+question worth answering first is the security one, separately from correctness: **does any of it
+record what the user typed?**
+
+Swept, and the answer is no. Three separate checks:
+
+- **`latin/settings/` persists no text.** Every `putString`/`putInt`/`putFloat` across the eighteen
+  files there writes an appearance or key-press value — colours, sizes, delays, vibration. There is
+  no personalisation setting, no gesture-data setting, no user-dictionary write and no
+  `allowBackup` toggle. The one `Log` call in the package logs an exception checking whether the IME
+  is enabled.
+- **No path logs typed text.** A sweep of every `Log.*` in `app/src/main` for a concatenated text,
+  word, message, draft or clipboard value returns exactly one live site:
+  `E2EEInputConnection.commitCompletion`, which logs a `CompletionInfo` — the host's own completion
+  object, not the user's plaintext — behind a `DEBUG` that is a compile-time `false`.
+- **The debug switches cannot be turned on.** `DebugFlags.DEBUG_ENABLED` is
+  `static final boolean = false` with no setter, no `buildConfigField` override and no flavour that
+  sets it, so javac eliminates the guarded branches. This matters most for `PointerTracker`, whose
+  debug mode logs key codes and touch coordinates — a keylogger by any other name. It was already
+  pinned: `DebugLoggingStaysOffTest` asserts the switch is false in source, **is a constant**, and
+  is false at runtime, which is the three ways it could go wrong.
+
+The two `LatinIME` debug branches that do exist log `inputType`/`imeOptions` and selection offsets —
+metadata, not content — so even a build with the flag flipped would not print a message.
+
+**What this does not say.** It is a negative result about one question. The rendering and layout
+correctness of `keyboard/`, and everything in `latin/utils/` beyond its logging, remain unexamined
+and stay on the open list. This narrows that entry rather than closing it.
