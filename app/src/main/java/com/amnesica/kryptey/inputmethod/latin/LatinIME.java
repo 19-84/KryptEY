@@ -894,6 +894,24 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
       steps = mInputLogic.mConnection.getUnicodeSteps(steps, true);
       final int end = mInputLogic.mConnection.getExpectedSelectionEnd() + steps;
       final int start = mInputLogic.mConnection.hasSelection() ? mInputLogic.mConnection.getExpectedSelectionStart() : end;
+      // The guard the sibling nine lines below has had all along.
+      //
+      // setSelection is the second writer of mExpectedSelStart/End and, unlike
+      // resetCachesUponCursorMoveAndReturnSuccess, it does not order its arguments - that method's
+      // own comment says the invariant "belongs to the pair rather than to either reader" and names
+      // what it is preventing: a negative count sizing a service-lifetime buffer. This is the one
+      // caller that can produce start > end, because getUnicodeSteps can return up to twice the
+      // step count it was given when the host over-answers getSelectedText, which is the one host
+      // reply that is not clamped.
+      //
+      // An inverted model then makes hasSelection() true with end < start, so handleBackspaceEvent
+      // computes a NEGATIVE numCharsDeleted and hands it to deleteTextBeforeCursor, which sets the
+      // composing buffer's length from it and moves the caret model FORWARD on a backspace.
+      //
+      // Guarded here rather than by ordering the pair inside setSelection: a reversed selection is
+      // a legitimate thing to ask an editor for, and swapping it there would change what the editor
+      // is told as well as what the model records.
+      if (start > end) return;
       mInputLogic.mConnection.setSelection(start, end);
     } else {
       for (; steps < 0; steps++)

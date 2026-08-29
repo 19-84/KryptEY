@@ -693,6 +693,14 @@ public final class RichInputConnection {
   public int getExpectedSelectionStart() {
     if (shouldUseOtherIC && mOtherIC != null) {
       final int start = mOtherIC.selectionStart();
+      final int end = mOtherIC.selectionEnd();
+      // Ordered, like the host arm. resetCachesUponCursorMoveAndReturnSuccess normalises the pair
+      // it writes and says why: the invariant belongs to the pair rather than to either reader, and
+      // what it prevents is a negative count sizing a service-lifetime buffer. A backwards drag
+      // inside an ordinary TextView leaves Selection.getSelectionStart() greater than
+      // getSelectionEnd(), so answering from the view without ordering would have made that
+      // invariant true of one arm and not the other - and no reader asks which arm it is talking to.
+      if (start >= 0 && end >= 0) return Math.min(start, end);
       if (start >= 0) return start;
     }
     return mExpectedSelStart;
@@ -701,7 +709,9 @@ public final class RichInputConnection {
   /** @see #getExpectedSelectionStart() */
   public int getExpectedSelectionEnd() {
     if (shouldUseOtherIC && mOtherIC != null) {
+      final int start = mOtherIC.selectionStart();
       final int end = mOtherIC.selectionEnd();
+      if (start >= 0 && end >= 0) return Math.max(start, end);
       if (end >= 0) return end;
     }
     return mExpectedSelEnd;

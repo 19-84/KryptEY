@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty-three sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [The invariant that belonged to a pair, and the arm that did not hold it](#the-invariant-that-belonged-to-a-pair-and-the-arm-that-did-not-hold-it)
 - [The lowering nobody asked about, because three comments said it did not exist](#the-lowering-nobody-asked-about-because-three-comments-said-it-did-not-exist)
 - [Kept is not the same as inert](#kept-is-not-the-same-as-inert)
 - [Guards that ran in the wrong command, and claims nobody had crossed a boundary to check](#guards-that-ran-in-the-wrong-command-and-claims-nobody-had-crossed-a-boundary-to-check)
@@ -2019,6 +2020,42 @@ value — while the store still writes a `DEVICE_ID` row nothing reads, holding 
 would reach for. Now an assertion, and asserted *after a real load*: written first against a fresh
 in-memory account, where it passed with the invariant deliberately broken, because that path never
 reaches the constructor that makes it true.
+
+---
+
+## The invariant that belonged to a pair, and the arm that did not hold it
+
+`resetCachesUponCursorMoveAndReturnSuccess` normalises the selection pair it writes, and its comment
+says why: the invariant belongs to the pair rather than to either reader, and what it prevents is a
+negative count sizing a service-lifetime buffer. `setSelection` is the *second* writer of that pair
+and orders nothing.
+
+`onMovePointer` is the one caller that can produce `start > end` — `getUnicodeSteps` returns up to
+twice the step count it was handed when the host over-answers `getSelectedText`, which is the one
+host reply that is not clamped. Its sibling `onMoveDeletePointer`, nine lines below in the same
+file, has guarded against exactly this all along. An inverted model makes `hasSelection()` true with
+`end < start`, so the next backspace computes a **negative** `numCharsDeleted`, hands it to
+`deleteTextBeforeCursor`, and that sizes the composing buffer from it and moves the caret model
+forward on a backspace. Guarded at the caller rather than by ordering inside `setSelection`: a
+reversed selection is a legitimate thing to ask an *editor* for, and swapping it there would change
+what the editor is told as well as what the model records.
+
+**And the same invariant, broken by my own fix from the tick before.** Answering the caret question
+from the strip's view was right, but an ordinary `TextView` leaves `Selection.getSelectionStart()`
+greater than `getSelectionEnd()` after a backwards drag — so the pair was ordered on the host arm and
+not on the compose-box arm, and no reader asks which arm it is talking to. A reviewer named this as
+the most valuable thing to check next and could not close it; it is closed now, by ordering both
+arms the same way. Nothing reachable today produced the bad count from that arm — `hasSelection()`
+is false while redirected — but "true of one arm and not the other" is not a property worth relying
+on.
+
+**A device test that broke the next test's control.** The confirmation for the add-contact draft
+leak passes on hardware, which is what a reviewer asked for, since Robolectric's focus semantics
+differ. It also left a draft in the compose box — which leaves the strip showing content, which
+raises `FLAG_SECURE` — and `FlagSecureReachesTheWindowOnDeviceTest`'s anti-vacuity assertion ("the
+ordinary keyboard must NOT be secure") then failed on this test's residue. That control working is
+the good news; the lesson is that the device suite shares one process and one live IME, so a test
+that changes strip state has to hand it back.
 
 ---
 

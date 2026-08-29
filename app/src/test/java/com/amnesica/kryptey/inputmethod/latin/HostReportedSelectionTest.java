@@ -260,4 +260,34 @@ public class HostReportedSelectionTest {
         connection.getExpectedSelectionStart());
     assertEquals(7, connection.getExpectedSelectionEnd());
   }
+
+  /**
+   * A backwards drag in the compose box must not invert the pair either.
+   *
+   * <p>{@code resetCachesUponCursorMoveAndReturnSuccess} normalises the pair it writes, and says
+   * why: the invariant belongs to the pair rather than to either reader, and what it prevents is a
+   * negative count sizing a service-lifetime buffer. Answering from the strip's view without
+   * ordering would have made that invariant true of one arm and not the other — and no reader asks
+   * which arm it is talking to. An ordinary {@code TextView} leaves
+   * {@code Selection.getSelectionStart()} greater than {@code getSelectionEnd()} after a backwards
+   * drag, so this is not hypothetical.
+   */
+  @Test
+  public void abackwardsSelectionInTheComposeBoxIsStillOrdered() {
+    final android.widget.EditText compose =
+        new android.widget.EditText(RuntimeEnvironment.getApplication());
+    compose.setText("the meeting is at nine");
+    // Anchor after the caret: what a right-to-left drag leaves behind.
+    android.text.Selection.setSelection(compose.getText(), 11, 4);
+
+    final RichInputConnection connection = new RichInputConnection(ime);
+    connection.setOtherIC(compose);
+    connection.setShouldUseOtherIC(true);
+
+    assertTrue("start must not exceed end, or handleBackspaceEvent computes a negative count and "
+            + "hands it to deleteTextBeforeCursor, which sizes the composing buffer from it",
+        connection.getExpectedSelectionStart() <= connection.getExpectedSelectionEnd());
+    assertEquals(4, connection.getExpectedSelectionStart());
+    assertEquals(11, connection.getExpectedSelectionEnd());
+  }
 }

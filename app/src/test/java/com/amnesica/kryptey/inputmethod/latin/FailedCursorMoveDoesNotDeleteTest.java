@@ -49,6 +49,13 @@ public class FailedCursorMoveDoesNotDeleteTest {
   /** A host field that can refuse to move the caret, the way a dead connection does. */
   private static final class HostField extends BaseInputConnection {
     final List<int[]> deletes = new ArrayList<>();
+    /** Whether to answer getSelectedText with more than the declared selection, as a host may. */
+    boolean overAnswerSelectedText;
+
+    @Override
+    public CharSequence getSelectedText(final int flags) {
+      return overAnswerSelectedText ? "far more text than the selection it declared" : null;
+    }
     boolean refuseSelection;
 
     HostField(final View dummy) {
@@ -168,5 +175,47 @@ public class FailedCursorMoveDoesNotDeleteTest {
             + "five the user has selected - and every later commit is offset from the editor.",
         1, hostConnection.deletes.size());
     assertEquals("and it must delete the whole selection", 5, hostConnection.deletes.get(0)[0]);
+  }
+
+  /**
+   * A pointer slide must not leave the caret model inverted.
+   *
+   * <p>{@code setSelection} is the second writer of {@code mExpectedSelStart/End} and, unlike
+   * {@code resetCachesUponCursorMoveAndReturnSuccess}, it does not order its arguments — that
+   * method's own comment says the invariant "belongs to the pair rather than to either reader" and
+   * names what it prevents: a negative count sizing a service-lifetime buffer.
+   *
+   * <p>{@code onMovePointer} was the one caller that could produce {@code start > end}, because
+   * {@code getUnicodeSteps} can return up to twice the step count it was handed when the host
+   * over-answers {@code getSelectedText} — the one host reply that is not clamped. Its sibling
+   * {@code onMoveDeletePointer}, nine lines below, has guarded against exactly this all along.
+   *
+   * <p>An inverted model makes {@code hasSelection()} true with {@code end < start}, so the next
+   * backspace computes a <em>negative</em> {@code numCharsDeleted} and hands it to
+   * {@code deleteTextBeforeCursor}, which sizes the composing buffer from it and moves the caret
+   * model forward on a backspace.
+   */
+  @Test
+  public void apointerSlideMustNotInvertTheCaretModel() {
+    ime.mInputLogic.onUpdateSelection(10, 13);
+
+    // The host answers getSelectedText with far more than the three characters it declared, which
+    // is what drives getUnicodeSteps past the distance to the selection start.
+    hostConnection.overAnswerSelectedText = true;
+
+    ime.onMovePointer(-5);
+
+    assertTrue("the caret model must never be left inverted: the next backspace reads "
+            + "end - start as the number of characters to delete",
+        ime.mInputLogic.mConnection.getExpectedSelectionStart()
+            <= ime.mInputLogic.mConnection.getExpectedSelectionEnd());
+
+    hostConnection.deletes.clear();
+    pressBackspace();
+
+    for (final int[] delete : hostConnection.deletes) {
+      assertTrue("a backspace must never ask the editor to delete a negative number of "
+              + "characters: " + delete[0], delete[0] >= 0);
+    }
   }
 }
