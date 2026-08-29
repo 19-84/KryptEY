@@ -171,7 +171,14 @@ public class AsplicedBundleIsRefusedTest {
    */
   @Test
   public void replayingAwholeInviteStillPutsTwoPeersOnOneOneTimeKey() throws Exception {
-    final int idFirstRecipientGets = EnvelopeCodec.fromWire(secondInvite).getPreKeyResponse()
+    // The one-time pre-key both recipients will negotiate against. Read once, from the bytes both
+    // are handed, and used below only to name the number in the failure message.
+    //
+    // It used to be compared against a second decode of the same immutable string at the end of
+    // this method - a pure function of a constant, computed twice, consulting neither recipient.
+    // That assertion could only have failed if the codec were non-deterministic, so the test's
+    // headline claim was measuring nothing while its two acceptances carried the whole result.
+    final int sharedOneTimeKeyId = EnvelopeCodec.fromWire(secondInvite).getPreKeyResponse()
         .getDevices().get(0).getPreKey().getKeyId();
 
     SignalProtocolMain.initialize(null);
@@ -180,16 +187,24 @@ public class AsplicedBundleIsRefusedTest {
             EnvelopeCodec.fromWire(secondInvite), inviterAddress));
 
     SignalProtocolMain.initialize(null);
+    // Anti-vacuity for the session assertion at the end: a fresh account has no session with the
+    // inviter, so that assertion is answering a question that was false a moment earlier.
+    assertFalse("fixture: a freshly initialised recipient must not already have a session",
+        SignalProtocolMain.hasSessionWith(inviterAddress));
     assertTrue("and so does a second recipient handed the very same bytes - nothing was edited, so "
             + "the issuing signature has nothing to object to",
         SignalProtocolMain.processPreKeyResponseMessage(
             EnvelopeCodec.fromWire(secondInvite), inviterAddress));
 
-    assertEquals("both negotiated against the same one-time pre-key, which is the reuse the splice "
-            + "was reported for. The signature binds a bundle's fields together; it says nothing "
-            + "about whether this bundle has been handed out before",
-        idFirstRecipientGets,
-        EnvelopeCodec.fromWire(secondInvite).getPreKeyResponse().getDevices().get(0)
-            .getPreKey().getKeyId());
+    // What the second recipient ACTUALLY ended up with, which is the part worth asserting: a live
+    // session against the inviter, built from a bundle another peer had already consumed. That both
+    // negotiated against the same one-time key follows from the two acceptances above - they were
+    // handed identical bytes - rather than from decoding those bytes twice.
+    assertTrue("the second recipient must be left with a usable session against the inviter - "
+            + "that is what makes the reuse real rather than theoretical. Both negotiated against "
+            + "one-time pre-key " + sharedOneTimeKeyId + ", because both were handed the same "
+            + "bytes and neither the signature nor anything else records that this bundle had "
+            + "already been handed out",
+        SignalProtocolMain.hasSessionWith(inviterAddress));
   }
 }

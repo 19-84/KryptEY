@@ -78,6 +78,32 @@ public class DebugLoggingStaysOffTest {
     final List<String> on = new ArrayList<>();
     int found = 0;
 
+    // Every switch name in the app, collected first, so a composed value can be checked against
+    // them instead of being trusted because it looks like an identifier.
+    //
+    // The predicate below used to accept any dotted identifier outright, on the stated grounds that
+    // "every term is itself one of these constants, which the whole-file assertion below covers".
+    // That was false: the whole-file assertion only covers constants matching this scan, so
+    // `DEBUG_MODE = com.amnesica.kryptey.inputmethod.BuildConfig.DEBUG` satisfied it - and
+    // BuildConfig.DEBUG is TRUE in the build under test. Measured by a reviewer: wiring one switch
+    // that way left all three tests in this file green. Upstream AOSP writes exactly that shape
+    // (DEBUG_ENABLED = ProductionFlags.IS_INTERNAL), so a re-sync reintroduces it silently.
+    final java.util.Set<String> switchNames = new java.util.HashSet<>();
+    final java.util.Set<String> qualifiedSwitches = new java.util.HashSet<>();
+    for (final Path source : javaSources()) {
+      final String file = source.getFileName().toString();
+      final String declaringClass = file.substring(0, file.length() - ".java".length());
+      final Matcher names = SWITCH.matcher(
+          new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+      while (names.find()) {
+        switchNames.add(names.group(1));
+        // Keyed by the class that DECLARES it, because the simple name is not enough: several
+        // classes here declare a switch called plainly DEBUG, so stripping the qualifier off
+        // BuildConfig.DEBUG made it look like one of them. The qualifier is the whole signal.
+        qualifiedSwitches.add(declaringClass + "." + names.group(1));
+      }
+    }
+
     for (final Path source : javaSources()) {
       final String text = new String(Files.readAllBytes(source), StandardCharsets.UTF_8);
       final Matcher matcher = SWITCH.matcher(text);
@@ -88,9 +114,34 @@ public class DebugLoggingStaysOffTest {
         // A switch may be defined in terms of other switches - PointerTracker.DEBUG_MODE is
         // "DebugFlags.DEBUG_ENABLED || DEBUG_EVENT". That is fine as long as every term is itself
         // one of these constants, which the whole-file assertion below covers.
+        // A switch may be defined in terms of other switches, and that is still fine - but every
+        // term has to BE one of them. Qualifiers are stripped (DebugFlags.DEBUG_ENABLED ->
+        // DEBUG_ENABLED) and the simple name looked up; anything else - BuildConfig.DEBUG, a
+        // gradle-injected field, a method call - is not a switch this file has checked.
+        boolean composedOfKnownSwitches = value.matches("[A-Za-z.\\s_0-9|&!()]+");
+        if (composedOfKnownSwitches) {
+          for (final String term : value.split("[|&!()\\s]+")) {
+            if (term.isEmpty()) continue;
+            final boolean known;
+            if (term.contains(".")) {
+              // Qualified: the class named right before the constant must be one this scan read,
+              // and must actually declare it. com.…​.BuildConfig.DEBUG fails on both counts.
+              final String simple = term.substring(term.lastIndexOf('.') + 1);
+              final String withoutName = term.substring(0, term.lastIndexOf('.'));
+              final String owner = withoutName.substring(withoutName.lastIndexOf('.') + 1);
+              known = qualifiedSwitches.contains(owner + "." + simple);
+            } else {
+              known = switchNames.contains(term);
+            }
+            if (!known) {
+              composedOfKnownSwitches = false;
+              break;
+            }
+          }
+        }
         final boolean off = value.equals("false")
             || value.chars().noneMatch(Character::isLowerCase)
-            || value.matches("[A-Za-z.\\s_0-9|&]+");
+            || composedOfKnownSwitches;
         if (!off || value.contains("true")) {
           on.add(source + ": " + name + " = " + value);
         }
