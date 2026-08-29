@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and thirty sections, written in the order things were found rather than by subject, so the
+One hundred and thirty-one sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -79,6 +79,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
 - [Guards that ran in the wrong command, and claims nobody had crossed a boundary to check](#guards-that-ran-in-the-wrong-command-and-claims-nobody-had-crossed-a-boundary-to-check)
+- [The mutant is not a formality, and here is the tally](#the-mutant-is-not-a-formality-and-here-is-the-tally)
 - [Two ways the store wrote a default over something it could not read](#two-ways-the-store-wrote-a-default-over-something-it-could-not-read)
 - [Three defects in three fixes, again](#three-defects-in-three-fixes-again)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
@@ -7285,3 +7286,46 @@ A floor answers "did this scan see anything?". None of the above is a failure to
 the wrong thing, or seeing it in the wrong state. The remedy is not another count — it is to assert
 against the rendered view, the parsed object, the recycled row: **the thing the user or the attacker
 actually meets**, rather than the text that produces it.
+
+---
+
+## The mutant is not a formality, and here is the tally
+
+Every fix on this branch is followed by reverting it and checking the new test goes red. That began
+as hygiene. It has now caught enough of my own mistakes to be the single most productive rule in the
+file, and the tally is worth writing down because the failures are not random — they come in four
+recognisable shapes, and a test that has any of them looks exactly like a test that works.
+
+**Testing the handler instead of the route.** The composed-warning test drove `selectContact`, and
+passed with the fix reverted: that path re-derives the refusal one writer later, so the loss is
+invisible there. The reachable route is a recipient moved by an arriving message, which re-derives
+only the shared-name warning. Same shape, twice more: a recovery route asserted by calling
+`selectContact` directly rather than drawing the list and tapping a row — a reviewer's proposed
+mutant survived it — and then, after switching to `showContactListForTest`, survived *again*,
+because that only flips visibility and leaves whatever adapter was there. The third attempt drove
+`e2ee_button_select_recipient`, which is what a user presses.
+
+**Reading a view the production path never repaints.** The deletion-notice test reached the clear
+and still passed, because `clearStorageCautionIfAbout` nulls the field and nothing on that path
+repaints — the banner still held the old string. This file's own rule is *assert against the
+rendered view, not the text that produces it*; here the rendered view was the stale one, and the
+assertion had to come after a real repaint. The rule is not "prefer the view", it is "know which of
+the two the code you are testing actually updates".
+
+**Ordering the fixture so the state never reaches the boundary.** The pre-key retention test put the
+reload before the save, so the recycle existed only in memory and was discarded. It failed, and it
+failed for my reason rather than the code's — which is the dangerous direction, because a red test
+reads as a found defect and I nearly recorded it as one.
+
+**Asserting which of two writers wins, without measuring.** The contact-address test asserted the
+`@JsonCreator` wins. It does not: Jackson assigns the stored nested address afterwards, through a
+setter that syncs the other two from it. Both look like the deciding writer and neither is.
+
+**Also worth its own line:** a test can be hollow because the *environment* makes both outcomes
+identical. An un-cancelled animator delivers no further frames once Robolectric's looper is idled
+past the view change, so a JVM test of the cancel passes with or without it. That one needed a
+device, and the only way to know was to revert the fix and watch the test not care.
+
+None of these were caught by reading. Every one was caught by reverting the production change and
+finding the test still green — which is the whole argument for the rule: a test you have not seen
+fail is a test you have not seen work.
