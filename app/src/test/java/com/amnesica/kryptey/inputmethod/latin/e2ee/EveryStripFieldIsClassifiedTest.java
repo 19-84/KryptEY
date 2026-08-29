@@ -149,7 +149,11 @@ public class EveryStripFieldIsClassifiedTest {
       // same call. Carrying them without the digits would be the worse half of either choice - a
       // rebuilt strip refusing Verify and Reject against a number nobody can see, which is the dead
       // end this screen has produced three times.
-      "mCodesWereDerivedFrom", "mCodesWereDerivedForAddress"));
+      "mCodesWereDerivedFrom", "mCodesWereDerivedForAddress",
+      // True only while one refusal clears focus, to stop that clearing re-entering itself. It
+      // describes a single focus event, and a focus event does not survive the view it happened
+      // on - carrying it would mean a rebuilt strip believing a refusal was still in progress.
+      "mRefusingFocusOverApasswordField"));
 
   /** Types whose contents cannot change, so a final field of that type cannot hold state. */
   private static boolean isImmutable(final Class<?> type) {

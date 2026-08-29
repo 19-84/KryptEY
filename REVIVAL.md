@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-three sections, written in the order things were found rather than by subject, so the
+One hundred and forty-four sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -94,6 +94,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [One class of comment drift that does have a test](#one-class-of-comment-drift-that-does-have-a-test)
 - [Two tests that could not see what they claimed to check](#two-tests-that-could-not-see-what-they-claimed-to-check)
 - [The one sentence the store listing gives to security](#the-one-sentence-the-store-listing-gives-to-security)
+- [The guard that armed once, and the three ways back in](#the-guard-that-armed-once-and-the-three-ways-back-in)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -7959,3 +7960,63 @@ This is the fifth claim this round has had to correct, and the pattern across al
 the four user-facing documents disagree with each other far more readily than the code disagrees
 with itself, because nothing compiles them. Every one of these was found by reading a promise and
 asking what would have to be true — never by reading code.
+
+## The guard that armed once, and the three ways back in
+
+A round that treated the strip's screens as a state machine reported a negative result first, and it
+is the more useful half: it built the transition table over six screens, the redirect and the four
+durable surfaces, walked all eighteen `showOnlyUIView` call sites, and found the switches themselves
+clean — every screen has a return route, the verify digits are blanked on every entry, the lists are
+rebuilt before every entry. **The machine breaks at one edge it does not model: the host-declared
+password field.**
+
+`setHostFieldIsPassword(true)` lowers the redirect exactly once. Nothing kept it down. All three of
+the strip's input fields stay focusable, and each has a focus listener that raises the redirect again
+with no reference to the guard — the compose box through `composeInsideTheKeyboard`, and the two
+add-contact name fields directly. One tap re-armed the capture. Measured, twice: the host's password
+box received **nothing** and the password went into the strip.
+
+The name-field half is worse than the compose box's. `isShowingSensitiveContent` does not count the
+add-contact screen, so `FLAG_SECURE` is not raised for it; text typed there becomes a contact display
+name, which reaches disk, the banner and the contact list; and that screen is the one the messenger's
+own invite payload delivers the user to.
+
+**`addContact` was the fourth action path.** `actionsAreAvailable()` gates the three paths that act
+on the host's field, and Add reaches the same decrypt without asking, rendering the peer's plaintext
+against a banner that says decryption is turned off here — then `setHostFieldIsPassword(false)` wipes
+the box on the way back, destroying the message with no notice. Fixed by refusing the decrypt and
+keeping the contact: refusing the whole Add would strand the user on a screen whose only other exit
+discards the invite, which would let the messenger deny contact-adding by declaring a password field.
+
+### The fix was wrong twice before it was right, and both were caught
+
+**Clearing focus does not clear focus.** The first version called `clearFocus()` from inside the
+focus listener and stack-overflowed: a container re-grants focus to the next candidate, whose
+listener lands back in the same refusal, and the three fields are each other's next candidate. A
+re-entrancy guard stopped the overflow — and a reviewer reading that fix pointed out it had moved the
+defect rather than removed it: the guard suppresses the clear on precisely the view that ends up
+focused, so the refusal terminated with a caret blinking in a strip field while every keystroke went
+to the host's password box. That is the mirror defect the method's own javadoc claimed to avoid, and
+it was **the fix's own comment that supplied the evidence against it**.
+
+The second version fought the focus manager and lost for a different reason: a clear issued from
+inside a focus-change callback is undone by the `requestFocus()` still unwinding around it. What
+holds is making the fields untakeable for as long as the guard is armed, and restoring them the
+moment it disarms — with the refusal explained on the add-contact screen's own banner, because the
+main view's is covered. Leaving them untakeable would be the other trap: the guard arms from a value
+the messenger chooses, so permanently inert name fields would let it disable contact-adding outright.
+
+**And two of this repo's own guards caught the rest.** `NoWriterSitsInAshortCircuitTest` rejected
+`if (hasFocus && refused(...))` — a writer on the right of `&&` is a call Java may skip, and widening
+the left term would delete it while looking like a tightened guard, which is how the identity-change
+warning once stopped being raised. The javadoc ratchet, landed two rounds ago, caught the new methods
+being inserted between `composeInsideTheKeyboard`'s javadoc and its declaration — the exact defect it
+was written for, on its first real chance to fire.
+
+The measurement was wrong twice too, in the direction that would have refuted the finding. The Add
+test first used a bundle-only envelope, so there was no ciphertext to decrypt; then a relabelled one
+aimed at an address that already holds a pinned key, where the decrypt is correctly refused. Both
+passed, and both passed for the fixture's reason. It took an anti-vacuity control — *over an ordinary
+field this path must put the plaintext in the box* — to show the test was measuring nothing, and the
+envelope had to come from an address with nothing pinned, which is exactly the state the add-contact
+screen exists for.

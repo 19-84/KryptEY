@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -9,6 +10,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.view.ContextThemeWrapper;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import com.amnesica.kryptey.inputmethod.R;
@@ -149,6 +151,97 @@ public class PostRejectBundlelessWarningTest {
     activate(victim);
     return new MessageEnvelope(forged.getCiphertextMessage(), forged.getCiphertextType(),
         peerAddress.getName(), peerAddress.getDeviceId());
+  }
+
+  /**
+   * Anti-vacuity for the case below: without the guard, Add really does decrypt into the box.
+   *
+   * <p>Without this, "the compose box is empty over a password field" could be true because the
+   * decrypt never happened at all - a failed decrypt leaves the box empty too, and the assertion
+   * would pass whatever the guard did.
+   */
+  @Test
+  public void aaAddDecryptsIntoTheBoxWhenTheFieldIsOrdinary() throws Exception {
+    final MessageEnvelope withCiphertext = messageFromAstranger();
+    strip.showAddContactViewForTest();
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+
+    strip.addContactForTest(withCiphertext);
+
+    final EditText compose = strip.findViewById(R.id.e2ee_input_field);
+    assertEquals("precondition for the password case: over an ordinary field this path decrypts "
+            + "the attached ciphertext into the compose box", "hello",
+        compose.getText().toString());
+  }
+
+  /**
+   * Add is the fourth action path, and the password guard did not cover it.
+   *
+   * <p>{@code actionsAreAvailable()} gates the three paths that act against the host's field -
+   * {@code encryptAndSendInputFieldContent}, {@code sendPreKeyResponseMessageToApplication} and
+   * {@code decryptMessageInClipboard}. {@code addContact} is a fourth: when the envelope carries a
+   * ciphertext it decrypts it straight into the compose box.
+   *
+   * <p>Reachable because nothing closes the add-contact screen when the guard arms.
+   * {@code isShowingSensitiveContent} does not count that screen, so {@code clearDecryptedContent}
+   * leaves it standing. The user meets an invite from an unknown address over an ordinary field,
+   * the messenger then starts a password-typed session - it declares the inputType of every field
+   * it presents - and Add still renders the peer's plaintext on a strip whose own banner says
+   * decryption is turned off here. Worse than showing it: {@code setHostFieldIsPassword(false)}
+   * wipes the box on the way back to an ordinary field, so the message is destroyed with no notice.
+   *
+   * <p>Fixed by refusing the decrypt-and-display, NOT the whole Add. Refusing the Add would strand
+   * the user on a screen whose only other exit discards the invite, which hands the messenger a way
+   * to deny contact-adding by declaring a password field. And the pinning must still happen: this
+   * arm is where {@code warnIfKeyWasRejected} fires, so skipping it would pin by
+   * trust-on-first-use with no warning - the defect the comment at that call site exists for.
+   */
+  @Test
+  public void addMustNotDecryptIntoTheStripOverApasswordField() throws Exception {
+    final MessageEnvelope withCiphertext = messageFromAstranger();
+    assertNotNull("fixture: the envelope must actually carry a ciphertext, or the decrypt this "
+        + "test is about is never reached", withCiphertext.getCiphertextMessage());
+
+    strip.showAddContactViewForTest();
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+
+    strip.setHostFieldIsPassword(true);
+    assertFalse("precondition: the guard is armed", strip.actionsAreAvailable());
+
+    strip.addContactForTest(withCiphertext);
+
+    final EditText compose = strip.findViewById(R.id.e2ee_input_field);
+    assertEquals("Add decrypted into the compose box while the app was refusing to decrypt here - "
+            + "the peer's plaintext is on screen against a banner saying decryption is off, and "
+            + "the next move to an ordinary field wipes it with no notice: " + compose.getText(),
+        "", compose.getText().toString());
+  }
+
+  /**
+   * The attacker's PreKey message labelled with an address the victim has never seen.
+   *
+   * <p>Distinct from {@code forgedBundlelessMessage}, which relabels onto {@code peerAddress} - and
+   * that address already holds a pinned key in this fixture, so the decrypt is correctly refused
+   * and any test built on it measures nothing. The add-contact screen is shown precisely when the
+   * envelope's address matches NO contact, which is also when nothing is pinned there, so
+   * trust-on-first-use accepts it and the decrypt succeeds. That is the state the Add button acts
+   * in.
+   */
+  private MessageEnvelope messageFromAstranger() throws Exception {
+    activate(victim);
+    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+
+    activate(attacker);
+    assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(victimBundle), victimAddress()));
+    final MessageEnvelope sent = SignalProtocolMain.encryptMessage("hello", victimAddress());
+    assertNotNull(sent);
+
+    activate(victim);
+    return new MessageEnvelope(sent.getCiphertextMessage(), sent.getCiphertextType(),
+        "stranger-nobody-has-pinned", 1);
   }
 
   private void paste(final MessageEnvelope envelope) throws Exception {

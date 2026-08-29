@@ -921,10 +921,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean mHostFieldIsPassword;
 
+  /**
+   * True only for the duration of one refusal, so clearing focus cannot re-enter itself.
+   *
+   * <p>Per-operation, like {@code mLastDecryptShowedAmessage}: it describes one focus event and a
+   * focus event does not survive the view it happened on.
+   */
+  private boolean mRefusingFocusOverApasswordField;
+
   /** Called by the IME as each input session starts. */
   public void setHostFieldIsPassword(final boolean isPassword) {
     final boolean wasPassword = mHostFieldIsPassword;
     mHostFieldIsPassword = isPassword;
+    if (!isPassword) stripInputsCanTakeFocus(true);
     if (isPassword) {
       clearDecryptedContent();
       // And stop collecting what the user types here.
@@ -946,6 +955,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // because clearDecryptedContent above already destroys the draft itself, and the user is
       // shown an emptied box, a changed banner and two dark buttons rather than nothing.
       stopComposingInsideTheKeyboard();
+      // And the fields must not accept a caret while the guard stands. See stripInputsCanTakeFocus.
+      stripInputsCanTakeFocus(false);
       // Not over a standing warning. LatinIME calls this on EVERY input session with the host
       // field's inputType, and the messenger owns the inputType of every field it presents - so
       // "your session expired, re-enter your PIN" erased the substitution warning, and the flag
@@ -1705,7 +1716,27 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       }
     }
 
-    if (messageEnvelope.getCiphertextMessage() != null) {
+    if (messageEnvelope.getCiphertextMessage() != null && !actionsAreAvailable()) {
+      // The fourth action path, and the only one that was not asking.
+      //
+      // actionsAreAvailable() gates encryptAndSendInputFieldContent,
+      // sendPreKeyResponseMessageToApplication and decryptMessageInClipboard. Add reaches the same
+      // decrypt and was not gated, and nothing closes this screen when the guard arms:
+      // isShowingSensitiveContent does not count the add-contact view, so clearDecryptedContent
+      // leaves it up. So the user meets an invite over an ordinary field, the messenger starts a
+      // password-typed session - it declares the inputType of every field it presents - and Add
+      // rendered the peer's plaintext against a banner saying decryption is turned off here.
+      // Then setHostFieldIsPassword(false) wipes the box on the way back, destroying the message
+      // with no notice.
+      //
+      // The CONTACT is still created, deliberately. Refusing the whole Add would strand the user on
+      // a screen whose only other exit discards the invite, which would let the messenger deny
+      // contact-adding outright by declaring a password field. Skipping only the decrypt leaves
+      // nothing pinned either, so the caution and the rejection check below have nothing to report
+      // and their absence is correct rather than a dropped warning - the envelope is still on the
+      // clipboard, and decrypting it over an ordinary field runs the whole path with its warnings.
+      setInfoTextViewMessage(mInfoTextView, INFO_PASSWORD_FIELD);
+    } else if (messageEnvelope.getCiphertextMessage() != null) {
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
       // This arm pins too, and that is not obvious: SignalProtocolMain.decrypt takes its PREKEY
@@ -2969,6 +3000,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setupFirstNameInputEditTextField() {
     mAddContactFirstNameInputEditText.setMovementMethod(new ScrollingMovementMethod());
     mAddContactFirstNameInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
+      // Not `hasFocus && refused(...)`: that puts a writer where Java may skip it, and
+      // widening the left term would then delete the call rather than tighten the guard.
+      if (hasFocus) {
+        if (refusedToComposeOverApasswordField(mAddContactFirstNameInputEditText)) return;
+      }
       if (hasFocus) mRichInputConnection.setOtherIC(mAddContactFirstNameInputEditText);
       // Raised on focus, and NOT lowered on blur - the asymmetry the compose box's listener argues
       // for twelve lines up, applied to the fields that hold a correspondent's name.
@@ -2991,6 +3027,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void setupLastNameInputEditTextField() {
     mAddContactLastNameInputEditText.setMovementMethod(new ScrollingMovementMethod());
     mAddContactLastNameInputEditText.setOnFocusChangeListener((v, hasFocus) -> {
+      // Not `hasFocus && refused(...)`: that puts a writer where Java may skip it, and
+      // widening the left term would then delete the call rather than tighten the guard.
+      if (hasFocus) {
+        if (refusedToComposeOverApasswordField(mAddContactLastNameInputEditText)) return;
+      }
       if (hasFocus) mRichInputConnection.setOtherIC(mAddContactLastNameInputEditText);
       // Same asymmetry as its sibling above, for the same reason.
       if (hasFocus) mRichInputConnection.setShouldUseOtherIC(true);
@@ -5278,12 +5319,73 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * prevent.
    */
   private void composeInsideTheKeyboard() {
+    if (refusedToComposeOverApasswordField(mInputEditText)) return;
     if (mInputEditText == null || mRichInputConnection == null) return;
     // Guarded, because requestFocus() on an already-focused view is a no-op but the listener it
     // would fire re-enters changeVisibilityInputFieldButtons, which calls this again.
     if (!mInputEditText.hasFocus()) mInputEditText.requestFocus();
     mRichInputConnection.setOtherIC(mInputEditText);
     mRichInputConnection.setShouldUseOtherIC(true);
+  }
+
+  /**
+   * Refuses to start composing here, and takes back the focus that asked to.
+   *
+   * <p>The password guard lowers the redirect once, in {@code setHostFieldIsPassword}. That was
+   * enough while nothing raised it again, and three focus listeners do: this method's caller, and
+   * the two add-contact name fields. Nothing stopped a tap - the strip is on screen throughout,
+   * because {@code LatinIME.onComputeInsets} makes it VISIBLE unconditionally - so one tap on any
+   * of the three restored exactly the state the guard exists to forbid. Measured: the host's
+   * password box received nothing and the password was committed into the strip.
+   *
+   * <p>Focus is cleared rather than the fields being made unfocusable. Unfocusable fields would
+   * make the add-contact screen silently inert for a user whose messenger declares a password field
+   * for its own reasons, and leaving focus without the redirect is the mirror defect this file has
+   * fixed three times: a caret blinking in a field that receives nothing.
+   *
+   * @return true when composing may not start, and the caller must do nothing further.
+   */
+  private boolean refusedToComposeOverApasswordField(final View asked) {
+    if (actionsAreAvailable()) return false;
+    // No focus fight here. The strip's three input fields are made untakeable for as long as the
+    // guard is armed (see stripInputsCanTakeFocus), so nothing can be focused at this point and
+    // clearing focus from inside a focus-change callback - which the in-progress requestFocus()
+    // simply undoes on the way out - is not attempted. This stays as the second lock: it is what
+    // refuses the raise itself.
+    if (asked != null && asked.hasFocus()) asked.clearFocus();
+    // Said where it happened. The password notice lives on the main view's banner, and the
+    // add-contact screen covers it - so a user who taps a name field there would otherwise get
+    // silence from a field that simply stops working.
+    if (mAddContactInfoTextView != null
+        && mLayoutE2EEAddContactView.getVisibility() == VISIBLE) {
+      setInfoTextViewMessage(mAddContactInfoTextView, INFO_PASSWORD_FIELD);
+    }
+    return true;
+  }
+
+  /**
+   * Whether the strip's own input fields may take focus at all.
+   *
+   * <p>Set false for as long as the password guard is armed. Clearing focus reactively does not
+   * work: the container re-grants it to the next candidate, and a clear issued from inside a
+   * focus-change callback is undone by the {@code requestFocus()} still unwinding around it. Making
+   * the fields untakeable is the only form that holds, and it is also the honest one - over a
+   * password field the app has announced it will not compose here, so the fields should not accept
+   * a caret.
+   *
+   * <p>Restored the moment the guard disarms. Leaving them untakeable would let the messenger
+   * disable the add-contact screen outright by declaring a password field, and that screen is where
+   * its own invite payload sends the user. The refusal is explained rather than silent: the notice
+   * goes to the add-contact screen's own banner, because the main view's is covered.
+   */
+  private void stripInputsCanTakeFocus(final boolean canTake) {
+    final EditText[] inputs = {mInputEditText, mAddContactFirstNameInputEditText,
+        mAddContactLastNameInputEditText};
+    for (final EditText input : inputs) {
+      if (input == null) continue;
+      input.setFocusableInTouchMode(canTake);
+      input.setFocusable(canTake);
+    }
   }
 
   /**

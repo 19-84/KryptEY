@@ -143,6 +143,76 @@ public class PasswordIsNotComposedInTheKeyboardTest {
   }
 
   /**
+   * And the guard must survive the user tapping the compose box while it is armed.
+   *
+   * <p>Every case above arms the guard and then types. The guard's lowering is one-shot -
+   * {@code stopComposingInsideTheKeyboard} clears focus once - and the compose box stays focusable,
+   * so one tap re-runs its focus listener, which calls {@code composeInsideTheKeyboard()} with no
+   * reference to {@code mHostFieldIsPassword}. That restores exactly the state this file exists to
+   * forbid, and it needs no timing trick: the strip is on screen throughout, because
+   * {@code LatinIME.onComputeInsets} makes it {@code VISIBLE} unconditionally.
+   */
+  @Test
+  public void atapOnTheComposeBoxMustNotRearmTheCaptureOverApasswordField() {
+    strip.setHostFieldIsPassword(true);
+    assertFalse("precondition: the guard lowered the redirect", connection.isUsingOtherIC());
+
+    compose.requestFocus();
+    hostField.received.setLength(0);
+    connection.commitText(PASSWORD, 1);
+
+    assertEquals("after one tap on the compose box the password went to the keyboard again - the "
+            + "guard's lowering is one-shot and the focus listener re-raises the redirect without "
+            + "asking whether the actions are available",
+        PASSWORD, hostField.received.toString());
+    assertFalse("and it must not be captured into the compose box: " + compose.getText(),
+        compose.getText().toString().contains(PASSWORD));
+  }
+
+  /**
+   * The same hole through the add-contact name fields, which is the worse half.
+   *
+   * <p>Those two fields have their own focus listeners that raise the redirect, with the same
+   * absent check. It matters more than the compose box for two reasons the file states elsewhere:
+   * {@code isShowingSensitiveContent} does not count the add-contact screen, so {@code FLAG_SECURE}
+   * is not raised for it; and text typed there becomes a {@code Contact} display name, which
+   * reaches disk, the banner and the contact list. The add-contact screen is also the screen the
+   * messenger's own invite payload delivers the user to.
+   */
+  @Test
+  public void atapOnAnameFieldMustNotRearmTheCaptureOverApasswordField() {
+    strip.showAddContactViewForTest();
+    strip.setHostFieldIsPassword(true);
+    assertFalse("precondition: the guard lowered the redirect", connection.isUsingOtherIC());
+
+    final EditText firstName = strip.findViewById(R.id.e2ee_add_contact_first_name_input_field);
+    assertNotNull("fixture: the add-contact screen must have a first-name field", firstName);
+    firstName.requestFocus();
+    hostField.received.setLength(0);
+    connection.commitText(PASSWORD, 1);
+
+    assertEquals("a tap on the add-contact name field re-raised the redirect over a password box, "
+            + "so the password went into a field whose contents become a stored contact name",
+        PASSWORD, hostField.received.toString());
+    assertFalse("and must not be captured into the name field: " + firstName.getText(),
+        firstName.getText().toString().contains(PASSWORD));
+
+    // And no caret may be left behind in a field that receives nothing.
+    //
+    // The refusal clears focus, and clearing focus inside a focusable container re-grants it to the
+    // next candidate - which is how the first version of this stack-overflowed. The re-entrancy
+    // guard that stopped the overflow suppresses the clear on exactly the view that ends up
+    // focused, so the refusal could terminate with the caret sitting in a name field while every
+    // keystroke goes to the host's password box. That is a lie about state rather than a capture,
+    // and it is the mirror defect the refusal's own javadoc claims to avoid - so it is asserted
+    // rather than assumed.
+    final EditText lastName = strip.findViewById(R.id.e2ee_add_contact_last_name_input_field);
+    assertFalse("the refusal left a caret in a strip field while typing goes to the host's "
+            + "password box - the affordance says the user is naming a contact and they are not",
+        firstName.hasFocus() || (lastName != null && lastName.hasFocus()));
+  }
+
+  /**
    * The consequence that makes it more than a mis-typed character: the captured password survives
    * the guard and is what Encrypt would send once the button comes back on.
    */
