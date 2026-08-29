@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Application;
@@ -366,5 +367,93 @@ public class AwarningDisplacedIsAwarningThatComesBackTest {
     rebuilt.refreshOpeningMessage();
     rebuilt.adoptState(carried);
     return rebuilt;
+  }
+
+  /**
+   * A displacer that is itself re-derived is not a displacement — it is a permanent loss.
+   *
+   * <p>{@code selectContact} re-derives four warnings in reverse severity and the last writer wins,
+   * which is safe while the displacer is a one-shot. It stopped being safe when the invite refusal
+   * became recomputable: for any row whose name folds onto another AND which has a refusal record,
+   * the duplicate-name warning was recomputed and immediately overwritten, on every selection, for
+   * the life of the record. Recomputed and never rendered is not survivable.
+   *
+   * <p>It lands on the one control covering the case the pin cannot — two rows the user cannot tell
+   * apart — and the attacker's cost is one stripped one-time pre-key on any message relayed from
+   * that address, plus the user pressing Decrypt once.
+   *
+   * <p>The existing test above does not see it, and is not hollow: it displaces with a one-shot
+   * writer, which is a different property. Production is the mutant for this one.
+   */
+  @Test
+  public void arecomputedRefusalDoesNotSilenceTheSharedNameWarning() {
+    strip.selectContact(impostor);
+    assertTrue("precondition: the shared-name warning must be standing: " + banner(),
+        banner().contains("a different one - not a replacement"));
+
+    // One relayed message with the one-time pre-key stripped, and one Decrypt press.
+    strip.rememberRefusedInviteForTest(impostor,
+        "That invite from Bob Jones could not be used - it does not verify, which means it was "
+            + "changed on the way here.");
+
+    strip.selectContact(impostor);
+
+    assertTrue("both are about this row and this tap. The refusal must not be the only thing said: "
+            + banner(),
+        banner().contains("a different one - not a replacement"));
+    assertTrue("...and the refusal must still be said too, or fixing this has just moved the "
+            + "silence onto the other one: " + banner(),
+        banner().contains("changed on the way here"));
+  }
+
+  /** And composing is idempotent, or the banner grows a copy on every tap. */
+  @Test
+  public void thecompositionDoesNotGrowOnEverySelection() {
+    strip.rememberRefusedInviteForTest(impostor, "That invite could not be used - it does not "
+        + "verify, which means it was changed on the way here.");
+
+    strip.selectContact(impostor);
+    final String once = banner();
+    strip.selectContact(impostor);
+    strip.selectContact(impostor);
+
+    assertEquals("re-deriving both on every selection must produce the same banner, not a longer "
+            + "one: " + banner(), once, banner());
+  }
+
+  /**
+   * And the composition is scoped to one subject, or it merges two people into one sentence.
+   *
+   * <p>{@code warnIfNameIsShared} lowers its warning only for the contact it is about, so a
+   * shared-name warning about one row stays standing while a different row is selected. Composing
+   * without checking the subject would then paint "you already have a contact called Bob Jones, and
+   * this is a different one" directly above a refusal about Carol, as one warning about one tap.
+   * Two people merged into a single sentence on the surface whose whole job is to be believed is
+   * worse than either warning being lost.
+   */
+  @Test
+  public void thecompositionDoesNotMergeTwoContacts() {
+    final Contact carol = new Contact("Carol", "Danvers", bobAddress.getName(),
+        bobAddress.getDeviceId() + 17, false);
+    final java.util.ArrayList<Contact> contacts =
+        new java.util.ArrayList<>(victim.getContactList());
+    contacts.add(carol);
+    victim.setContactList(contacts);
+
+    strip.selectContact(impostor);
+    assertTrue("precondition: a shared-name warning about the impostor must be standing: "
+            + banner(),
+        banner().contains("a different one - not a replacement"));
+
+    strip.rememberRefusedInviteForTest(carol, "That invite from Carol Danvers could not be used - "
+        + "it does not verify, which means it was changed on the way here.");
+    strip.selectContact(carol);
+
+    assertTrue("Carol's refusal must be said: " + banner(),
+        banner().contains("changed on the way here"));
+    assertTrue("and the impostor's shared-name warning must not be composed into it - it is about "
+            + "somebody else, and the lowering is address-scoped so it is still standing: "
+            + banner(),
+        !banner().contains("a different one - not a replacement"));
   }
 }

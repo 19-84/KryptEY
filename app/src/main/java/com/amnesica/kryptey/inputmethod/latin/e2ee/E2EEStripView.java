@@ -3949,6 +3949,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     postStorageCaution(caution, about);
   }
 
+  /**
+   * Records a refused invite through the real writer, for tests.
+   *
+   * <p>The production route is a paste plus a Decrypt press on an envelope whose bundle fails its
+   * issuing signature; this is that fact, without rebuilding the envelope.
+   */
+  void rememberRefusedInviteForTest(final Contact about, final String message) {
+    rememberRefusedInvite(String.valueOf(about.getSignalProtocolAddress()), message);
+  }
+
   /** Posts a warning, for tests that drive the strip. */
   void setWarningMessageForTest(final String message) {
     setWarningMessage(message);
@@ -4338,11 +4348,34 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean warnIfLastInviteWasRefused(final Contact contact) {
     if (contact == null) return false;
-    final String remembered =
-        mRefusedInvites.get(String.valueOf(contact.getSignalProtocolAddress()));
+    final String address = String.valueOf(contact.getSignalProtocolAddress());
+    final String remembered = mRefusedInvites.get(address);
     if (remembered == null) return false;
-    setInviteRefusalWarning(remembered, String.valueOf(contact.getSignalProtocolAddress()));
+    setInviteRefusalWarning(composedWithAsharedNameWarningAbout(address, remembered), address);
     return true;
+  }
+
+  /**
+   * Keeps the shared-name warning when this one would otherwise overwrite it.
+   *
+   * <p>Displacement is survivable here because every warning can be worked out again - but that
+   * argument fails when the displacer is worked out again in the SAME pass. {@code selectContact}
+   * re-derives four warnings in reverse severity and the last writer wins, so once a refusal was
+   * recorded for a row whose name folds onto another, the duplicate-name warning was recomputed and
+   * immediately overwritten on every single selection. Recomputable and never rendered is not a
+   * displacement, it is a permanent loss, and it lands on the one control covering the case the pin
+   * cannot: two rows the user cannot tell apart.
+   *
+   * <p>Reordering only moves the loss - the refusal sits second of four precisely because being
+   * below the shared name reduced it to a three-second toast for exactly these contacts. So both
+   * are said. They are about the same row and the same tap, the slot is not widened, and the
+   * composition is idempotent: the next selection re-derives the shared name first and composes
+   * again.
+   */
+  private String composedWithAsharedNameWarningAbout(final String address, final String refusal) {
+    if (!mWarningStanding || !standingWarningIsAboutAsharedName()) return refusal;
+    if (!address.equals(mStandingWarningAddress)) return refusal;
+    return mStandingWarningText + "\n\n" + refusal;
   }
 
   /**

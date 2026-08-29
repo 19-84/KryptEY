@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and twenty-six sections, written in the order things were found rather than by subject, so the
+One hundred and twenty-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -78,6 +78,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Open](#open)
 - [Settled during review](#settled-during-review)
 - [Known-deferred defects](#known-deferred-defects)
+- [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
 - [The carrier, attacked and found sound, with four things worth fixing anyway](#the-carrier-attacked-and-found-sound-with-four-things-worth-fixing-anyway)
@@ -1956,6 +1957,41 @@ older messages, skip ones they cannot be bothered with, and occasionally paste t
   once", which is wrong for a message more than 2000 behind. Wrong in a harmless direction — it is
   unrecoverable either way — but a user scrolling a long way back is told they have already read
   something they have not. Distinguishing the two needs a counter libsignal does not expose.
+
+---
+
+## A displacer that is re-derived in the same pass
+
+The banner holds one warning and the writers displace each other. That is survivable because every
+one of them can be worked out again — and this branch spent several rounds making the last hold-out,
+the invite refusal, recomputable. Making it recomputable is what broke the argument.
+
+`selectContact` re-derives four warnings in reverse severity and the last writer wins. The refusal
+sits second, above a warning derived from the contact list and below a rejection or a detected
+substitution. So for any row that has **both** a folded name and a refusal record, the duplicate-name
+warning was recomputed and immediately overwritten — on every selection, for the life of the record.
+Recomputed and never rendered is not a displacement; it is a permanent loss, and it lands on the one
+control covering the case the pin cannot: two rows the user cannot tell apart. The attacker's cost is
+one stripped one-time pre-key on a message relayed from that address, plus the user pressing Decrypt
+once.
+
+The argument had been checked against a one-shot displacer, which is a different property.
+`thesharedNameWarningComesBackAfterBeingDisplaced` displaces with `setWarningMessageForTest` — not
+hollow, and blind to this. Production was the mutant.
+
+**Reordering only moves the loss.** The refusal is second of four precisely because being below the
+shared name reduced it to a three-second toast for exactly these contacts; that is recorded two
+sections up as a defect that was found and fixed. So both are said. They are about the same row and
+the same tap, the slot is not widened, and the composition is idempotent — the next selection
+re-derives the shared name first and composes again to the same string.
+
+**Scoped to one subject.** `warnIfNameIsShared` lowers its warning only for the contact it is about,
+so a shared-name warning about one row stays standing while a different row is selected. Composing
+without checking the subject would paint "you already have a contact called Bob Jones, and this is a
+different one" directly above a refusal about Carol, as one warning about one tap. Two people merged
+into a single sentence, on the surface whose whole job is to be believed, is worse than either
+warning being lost. Three tests; overwriting turns one red, composing across subjects turns another
+red, and the third holds the composition idempotent so the banner cannot grow a copy per tap.
 
 ---
 
