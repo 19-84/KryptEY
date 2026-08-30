@@ -147,7 +147,11 @@ public class DuplicateNameWordingTest {
   @Test
   public void aliveDuplicateIsNamedEvenWhenTheNameWasAlsoRetired() throws Exception {
     // The attacker tried this name once before from another address and was deleted.
-    victim.retireDisplayName("Bob", "Jones", "an-earlier-attacker-address.1");
+    victim.retireDisplayName("Bob", "Jones",
+        // Rendered as removeContact writes it. The address is still deliberately unrelated to the
+        // row under test - that is the point of this fixture - but a dotted string is a shape
+        // production cannot produce, and a later test extending this one would inherit the trap.
+        ProtocolAddresses.key(ProtocolAddresses.of("an-earlier-attacker-address", 1)));
     assertTrue("precondition: the retirement matches",
         SignalProtocolMain.hasRetiredDisplayName("Bob", "Jones"));
     assertTrue("precondition: and a LIVE contact of that name is in the list",
@@ -170,7 +174,8 @@ public class DuplicateNameWordingTest {
   @Test
   public void aretiredNameAloneStillGetsTheDeletedContactWording() throws Exception {
     victim.setContactList(new ArrayList<>());
-    victim.retireDisplayName("Carol", "Smith", "a-deleted-address.1");
+    victim.retireDisplayName("Carol", "Smith",
+        ProtocolAddresses.key(ProtocolAddresses.of("a-deleted-address", 1)));
 
     acceptInviteAs("Carol", "Smith", ProtocolAddresses.of("attacker-two", 3));
 

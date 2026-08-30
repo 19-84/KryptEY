@@ -127,8 +127,16 @@ public class AnumberThatMovedUnderTheScreenIsNotWhatGetsVerifiedTest {
         SignalProtocolMain.isContactKeyTrustworthy(bob()));
     assertNotNull("...and the user must be told why the press did nothing, or a refused press is "
             + "indistinguishable from a broken button", ShadowToast.getTextOfLatestToast());
-    assertTrue("the sentence must say the number moved. Shown: "
-            + ShadowToast.getTextOfLatestToast(),
-        ShadowToast.getTextOfLatestToast().contains("changed while this screen was open"));
+    // The DISTINGUISHING half, not the shared opening. Both sentences for this refusal begin
+    // "The safety number for X changed while this screen was open, so nothing was recorded", and
+    // they were written as two sentences precisely because one cannot cover both states: here a
+    // number is still on screen to compare, and in the other the pin is gone and the digits are
+    // blank. Asserting the shared part leaves swapping the two arms invisible - measured, before
+    // this line was narrowed.
+    assertTrue("the sentence must be the one for a number that is still there and has MOVED, not "
+            + "the one for a number that is gone - this fixture leaves a key pinned, so the screen "
+            + "has digits to compare and telling the user there is no number would be a claim the "
+            + "screen disproves. Shown: " + ShadowToast.getTextOfLatestToast(),
+        ShadowToast.getTextOfLatestToast().contains("The number below is the current one"));
   }
 }

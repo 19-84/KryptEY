@@ -4,11 +4,17 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
+import android.view.View;
+import android.view.inputmethod.InputConnection;
+import android.inputmethodservice.InputMethodService;
+import android.view.inputmethod.BaseInputConnection;
 import android.widget.TextView;
 
 import com.amnesica.kryptey.inputmethod.R;
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.latin.RichInputConnection;
+import com.amnesica.kryptey.inputmethod.latin.RichInputMethodManager;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 
 import org.junit.After;
@@ -47,6 +53,7 @@ public class AninviteWhoseKeysDidNotReachDiskIsRefusedTest {
 
   @Before
   public void setUp() {
+    RichInputMethodManager.init(RuntimeEnvironment.getApplication());
     SignalProtocolMain.resetForTest();
     SignalProtocolMain.testIsRunning = true;
     SignalProtocolMain.initialize(null);
@@ -54,6 +61,22 @@ public class AninviteWhoseKeysDidNotReachDiskIsRefusedTest {
 
     strip = new E2EEStripView(new ContextThemeWrapper(RuntimeEnvironment.getApplication(),
         R.style.KeyboardTheme_LXX_Pure_Day), null);
+
+    // A real connection, so the send path can COMPLETE if the refusal is removed.
+    //
+    // Without one, sendEncryptedMessageToApplication throws on a null connection two statements
+    // before it would reach the listener - so "nothing was handed to the app" was true of every
+    // possible mutation of this file, and the mutant that deletes the refusal was killed by that
+    // NPE rather than by any assertion here. The sibling positive case,
+    // TheInviteGoesToTheHostAppTest, installs the same thing for the same reason.
+    final BaseInputConnection hostField =
+        new BaseInputConnection(new View(RuntimeEnvironment.getApplication()), true);
+    strip.setRichInputConnection(new RichInputConnection(new InputMethodService() {
+      @Override
+      public InputConnection getCurrentInputConnection() {
+        return hostField;
+      }
+    }));
     strip.setListener(new E2EEStripView.Listener() {
       @Override public void onTextInput(final String rawText) {
         handedToTheApp.add(rawText);
@@ -78,10 +101,12 @@ public class AninviteWhoseKeysDidNotReachDiskIsRefusedTest {
 
   @Test
   public void aninviteWhosePrivateHalvesWereNotStoredIsNotGivenToTheMessenger() {
-    assertTrue("precondition: this fixture's writes must fail, or the invite reaches disk and there "
-            + "is no refusal to measure",
-        !SignalProtocolMain.getInstance().getAccount().getSignalProtocolStore().equals(null)
-            && !new StorageHelper(RuntimeEnvironment.getApplication())
+    // Deliberately NOT TestStores.writesLand(): this fixture's store cannot write, which is the
+    // state under test. The sibling positive case says the same thing from the other side - "the
+    // invite is refused when its private halves cannot be written, so this fixture has to say its
+    // store writes."
+    assertTrue("precondition: the store must not be able to write, or there is no refusal to "
+            + "measure", !new StorageHelper(RuntimeEnvironment.getApplication())
                 .storeAllInformationInSharedPreferences(account));
 
     strip.findViewById(R.id.e2ee_contact_list_invite_new_contact_button).performClick();
