@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -104,7 +105,7 @@ public class AtapThroughAnoverlayIsNotAcomparisonTest {
    * <p>Built through the pointer-properties overload because it is the only {@code obtain} that
    * takes a flags argument, and the flag is the entire subject of this test.
    */
-  private static MotionEvent touch(final int flags) {
+  private static MotionEvent touch(final int action, final int flags) {
     final MotionEvent.PointerProperties[] properties = {new MotionEvent.PointerProperties()};
     properties[0].id = 0;
     properties[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
@@ -113,7 +114,7 @@ public class AtapThroughAnoverlayIsNotAcomparisonTest {
     coords[0].y = 1f;
     coords[0].pressure = 1f;
     coords[0].size = 1f;
-    return MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 1, properties, coords, 0, 0,
+    return MotionEvent.obtain(0L, 0L, action, 1, properties, coords, 0, 0,
         1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, flags);
   }
 
@@ -138,14 +139,54 @@ public class AtapThroughAnoverlayIsNotAcomparisonTest {
     assertTrue("a touch carrying FLAG_WINDOW_IS_OBSCURED must be refused: it arrived through some "
             + "other application's window, and Verify asserts the user compared twelve digits by "
             + "voice - the one claim this app makes that nothing on screen lets them re-derive",
-        (Boolean) decide.invoke(strip, touch(MotionEvent.FLAG_WINDOW_IS_OBSCURED)));
+        (Boolean) decide.invoke(strip, touch(MotionEvent.ACTION_DOWN, MotionEvent.FLAG_WINDOW_IS_OBSCURED)));
 
-    final android.widget.TextView banner = strip.findViewById(R.id.e2ee_info_text);
-    assertNotNull(banner);
-    assertTrue("the refusal must say why. Discarding the touch in silence is what "
+    // The notice has to reach a surface the user can actually see, and on this screen the banner
+    // is not one. Asserted rather than assumed, because the first version of this guard wrote to
+    // the banner and this test passed: findViewById and getText are indifferent to whether an
+    // ancestor is GONE, so the fixture demonstrated the defect and reported success.
+    assertEquals("the main view - which contains the banner - is GONE while the verify screen is "
+            + "up, so a refusal written there cannot be seen. This is the reason the notice is a "
+            + "toast, and it is asserted so the notice cannot quietly move back to the banner",
+        View.GONE, strip.<View>findViewById(R.id.e2ee_main_wrapper).getVisibility());
+
+    assertEquals("the refusal must say why. Discarding the touch in silence is what "
             + "filterTouchesWhenObscured does, and it turns every security control dark for anyone "
-            + "running a screen dimmer with nothing on screen to explain it: " + banner.getText(),
-        banner.getText().toString().contains("drawn over this keyboard"));
+            + "running a screen dimmer with nothing on screen to explain it",
+        E2EEStripView.INFO_TAP_CAME_THROUGH_ANOTHER_WINDOW,
+        org.robolectric.shadows.ShadowToast.getTextOfLatestToast());
+  }
+
+  /**
+   * One notice per gesture, not one per event.
+   *
+   * <p>{@code FLAG_WINDOW_IS_OBSCURED} is carried on every event of a touch stream rather than only
+   * the first, so a guard that reads it without remembering fires on DOWN, on every MOVE and on UP.
+   * With the notice on the banner that was invisible; as a toast it is three stacked toasts per
+   * press.
+   *
+   * <p>The other half is asserted with it: once a gesture has been refused, the rest of it stays
+   * refused. Filtering to DOWN alone and letting the rest through re-opens the press - if DOWN is
+   * clean and the overlay appears before UP, the view is already the touch target and
+   * {@code performClick} runs.
+   */
+  @Test
+  public void anobscuredGestureIsRefusedOnceAndStaysRefused() throws Exception {
+    strip.showVerifyContactForTest(bob);
+    final java.lang.reflect.Method decide = E2EEStripView.class
+        .getDeclaredMethod("tapCameThroughAnotherWindow", MotionEvent.class);
+    decide.setAccessible(true);
+    org.robolectric.shadows.ShadowToast.reset();
+
+    final int obscured = MotionEvent.FLAG_WINDOW_IS_OBSCURED;
+    assertTrue((Boolean) decide.invoke(strip, touch(MotionEvent.ACTION_DOWN, obscured)));
+    assertTrue("the rest of a refused gesture must stay refused, or the up-event reaches "
+            + "performClick", (Boolean) decide.invoke(strip, touch(MotionEvent.ACTION_MOVE, obscured)));
+    assertTrue((Boolean) decide.invoke(strip, touch(MotionEvent.ACTION_UP, obscured)));
+
+    assertEquals("one press must produce one notice. The obscured flag rides every event in the "
+            + "stream, so a guard that does not remember toasts on down, on every move and on up",
+        1, org.robolectric.shadows.ShadowToast.shownToastCount());
   }
 
   /**
@@ -163,7 +204,7 @@ public class AtapThroughAnoverlayIsNotAcomparisonTest {
     decide.setAccessible(true);
 
     assertFalse("an unobscured touch must be let through, or the guard has simply broken every "
-            + "security control for everyone", (Boolean) decide.invoke(strip, touch(0)));
+            + "security control for everyone", (Boolean) decide.invoke(strip, touch(MotionEvent.ACTION_DOWN, 0)));
   }
 
   /**
@@ -220,6 +261,6 @@ public class AtapThroughAnoverlayIsNotAcomparisonTest {
     assertFalse("a partially-obscured touch is ordinary - a status-bar chip is enough to set it - "
             + "so refusing it would dead-button the app for routine screen furniture",
         (Boolean) decide.invoke(strip,
-            touch(MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED)));
+            touch(MotionEvent.ACTION_DOWN, MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED)));
   }
 }

@@ -924,13 +924,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean mHostFieldIsPassword;
 
-  /**
-   * True only for the duration of one refusal, so clearing focus cannot re-enter itself.
-   *
-   * <p>Per-operation, like {@code mLastDecryptShowedAmessage}: it describes one focus event and a
-   * focus event does not survive the view it happened on.
-   */
-  private boolean mRefusingFocusOverApasswordField;
 
   /** Called by the IME as each input session starts. */
   public void setHostFieldIsPassword(final boolean isPassword) {
@@ -5413,10 +5406,53 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private boolean tapCameThroughAnotherWindow(final MotionEvent event) {
     if (event == null) return false;
-    if ((event.getFlags() & MotionEvent.FLAG_WINDOW_IS_OBSCURED) == 0) return false;
-    setInfoUnlessWarned(INFO_TAP_CAME_THROUGH_ANOTHER_WINDOW);
-    return true;
+    final int action = event.getActionMasked();
+    if (action == MotionEvent.ACTION_DOWN) mRefusedThisGesture = false;
+
+    final boolean obscuredNow = (event.getFlags() & MotionEvent.FLAG_WINDOW_IS_OBSCURED) != 0;
+    if (obscuredNow && !mRefusedThisGesture) {
+      mRefusedThisGesture = true;
+      // A toast, not the banner.
+      //
+      // The first version wrote INFO_TAP_CAME_THROUGH_ANOTHER_WINDOW to mInfoTextView through
+      // setInfoUnlessWarned, and that message could never be seen. Both guarded buttons live on the
+      // verify screen, and showing that screen sets mLayoutE2EEMainView - which contains the banner
+      // - GONE. setText on a view under a GONE ancestor changes nothing the user can look at. Worse,
+      // setInfoUnlessWarned refuses to write over a standing item, and a standing key-change
+      // warning is exactly the state a user opens Verify in.
+      //
+      // So the refusal was silent, and consuming the touch removes the pressed state and ripple
+      // too: an absolutely inert button, which is precisely the failure this guard's javadoc says
+      // filterTouchesWhenObscured produces and that this was written to avoid. The sibling refusal
+      // on this same button - refuseThePressAndRepaintTheNumber - already uses a toast, for the
+      // same reason, three lines away.
+      //
+      // Safe as a toast specifically because it carries no content: it names no contact and no
+      // message, so the toast channel's lack of FLAG_SECURE costs nothing here.
+      Toast.makeText(getContext(), INFO_TAP_CAME_THROUGH_ANOTHER_WINDOW, Toast.LENGTH_LONG).show();
+    }
+
+    // Once refused, the whole gesture is refused.
+    //
+    // Acting only on ACTION_DOWN and letting the rest through re-opens the press: if DOWN is clean
+    // and the overlay appears before UP, the view is already the touch target and performClick
+    // runs. And refusing every event without remembering would toast on DOWN, on every MOVE and on
+    // UP - the flag is carried on each event of the stream, not only the first.
+    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+      final boolean refused = mRefusedThisGesture;
+      mRefusedThisGesture = false;
+      return refused;
+    }
+    return mRefusedThisGesture;
   }
+
+  /**
+   * True from the moment one gesture is refused until it ends.
+   *
+   * <p>Per-operation, like {@code mLastDecryptShowedAmessage}: it describes one touch stream and a
+   * touch stream does not survive the view it happened on.
+   */
+  private boolean mRefusedThisGesture;
 
   /**
    * Wires one security-consequential control to refuse taps delivered through another window.
@@ -5440,10 +5476,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * of the three restored exactly the state the guard exists to forbid. Measured: the host's
    * password box received nothing and the password was committed into the strip.
    *
-   * <p>Focus is cleared rather than the fields being made unfocusable. Unfocusable fields would
-   * make the add-contact screen silently inert for a user whose messenger declares a password field
-   * for its own reasons, and leaving focus without the redirect is the mirror defect this file has
-   * fixed three times: a caret blinking in a field that receives nothing.
+   * <p>This paragraph used to say focus is cleared "rather than the fields being made unfocusable",
+   * and argued against exactly what the method below it does. The fields ARE made untakeable while
+   * the guard is armed - see {@code stripInputsCanTakeFocus} - because clearing focus reactively
+   * does not hold: the container re-grants it to the next candidate, and a clear issued from inside
+   * a focus-change callback is undone by the {@code requestFocus()} unwinding around it. The
+   * sentence survived the fix that refuted it, which matters because it pre-argues against the
+   * code: a reader who found the add-contact screen inert over a password field would have had a
+   * javadoc telling them that outcome was ruled out, and the natural response is to delete the
+   * thing keeping the password out of the strip.
+   *
+   * <p>The concern it raised is real and is answered elsewhere rather than by not doing it: the
+   * fields are restored the moment the guard disarms, so the screen is inert only while the host
+   * field is a password box, and the refusal is explained on the add-contact screen's own banner.
    *
    * @return true when composing may not start, and the caller must do nothing further.
    */

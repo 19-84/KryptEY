@@ -150,10 +150,16 @@ public class EveryStripFieldIsClassifiedTest {
       // rebuilt strip refusing Verify and Reject against a number nobody can see, which is the dead
       // end this screen has produced three times.
       "mCodesWereDerivedFrom", "mCodesWereDerivedForAddress",
-      // True only while one refusal clears focus, to stop that clearing re-entering itself. It
-      // describes a single focus event, and a focus event does not survive the view it happened
-      // on - carrying it would mean a rebuilt strip believing a refusal was still in progress.
-      "mRefusingFocusOverApasswordField"));
+      // True from the moment one obscured gesture is refused until that gesture ends. It describes
+      // a single touch stream, and a touch stream does not survive the view it happened on -
+      // carrying it would mean a rebuilt strip believing a press was still in progress.
+      //
+      // Its predecessor, mRefusingFocusOverApasswordField, was listed here after the code using it
+      // was restructured away, so this file went on certifying that a re-entrancy mechanism had
+      // been considered and deliberately dropped when the mechanism no longer existed. That is
+      // worse than an ordinary stale comment: an entry here reads as evidence a question was
+      // answered.
+      "mRefusedThisGesture"));
 
   /** Types whose contents cannot change, so a final field of that type cannot hold state. */
   private static boolean isImmutable(final Class<?> type) {
