@@ -753,3 +753,43 @@ is the distinction the whole trust model rests on. It can now.
 
 Also recorded, not chased: `Contact` carries exactly the five fields the map copies, so a map-built
 row would not even lose data if `updateContactInContactList` replaced a live row with one.
+
+## The fifth warning, and the part of it that stays uncovered
+
+`warnIfThisKeyIsPinnedElsewhere` is the one warning on the strip's surface that nothing re-derives.
+`selectContact` re-raises four — the shared name, the refused invite, the rejection and the identity
+change — and every one of this raiser's call sites is an arrival path. The file's own justification
+for last-writer-wins said "every warning on this surface is now RECOMPUTABLE", naming three of the
+five; that sentence is now corrected in both places it appeared, because reasoning from it produced a
+real regression: a deferral was added to this raiser on the strength of it, which turned a
+displacement into a deletion the messenger could hold open indefinitely.
+
+**It cannot simply be added to `selectContact`.** Its condition reads the pins, and a pin deliberately
+survives contact deletion, so re-raising it on every selection is a sentence with no action that ends
+it. The remaining exits would be deleting a conversation the user wants to keep, or pressing Reject —
+which asserts "the number does not match" when it does, and writes a permanent rejection making every
+future genuine invite at that address raise `INFO_PINNED_AFTER_REJECT`. Telling a user to lie to a
+security control is worse than the gap.
+
+**What is covered.** When the two rows share a display name, the fact is carried by
+`INFO_DUPLICATE_NAME_SAME_KEY` on the live branch and `INFO_RETIRED_NAME_SAME_KEY` on the deleted
+branch, both selected by `duplicateNameMessage` and both re-derived on every selection. That is the
+configuration the attack actually produces, because a relay presents the peer's own name.
+
+**What is not.** Two live rows the user has named *differently*. There the shared-name condition never
+fires, nothing re-derives the same-key fact, and it is lost once displaced — and displacement is cheap
+for a messenger, which can raise the identity-change or refused-invite warning about any contact with
+one forged bundle. The app's own advice steers toward this state: the duplicate-name wordings end
+"delete one of them — it stays while two contacts share a name", so a user who wants to keep both rows
+is pushed into renaming one.
+
+The residual harm there is the thinnest of the family and is stated rather than waved at: the rows are
+distinguishable by name and by address tag, the pin is the peer's real key so confidentiality holds,
+and every later key event at either address is still covered by the identity-change and rejection
+warnings. What the user loses is knowing that one of the two rows was minted by the messenger.
+
+If it is ever closed, the banner is the wrong surface. The contact row is the right one:
+`ListAdapterContacts.getView` already recomputes trust per bind and already owns a two-state badge and
+an address tag, and a third row state needs no exit because one key at two addresses is a permanent
+property of a permanent state. That is a product decision about what the row's visual language says,
+not a code decision, and it is under-determined by the code as it stands.
