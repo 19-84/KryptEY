@@ -688,12 +688,7 @@ public class MessengerCannotClearAstandingWarningTest {
       // two same-named rows hold one key. The row raises the arrival wording and then fires
       // the selection event, which is exactly the path that swaps one for the other, and it
       // asserts the fact both sentences carry rather than either sentence.
-      "INFO_DUPLICATE_NAME_SAME_KEY",
-      // Same shape as the row above, on the deleted-name branch: no call site of its own, it
-      // is the wording warnIfNameIsShared selects when the row that shares the name is gone
-      // and its pin is not. Swept by the same colliding-name row, which fires the selection
-      // event that chooses between the wordings.
-      "INFO_RETIRED_NAME_SAME_KEY"));
+      "INFO_DUPLICATE_NAME_SAME_KEY"));
 
   /**
    * Constants the scan reaches that are not warnings at all.
@@ -734,6 +729,16 @@ public class MessengerCannotClearAstandingWarningTest {
   private static final java.util.Map<String, String> EXCUSED = new java.util.TreeMap<>();
 
   static {
+    EXCUSED.put("INFO_RETIRED_NAME_SAME_KEY",
+        "no row here produces it, and the entry that claimed one was wrong. It is the wording "
+            + "warnIfNameIsShared selects on the DELETED-name branch, which needs the other row of "
+            + "that name to be gone while its pin survives - and the colliding-name row that was "
+            + "credited with sweeping it keeps both rows live, so that branch is unreachable from "
+            + "this fixture. The row's fragment would not have distinguished it either: 'both show "
+            + "the same number' is carried by three of these sentences. Its selection and its "
+            + "ending are covered by DuplicateNameWordingTest instead, which builds the deleted "
+            + "state directly. Sweeping it here would need a fourth row that deletes before it "
+            + "fires the selection event; that is worth adding, and claiming it exists is not");
     EXCUSED.put("INFO_STORAGE_UNREADABLE",
         "observed through mayOverwriteInfoBanner, which returns false from storageIsUnreadable() "
             + "alone - so both the precondition and the assertion hold regardless of the warning, "

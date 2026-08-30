@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -333,6 +334,38 @@ public class DuplicateNameWordingTest {
 
     assertTrue("a different key leaves the reinstall story open, and the number is the test that "
             + "settles it. Banner: " + infoText(),
+        infoText().contains("check the security number with them by voice"));
+  }
+
+  /**
+   * A third party pinning this key must not turn off the deleted-name comparison either.
+   *
+   * <p>The retired-branch twin of the live-branch case above, and it was missing: the deleted branch
+   * asked "does ANY address pin this key" while its sentence claims this entry holds the key
+   * <em>the deleted contact</em> had. Here they are about different people — a deleted "Bob Jones"
+   * with one key, an unrelated row pinning a second, and a new "Bob Jones" holding that second — so
+   * the numbers differ and comparing by voice is exactly what exposes the new row.
+   */
+  @Test
+  public void anunrelatedPinDoesNotSuppressTheDeletedNameComparison() throws Exception {
+    final SignalProtocolAddress unrelated = ProtocolAddresses.of("carols-address", 1);
+    final SignalProtocolAddress newBob = ProtocolAddresses.of("a-new-bobs-address", 1);
+
+    // Carol pins the attacker's key; nothing about her shares a name with anybody.
+    acceptInviteFrom(attackerBundle, "Carol", "Smith", unrelated);
+
+    // The genuine Bob is deleted, so his key stays pinned at his old address under a retired name.
+    victim.setContactList(new ArrayList<>());
+    victim.retireDisplayName("Bob", "Jones", String.valueOf(peerAddress));
+
+    // A new "Bob Jones" arrives holding the ATTACKER's key - a different key from the deleted Bob's.
+    acceptInviteFrom(attackerBundleAgain, "Bob", "Jones", newBob);
+
+    strip.selectContact(rowAt(newBob));
+
+    assertTrue("the deleted Bob held a different key from this row, so the numbers differ and "
+            + "comparing by voice is the test that exposes it. An unrelated row pinning this row's "
+            + "key says nothing about the deleted Bob. Banner: " + infoText(),
         infoText().contains("check the security number with them by voice"));
   }
 }

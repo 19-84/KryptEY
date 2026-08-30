@@ -1708,9 +1708,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // Here, because here is where the key actually got pinned. Through the shared helper, so
         // there is one definition of when this warning is true rather than two that drift.
         warnIfKeyWasRejected(chosenContact);
-        warnIfThisKeyIsPinnedElsewhere(chosenContact);
-        // Last, because it outranks both, and because without it the deferral above has no premise
-        // on this arm.
+        // Second, so the deferral above has a premise on this arm - it steps aside for a pending
+        // change, and this is what writes that sentence here. Moved ahead of the pinned-elsewhere
+        // call after a round pointed out that putting it LAST deleted the one warning nothing
+        // re-derives, by rank instead of by the return this commit had just removed. All three
+        // decrypt arms write the pinned-elsewhere sentence last, and this file's own note on rank
+        // says why: a pending change is fail-closed, the offered key was refused and the pin stands,
+        // while one key at two addresses is fail-open - the pin is live and the number is defeated
+        // by construction.
         //
         // warnIfKeyWasRejected steps aside when a substitution is pending at the address, on the
         // stated grounds that the higher-ranked sentence was written in this same pass. That is true
@@ -1725,6 +1730,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // and is not in use, your messages still go to the key you already had - is exactly true
         // whenever a change is pending, and it is pending here or this line writes nothing.
         warnIfIdentityChanged(chosenContact);
+        // Last, matching the decrypt arms. Nothing re-derives this one, so whatever writes after it
+        // does not displace it - it erases it.
+        warnIfThisKeyIsPinnedElsewhere(chosenContact);
         {
           // Through the guarded writer: an attacker whose substitution was just refused posts one
           // more ordinary invite under a fresh name at a fresh address, the user accepts it -
@@ -2782,13 +2790,20 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final boolean live = SignalProtocolMain.hasLiveContactWithSameDisplayName(
         contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress());
     if (!live) {
-      // The same key at another address outranks the deleted-name wording, for the same reason it
-      // outranks the live one: the sentence it replaces sends the user to a comparison that is
-      // already decided. Asked with the UN-named predicate, because there is no live row of this
-      // name to intersect with - the other side is a contact that was deleted, and its pin outlived
-      // it deliberately.
-      if (!SignalProtocolMain.addressesAlreadyPinningTheSameKey(
-          contact.getSignalProtocolAddress()).isEmpty()) {
+      // The same key at the DELETED contact's address outranks the deleted-name wording, for the
+      // same reason it outranks the live one: the sentence it replaces sends the user to a
+      // comparison that is already decided.
+      //
+      // Intersected, not asked as two questions. This read addressesAlreadyPinningTheSameKey on its
+      // own - "does ANY address pin this key" - which is the identical defect the live branch beside
+      // it was fixed for one commit earlier, reproduced here within the hour. A deleted "Bob Jones"
+      // holding one key, plus any unrelated row pinning a second, plus a new "Bob Jones" holding
+      // that second key, satisfied both halves while neither was about the other; the sentence then
+      // said comparing numbers could not tell them apart, when the keys differ and comparing is what
+      // exposes it. The retired list records the addresses it retired, so the intersection was
+      // available and simply was not asked for.
+      if (SignalProtocolMain.adeletedContactOfThisNamePinnedTheSameKey(
+          contact.getSignalProtocolAddress(), contact.getFirstName(), contact.getLastName())) {
         return INFO_RETIRED_NAME_SAME_KEY;
       }
       return INFO_RETIRED_CONTACT_NAME;
