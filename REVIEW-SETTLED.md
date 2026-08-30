@@ -560,3 +560,46 @@ explicit class rather than an implicit action.
 A clean negative result, and worth recording as one: the layout surface adds no capability beyond
 editing text and switching layouts. It does not close the rest of that directory — the rendering and
 geometry of those files is still unexamined, and this says nothing about it.
+
+## In landscape the keyboard's window holds a copy of the host's text, and FLAG_SECURE has no term for it
+
+An audit of the fullscreen/extract mode found the one thing that surface can cost, and it is not
+about this app's own plaintext.
+
+In extract mode the framework mirrors the **host** field's text into an `ExtractEditText` inside the
+IME's window. `isShowingSensitiveContent()` is a closed enumeration of the app's own views and model
+state — the chat log, the verify screen, the contact list, a chosen recipient, a standing warning, a
+non-empty compose box — with no term for anything the app does not own. So in the ordinary landscape
+state, empty compose box and no strip screen up, the IME window is deliberately **not** secure while
+displaying another application's text. A host that protects itself with `FLAG_SECURE` loses that
+protection through the keyboard.
+
+**Not fixed, and the reason is that this project already tried the fix and reverted it.** REVIVAL
+records that a `FLAG_SECURE` IME window blanks the *entire system screenshot*, so the flag was
+deliberately narrowed to the states where this app's own plaintext is on screen. Adding a term for
+"extract mode is up" reinstates the reverted behaviour under a new name: screenshots dead in every
+app whenever the phone is sideways. The other lever — setting `config_use_fullscreen_mode` false in
+`values-land` — is not free either: the verify screen's `ScrollView` was added on a landscape
+overflow measurement taken *in the mode that would be removed*, and two other screens were
+deliberately left unwrapped on the strength of the same analysis.
+
+**What is unverified, and it decides everything.** Whether the platform independently marks the IME
+window secure when the input target is secure. If it does, there is nothing here. If it does not,
+there is a second and worse question, because `onSensitiveContentVisibilityChanged` calls
+`clearFlags(FLAG_SECURE)` unconditionally — this app would then be actively stripping a flag the
+platform had set. That is one emulator run in a class that already owns the rotation harness and its
+anti-vacuity control: a host activity that sets `FLAG_SECURE`, rotated, with the strip's own
+predicate false, asserting on the IME window block. It is the next thing to run on this surface, and
+it is recorded here rather than guessed at.
+
+Two related notes from the same audit, both worth keeping:
+
+- **Clean negative on the redirect.** The framework's extract machinery holds the platform's own
+  `InputConnection` to the host and never sees `mOtherIC` — `LatinIME` does not override
+  `getCurrentInputConnection()`, and the app overrides none of the eight extract hooks. So committed
+  text while redirected goes to the compose box regardless of window mode, and the extract view
+  mirrors the host field, which under this design holds ciphertext or nothing.
+- **`mApplicationSpecifiedCompletionOn` is dead.** It has no reader anywhere, because this fork
+  deleted `onDisplayCompletions`. Restoring that method from upstream — an ordinary merge outcome —
+  would give the messenger a suggestion strip inside the keyboard, live only in landscape, which is
+  the configuration nobody tests.

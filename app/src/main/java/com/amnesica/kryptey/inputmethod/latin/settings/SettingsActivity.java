@@ -58,19 +58,43 @@ public class SettingsActivity extends PreferenceActivity {
    */
   private static void aimAtTheSystemSettingsIfWeCan(final Context context, final Intent intent) {
     try {
-      for (final android.content.pm.ResolveInfo candidate
-          : context.getPackageManager().queryIntentActivities(intent, 0)) {
+      // MATCH_DEFAULT_ONLY, because that is what startActivity will resolve with.
+      //
+      // The first version queried with flags 0, which does not apply the CATEGORY_DEFAULT filter.
+      // So it could select a system activity whose filter lacks that category, pin the intent to
+      // its package, and then startActivity would find no default match and throw - caught,
+      // swallowed, dialog dismissed, and the same non-cancelable dialog back on the next onStart
+      // with the same dead OK button. That is precisely the failure this method's javadoc says
+      // hard-coding the package would cause, reintroduced by another route.
+      final java.util.List<android.content.pm.ResolveInfo> candidates =
+          context.getPackageManager().queryIntentActivities(
+              intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+
+      String only = null;
+      for (final android.content.pm.ResolveInfo candidate : candidates) {
         if (candidate.activityInfo == null || candidate.activityInfo.applicationInfo == null) {
           continue;
         }
         final int flags = candidate.activityInfo.applicationInfo.flags;
         final boolean system = (flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
             || (flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
-        if (system) {
-          intent.setPackage(candidate.activityInfo.packageName);
+        if (!system) continue;
+        if (only != null && !only.equals(candidate.activityInfo.packageName)) {
+          // Two system handlers, and no way here to tell which is the real settings app.
+          //
+          // FLAG_SYSTEM means preinstalled, not trustworthy: every OEM, carrier and partner app
+          // carries it, and queryIntentActivities returns results ordered by a filter priority the
+          // declaring app chooses. Picking the first would let a preinstalled lookalike take the
+          // intent with the chooser REMOVED - turning "the attacker is one row in a list" into "the
+          // attacker is the only destination", which is worse than doing nothing.
+          //
+          // So ambiguity falls back to the implicit intent. The user sees a chooser containing the
+          // real settings app, which is exactly where they were before this method existed.
           return;
         }
+        only = candidate.activityInfo.packageName;
       }
+      if (only != null) intent.setPackage(only);
     } catch (final RuntimeException e) {
       // A package-manager failure must not stop the user reaching the settings screen.
       Log.e(TAG, "Could not resolve a system handler for the input-method settings", e);

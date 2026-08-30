@@ -73,6 +73,31 @@ public class ThesetupIntentPrefersAsystemHandlerTest {
   }
 
   /**
+   * Two preinstalled handlers means we cannot tell, so we must not choose.
+   *
+   * <p>{@code FLAG_SYSTEM} means preinstalled, not trustworthy: every OEM, carrier and partner app
+   * carries it, and {@code queryIntentActivities} orders results by a filter priority the declaring
+   * app chooses. A first-match rule therefore lets a preinstalled lookalike take the intent with
+   * the chooser <em>removed</em> — turning "the attacker is one row in a list" into "the attacker
+   * is the only destination", which is worse than the unfixed code.
+   *
+   * <p>So ambiguity falls back to implicit, and the user gets the chooser they had before this
+   * method existed. Asserting it because the failure it prevents is one this fix would otherwise
+   * have introduced.
+   */
+  @Test
+  public void twoPreinstalledHandlersFallBackToTheChooser() throws Exception {
+    final Intent intent = aimed(
+        handler("com.oem.helpfulsettings", true),
+        handler("com.android.settings", true));
+
+    assertNull("with two preinstalled handlers there is no way here to tell the real settings app "
+            + "from a lookalike, so the intent must stay implicit and let the user choose - "
+            + "picking the first would hand the intent to whichever declared the higher priority",
+        intent.getPackage());
+  }
+
+  /**
    * And the setup dialog must actually call it.
    *
    * <p>The two tests around this one drive the helper directly, so deleting the call from the OK
