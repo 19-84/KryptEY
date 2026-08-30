@@ -688,7 +688,12 @@ public class MessengerCannotClearAstandingWarningTest {
       // two same-named rows hold one key. The row raises the arrival wording and then fires
       // the selection event, which is exactly the path that swaps one for the other, and it
       // asserts the fact both sentences carry rather than either sentence.
-      "INFO_DUPLICATE_NAME_SAME_KEY"));
+      "INFO_DUPLICATE_NAME_SAME_KEY",
+      // Same shape as the row above, on the deleted-name branch: no call site of its own, it
+      // is the wording warnIfNameIsShared selects when the row that shares the name is gone
+      // and its pin is not. Swept by the same colliding-name row, which fires the selection
+      // event that chooses between the wordings.
+      "INFO_RETIRED_NAME_SAME_KEY"));
 
   /**
    * Constants the scan reaches that are not warnings at all.

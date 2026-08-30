@@ -1464,7 +1464,19 @@ public class SignalProtocolMain {
       // is not warned about, the warning can be re-derived for everyone else, and the retired entry
       // stays where it is - a LATER contact reusing that name is still warned about, because this
       // suppression is scoped to the one address whose number was compared.
-      if (excluding != null && contactAtAddressIsVerified(excluding)) continue;
+      // ...unless the new entry holds the key the deleted one had.
+      //
+      // Verifying is the resolution for the ordinary retired-name case, and that is why this skip
+      // exists: the warning says the app cannot confirm this is the same person coming back, and
+      // comparing the number by voice is how the user confirms it. That argument needs the
+      // comparison to be capable of failing. When the same key is pinned at another address it is
+      // not: the digits are a function of the two identity keys, so they match by construction, the
+      // peer confirms their own key, and verification becomes a step the attacker can rely on
+      // rather than a test. Suppressing on it would hand over the silencer.
+      if (excluding != null && contactAtAddressIsVerified(excluding)
+          && addressesAlreadyPinningTheSameKey(excluding).isEmpty()) {
+        continue;
+      }
       return true;
     }
     return false;
@@ -2506,7 +2518,20 @@ public class SignalProtocolMain {
     // is gone from memory and still on disk - the next reload restores a log entry for a message
     // nobody received, and the plaintext of a draft the user was told could not be sent stays
     // sealed there with nothing to notice it.
-    return sInstance.storeAllAccountInformationInSharedPreferences();
+    // BOTH files, because the entry lives in only one of them and it is not the one this returns.
+    //
+    // storeAllInformationInSharedPreferences writes protocol_messages first and protocol second, and
+    // returns only the second - the account batch, which the chat log is deliberately not part of.
+    // So asking it whether a LOG removal reached disk asks the wrong file: when the log commit fails
+    // and the account commit succeeds, which removeContact's comment calls ordinary on a nearly full
+    // disk, this returned true with the entry still on disk. The previous version of this line
+    // returned exactly that, under a javadoc promising it reported the removal reaching disk, which
+    // is worse than the bare call it replaced: it was wrong rather than merely silent.
+    //
+    // Same shape as mLastDeletionLeftMessagesBehind above, and for the same reason.
+    final boolean accountLanded = sInstance.storeAllAccountInformationInSharedPreferences();
+    return accountLanded && sInstance.mStorageHelper != null
+        && sInstance.mStorageHelper.lastMessageLogWriteSucceeded();
   }
 
   private boolean sessionExists(SignalProtocolAddress signalProtocolAddress) {

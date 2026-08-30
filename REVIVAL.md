@@ -99,6 +99,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A guard that checked a list of names, not the thing the names are about](#a-guard-that-checked-a-list-of-names-not-the-thing-the-names-are-about)
 - [What the app promises about time, and what it does when nobody sends](#what-the-app-promises-about-time-and-what-it-does-when-nobody-sends)
 - [One key at two addresses, and a warning that survived being answered](#one-key-at-two-addresses-and-a-warning-that-survived-being-answered)
+- [What keeping a badge actually costs, priced](#what-keeping-a-badge-actually-costs-priced)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -8270,3 +8271,27 @@ guard wanted the warning declared an event rather than a condition, and the mess
 proven un-clearable by traffic the messenger can generate. The sweep also caught that only the
 add-contact paths had been wired and the three sender-side ones had not — its precondition said the
 warning was not standing, which is what a precondition is for.
+
+## What keeping a badge actually costs, priced
+
+A round that walked the update arm end to end returned a clean verdict on the question it was asked —
+`UPDATED_PRE_KEY_RESPONSE_MESSAGE_AND_SIGNAL_MESSAGE` cannot move a verified contact onto a new key
+without telling the user, and cannot leave the badge green across a key change. The reason is
+structural rather than a warning list: `isTrustedIdentity` returns true only for an unpinned address
+or an identical key, so libsignal never reaches `saveIdentity`'s replace branch from the wire, and
+the only writers that displace a pin are a user rejection and a method with no production caller.
+Five hostile variants were walked — substituted key, replayed update, relabelled sender, duplicate
+delivery, reordered arrival — and all land correctly.
+
+What that walk did price, and nothing else had, is the **rate**. Every message the messenger relays
+can carry a substituted bundle stapled to genuine ciphertext. The ciphertext still decrypts under the
+existing session, so the user reads their message — and the bundle drops the badge and raises a
+pending change. The exits are `verifyContact`, which means a voice call, and `dismissIdentityChange`,
+which has no production caller. So the badge is maintainable at **one voice call per relayed
+message**, indefinitely, at the attacker's choice of moment.
+
+That is not a defect in the mechanism. Permanence was the original problem and dismissal was the fix,
+and both are recorded above. It is the cost of the mechanism, written down here because it had been
+described qualitatively for several rounds and never quantified, and because an unpriced cost is the
+kind of thing a later round re-derives from scratch or, worse, decides to "fix" by making the badge
+stickier — which is the direction that turns a nuisance into a silent endorsement.

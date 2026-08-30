@@ -60,6 +60,7 @@ public class NostatementIsWrittenTwiceInArowTest {
       "com/amnesica/kryptey/inputmethod/signalprotocol/SignalProtocolMain.java",
       "com/amnesica/kryptey/inputmethod/signalprotocol/Account.java",
       "com/amnesica/kryptey/inputmethod/signalprotocol/helper/StorageHelper.java",
+      "com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStrip.java",
   };
 
   /**

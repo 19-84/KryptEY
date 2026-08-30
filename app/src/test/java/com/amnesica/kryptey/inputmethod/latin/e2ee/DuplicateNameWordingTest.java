@@ -1,5 +1,6 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -50,6 +51,7 @@ public class DuplicateNameWordingTest {
   private Account victim;
   private SignalProtocolAddress peerAddress;
   private String attackerBundle;
+  private String attackerBundleAgain;
   /**
    * A SECOND invite from the same peer: same identity key, a fresh one-time pre-key.
    *
@@ -73,6 +75,7 @@ public class DuplicateNameWordingTest {
 
     SignalProtocolMain.initialize(null);
     attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    attackerBundleAgain = SignalProtocolMain.exportOwnKeyBundle();
 
     SignalProtocolMain.initialize(null);
     victim = SignalProtocolMain.getInstance().getAccount();
@@ -92,10 +95,10 @@ public class DuplicateNameWordingTest {
       @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
     }, strip);
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
-    // Writes have to land here. Pinning a key goes through the account write, so with the default
-    // failing store a row is created holding NO key - which is invisible to the tests above, since
-    // they only read the wording, and fatal to the ones below, which are about which key a row
-    // holds.
+    // Writes land here so the banner carries no appended storage caution. It is NOT what makes the
+    // pins work: buildSession writes trustedKeys in memory and a failed account write rolls nothing
+    // back, so a failing store still pins. What stops a pin in this fixture is an unsigned
+    // relabelling - see acceptInviteFrom.
     com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
     ShadowToast.reset();
   }
@@ -122,8 +125,16 @@ public class DuplicateNameWordingTest {
   private void acceptInviteFrom(final String bundle, final String first, final String last,
                                 final SignalProtocolAddress address) throws Exception {
     final MessageEnvelope original = EnvelopeCodec.fromWire(bundle);
-    final MessageEnvelope relabelled = new MessageEnvelope(original.getPreKeyResponse(),
-        address.getName(), address.getDeviceId());
+    // Through asEditedInTransit, which relabels the sender while leaving the bundle and its issuing
+    // signature intact. Rebuilding the envelope with the plain constructor drops the signature, so
+    // requireTheBundleWasIssuedAsOneUnit refuses it and NOTHING IS PINNED - the row is still created,
+    // holding no key, which looks identical on the banner and makes every test about which key a row
+    // holds vacuous. Two of the tests below were written that way and passed against the defect they
+    // were meant to catch.
+    final MessageEnvelope relabelled =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            original, new MessageEnvelope(original.getPreKeyResponse(),
+                address.getName(), address.getDeviceId()));
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText(first);
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText(last);
     strip.addContactForTest(relabelled);
@@ -182,73 +193,146 @@ public class DuplicateNameWordingTest {
    *
    * <p>The same-key wording was selected by two questions asked separately - "does some live row
    * share this name" and "does SOME address pin this key" - and nothing tied the answers to the same
-   * people. The sentence they select asserts that the two <em>same-named</em> rows hold one key.
+   * people, while the sentence they select asserts something about the two <em>same-named</em> rows.
    *
-   * <p>Here they are about different people, which needs no attacker beyond the one already in the
-   * fixture: two genuine "Bob Jones" rows holding DIFFERENT keys, and one unrelated contact who
-   * happens to pin the second Bob's key. Both halves are satisfied and neither is about the other.
+   * <p>Here they are about different people: two "Bob Jones" rows holding DIFFERENT keys, and one
+   * unrelated contact who happens to pin the second Bob's key. Both halves of the old predicate are
+   * satisfied and neither is about the other.
    *
-   * <p>The user must still be told to compare the number against each row, because here that WORKS:
+   * <p>The user must still be told to compare the number against each row, because here that WORKS -
    * the keys differ, so the digits differ, and the peer confirms only their own. Telling them
    * instead that comparing cannot distinguish the rows is false, and it removes the only control
    * this app has for the case the pin cannot cover.
+   *
+   * <p>Asserted after a SELECTION, not after the add. {@code duplicateNameMessage} runs on the add
+   * path before {@code createSessionWithContact} has pinned anything, so at that moment the
+   * intersection is false for a fresh address whatever it is asked - and the banner is then
+   * overwritten by the arrival wording, which shares a phrase with the sentence under test. The
+   * re-derivation on selection is the only place the intersection decides anything.
    */
   @Test
   public void anunrelatedContactPinningThisKeyDoesNotSuppressTheImpostorWording() throws Exception {
     final SignalProtocolAddress unrelated = ProtocolAddresses.of("carols-address", 1);
     final SignalProtocolAddress secondBob = ProtocolAddresses.of("second-bobs-address", 1);
 
-    // Carol pins the attacker's key. Nothing about her shares a name with anybody.
-    acceptInviteAs("Carol", "Smith", unrelated);
-    // A second "Bob Jones" whose key is the attacker's - a different key from the genuine Bob's, so
-    // the two rows show different safety numbers and comparing them is what exposes this.
-    acceptInviteAs("Bob", "Jones", secondBob);
+    acceptInviteFrom(attackerBundle, "Bob", "Jones", secondBob);
+    acceptInviteFrom(attackerBundleAgain, "Carol", "Smith", unrelated);
+
+    assertNotNull("precondition: the second Bob must hold a pinned key",
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(secondBob));
+    assertNotNull("precondition: and the unrelated row must hold one too, or nothing pins this key "
+            + "elsewhere and the old predicate would have been false anyway",
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(unrelated));
+    assertEquals("precondition: the two rows must hold the SAME key, or this is not the state that "
+            + "fooled the old predicate",
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(secondBob),
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(unrelated));
+
+    strip.selectContact(rowAt(secondBob));
 
     assertTrue("with two same-named rows holding DIFFERENT keys, the user must be told to compare "
             + "the number against each - that is what tells an impostor from the real contact here. "
-            + "An unrelated third row pinning one of those keys says nothing about the two Bobs, and "
-            + "must not replace this with a claim that both show the same number. Banner: "
-            + infoText(),
+            + "An unrelated third row pinning one of those keys says nothing about the two Bobs. "
+            + "Banner: " + infoText(),
         infoText().contains("the one they confirm is theirs"));
   }
 
   /**
    * ...and the row that really does share the key still gets the wording written for it.
    *
-   * <p>The control for the test above, and the reason the fix is an intersection rather than a
-   * removal. Here the second row holds the GENUINE peer's key at an address the relay chose, which
-   * is the attack the same-key wording exists for: the digits match, the peer confirms both, and
-   * telling the user to pick the one they confirm is advice that cannot be followed.
+   * <p>The control, and the reason the fix is an intersection rather than a removal. The second row
+   * holds the GENUINE peer's key at an address the relay chose: the digits match, the peer confirms
+   * both, and telling the user to pick the one they confirm is advice that cannot be followed.
+   *
+   * <p>Asserts a phrase unique to the shared-name wording rather than one it shares with the arrival
+   * wording. "both show the same number" appears in both sentences, so reading it proves only that
+   * one of them is on the banner - and the arrival one is written last on the add path, so the
+   * assertion passed without the selection wording ever being chosen.
    */
   @Test
   public void therowThatActuallySharesTheKeyStillGetsTheSameKeyWording() throws Exception {
     final SignalProtocolAddress relayed = ProtocolAddresses.of("an-address-the-relay-picked", 1);
 
-    // Through BundleSigning.asEditedInTransit, which is how the relay's move is modelled
-    // everywhere else in the suite: it relabels the envelope's sender while leaving the bundle and
-    // its signature intact, which is precisely what makes the re-delivery verify. Rebuilding the
-    // envelope with the plain constructor instead drops whatever binds the two, and the bundle is
-    // then refused - a row is still created, holding no key, which is a different state entirely.
-    final MessageEnvelope original = EnvelopeCodec.fromWire(peerBundleAgain);
-    final MessageEnvelope relabelled =
-        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
-            original,
-            new MessageEnvelope(original.getPreKeyResponse(), relayed.getName(),
-                relayed.getDeviceId()));
-    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
-    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
-    strip.addContactForTest(relabelled);
+    acceptInviteFrom(peerBundleAgain, "Bob", "Jones", relayed);
 
-    assertNotNull("precondition: the relayed row must actually hold a pinned key, or this measures "
-            + "two rows of which only one has one. rows=" + victim.getContactList().size()
-            + " addresses=" + java.util.Arrays.toString(victim.getContactList().stream()
-                .map(c -> String.valueOf(c.getSignalProtocolAddress())).toArray())
-            + " relayed=" + relayed + " banner=" + infoText(),
+    assertNotNull("precondition: the relayed row must actually hold a pinned key",
         victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(relayed));
 
-    assertTrue("when the two same-named rows really do hold one key, the user must be told that "
-            + "comparing numbers cannot tell them apart - both show the same number, because it is "
-            + "the same key. Banner: " + infoText(),
-        infoText().contains("both show the same number"));
+    strip.selectContact(rowAt(relayed));
+
+    assertTrue("when the two same-named rows really do hold one key, the selection must re-derive "
+            + "the wording that says comparing numbers cannot tell them apart. Banner: " + infoText(),
+        infoText().contains("holds the SAME key"));
+  }
+
+  /** The live contact row at an address, as the list holds it. */
+  private Contact rowAt(final SignalProtocolAddress address) {
+    for (final Contact candidate : victim.getContactList()) {
+      if (String.valueOf(candidate.getSignalProtocolAddress()).equals(String.valueOf(address))) {
+        return candidate;
+      }
+    }
+    throw new IllegalStateException("no contact row at " + address);
+  }
+
+  /**
+   * A deleted name whose key turns up again must not be sent to a comparison that is already
+   * decided.
+   *
+   * <p>{@code INFO_RETIRED_CONTACT_NAME} offers the safety number as the test of the reinstall
+   * story. Here the key has already settled it: {@code initializeProtocol} mints the UUID, the
+   * device id and the identity key together, so a reinstall arrives with a NEW key at a NEW address,
+   * and the same key at a different address cannot be one. It is the user's own old invite delivered
+   * a second time.
+   *
+   * <p>The comparison would nevertheless pass — the digits are a function of the two identity keys,
+   * so they match by construction and the peer confirms their own key — and the user would read that
+   * match as confirming the story the key refutes.
+   */
+  @Test
+  public void adeletedNameWhoseKeyComesBackIsNotSentToTheNumber() throws Exception {
+    final SignalProtocolAddress secondAddress = ProtocolAddresses.of("a-second-address", 1);
+
+    // The row is gone; the pin deliberately is not.
+    victim.setContactList(new ArrayList<>());
+    victim.retireDisplayName("Bob", "Jones", String.valueOf(peerAddress));
+
+    acceptInviteFrom(peerBundleAgain, "Bob", "Jones", secondAddress);
+
+    assertNotNull("precondition: the new row must hold a pinned key",
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(secondAddress));
+    assertNotNull("precondition: and the deleted contact's pin must have survived the deletion, or "
+            + "there is no second address holding this key and nothing to detect",
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
+
+    strip.selectContact(rowAt(secondAddress));
+
+    assertTrue("the wording must say the key is the one the deleted contact had, not ask the user "
+            + "to check the number - that check passes here whatever the truth is. Banner: "
+            + infoText(),
+        infoText().contains("holds the SAME key that one had"));
+  }
+
+  /**
+   * ...and an ordinary deleted-name case still gets the ordinary deleted-name wording.
+   *
+   * <p>The control. A different key at the new address is exactly the state the retired sentence was
+   * written for: the reinstall story is possible, the numbers differ, and comparing by voice is the
+   * test that settles it. If this went red the fix would be a suppression rather than a distinction.
+   */
+  @Test
+  public void adeletedNameWithAdifferentKeyStillGetsTheOrdinaryWording() throws Exception {
+    final SignalProtocolAddress secondAddress = ProtocolAddresses.of("a-second-address", 1);
+
+    victim.setContactList(new ArrayList<>());
+    victim.retireDisplayName("Bob", "Jones", String.valueOf(peerAddress));
+
+    acceptInviteFrom(attackerBundle, "Bob", "Jones", secondAddress);
+
+    strip.selectContact(rowAt(secondAddress));
+
+    assertTrue("a different key leaves the reinstall story open, and the number is the test that "
+            + "settles it. Banner: " + infoText(),
+        infoText().contains("check the security number with them by voice"));
   }
 }

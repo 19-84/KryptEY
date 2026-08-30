@@ -51,6 +51,12 @@ public class NoWriteResultIsDiscardedTest {
       "com/amnesica/kryptey/inputmethod/signalprotocol/helper/StorageHelper.java",
       "com/amnesica/kryptey/inputmethod/signalprotocol/Account.java",
       "com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStripView.java",
+      // The delegate every write for the view goes through. It declares seventeen methods
+      // whose whole job is to answer "did that reach disk", and it was in neither scanner -
+      // so the file fronting every write was the one file nobody checked for dropping one.
+      // Adding it finds nothing today, which is the point: it is cheap now and expensive to
+      // add after a defect rather than before.
+      "com/amnesica/kryptey/inputmethod/latin/e2ee/E2EEStrip.java",
   };
 
   /**
@@ -88,6 +94,11 @@ public class NoWriteResultIsDiscardedTest {
         "no production caller; the wired exit is verifyContactInContactList, which does report");
     DELIBERATE.put("importOutOfBandKeyBundle->storeAllAccountInformationInSharedPreferences",
         "no production caller");
+    DELIBERATE.put("addContact->warnIfIdentityChanged",
+        "called for its effect, last on the successful-bundle arm so it wins the slot by rank. The "
+            + "answer says whether it wrote, and nothing on this arm asks that: the writers after it "
+            + "read mWarningStanding, which setWarningMessage sets. The else-branch below DOES "
+            + "capture it, because there it decides whether the generic advice is suppressed");
     DELIBERATE.put("initialize->storeAllAccountInformationInSharedPreferences",
         "a best-effort write-back after reloading an existing account. It carries "
             + "KEY_SCHEMA_MIGRATED, so a lost write costs re-running migrateLegacyKeys over the "

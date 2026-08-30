@@ -491,6 +491,35 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   // the only way a bundle can enter the app. Advising a route that does not exist is the same
   // defect as telling them to check a number that is never displayed.
   /**
+   * The deleted-name wording for when the new entry holds the key the deleted one had.
+   *
+   * <p>{@code INFO_RETIRED_CONTACT_NAME} offers the safety number as the test of the story: "if they
+   * told you they reinstalled, check the security number with them by voice". Here that test is
+   * already decided and it passes for the wrong reason. {@code initializeProtocol} mints the UUID,
+   * the device id and the identity key together, so a reinstall arrives with a NEW key at a NEW
+   * address; the same key at a different address cannot be a reinstall. It is a re-delivery of the
+   * invite the user already had. The number will match, the peer will confirm it - it is their real
+   * key - and the user reads that match as confirming the reinstall story the key itself refutes.
+   *
+   * <p>So this says what the key already settles, and does not send the user to a comparison whose
+   * answer is known. Its ending is reachable, which the live sibling's is not for this shape: there
+   * is one row here, the other side is a contact that no longer exists, so "delete this entry" names
+   * something the user can actually do and ending the shared-name condition puts the notice down.
+   *
+   * <p>Opens with the same words as its sibling on purpose - see
+   * {@code standingWarningIsAboutAsharedName}, which recognises shared-name warnings by that prefix.
+   * And it asks for a fresh invite "through some other app" rather than "out of band": the clipboard
+   * is the only way a bundle can enter this app, so advising a route that does not exist would be
+   * the same defect as pointing at a number that is never shown.
+   */
+  static final String INFO_RETIRED_NAME_SAME_KEY = "You deleted a contact called %s, and this entry "
+      + "holds the SAME key that one had. Reinstalling gives someone a new key, so this did not "
+      + "come from them setting the app up again - their old invite has been delivered to you a "
+      + "second time. Comparing security numbers will NOT tell the two apart, because both show the "
+      + "same number. To end this notice, delete this entry. If you want them back, ask them to "
+      + "send you a fresh invite through some other app.";
+
+  /**
    * Said when Reject is pressed and there was no stored key to forget.
    *
    * <p>Reject is deliberately available with no pin — it is the one deliberate response left when a
@@ -1680,6 +1709,22 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // there is one definition of when this warning is true rather than two that drift.
         warnIfKeyWasRejected(chosenContact);
         warnIfThisKeyIsPinnedElsewhere(chosenContact);
+        // Last, because it outranks both, and because without it the deferral above has no premise
+        // on this arm.
+        //
+        // warnIfKeyWasRejected steps aside when a substitution is pending at the address, on the
+        // stated grounds that the higher-ranked sentence was written in this same pass. That is true
+        // on the three decrypt arms, where the identity-change warning is written from inside the
+        // decrypt. It was NOT true here: this arm never called it, so a pending change silenced the
+        // rejection warning and put nothing in its place - "Contact created" over an address where a
+        // substitution is on record.
+        //
+        // Safe to call for a bundle that was ACCEPTED, which is the objection to look at twice. This
+        // raiser is a function of hasUnacceptedIdentityChange alone; it says nothing about the
+        // envelope just processed. Its sentence - someone offered a different key, it was refused
+        // and is not in use, your messages still go to the key you already had - is exactly true
+        // whenever a change is pending, and it is pending here or this line writes nothing.
+        warnIfIdentityChanged(chosenContact);
         {
           // Through the guarded writer: an attacker whose substitution was just refused posts one
           // more ordinary invite under a fresh name at a fresh address, the user accepts it -
@@ -2736,7 +2781,18 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // i.e. the one furthest along.
     final boolean live = SignalProtocolMain.hasLiveContactWithSameDisplayName(
         contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress());
-    if (!live) return INFO_RETIRED_CONTACT_NAME;
+    if (!live) {
+      // The same key at another address outranks the deleted-name wording, for the same reason it
+      // outranks the live one: the sentence it replaces sends the user to a comparison that is
+      // already decided. Asked with the UN-named predicate, because there is no live row of this
+      // name to intersect with - the other side is a contact that was deleted, and its pin outlived
+      // it deliberately.
+      if (!SignalProtocolMain.addressesAlreadyPinningTheSameKey(
+          contact.getSignalProtocolAddress()).isEmpty()) {
+        return INFO_RETIRED_NAME_SAME_KEY;
+      }
+      return INFO_RETIRED_CONTACT_NAME;
+    }
 
     // The same key at both addresses outranks the ordinary duplicate wording.
     //
@@ -3423,9 +3479,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * Yielding to "something is standing" was tried and reverted because it reopens an eviction: an
    * attacker raises a cheap warning about a DIFFERENT contact and the yielding warning never returns.
    * A store fact about THIS address cannot be raised by anyone else, so deferring to it is a rank,
-   * not a yield. The deferral is also survivable in the way the erasure was not: both deferring
-   * warnings are re-derived by {@code selectContact}, which writes them in rank order, so the moment
-   * the change is accepted or dismissed they appear.
+   * not a yield.
+   *
+   * <p><b>Only one caller may use this, and only because {@code selectContact} re-derives it.</b>
+   * The first version of this javadoc said "both deferring warnings are re-derived by
+   * {@code selectContact}" and that was false: it re-derives the shared name, the refused invite,
+   * the rejection and the identity change, and {@code warnIfThisKeyIsPinnedElsewhere} is the fifth
+   * warning on this surface and is not among them. Deferring a warning nothing re-derives deletes it
+   * for as long as the condition stands, and a pending identity change stands for as long as the
+   * messenger keeps stapling bundles. Before adding a second caller, check that
+   * {@code selectContact} raises it.
    */
   private boolean asubstitutionAtThisAddressOutranksThis(final Contact sender) {
     return sender != null
@@ -3459,7 +3522,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final java.util.List<org.signal.libsignal.protocol.SignalProtocolAddress> elsewhere =
         SignalProtocolMain.addressesAlreadyPinningTheSameKey(sender.getSignalProtocolAddress());
     if (elsewhere.isEmpty()) return false;
-    if (asubstitutionAtThisAddressOutranksThis(sender)) return true;
+    // Deliberately does NOT defer to a pending identity change, though its sibling does.
+    //
+    // Deferring is only survivable for a warning something re-derives. selectContact re-derives four
+    // - shared name, refused invite, rejection, identity change - and this is the fifth and is not
+    // among them; all five of its call sites are arrival paths. So a deferral here is not a
+    // displacement, it is a deletion for as long as the pending change stands, and the messenger
+    // chooses how long that is: one stapled bundle per relayed message keeps a change pending
+    // indefinitely, and an unchanged key returns from saveIdentity before pendingIdentities is
+    // cleared, so ordinary traffic never ends it.
+    //
+    // The rank is the other way round here on the merits, which is why this is not simply a missing
+    // re-derivation. A pending change is fail-CLOSED: the offered key was refused, the pin stands,
+    // and the sentence says so. One key at two addresses is fail-OPEN: the pin is live, it is the
+    // peer's real key, and the safety number is defeated by construction. Worse, the substitution
+    // sentence tells the user to compare the number by voice - which SUCCEEDS for a relay-minted
+    // row - and that road ends at Verify, which green-badges the relay's row and clears everything.
+    // The sentence forbidding exactly that is the one a deferral here would suppress.
 
     // Named from the contact list if a row is there, and described plainly if not. A pin can
     // outlive its row - deleting a contact keeps the key on purpose - so "another contact" is the
@@ -4664,12 +4743,26 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // indistinguishable again. Yielding closes a displacement and reopens an eviction, which is
     // strictly worse.
     //
-    // What makes last-writer-wins acceptable here is that every warning on this surface is now
-    // RECOMPUTABLE: the identity change, the rejection and the shared name are all re-derived on
-    // selection, and the storage warnings are re-raised on every setInputView. So a displaced
-    // warning returns the moment its own subject is looked at, and displacement is a momentary
-    // ordering question rather than a loss. That property is the thing to protect, and it is what
-    // AwarningDisplacedIsAwarningThatComesBackTest pins.
+    // What makes last-writer-wins acceptable here is that ALMOST every warning on this surface is
+    // RECOMPUTABLE: selectContact re-derives four - the shared name, the refused invite, the
+    // rejection and the identity change - and the storage warnings are re-raised on every
+    // setInputView. So a displaced warning returns the moment its own subject is looked at, and for
+    // those, displacement is a momentary ordering question rather than a loss. That property is the
+    // thing to protect, and it is what AwarningDisplacedIsAwarningThatComesBackTest pins.
+    //
+    // THE EXCEPTION, and it is load-bearing: warnIfThisKeyIsPinnedElsewhere is raised only on
+    // arrival paths and re-derived nowhere. This sentence used to say "every warning", naming three
+    // of the four - it predated the refusal being added, and predated the fifth warning entirely -
+    // and a reader taking it at its word treats displacement of that one as survivable when it is
+    // permanent. That is not hypothetical: a deferral was added to that raiser on exactly this
+    // reasoning, which turned a displacement into a deletion the messenger could hold open
+    // indefinitely, and it was caught by a review round rather than by anything here.
+    //
+    // It cannot simply be added to selectContact. Its condition reads the PINS, and a pin survives
+    // contact deletion, so re-raising it on every selection is a banner with no action that ends it
+    // - the dead end this file has paid for twice. Where the two rows share a display name the fact
+    // is carried by INFO_DUPLICATE_NAME_SAME_KEY, which IS re-derived here; where they do not, the
+    // fact is lost once displaced, and that gap is recorded rather than closed.
     final String duplicate = String.format(duplicateNameMessage(contact), labelFor(contact));
     setWarningMessage(duplicate, String.valueOf(contact.getSignalProtocolAddress()));
     return true;

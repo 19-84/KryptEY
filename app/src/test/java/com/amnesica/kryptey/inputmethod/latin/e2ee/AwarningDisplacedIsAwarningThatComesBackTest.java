@@ -42,6 +42,20 @@ import java.util.ArrayList;
  * <p>So the property that makes displacement acceptable is the one worth pinning: <b>a displaced
  * warning comes back</b>. Each is re-derived from state rather than remembered, so looking at its own
  * subject re-raises it. This checks that for each of the three, by displacing it and then looking.
+ *
+ * <p><b>Three, not all.</b> {@code selectContact} re-derives four — the refused invite was added
+ * after this file was written and is covered by its own tests — and the fifth,
+ * {@code warnIfThisKeyIsPinnedElsewhere}, is re-derived by nothing: every one of its call sites is
+ * an arrival path. So the property this class pins is real for what it covers and must not be read
+ * as a statement about the surface. It was: a deferral was added to that fifth raiser on the
+ * reasoning that displacement is survivable here, which turned it into a deletion the messenger
+ * could hold open for as long as it kept a change pending.
+ *
+ * <p>The gap is not closable by adding it to {@code selectContact} — its condition reads the pins,
+ * and a pin survives contact deletion, so it would become a banner with no ending. Where the two
+ * rows share a display name the fact is carried by {@code INFO_DUPLICATE_NAME_SAME_KEY}, which IS
+ * re-derived on selection; where they do not, it is lost once displaced. Recorded rather than
+ * closed, and named here so the next reader does not infer coverage this file does not claim.
  */
 @RunWith(RobolectricTestRunner.class)
 public class AwarningDisplacedIsAwarningThatComesBackTest {
