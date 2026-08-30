@@ -35,6 +35,48 @@ public class SettingsActivity extends PreferenceActivity {
   private static final String DEFAULT_FRAGMENT = SettingsFragment.class.getName();
   private static final String TAG = SettingsActivity.class.getSimpleName();
 
+  /**
+   * Points the settings intent at a system handler when one can be identified.
+   *
+   * <p>{@code ACTION_INPUT_METHOD_SETTINGS} is an implicit action, and any installed app may
+   * declare an {@code intent-filter} for it and appear in the chooser. That matters here more than
+   * it would anywhere else in the app: this dialog is not cancelable, it fires on first run before
+   * the keyboard is enabled, and it has just told the user to go and enable a keyboard. A
+   * convincing clone of the input-method settings screen arriving at that moment is being handed a
+   * user who has been primed to say yes - to enabling an IME, which is a complete keylogger, or an
+   * accessibility service.
+   *
+   * <p>Resolved rather than hard-coded. {@code setPackage("com.android.settings")} is the obvious
+   * one-liner and is wrong: the settings package name is not guaranteed, and on a device where it
+   * differs the OK button becomes dead while {@code setCancelable(false)} keeps the dialog up on
+   * every {@code onStart} - so the user's only route to enabling the keyboard silently disappears,
+   * on exactly the devices least likely to be tested.
+   *
+   * <p>So this narrows the intent only when it finds a handler flagged as part of the system image,
+   * and otherwise leaves it implicit. Leaving it implicit is not a fix, and is deliberately better
+   * than a dead button: the chooser at least still contains the real settings app.
+   */
+  private static void aimAtTheSystemSettingsIfWeCan(final Context context, final Intent intent) {
+    try {
+      for (final android.content.pm.ResolveInfo candidate
+          : context.getPackageManager().queryIntentActivities(intent, 0)) {
+        if (candidate.activityInfo == null || candidate.activityInfo.applicationInfo == null) {
+          continue;
+        }
+        final int flags = candidate.activityInfo.applicationInfo.flags;
+        final boolean system = (flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            || (flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+        if (system) {
+          intent.setPackage(candidate.activityInfo.packageName);
+          return;
+        }
+      }
+    } catch (final RuntimeException e) {
+      // A package-manager failure must not stop the user reaching the settings screen.
+      Log.e(TAG, "Could not resolve a system handler for the input-method settings", e);
+    }
+  }
+
   @Override
   protected void onStart() {
     super.onStart();
@@ -52,9 +94,18 @@ public class SettingsActivity extends PreferenceActivity {
       builder.setMessage(R.string.setup_message);
       builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
         public void onClick(DialogInterface dialog, int id) {
-          Intent intent = new Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS);
+          final Intent intent =
+              new Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS);
           intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-          context.startActivity(intent);
+          aimAtTheSystemSettingsIfWeCan(context, intent);
+          try {
+            context.startActivity(intent);
+          } catch (final android.content.ActivityNotFoundException noSettings) {
+            // Better a logged failure than a crash on the one screen that tells the user how to
+            // enable the keyboard. The dialog is not cancelable, so a crash here would leave them
+            // with no route at all.
+            Log.e(TAG, "No activity could handle ACTION_INPUT_METHOD_SETTINGS");
+          }
           dialog.dismiss();
         }
       });

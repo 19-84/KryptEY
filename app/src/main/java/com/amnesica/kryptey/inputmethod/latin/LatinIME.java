@@ -683,9 +683,24 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     if (mainKeyboardView != null) {
       mainKeyboardView.closing();
     }
-    // Decrypted plaintext must not outlive the keyboard being dismissed. The IME view is not
-    // recreated when the user switches apps, so without this a decrypted message came back on
+    // Decrypted plaintext must not be ON SCREEN after the keyboard is dismissed. The IME view is
+    // not recreated when the user switches apps, so without this a decrypted message came back on
     // screen the next time the keyboard rose - in whatever app that was.
+    //
+    // The scope is the screen, and this sentence used to say "must not outlive the keyboard being
+    // dismissed", which reads as a claim about memory and is not one. Everything below clears a
+    // VIEW - the compose box, the messages adapter, the fingerprint digits, the screen. The
+    // decrypted chat log lives on the Account behind a static singleton; nothing here touches it,
+    // and the only thing in the app that takes it back out of memory is the account being replaced,
+    // which happens on a theme or ui-mode change rather than on anything the user does. So after
+    // reading one message the whole decrypted history is resident until the process dies.
+    //
+    // That is outside the stated adversary model - the messenger cannot read this process's heap -
+    // and it is written down rather than fixed, because the fixes are worse: re-deferring the log
+    // on hide collides with storeMessageLog, which returns true for "nothing to write" when the log
+    // is not loaded, so a save landing while deferred would report success and drop a message from
+    // the history. Pinned by WhatDismissingTheKeyboardActuallyClearsTest, which asserts both halves
+    // so the difference cannot quietly become one claim again.
     if (mE2EEStripView != null) {
       mE2EEStripView.onKeyboardHidden();
     }
