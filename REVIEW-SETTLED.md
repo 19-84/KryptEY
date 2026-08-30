@@ -624,3 +624,31 @@ Two related notes from the same audit, both worth keeping:
   deleted `onDisplayCompletions`. Restoring that method from upstream — an ordinary merge outcome —
   would give the messenger a suggestion strip inside the keyboard, live only in landscape, which is
   the configuration nobody tests.
+
+## The suite-wide vacuity audit, re-run at 1451 tests
+
+A round that pointed at the test suite found eight tests passing for the fixture's reason rather than
+the code's, so the crude version of that question — which tests contain no assertion at all — is
+worth re-asking as the suite grows. Re-run over both source sets: **1451 `@Test` methods, 42 with no
+`assert`/`fail` token.**
+
+Forty-two sounds like a lot and is not. Every one checked falls into three groups, and the grouping
+is the useful part because it says what to look at next time:
+
+- **Must-not-throw contracts**, which are the majority and are named as such: a corrupted wire text
+  must fail as a checked exception rather than an unchecked one, a legacy store without Kyber fields
+  must still deserialise, the fuzz corpora must not crash. The absence of an assertion IS the
+  assertion; adding one would weaken it.
+- **Delegating tests.** The eight in `SignalProtocolTest` looked like the worst case — the protocol
+  layer with no assertions — and are not: both helpers they call assert throughout, five assertions
+  in the session builder alone. Checked rather than assumed, because "the protocol tests assert
+  nothing" would have been a serious finding.
+- **The measurement harness**, which is not a test and is already excluded by name elsewhere.
+
+What this audit cannot see is the failure this branch actually keeps hitting: a test with plenty of
+assertions, all of which hold for a reason unrelated to the code — an envelope with no ciphertext, a
+deletion that rolled back, a fixture whose write never lands. Counting `assert` tokens says nothing
+about that, and the eight found this session all had assertions. The technique that finds those is
+mutation: break the production code the test names and see whether it still passes. This audit is a
+cheap floor, not a substitute, and it is recorded that way so the next round does not mistake a
+clean count for a clean suite.
