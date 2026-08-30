@@ -624,8 +624,10 @@ public class StorageHelperTest {
   public void retiredDisplayNamesSurviveAstoreAndReload() {
     final StorageHelper helper = new StorageHelper(context, workingBox());
     final Account account = newAccount();
-    account.retireDisplayName("Bob", "Jones", "bob-uuid");
-    account.retireDisplayName("Carol", "Smith", "carol-uuid");
+    account.retireDisplayName("Bob", "Jones",
+        ProtocolAddresses.key(ProtocolAddresses.of("bob-uuid", 1)));
+    account.retireDisplayName("Carol", "Smith",
+        ProtocolAddresses.key(ProtocolAddresses.of("carol-uuid", 1)));
 
     helper.storeAllInformationInSharedPreferences(account);
     final Account reloaded = helper.getAccountFromSharedPreferences();

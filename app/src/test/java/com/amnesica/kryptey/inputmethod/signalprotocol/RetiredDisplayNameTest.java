@@ -109,7 +109,8 @@ public class RetiredDisplayNameTest {
   @Test
   public void theListIsBoundedAndKeepsTheMostRecent() {
     for (int i = 0; i < 150; i++) {
-      me.retireDisplayName("Person" + i, "Surname" + i, "uuid-" + i);
+      me.retireDisplayName("Person" + i, "Surname" + i,
+          ProtocolAddresses.key(ProtocolAddresses.of("uuid-" + i, 1)));
     }
 
     assertTrue("the list must be bounded, and held " + me.getRetiredDisplayNames().size(),
@@ -186,7 +187,8 @@ public class RetiredDisplayNameTest {
     assertTrue(SignalProtocolMain.hasRetiredDisplayName("Bob", "Jones"));
 
     for (int i = 0; i < 250; i++) {
-      me.retireDisplayName("Churn", "Contact", "churn-uuid");
+      me.retireDisplayName("Churn", "Contact",
+          ProtocolAddresses.key(ProtocolAddresses.of("churn-uuid", 1)));
     }
 
     assertEquals("repeating one name must not consume the bound", 2,
@@ -199,7 +201,8 @@ public class RetiredDisplayNameTest {
   @Test
   public void theboundIsWhatItIsDocumentedToBe() {
     for (int i = 0; i < 150; i++) {
-      me.retireDisplayName("Person" + i, "Surname" + i, "uuid-" + i);
+      me.retireDisplayName("Person" + i, "Surname" + i,
+          ProtocolAddresses.key(ProtocolAddresses.of("uuid-" + i, 1)));
     }
     assertEquals("the bound on remembered names is a product decision", 100,
         me.getRetiredDisplayNames().size());

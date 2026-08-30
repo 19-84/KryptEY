@@ -10,6 +10,7 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
@@ -82,7 +83,10 @@ public class AnunreadableValueIsNotWrittenOverTest {
   private Account storedAccount() {
     final Account account = SignalProtocolMain.getInstance().getAccount();
     account.setMessageLogLoader(ArrayList::new);
-    account.retireDisplayName("Bob", "Jones", "bob-uuid.1");
+    account.retireDisplayName("Bob", "Jones",
+        // As removeContact writes it. A dotted string is the view's rendering and a shape
+        // production cannot store here, so a later test extending this one would inherit it.
+        ProtocolAddresses.key(ProtocolAddresses.of("bob-uuid", 1)));
     assertTrue("fixture: a retired name must have been recorded",
         !account.getRetiredDisplayNames().isEmpty());
     assertNotNull("fixture: a tag secret must exist", account.getDisplayTagSecret());
@@ -249,7 +253,8 @@ public class AnunreadableValueIsNotWrittenOverTest {
   public void anabsentValueIsStillWritten() {
     final Account account = SignalProtocolMain.getInstance().getAccount();
     account.setMessageLogLoader(ArrayList::new);
-    account.retireDisplayName("Carol", "Danvers", "carol-uuid.1");
+    account.retireDisplayName("Carol", "Danvers",
+        ProtocolAddresses.key(ProtocolAddresses.of("carol-uuid", 1)));
     assertTrue(helper().storeAllInformationInSharedPreferences(account));
 
     assertNotNull("a value that was never stored must be written normally, or telling absent from "
