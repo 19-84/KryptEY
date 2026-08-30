@@ -277,44 +277,6 @@ public class DuplicateNameWordingTest {
   }
 
   /**
-   * A deleted name whose key turns up again must not be sent to a comparison that is already
-   * decided.
-   *
-   * <p>{@code INFO_RETIRED_CONTACT_NAME} offers the safety number as the test of the reinstall
-   * story. Here the key has already settled it: {@code initializeProtocol} mints the UUID, the
-   * device id and the identity key together, so a reinstall arrives with a NEW key at a NEW address,
-   * and the same key at a different address cannot be one. It is the user's own old invite delivered
-   * a second time.
-   *
-   * <p>The comparison would nevertheless pass — the digits are a function of the two identity keys,
-   * so they match by construction and the peer confirms their own key — and the user would read that
-   * match as confirming the story the key refutes.
-   */
-  @Test
-  public void adeletedNameWhoseKeyComesBackIsNotSentToTheNumber() throws Exception {
-    final SignalProtocolAddress secondAddress = ProtocolAddresses.of("a-second-address", 1);
-
-    // The row is gone; the pin deliberately is not.
-    victim.setContactList(new ArrayList<>());
-    victim.retireDisplayName("Bob", "Jones", String.valueOf(peerAddress));
-
-    acceptInviteFrom(peerBundleAgain, "Bob", "Jones", secondAddress);
-
-    assertNotNull("precondition: the new row must hold a pinned key",
-        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(secondAddress));
-    assertNotNull("precondition: and the deleted contact's pin must have survived the deletion, or "
-            + "there is no second address holding this key and nothing to detect",
-        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(peerAddress));
-
-    strip.selectContact(rowAt(secondAddress));
-
-    assertTrue("the wording must say the key is the one the deleted contact had, not ask the user "
-            + "to check the number - that check passes here whatever the truth is. Banner: "
-            + infoText(),
-        infoText().contains("holds the SAME key that one had"));
-  }
-
-  /**
    * ...and an ordinary deleted-name case still gets the ordinary deleted-name wording.
    *
    * <p>The control. A different key at the new address is exactly the state the retired sentence was
@@ -337,35 +299,4 @@ public class DuplicateNameWordingTest {
         infoText().contains("check the security number with them by voice"));
   }
 
-  /**
-   * A third party pinning this key must not turn off the deleted-name comparison either.
-   *
-   * <p>The retired-branch twin of the live-branch case above, and it was missing: the deleted branch
-   * asked "does ANY address pin this key" while its sentence claims this entry holds the key
-   * <em>the deleted contact</em> had. Here they are about different people — a deleted "Bob Jones"
-   * with one key, an unrelated row pinning a second, and a new "Bob Jones" holding that second — so
-   * the numbers differ and comparing by voice is exactly what exposes the new row.
-   */
-  @Test
-  public void anunrelatedPinDoesNotSuppressTheDeletedNameComparison() throws Exception {
-    final SignalProtocolAddress unrelated = ProtocolAddresses.of("carols-address", 1);
-    final SignalProtocolAddress newBob = ProtocolAddresses.of("a-new-bobs-address", 1);
-
-    // Carol pins the attacker's key; nothing about her shares a name with anybody.
-    acceptInviteFrom(attackerBundle, "Carol", "Smith", unrelated);
-
-    // The genuine Bob is deleted, so his key stays pinned at his old address under a retired name.
-    victim.setContactList(new ArrayList<>());
-    victim.retireDisplayName("Bob", "Jones", String.valueOf(peerAddress));
-
-    // A new "Bob Jones" arrives holding the ATTACKER's key - a different key from the deleted Bob's.
-    acceptInviteFrom(attackerBundleAgain, "Bob", "Jones", newBob);
-
-    strip.selectContact(rowAt(newBob));
-
-    assertTrue("the deleted Bob held a different key from this row, so the numbers differ and "
-            + "comparing by voice is the test that exposes it. An unrelated row pinning this row's "
-            + "key says nothing about the deleted Bob. Banner: " + infoText(),
-        infoText().contains("check the security number with them by voice"));
-  }
 }

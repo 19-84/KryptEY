@@ -793,3 +793,40 @@ If it is ever closed, the banner is the wrong surface. The contact row is the ri
 an address tag, and a third row state needs no exit because one key at two addresses is a permanent
 property of a permanent state. That is a product decision about what the row's visual language says,
 not a code decision, and it is under-determined by the code as it stands.
+
+## A fourth wording, written and withdrawn
+
+`INFO_RETIRED_NAME_SAME_KEY` said what the key already settles when a deleted contact's name comes
+back at a new address holding the key the deleted one had: a reinstall mints a new identity key, so
+the same key at a different address cannot be one. It replaced the deleted-name sentence, which sends
+the user to compare the safety number — a comparison that passes by construction in exactly that
+state, so the match reads as confirming the story the key refutes.
+
+It never fired. `adeletedContactOfThisNamePinnedTheSameKey` built its comparison set with
+`String.valueOf(address)`, which renders `name.deviceId`, and compared it against retired entries the
+app writes through `ProtocolAddresses.key`, which renders `name` + `U+001F` + `deviceId`. Those
+strings cannot be equal, so the predicate was constant-false and the branch always emitted the
+ordinary wording. The test written for it passed only because its fixture retired a name using
+`String.valueOf` — a rendering production never writes; changing that one line turns it red. So the
+only assertion for the sentence was pinned to a state the app cannot reach.
+
+**It is withdrawn rather than repaired, and the reason is the sentence, not the predicate.** Fixing
+the rendering activates it in the state that actually occurs, which is the one the app's own
+instruction produces: two rows share a name and a key, the banner says "delete one of them", the user
+deletes the relay's row, and the survivor is the genuine contact. The sentence's subject is the
+surviving row, and its ending is "to end this notice, delete this entry" — so the repaired version
+tells the user to delete the peer they kept. The benign shape of this state (a duplicate of the same
+person, deleted) and the hostile shape (that person deleted, a new row arriving with their key) are
+the same state: one row, one key, one retired name. Nothing in the store distinguishes them, because
+what separates them is which row came first, and that is not recorded.
+
+What remains is the deleted-name sentence, which asks for a comparison whose answer is decided. That
+is a real cost and it is the lesser one: it misleads in a state that is *sometimes* hostile, where the
+alternative instructs a deletion that is wrong whenever the state is benign. If it is ever addressed,
+the sentence has to be one that is true in both shapes and names an action that is right in both —
+neither of which "delete this entry" is.
+
+Recorded also because the failure mode is reusable: a predicate comparing two renderings of the same
+address is silent, permanent, and invisible to any test that builds its fixture with the same
+rendering the predicate uses. `ProtocolAddresses.key` is the canonical form and the chat log uses it;
+`String.valueOf` is the idiom everywhere else. Any comparison that crosses those two is wrong.

@@ -490,34 +490,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   // exportOwnKeyBundle and importOutOfBandKeyBundle have no production caller, so the clipboard is
   // the only way a bundle can enter the app. Advising a route that does not exist is the same
   // defect as telling them to check a number that is never displayed.
-  /**
-   * The deleted-name wording for when the new entry holds the key the deleted one had.
-   *
-   * <p>{@code INFO_RETIRED_CONTACT_NAME} offers the safety number as the test of the story: "if they
-   * told you they reinstalled, check the security number with them by voice". Here that test is
-   * already decided and it passes for the wrong reason. {@code initializeProtocol} mints the UUID,
-   * the device id and the identity key together, so a reinstall arrives with a NEW key at a NEW
-   * address; the same key at a different address cannot be a reinstall. It is a re-delivery of the
-   * invite the user already had. The number will match, the peer will confirm it - it is their real
-   * key - and the user reads that match as confirming the reinstall story the key itself refutes.
-   *
-   * <p>So this says what the key already settles, and does not send the user to a comparison whose
-   * answer is known. Its ending is reachable, which the live sibling's is not for this shape: there
-   * is one row here, the other side is a contact that no longer exists, so "delete this entry" names
-   * something the user can actually do and ending the shared-name condition puts the notice down.
-   *
-   * <p>Opens with the same words as its sibling on purpose - see
-   * {@code standingWarningIsAboutAsharedName}, which recognises shared-name warnings by that prefix.
-   * And it asks for a fresh invite "through some other app" rather than "out of band": the clipboard
-   * is the only way a bundle can enter this app, so advising a route that does not exist would be
-   * the same defect as pointing at a number that is never shown.
-   */
-  static final String INFO_RETIRED_NAME_SAME_KEY = "You deleted a contact called %s, and this entry "
-      + "holds the SAME key that one had. Reinstalling gives someone a new key, so this did not "
-      + "come from them setting the app up again - their old invite has been delivered to you a "
-      + "second time. Comparing security numbers will NOT tell the two apart, because both show the "
-      + "same number. To end this notice, delete this entry. If you want them back, ask them to "
-      + "send you a fresh invite through some other app.";
 
   /**
    * Said when Reject is pressed and there was no stored key to forget.
@@ -2790,22 +2762,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final boolean live = SignalProtocolMain.hasLiveContactWithSameDisplayName(
         contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress());
     if (!live) {
-      // The same key at the DELETED contact's address outranks the deleted-name wording, for the
-      // same reason it outranks the live one: the sentence it replaces sends the user to a
-      // comparison that is already decided.
-      //
-      // Intersected, not asked as two questions. This read addressesAlreadyPinningTheSameKey on its
-      // own - "does ANY address pin this key" - which is the identical defect the live branch beside
-      // it was fixed for one commit earlier, reproduced here within the hour. A deleted "Bob Jones"
-      // holding one key, plus any unrelated row pinning a second, plus a new "Bob Jones" holding
-      // that second key, satisfied both halves while neither was about the other; the sentence then
-      // said comparing numbers could not tell them apart, when the keys differ and comparing is what
-      // exposes it. The retired list records the addresses it retired, so the intersection was
-      // available and simply was not asked for.
-      if (SignalProtocolMain.adeletedContactOfThisNamePinnedTheSameKey(
-          contact.getSignalProtocolAddress(), contact.getFirstName(), contact.getLastName())) {
-        return INFO_RETIRED_NAME_SAME_KEY;
-      }
       return INFO_RETIRED_CONTACT_NAME;
     }
 

@@ -344,40 +344,6 @@ public class SignalProtocolMain {
     return false;
   }
 
-  /**
-   * Whether a contact of this name that the user DELETED pinned this same key.
-   *
-   * <p>The deleted-branch twin of {@link #asameNamedLiveContactPinsTheSameKey}, and it exists for the
-   * same reason. Asking "does some address pin this key" and "was a contact of this name deleted"
-   * separately lets the two answers be about different people, while the sentence they select says
-   * this entry holds the key <em>that one</em> had. A deleted "Bob Jones" holding K1, plus any
-   * unrelated row pinning K2, plus a new "Bob Jones" at K2, satisfied both halves - and the sentence
-   * then told the user that comparing numbers cannot distinguish them, when the keys differ and
-   * comparing is exactly what exposes it.
-   *
-   * <p>The retired list records the addresses it retired, which is what makes the intersection
-   * possible: entry[0] and entry[1] are the name, entry[2..] the addresses deleted under it.
-   */
-  public static boolean adeletedContactOfThisNamePinnedTheSameKey(
-      final SignalProtocolAddress address, final String firstName, final String lastName) {
-    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
-
-    final java.util.List<SignalProtocolAddress> pinningTheSameKey =
-        addressesAlreadyPinningTheSameKey(address);
-    if (pinningTheSameKey.isEmpty()) return false;
-
-    final java.util.Set<String> alsoPinning = new java.util.HashSet<>();
-    for (final SignalProtocolAddress at : pinningTheSameKey) alsoPinning.add(String.valueOf(at));
-
-    for (final String[] entry : sInstance.mAccount.getRetiredDisplayNames()) {
-      if (entry == null || entry.length < 3) continue;
-      if (!displayNamesMatch(entry[0], entry[1], firstName, lastName)) continue;
-      for (int i = 2; i < entry.length; i++) {
-        if (entry[i] != null && alsoPinning.contains(entry[i])) return true;
-      }
-    }
-    return false;
-  }
 
   /**
    * Addresses other than this one where the same identity key is already pinned.
@@ -1513,9 +1479,12 @@ public class SignalProtocolMain {
       // Between a notice that can be silenced by a comparison the attacker knows will pass and a
       // notice with no ending at all, this project's own precedent is not close: an unresolvable
       // sentence is the worse defect, because it costs the credibility of every other warning in the
-      // same slot. What the earlier change was really reaching for is the WORDING - not sending the
-      // user to a decided comparison - and INFO_RETIRED_NAME_SAME_KEY fixes that without touching
-      // the exit.
+      // same slot.
+      //
+      // A separate wording was written to say what the key already settles, so the user would not be
+      // sent to that comparison at all, and it has been withdrawn - see REVIEW-SETTLED.md. It could
+      // not distinguish the benign shape of this state from the hostile one, and its ending named
+      // the wrong row in the benign one.
       if (excluding != null && contactAtAddressIsVerified(excluding)) continue;
       return true;
     }
