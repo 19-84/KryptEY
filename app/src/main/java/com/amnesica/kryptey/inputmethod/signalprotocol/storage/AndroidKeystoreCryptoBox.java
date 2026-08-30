@@ -50,8 +50,17 @@ public final class AndroidKeystoreCryptoBox extends GcmCryptoBox {
    * <p>A separate alias rather than a flag inside the store, because the store is the thing the
    * attacker rewrites. Its key material is never used for anything — only whether it exists is
    * read — so it is generated with the cheapest parameters that will not prompt the user.
+   *
+   * <p>Package-private rather than private so instrumentation can name it for cleanup. That alias
+   * is device-global and nothing in production ever removes it - deliberately, since removing it
+   * restores exactly the one free laundering it exists to spend. {@code destroyMasterKey} is NOT
+   * widened to clear it for the same reason and one more: the ladder calls the same
+   * {@code deleteAlias} to clear a half-created master key between rungs, so a wider delete would
+   * unseal the device on every step-down. An instrumentation class that seals and does not clean up
+   * makes every later "fresh device" case pass without measuring anything, which is the state this
+   * alias was in before {@code TheMigrationSealIsRealOnDeviceTest} existed.
    */
-  private static final String MIGRATION_SEALED_ALIAS = "kryptey.storage.migration.sealed";
+  static final String MIGRATION_SEALED_ALIAS = "kryptey.storage.migration.sealed";
 
   private final Context context;
   /** Whether the caller has data on disk that a newly generated key could not possibly decrypt. */

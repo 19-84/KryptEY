@@ -117,11 +117,12 @@ public class InstrumentationTestsCleanUpTheKeystoreTest {
     }
 
     // Raised each time tests land: 11, then 14 (ImeBindsDespiteExportedFalseTest), 17
-    // (AutofillDoesNotReachTheKeyboardTest), 20 (ChatLogSplitAgainstARealKeystoreTest), now 23
-    // (ProtocolRoundTripOnRealHardwareTest). A floor that lags the real count is a guard that lets
-    // you delete the difference for free, so it is worth the churn of raising it every time.
-    assertTrue("expected the 24 instrumentation tests this branch carries; found " + tests,
-        tests >= 24);
+    // (AutofillDoesNotReachTheKeyboardTest), 20 (ChatLogSplitAgainstARealKeystoreTest), 23
+    // (ProtocolRoundTripOnRealHardwareTest), now 29 (TheMigrationSealIsRealOnDeviceTest). A floor
+    // that lags the real count is a guard that lets you delete the difference for free, so it is
+    // worth the churn of raising it every time.
+    assertTrue("expected the 29 instrumentation tests this branch carries; found " + tests,
+        tests >= 29);
     assertTrue("the instrumentation tests must still assert something - they compile whether or not "
             + "they do, and nothing here runs them. Found " + assertions + " assertions across "
             + tests + " tests", assertions >= tests);
