@@ -96,10 +96,19 @@ public class SignalProtocolMain {
       Log.w(TAG, "Protocol data already exists; refusing to generate a new identity. "
           + "Loading the existing account instead.");
       sInstance.reloadAccountFromSharedPreferences();
-      // Write back, as reloadAccount does. Without it, a store predating a persisted field gets one
-      // raise with the freshly minted value un-persisted - so the display tags churn once and then
-      // settle, which is the same bug this branch's sibling was fixed for. Guarded because storing
-      // a partially-loaded account would overwrite good data with blanks.
+      // Write back, as reloadAccount does. Guarded because storing a partially-loaded account
+      // would overwrite good data with blanks.
+      //
+      // What a lost write here actually costs is NOT display-tag churn, which is what this comment
+      // used to say. deriveDisplayTagSecret is a deterministic HMAC over the identity private key
+      // and the Account constructor runs it on every load, so a store predating that field derives
+      // the same secret every time and the tags are stable whether or not this lands.
+      //
+      // It carries KEY_SCHEMA_MIGRATED. Losing it means migrateLegacyKeys re-parses and re-runs the
+      // whole chat log on the next load, on the IME UI thread, and keeps doing it on every load
+      // until some write lands - so it does not settle on the next raise, it repeats for as long as
+      // the store refuses writes. Not a correctness loss: the per-entry migration flags make
+      // re-running safe.
       if (sInstance.mAccount != null) {
         sInstance.storeAllAccountInformationInSharedPreferences();
       }
@@ -293,6 +302,46 @@ public class SignalProtocolMain {
   public static boolean hasSessionWith(final SignalProtocolAddress address) {
     if (sInstance == null || sInstance.mAccount == null || address == null) return false;
     return sInstance.mAccount.getSignalProtocolStore().containsSession(address);
+  }
+
+  /**
+   * Whether a live contact that SHARES THIS DISPLAY NAME also pins this key.
+   *
+   * <p>The intersection, and it has to be one. Asking the two questions separately — "does some row
+   * share this name" and "does some address pin this key" — lets them be about different people, and
+   * the sentence that reads the answer asserts something about the two <em>same-named</em> rows. Two
+   * genuine "Bob Jones" entries with different keys, plus any third pin holding one of those keys,
+   * satisfied both halves; the user was then told the two Bobs hold the same key and that comparing
+   * numbers could not tell them apart, when the numbers differ and comparing is exactly what exposes
+   * the impostor. That is the control this app has for the case the pin cannot cover, switched off
+   * by a false sentence, in the state it exists for.
+   *
+   * <p>Answered over the whole set rather than by finding "the" same-named row. With three rows of
+   * one name a lookup that returns one address answers about the wrong pair, silently.
+   *
+   * <p>Lives here, beside the two predicates it intersects, so the display-name comparison stays in
+   * one place: {@link #displayNamesMatch} folds the joined string, and a second implementation in
+   * the view would be a second set of rules for which names count as the same.
+   */
+  public static boolean asameNamedLiveContactPinsTheSameKey(final SignalProtocolAddress address,
+      final String firstName, final String lastName) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) return false;
+    if (sInstance.mAccount.getContactList() == null) return false;
+
+    final java.util.List<SignalProtocolAddress> pinningTheSameKey =
+        addressesAlreadyPinningTheSameKey(address);
+    if (pinningTheSameKey.isEmpty()) return false;
+
+    for (final Contact existing : sInstance.mAccount.getContactList()) {
+      if (existing == null || existing.getSignalProtocolAddress() == null) continue;
+      if (existing.getSignalProtocolAddress().equals(address)) continue;
+      if (!displayNamesMatch(existing.getFirstName(), existing.getLastName(),
+          firstName, lastName)) {
+        continue;
+      }
+      if (pinningTheSameKey.contains(existing.getSignalProtocolAddress())) return true;
+    }
+    return false;
   }
 
   /**

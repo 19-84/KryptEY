@@ -99,6 +99,14 @@ emulator share a Gradle cache volume, so two `build-in-docker` invocations at on
 `build-in-docker` alongside the emulator's own build step — deadlock on `journal-1.lock` and fail
 with a message that names neither the other process nor the cause. Run them one at a time.
 
+The second thing, learned the same way: **do not edit a source file while a suite is running.** A
+number of the guards here are source scanners - they read the working tree with `Files.readAllBytes`
+at test execution time, not from the compiled classes. So an edit made after the compile step and
+before the test task reaches that guard is picked up mid-run, and the result is a pass or a failure
+about a tree that never existed. It fails in the confusing direction too: the run is green, the
+finding is real, and neither matches the code you have. Queue the edit and run again; a full JVM
+suite is under seven minutes.
+
 ## Instrumentation tests
 
 `tools/test-on-emulator` runs them. There are 36, and the count in this sentence is checked against

@@ -2748,8 +2748,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // conditioned on the pin has no action that ends it and would sit on the banner for the life of
     // the install - the retired-name failure this file has already paid for once. Conditioned on the
     // shared NAME, it is raised, re-derived and lowered exactly like its sibling.
-    if (!SignalProtocolMain.addressesAlreadyPinningTheSameKey(
-        contact.getSignalProtocolAddress()).isEmpty()) {
+    // Asked as ONE question about the same-named row, not as two that can be about different
+    // people. This read addressesAlreadyPinningTheSameKey directly, which answers "does ANY address
+    // pin this key" - so two genuine Bob Joneses with different keys, plus any third pin holding one
+    // of those keys, satisfied it. The user was then told the two Bobs hold one key and that
+    // comparing numbers could not tell them apart, which is false when the keys differ, and the
+    // sentence that exposes an impostor - compare against each, the one they confirm is theirs - was
+    // the one it replaced. Widening a warning to cover the relay attack must not switch off the
+    // control for the impostor attack.
+    if (SignalProtocolMain.asameNamedLiveContactPinsTheSameKey(contact.getSignalProtocolAddress(),
+        contact.getFirstName(), contact.getLastName())) {
       return INFO_DUPLICATE_NAME_SAME_KEY;
     }
     return INFO_DUPLICATE_CONTACT_NAME;
@@ -3395,6 +3403,36 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       + "Ask them whether they sent you two invites: if they sent one, something in between made the other. Do not send anything private to either until you have agreed a fresh invite with them by some other channel.";
 
   /**
+   * Whether a detected substitution at this address has already claimed the banner this pass.
+   *
+   * <p>The three decrypt arms write their warnings in ASCENDING severity - the identity change
+   * first, from inside the decrypt, then the rejection, then the same-key notice - and
+   * {@code setWarningMessage} is last-writer-wins. {@code selectContact} states the opposite rank in
+   * forty lines of comment, ending "a detected key substitution outranks everything and is written
+   * last".
+   *
+   * <p>Displacement is normally survivable here, and the no-yield trade rests on it: everything is
+   * re-derived on the next selection, so a displaced warning comes back. This file's own rule says
+   * where that stops - <em>recomputable and never rendered is not a displacement, it is a permanent
+   * loss</em> - and on these arms the displacer runs in the SAME pass, unconditionally, before
+   * anything is drawn. Measured: reject, let the next bundle re-pin by trust-on-first-use, then post
+   * a substitution, and the banner ends the pass saying the key was rejected rather than that a
+   * different key was just offered and refused.
+   *
+   * <p>Asked of the STORE, never of {@code mStandingWarningText} or {@code mWarningStanding}.
+   * Yielding to "something is standing" was tried and reverted because it reopens an eviction: an
+   * attacker raises a cheap warning about a DIFFERENT contact and the yielding warning never returns.
+   * A store fact about THIS address cannot be raised by anyone else, so deferring to it is a rank,
+   * not a yield. The deferral is also survivable in the way the erasure was not: both deferring
+   * warnings are re-derived by {@code selectContact}, which writes them in rank order, so the moment
+   * the change is accepted or dismissed they appear.
+   */
+  private boolean asubstitutionAtThisAddressOutranksThis(final Contact sender) {
+    return sender != null
+        && SignalProtocolMain.hasUnacceptedIdentityChange(sender.getSignalProtocolAddress());
+  }
+
+  /**
    * Warns when an arriving key is already pinned at a different address.
    *
    * <p>The check every other control on this path is blind to. A relay can re-deliver a genuine,
@@ -3421,6 +3459,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     final java.util.List<org.signal.libsignal.protocol.SignalProtocolAddress> elsewhere =
         SignalProtocolMain.addressesAlreadyPinningTheSameKey(sender.getSignalProtocolAddress());
     if (elsewhere.isEmpty()) return false;
+    if (asubstitutionAtThisAddressOutranksThis(sender)) return true;
 
     // Named from the contact list if a row is there, and described plainly if not. A pin can
     // outlive its row - deleting a contact keeps the key on purpose - so "another contact" is the
@@ -3457,6 +3496,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean warnIfKeyWasRejected(final Contact sender) {
     if (sender == null) return false;
     if (!mE2EEStrip.wasKeyRejected(sender.getSignalProtocolAddress())) return false;
+    // Reported as raised, because the caller's question is "was this contact warned about", and it
+    // was - by the higher-ranked sentence, in this same pass.
+    if (asubstitutionAtThisAddressOutranksThis(sender)) return true;
     // A key must actually be there. INFO_PINNED_AFTER_REJECT states as fact that "this IS a new
     // key for that address", and there are two ways for that to be false: nothing arrived at all
     // (the selection path), or something arrived and was REFUSED.
@@ -4538,9 +4580,19 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean standingWarningIsAboutAsharedName() {
     if (mStandingWarningText == null) return false;
     return mStandingWarningText.startsWith(literalPrefixOf(INFO_DUPLICATE_CONTACT_NAME))
-        // The same-key wording is a shared-name warning too, and has to be recognised as one or it
-        // is raised by that condition and never lowered by it - a sentence with no exit, arrived at
-        // by adding a third wording and updating only the two readers that were easy to find.
+        // Byte-identical to the clause above it, and kept deliberately.
+        //
+        // The same-key wording opens with the same words as the plain duplicate one, so
+        // literalPrefixOf truncates both to "You already have a contact called " and the first
+        // clause already matched it. The claim originally written here - that the third wording
+        // "has to be recognised or it is never lowered" - was false: it was recognised, by
+        // accident. Every other reader that keys on this opening is carried by the same collision,
+        // and none of them declares that it depends on it.
+        //
+        // Named here so the dependency is written down rather than inferred, and pinned by
+        // AtherdWordingIsCarriedByAsharedOpeningTest: shortening either opening so the prefixes
+        // differ silently drops this wording out of every prefix reader at once, and the failure
+        // would appear as a warning that will not go down rather than as anything to do with text.
         || mStandingWarningText.startsWith(literalPrefixOf(INFO_DUPLICATE_NAME_SAME_KEY))
         || mStandingWarningText.startsWith(literalPrefixOf(INFO_RETIRED_CONTACT_NAME));
   }

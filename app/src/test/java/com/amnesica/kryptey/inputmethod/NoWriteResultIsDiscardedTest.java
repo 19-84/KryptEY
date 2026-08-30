@@ -89,9 +89,12 @@ public class NoWriteResultIsDiscardedTest {
     DELIBERATE.put("importOutOfBandKeyBundle->storeAllAccountInformationInSharedPreferences",
         "no production caller");
     DELIBERATE.put("initialize->storeAllAccountInformationInSharedPreferences",
-        "a best-effort write-back after reloading an existing account, so a store predating a "
-            + "persisted field does not churn its display tags; a lost write costs one more churn "
-            + "on the next raise and then settles");
+        "a best-effort write-back after reloading an existing account. It carries "
+            + "KEY_SCHEMA_MIGRATED, so a lost write costs re-running migrateLegacyKeys over the "
+            + "chat log on the next load, repeatedly until some write lands - expensive on the IME "
+            + "thread, and safe, because the per-entry migration flags make re-running a no-op. It "
+            + "is NOT display-tag churn: deriveDisplayTagSecret is deterministic over the identity "
+            + "key, so the tags are stable whether or not this write lands");
     DELIBERATE.put("acceptIdentityChange->storeAllAccountInformationInSharedPreferences",
         "no production caller, the same reason dismissIdentityChange is exempt above");
     DELIBERATE.put("setChosenContact->warnIfNameIsShared",

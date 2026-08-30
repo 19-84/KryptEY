@@ -1,6 +1,7 @@
 package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -15,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * The same statement must not be executed twice in a row.
@@ -80,10 +82,55 @@ public class NostatementIsWrittenTwiceInArowTest {
     throw new IllegalStateException("could not locate the main source tree");
   }
 
+  /**
+   * Blanks comments and string bodies while keeping every newline.
+   *
+   * <p>The usual version of this helper collapses a block comment to a single space, which is
+   * harmless when the caller only asks "does this text contain X" and wrong the moment it reports a
+   * line number: this file's javadoc alone is thirty lines, so the offences it named came out
+   * dozens of lines adrift, and in a file the size of the strip the drift runs to thousands. A
+   * guard that points at the wrong line sends the reader to innocent code and is worse than one
+   * that says nothing.
+   */
   private static String withoutCommentsAndStrings(final String source) {
-    return source.replaceAll("(?s)/\\*.*?\\*/", " ")
-        .replaceAll("(?m)//[^\n]*", " ")
-        .replaceAll("\"(?:[^\"\\\\]|\\\\.)*\"", "\"\"");
+    final StringBuffer blanked = new StringBuffer();
+    final Matcher spans = Pattern.compile(
+        "(?s)/\\*.*?\\*/|(?m)//[^\n]*|\"(?:[^\"\\\\\n]|\\\\.)*\"").matcher(source);
+    while (spans.find()) {
+      final StringBuilder replacement = new StringBuilder();
+      for (final char c : spans.group().toCharArray()) replacement.append(c == '\n' ? '\n' : ' ');
+      spans.appendReplacement(blanked, Matcher.quoteReplacement(replacement.toString()));
+    }
+    spans.appendTail(blanked);
+    return blanked.toString();
+  }
+
+  /**
+   * The scan itself, so the guard and its own anti-vacuity case run the SAME code.
+   *
+   * <p>The first version of this file reimplemented the loop inside the anti-vacuity test. That
+   * validates the pattern and nothing else: changing {@code raw.trim()} to {@code raw} in the
+   * production loop - which is exactly what makes the original defect invisible again, since its two
+   * copies differed only in indentation - left both tests green.
+   */
+  private static List<String> adjacentDuplicateStatements(final String source, final String label) {
+    final List<String> found = new ArrayList<>();
+    String previous = null;
+    int previousLine = 0;
+    int number = 0;
+    for (final String raw : withoutCommentsAndStrings(source).split("\n", -1)) {
+      number++;
+      final String line = raw.trim();
+      if (line.isEmpty()) continue;
+      if (line.equals(previous)
+          && CALL_STATEMENT.matcher(line).matches()
+          && !DELIBERATE.contains(line)) {
+        found.add(label + ":" + previousLine + " and :" + number + "  " + line);
+      }
+      previous = line;
+      previousLine = number;
+    }
+    return found;
   }
 
   @Test
@@ -91,26 +138,9 @@ public class NostatementIsWrittenTwiceInArowTest {
     final List<String> offences = new ArrayList<>();
 
     for (final String file : FILES) {
-      final Path path = mainSources().resolve(file);
-      final String text = withoutCommentsAndStrings(
-          new String(Files.readAllBytes(path), StandardCharsets.UTF_8));
-
-      String previous = null;
-      int previousLine = 0;
-      int number = 0;
-      for (final String raw : text.split("\n", -1)) {
-        number++;
-        final String line = raw.trim();
-        if (line.isEmpty()) continue;
-
-        if (line.equals(previous)
-            && CALL_STATEMENT.matcher(line).matches()
-            && !DELIBERATE.contains(line)) {
-          offences.add(file + ":" + previousLine + " and :" + number + "  " + line);
-        }
-        previous = line;
-        previousLine = number;
-      }
+      offences.addAll(adjacentDuplicateStatements(
+          new String(Files.readAllBytes(mainSources().resolve(file)), StandardCharsets.UTF_8),
+          file));
     }
 
     assertEquals("a statement that runs and then immediately runs again is a paste, not a "
@@ -129,21 +159,44 @@ public class NostatementIsWrittenTwiceInArowTest {
    */
   @Test
   public void thescanFindsTheDefectItWasWrittenFor() {
-    final String reconstructed = "        warnIfKeyWasRejected(chosenContact);\n"
+    final String reconstructed = "  void arm() {\n"
+        + "        warnIfKeyWasRejected(chosenContact);\n"
         + "        warnIfThisKeyIsPinnedElsewhere(chosenContact);\n"
-        + "      warnIfThisKeyIsPinnedElsewhere(chosenContact);\n";
+        + "      warnIfThisKeyIsPinnedElsewhere(chosenContact);\n"
+        + "  }\n";
 
-    final List<String> offences = new ArrayList<>();
-    String previous = null;
-    for (final String raw : withoutCommentsAndStrings(reconstructed).split("\n", -1)) {
-      final String line = raw.trim();
-      if (line.isEmpty()) continue;
-      if (line.equals(previous) && CALL_STATEMENT.matcher(line).matches()) offences.add(line);
-      previous = line;
-    }
+    final List<String> found = adjacentDuplicateStatements(reconstructed, "reconstructed");
 
     assertEquals("the scan must catch the original defect, differing indentation and all - "
-        + "otherwise a green run above means only that the pattern matches nothing", 1,
-        offences.size());
+        + "otherwise a green run above means only that the pattern matches nothing: " + found,
+        1, found.size());
+    assertTrue("and must name the two lines it actually sits on, not lines shifted by whatever "
+            + "comments happen to precede it: " + found.get(0),
+        found.get(0).startsWith("reconstructed:3 and :4"));
+  }
+
+  /**
+   * A comment above the defect must not move the line numbers the scan reports.
+   *
+   * <p>The mutant this kills is the ordinary one-line comment stripper, which replaces a block
+   * comment with a single space and silently renumbers everything after it.
+   */
+  @Test
+  public void thereportedLinesSurviveAcommentAboveThem() {
+    final String withComment = "  void arm() {\n"
+        + "    /* a block comment\n"
+        + "       spanning three\n"
+        + "       lines */\n"
+        + "        warnIfKeyWasRejected(chosenContact);\n"
+        + "        warnIfThisKeyIsPinnedElsewhere(chosenContact);\n"
+        + "      warnIfThisKeyIsPinnedElsewhere(chosenContact);\n"
+        + "  }\n";
+
+    final List<String> found = adjacentDuplicateStatements(withComment, "withComment");
+
+    assertEquals("the comment must not hide the defect: " + found, 1, found.size());
+    assertTrue("the duplicate is on lines 6 and 7 of that text, and must be reported there - a "
+            + "collapsing stripper reports 4 and 5: " + found.get(0),
+        found.get(0).startsWith("withComment:6 and :7"));
   }
 }

@@ -50,6 +50,14 @@ public class DuplicateNameWordingTest {
   private Account victim;
   private SignalProtocolAddress peerAddress;
   private String attackerBundle;
+  /**
+   * A SECOND invite from the same peer: same identity key, a fresh one-time pre-key.
+   *
+   * <p>Needed because the first is consumed by the session this fixture builds in setUp, and a
+   * bundle whose one-time pre-key is already spent pins nothing - so a row built from it has no key,
+   * and a test about two rows sharing a key would be measuring two rows where only one has one.
+   */
+  private String peerBundleAgain;
 
   @Before
   public void setUp() throws Exception {
@@ -61,6 +69,7 @@ public class DuplicateNameWordingTest {
     peerAddress = ProtocolAddresses.of(peer.getSignalProtocolAddress().getName(),
         peer.getDeviceId());
     final String peerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    peerBundleAgain = SignalProtocolMain.exportOwnKeyBundle();
 
     SignalProtocolMain.initialize(null);
     attackerBundle = SignalProtocolMain.exportOwnKeyBundle();
@@ -83,6 +92,11 @@ public class DuplicateNameWordingTest {
       @Override public void onSensitiveContentVisibilityChanged(final boolean sensitive) { }
     }, strip);
     SignalProtocolMain.setStorageStateForTest(StorageHelper.StorageState.READABLE);
+    // Writes have to land here. Pinning a key goes through the account write, so with the default
+    // failing store a row is created holding NO key - which is invisible to the tests above, since
+    // they only read the wording, and fatal to the ones below, which are about which key a row
+    // holds.
+    com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores.writesLand();
     ShadowToast.reset();
   }
 
@@ -101,7 +115,13 @@ public class DuplicateNameWordingTest {
   /** Accepts an invite from {@code address} under the given name, through the real Add button. */
   private void acceptInviteAs(final String first, final String last,
                               final SignalProtocolAddress address) throws Exception {
-    final MessageEnvelope original = EnvelopeCodec.fromWire(attackerBundle);
+    acceptInviteFrom(attackerBundle, first, last, address);
+  }
+
+  /** The same, from a chosen bundle, so a row can be given the PEER's key rather than a new one. */
+  private void acceptInviteFrom(final String bundle, final String first, final String last,
+                                final SignalProtocolAddress address) throws Exception {
+    final MessageEnvelope original = EnvelopeCodec.fromWire(bundle);
     final MessageEnvelope relabelled = new MessageEnvelope(original.getPreKeyResponse(),
         address.getName(), address.getDeviceId());
     ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText(first);
@@ -155,5 +175,80 @@ public class DuplicateNameWordingTest {
     final String shown = infoText();
     assertTrue("a live duplicate must still get the live wording: " + shown,
         shown.contains("Both now appear in your list"));
+  }
+
+  /**
+   * A third party pinning this key must not turn off the warning that exposes an impostor.
+   *
+   * <p>The same-key wording was selected by two questions asked separately - "does some live row
+   * share this name" and "does SOME address pin this key" - and nothing tied the answers to the same
+   * people. The sentence they select asserts that the two <em>same-named</em> rows hold one key.
+   *
+   * <p>Here they are about different people, which needs no attacker beyond the one already in the
+   * fixture: two genuine "Bob Jones" rows holding DIFFERENT keys, and one unrelated contact who
+   * happens to pin the second Bob's key. Both halves are satisfied and neither is about the other.
+   *
+   * <p>The user must still be told to compare the number against each row, because here that WORKS:
+   * the keys differ, so the digits differ, and the peer confirms only their own. Telling them
+   * instead that comparing cannot distinguish the rows is false, and it removes the only control
+   * this app has for the case the pin cannot cover.
+   */
+  @Test
+  public void anunrelatedContactPinningThisKeyDoesNotSuppressTheImpostorWording() throws Exception {
+    final SignalProtocolAddress unrelated = ProtocolAddresses.of("carols-address", 1);
+    final SignalProtocolAddress secondBob = ProtocolAddresses.of("second-bobs-address", 1);
+
+    // Carol pins the attacker's key. Nothing about her shares a name with anybody.
+    acceptInviteAs("Carol", "Smith", unrelated);
+    // A second "Bob Jones" whose key is the attacker's - a different key from the genuine Bob's, so
+    // the two rows show different safety numbers and comparing them is what exposes this.
+    acceptInviteAs("Bob", "Jones", secondBob);
+
+    assertTrue("with two same-named rows holding DIFFERENT keys, the user must be told to compare "
+            + "the number against each - that is what tells an impostor from the real contact here. "
+            + "An unrelated third row pinning one of those keys says nothing about the two Bobs, and "
+            + "must not replace this with a claim that both show the same number. Banner: "
+            + infoText(),
+        infoText().contains("the one they confirm is theirs"));
+  }
+
+  /**
+   * ...and the row that really does share the key still gets the wording written for it.
+   *
+   * <p>The control for the test above, and the reason the fix is an intersection rather than a
+   * removal. Here the second row holds the GENUINE peer's key at an address the relay chose, which
+   * is the attack the same-key wording exists for: the digits match, the peer confirms both, and
+   * telling the user to pick the one they confirm is advice that cannot be followed.
+   */
+  @Test
+  public void therowThatActuallySharesTheKeyStillGetsTheSameKeyWording() throws Exception {
+    final SignalProtocolAddress relayed = ProtocolAddresses.of("an-address-the-relay-picked", 1);
+
+    // Through BundleSigning.asEditedInTransit, which is how the relay's move is modelled
+    // everywhere else in the suite: it relabels the envelope's sender while leaving the bundle and
+    // its signature intact, which is precisely what makes the re-delivery verify. Rebuilding the
+    // envelope with the plain constructor instead drops whatever binds the two, and the bundle is
+    // then refused - a row is still created, holding no key, which is a different state entirely.
+    final MessageEnvelope original = EnvelopeCodec.fromWire(peerBundleAgain);
+    final MessageEnvelope relabelled =
+        com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+            original,
+            new MessageEnvelope(original.getPreKeyResponse(), relayed.getName(),
+                relayed.getDeviceId()));
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+    ((EditText) strip.findViewById(R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+    strip.addContactForTest(relabelled);
+
+    assertNotNull("precondition: the relayed row must actually hold a pinned key, or this measures "
+            + "two rows of which only one has one. rows=" + victim.getContactList().size()
+            + " addresses=" + java.util.Arrays.toString(victim.getContactList().stream()
+                .map(c -> String.valueOf(c.getSignalProtocolAddress())).toArray())
+            + " relayed=" + relayed + " banner=" + infoText(),
+        victim.getSignalProtocolStore().getIdentityKeyStore().getIdentity(relayed));
+
+    assertTrue("when the two same-named rows really do hold one key, the user must be told that "
+            + "comparing numbers cannot tell them apart - both show the same number, because it is "
+            + "the same key. Banner: " + infoText(),
+        infoText().contains("both show the same number"));
   }
 }
