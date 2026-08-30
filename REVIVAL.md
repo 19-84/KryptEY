@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-seven sections, written in the order things were found rather than by subject, so the
+One hundred and forty-eight sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -98,6 +98,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [One clear written for a different event](#one-clear-written-for-a-different-event)
 - [A guard that checked a list of names, not the thing the names are about](#a-guard-that-checked-a-list-of-names-not-the-thing-the-names-are-about)
 - [What the app promises about time, and what it does when nobody sends](#what-the-app-promises-about-time-and-what-it-does-when-nobody-sends)
+- [One key at two addresses, and a warning that survived being answered](#one-key-at-two-addresses-and-a-warning-that-survived-being-answered)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -8219,3 +8220,53 @@ says is what the old sentence hid: the deferral keeps the plaintext log out of m
 first message in either direction, because both paths force the load. It is a performance measure
 that buys a little privacy incidentally, and reading it the other way round is how the question of
 how long the log actually lives went unasked.
+
+## One key at two addresses, and a warning that survived being answered
+
+A round walked the whole life of a contact instead of attacking pieces of it, and found the join the
+piecewise rounds could not see.
+
+**The bundle signature does not cover the address.** `canonicalBundleBytes` is the identity key, the
+inner device id, the registration id and the three pre-keys. The envelope's sender name and device id
+are written outside it. So a relay can re-deliver a genuine, correctly signed invite under an address
+of its own choosing: nothing is forged, the issuer's own signature still covers everything it ever
+covered, and what lands is a second contact holding the peer's **real** identity key.
+
+That is worse than the impostor case the duplicate-name warning was written for, and worse in the one
+way that matters. The safety number is a function of the two identity keys — the address was
+deliberately removed from it, for good reasons recorded elsewhere in this file — so the extra row
+shows the **same digits** as the genuine one. The user does exactly what the README, the help and the
+store listing all name as the step that tells a chat partner apart from the messenger. They read the
+number aloud. Their real peer confirms it. Because it is their number.
+
+What a relay cannot forge is the key. `initializeProtocol` mints a fresh UUID, a fresh device id and
+a fresh identity key pair together, so one identity key belongs to one address — and a reinstall
+produces a different key along with its different address. **One key pinned at two addresses is
+something only a relay can produce**, and it is now a warning naming both rows. The property that
+makes it safe to show is asserted rather than assumed: an honest reinstall does not trigger it.
+
+It warns rather than refuses. Refusing an invite whose key is already pinned elsewhere hands the
+messenger an eviction — one relayed copy at an invented address burns a real contact's key, and every
+genuine invite from that peer is refused afterwards while the app's own advice to ask for another
+loops forever. This file has already paid for one refusal that locked the keyboard.
+
+**And the duplicate-name warning survived being answered.** It says "check with them by voice", is
+re-derived on every `selectContact` from `live || retired`, and only the retired half honours the
+answer. So for two live rows sharing a name — a peer on two devices, or a reinstall where the user
+kept the old row — the user compares, watches the warning clear, and meets the identical sentence on
+the next selection, permanently. Measured. That is the cries-wolf failure this file names elsewhere,
+with the additional cost that a standing warning suppresses every ordinary line the strip has to say
+for that contact.
+
+The fix is the wording, not a suppression, and the reason is the finding above: making the live half
+honour verification would hand an attacker the silencer, because a relayed row shows the same number
+as the genuine one and verifying it is precisely what the attacker wants. So the sentence now names
+the action that ends it — compare against each, delete the one they do not confirm — and says that it
+stays while two contacts share a name.
+
+Three of this repo's own guards caught the integration and each demanded something real rather than
+an exemption: the bare-statement guard wanted the new call sites named, the raiser-classification
+guard wanted the warning declared an event rather than a condition, and the messenger-sweep wanted it
+proven un-clearable by traffic the messenger can generate. The sweep also caught that only the
+add-contact paths had been wired and the three sender-side ones had not — its precondition said the
+warning was not standing, which is what a precondition is for.
