@@ -82,6 +82,23 @@ refuted, each with the measurement that settled it and the test now holding the 
 Reviewers read it before reporting, which is what stops a round spending itself on ground a previous
 round already covered.
 
+## Knobs
+
+Every one of these has a default that is what you want; they exist for the awkward runs.
+
+| Variable | Script | What it is for |
+| --- | --- | --- |
+| `KRYPTEY_TEST_CLASS` | `test-on-emulator` | Narrow the device run to one class or `Class#method`. A full device run is about eight minutes, and settling a device question usually takes three of them — measure, mutate the production code, measure again — which is most of why device questions get deferred. The run prints that it is narrowed, so its output cannot be mistaken for the full suite. |
+| `KRYPTEY_IMAGE` | `build-in-docker`, `verify-cold` | The pinned build image. Change it only to test an image bump. |
+| `KRYPTEY_EMU_IMAGE` | `test-on-emulator` | The pinned emulator image. |
+| `KRYPTEY_EMU_CONTAINER` | `test-on-emulator` | Container name, so two emulator runs can coexist. They otherwise collide on the name. |
+| `KRYPTEY_EMU_BOOT_TIMEOUT` | `test-on-emulator` | Seconds to wait for boot, default 1800. Under software emulation a cold boot is ten minutes and a loaded machine is slower. |
+
+One thing that is **not** a knob, and is worth knowing before a long run: the JVM build and the
+emulator share a Gradle cache volume, so two `build-in-docker` invocations at once — or a
+`build-in-docker` alongside the emulator's own build step — deadlock on `journal-1.lock` and fail
+with a message that names neither the other process nor the cause. Run them one at a time.
+
 ## Instrumentation tests
 
 `tools/test-on-emulator` runs them. There are 36, and the count in this sentence is checked against
