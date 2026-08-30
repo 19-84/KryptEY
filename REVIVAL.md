@@ -100,6 +100,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [What the app promises about time, and what it does when nobody sends](#what-the-app-promises-about-time-and-what-it-does-when-nobody-sends)
 - [One key at two addresses, and a warning that survived being answered](#one-key-at-two-addresses-and-a-warning-that-survived-being-answered)
 - [What keeping a badge actually costs, priced](#what-keeping-a-badge-actually-costs-priced)
+- [A rollback that reports honestly, to nobody](#a-rollback-that-reports-honestly-to-nobody)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -8295,3 +8296,37 @@ and both are recorded above. It is the cost of the mechanism, written down here 
 described qualitatively for several rounds and never quantified, and because an unpriced cost is the
 kind of thing a later round re-derives from scratch or, worse, decides to "fix" by making the badge
 stickier — which is the direction that turns a nuisance into a silent endorsement.
+
+## A rollback that reports honestly, to nobody
+
+`discardRecordedMessage` removes the chat-log entry `encrypt` wrote before the encoder ran, for a
+message the encoder then refused. It used to call the persist and throw the answer away; it was
+changed to return one, and the answer it returned was the **account batch's** — a file this operation
+never touches. The chat log lives in `protocol_messages`, is written separately, and is reported by
+`lastMessageLogWriteSucceeded`. So in the failure that matters, the log commit failing while the
+account commit succeeds, it returned `true` with the entry still on disk, under a javadoc promising
+the opposite. That is fixed and pinned by the log-refusing crypto box in `MessageLogWriteFlagTest`,
+which is the only fixture that can tell the two files apart.
+
+What is **not** fixed is that nothing reads it. The only production caller is in `E2EEStrip`'s
+`catch (IOException refused)`, which discards it and rethrows. So the state the javadoc describes —
+memory clean, disk holding a log entry for a message nobody received, plus the plaintext of a draft
+the user was told could not be sent — still has nothing to notice it. Before the fix the value was
+wrong and unread; now it is right and unread, and the user-visible change is zero.
+
+The shape that fits is not a toast. `mStandingStoreNotice` already means exactly "a log entry is on
+disk that should not be, it is settled by the next landed log write, and a reload voids the rule
+rather than satisfying it" — a bit-for-bit description of this state, with the counters already
+carried across a rebuild. It wants a latch in `SignalProtocolMain` beside
+`mLastDeletionLeftMessagesBehind`, an accessor in `E2EEStrip` beside the sixteen others, and a read
+in the `TooManyCharsException` arm.
+
+Deferred rather than done, with the trap written down: raising it on a *successful* rollback — flag
+polarity inverted, or the log flag read before the store call rather than after — parks a notice on
+the banner for the life of the process on the ordinary "your message was too long" path, buying a
+permanent sentence for a rare failure. `removeContact` reads its flag immediately after the store
+call, and that ordering is the whole of what makes it safe.
+
+Bounded meanwhile: the leak self-heals if any later log write lands in the same process, and the very
+next send is such a write. It becomes permanent only if a reload happens first, which the messenger
+can force.
