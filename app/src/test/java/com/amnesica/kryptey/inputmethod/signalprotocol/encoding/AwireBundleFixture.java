@@ -23,6 +23,20 @@ final class AwireBundleFixture {
   }
 
   static MessageEnvelope bundleEnvelope() {
+    return bundleEnvelopeWithIds(11, 12, 13);
+  }
+
+  /**
+   * The same bundle, with the three key ids chosen by the caller.
+   *
+   * <p>Exists so a test can build the input a hostile ISSUER sends. The encoder guards only
+   * {@code registrationId} with {@code requireUnsigned} - {@code writeU32} takes the other three
+   * ids as given - so a negative id encodes cleanly and the bundle it produces is internally
+   * consistent and correctly signed by whoever issued it. No byte editing, and nothing for a
+   * signature check to notice.
+   */
+  static MessageEnvelope bundleEnvelopeWithIds(final int signedId, final int preKeyId,
+      final int kyberId) {
     final IdentityKeyPair identity = IdentityKeyPair.generate();
     final ECKeyPair signed = ECKeyPair.generate();
     final ECKeyPair oneTime = ECKeyPair.generate();
@@ -30,10 +44,10 @@ final class AwireBundleFixture {
 
     final List<PreKeyResponseItem> devices = new ArrayList<>();
     devices.add(new PreKeyResponseItem(3, 4242,
-        new SignedPreKeyEntity(11, signed.getPublicKey(),
+        new SignedPreKeyEntity(signedId, signed.getPublicKey(),
             identity.getPrivateKey().calculateSignature(signed.getPublicKey().serialize())),
-        new PreKeyEntity(12, oneTime.getPublicKey()),
-        new KyberPreKeyEntity(13, kyber.getPublicKey(),
+        new PreKeyEntity(preKeyId, oneTime.getPublicKey()),
+        new KyberPreKeyEntity(kyberId, kyber.getPublicKey(),
             identity.getPrivateKey().calculateSignature(kyber.getPublicKey().serialize()))));
 
     return new MessageEnvelope(new PreKeyResponse(identity.getPublicKey(), devices), "peer", 3);
