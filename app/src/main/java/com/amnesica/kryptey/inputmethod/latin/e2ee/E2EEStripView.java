@@ -1650,6 +1650,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // Here, because here is where the key actually got pinned. Through the shared helper, so
         // there is one definition of when this warning is true rather than two that drift.
         warnIfKeyWasRejected(chosenContact);
+        warnIfThisKeyIsPinnedElsewhere(chosenContact);
+      warnIfThisKeyIsPinnedElsewhere(chosenContact);
         {
           // Through the guarded writer: an attacker whose substitution was just refused posts one
           // more ordinary invite under a fresh name at a fresh address, the user accepts it -
@@ -1767,6 +1769,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // places that pin, which is the same mistake in the opposite direction. Both arms call the
       // shared helper now; it is a no-op unless a key is really pinned at a rejected address.
       warnIfKeyWasRejected(chosenContact);
+      warnIfThisKeyIsPinnedElsewhere(chosenContact);
 
       // And the caution, which this arm pinned a key without.
       //
@@ -3248,6 +3251,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       if (messageEnvelope.getCiphertextType()
           == org.signal.libsignal.protocol.message.CiphertextMessage.PREKEY_TYPE) {
         warnIfKeyWasRejected(sender);
+        warnIfThisKeyIsPinnedElsewhere(sender);
       }
       // The third arm gets the same reader, because the same write can be lost here.
       //
@@ -3306,6 +3310,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       final boolean usable =
           decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, true);
       warnIfKeyWasRejected(sender);
+      warnIfThisKeyIsPinnedElsewhere(sender);
       if (reportIfTheRotationWasNotSaved()) return;
       // Only if there is actually a session. Otherwise the refusal notice written above stands,
       // instead of being painted over by a line saying the contact was detected.
@@ -3329,6 +3334,70 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         giveTheRecipientBack(previousRecipient);
       }
     }
+  }
+
+  /**
+   * The one sentence that fits a relabelled invite, and the state it names.
+   *
+   * <p>Says what happened rather than what to do about the messenger, because there is nothing the
+   * user can do about the messenger. It names the other contact so the two rows can be told apart,
+   * and it does not tell them to delete anything: which row is the one they meant is a question only
+   * they can answer, and the app guessing would delete a conversation.
+   */
+  private final String INFO_SAME_KEY_AT_ANOTHER_ADDRESS = "Careful: the key just stored for %s is "
+      + "the same key already saved for %s. One person's key belongs to one address, and even "
+      + "reinstalling gives them a new one - so these two entries did not both come from them. "
+      + "Comparing security numbers will NOT tell them apart, because both show the same number. "
+      + "Ask them which one they sent, and do not send anything private to the other.";
+
+  /**
+   * Warns when an arriving key is already pinned at a different address.
+   *
+   * <p>The check every other control on this path is blind to. A relay can re-deliver a genuine,
+   * correctly signed invite under an address of its own choosing — the sender name and device id are
+   * written outside the bundle signature, so nothing is forged and the signature still verifies —
+   * and what lands is a second contact holding the peer's real identity key. The safety number is a
+   * function of the two identity keys, so that row shows the SAME digits as the real one: the user
+   * reads them aloud, the peer confirms them, and the comparison this whole design rests on endorses
+   * a row the messenger created. Measured, both halves, in
+   * {@code ArelayCanMintExtraRowsForAgenuinePeerTest}.
+   *
+   * <p>Warns rather than refuses, deliberately. Refusing an invite whose key is already pinned
+   * elsewhere hands the messenger an eviction: one relayed copy at an address it invents would burn
+   * a real contact's key, and every genuine invite from that peer afterwards would be refused, with
+   * the app's own advice to ask for another looping forever. This file has already paid for one
+   * refusal that locked the keyboard.
+   *
+   * <p>Safe to say because it cannot fire on an honest peer: {@code initializeProtocol} mints a
+   * fresh identity key with every new address, so even a reinstall produces a different key. That
+   * property is asserted rather than assumed, in the same test.
+   */
+  private boolean warnIfThisKeyIsPinnedElsewhere(final Contact sender) {
+    if (sender == null) return false;
+    final java.util.List<org.signal.libsignal.protocol.SignalProtocolAddress> elsewhere =
+        SignalProtocolMain.addressesAlreadyPinningTheSameKey(sender.getSignalProtocolAddress());
+    if (elsewhere.isEmpty()) return false;
+
+    // Named from the contact list if a row is there, and described plainly if not. A pin can
+    // outlive its row - deleting a contact keeps the key on purpose - so "another contact" is the
+    // honest wording for a key pinned at an address no row currently holds.
+    final String elsewhereAddress = String.valueOf(elsewhere.get(0));
+    String otherLabel = "another entry you already have";
+    final java.util.ArrayList<Contact> contacts = mE2EEStrip.getContacts();
+    if (contacts != null) {
+      for (final Contact candidate : contacts) {
+        if (candidate != null
+            && elsewhereAddress.equals(String.valueOf(candidate.getSignalProtocolAddress()))) {
+          otherLabel = labelFor(candidate);
+          break;
+        }
+      }
+    }
+    final String warning =
+        String.format(INFO_SAME_KEY_AT_ANOTHER_ADDRESS, labelFor(sender), otherLabel);
+    Toast.makeText(getContext(), warning, Toast.LENGTH_LONG).show();
+    setWarningMessage(warning, String.valueOf(sender.getSignalProtocolAddress()));
+    return true;
   }
 
   /**
@@ -3420,6 +3489,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // isSessionCreation is false here so nothing else on this arm ever asked.
       decryptMessageAndShowMessageInMainInputField(messageEnvelope, chosenContact, false);
       warnIfKeyWasRejected(sender);
+      warnIfThisKeyIsPinnedElsewhere(sender);
       // The same reader the sibling arm has. One appended field moves an envelope here, and this
       // arm is the ordinary shape for a rotation, so it was the common one with no reader at all.
       if (reportIfTheRotationWasNotSaved()) return;

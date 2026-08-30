@@ -305,6 +305,39 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
     return address.getName() + "." + address.getDeviceId();
   }
 
+  /**
+   * Every address this store already pins the given key at, other than the one asked about.
+   *
+   * <p>The key dual of {@code existingContactAtSameAddress}, which its own comment calls "exact and
+   * unspoofable: one address is one identity". The same is true the other way and had no reader:
+   * one identity key belongs to one address, because {@code initializeProtocol} mints a fresh UUID,
+   * a fresh device id and a fresh identity key pair together — so an honest peer cannot produce two
+   * addresses sharing a key, not even by reinstalling, which mints a new key as well.
+   *
+   * <p>What can produce it is a relay. The envelope's sender name and device id are written outside
+   * the bundle signature, so re-delivering a genuine, correctly signed invite under another address
+   * yields bytes that verify perfectly and pin the peer's real key somewhere the peer never chose.
+   * Measured: the second row shows the same safety number as the first, because the number is a
+   * function of the two identity keys and the address was deliberately removed from it — so reading
+   * the digits aloud has the real peer confirm a row the messenger created.
+   *
+   * <p>Answered from the pinned keys rather than from the contact list on purpose. The contact list
+   * is the messenger's to influence, by arranging adds and deletes; the pins are what the app itself
+   * recorded.
+   */
+  public java.util.List<SignalProtocolAddress> addressesAlreadyPinning(final IdentityKey key,
+      final SignalProtocolAddress excluding) {
+    final java.util.List<SignalProtocolAddress> found = new ArrayList<>();
+    if (key == null) return found;
+    for (final TrustedKey trustedKey : trustedKeys) {
+      if (trustedKey == null || trustedKey.getIdentityKey() == null) continue;
+      final SignalProtocolAddress at = trustedKey.getSignalProtocolAddress();
+      if (at == null || at.equals(excluding)) continue;
+      if (key.equals(trustedKey.getIdentityKey())) found.add(at);
+    }
+    return found;
+  }
+
   @Override
   public IdentityKey getIdentity(SignalProtocolAddress address) {
     return getIdentityKeyFromEntryInList(address);

@@ -162,6 +162,31 @@ public class MessengerCannotClearAstandingWarningTest {
       }
     });
     warnings.add(new Warning() {
+      @Override public String name() { return "the same-key-at-another-address warning"; }
+      @Override public String fragment() { return "same key already saved"; }
+      @Override public void raise() throws Exception {
+        // The relay's own move, through the real path: the peer's genuine, correctly signed invite
+        // re-delivered under an address the relay chose. Nothing is forged - the signature covers
+        // the bundle, and the sender name sits outside it - so what lands is the peer's real key
+        // pinned at a second address, showing the same safety number as the first.
+        final var original = EnvelopeCodec.fromWire(peerBundle);
+        final var relabelled =
+            com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+                original,
+                new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+                    original.getPreKeyResponse(), "an-address-the-relay-picked", 1));
+        // Through Add, not the paste. An invite whose address the app has never seen opens the
+        // add-contact screen and pins nothing until the user presses Add - which is exactly the
+        // gesture the attack relies on, because the screen gives the user no reason to hesitate.
+        // The name fields have to be filled or the add aborts before it pins anything.
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_first_name_input_field)).setText("Robert");
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_last_name_input_field)).setText("Smith");
+        strip.addContactForTest(relabelled);
+      }
+    });
+    warnings.add(new Warning() {
       @Override public String name() { return "the identity-change warning"; }
       @Override public String fragment() { return "different key"; }
       @Override public void raise() throws Exception {
@@ -616,7 +641,7 @@ public class MessengerCannotClearAstandingWarningTest {
       "INFO_INVITE_REFUSED", "INFO_INVITE_REFUSED_SESSION_KEPT",
       "INFO_INVITE_REFUSED_BUT_KEY_PINNED", "INFO_IDENTITY_CHANGED_EXISTING",
       "INFO_PINNED_AFTER_REJECT", "INFO_DUPLICATE_CONTACT_NAME", "INFO_RETIRED_CONTACT_NAME",
-      "INFO_SAME_ADDRESS_DIFFERENT_NAME"));
+      "INFO_SAME_ADDRESS_DIFFERENT_NAME", "INFO_SAME_KEY_AT_ANOTHER_ADDRESS"));
 
   /**
    * Constants the scan reaches that are not warnings at all.

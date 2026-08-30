@@ -67,6 +67,12 @@ public class AconditionWarningIsLoweredWithItsConditionTest {
       // or the contact being deleted.
       "warnIfLastInviteWasRefused",
       "warnIfKeyWasRejected",        // a key was pinned where the user had reported a mismatch
+      // A key arrived and was pinned at a second address while the same key is pinned at another.
+      // An EVENT: the arrival happened, and a passing repaint must not take it down. It is also not
+      // a condition that can go away on its own - deleting one of the two rows leaves the pin, and
+      // the pins are what this reads - so lowering it on a refresh would erase the only notice the
+      // user gets that comparing safety numbers cannot tell those two rows apart.
+      "warnIfThisKeyIsPinnedElsewhere",
       "addContact",                  // the duplicate-name and same-address refusals, at add time
       "decryptMessageAndShowMessageInMainInputField",  // the invite-refusal outcomes
       "adoptState"));                // restores what the outgoing view was already showing

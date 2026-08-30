@@ -282,6 +282,28 @@ public class SignalProtocolMain {
   }
 
   /**
+   * Addresses other than this one where the same identity key is already pinned.
+   *
+   * <p>Empty for everything an honest peer can do, including a reinstall — that mints a new identity
+   * key along with a new address, so the old pin and the new one differ. A non-empty answer means
+   * one key is pinned at two addresses, and the only thing that produces it is a relay re-delivering
+   * a genuine invite under an address it chose: the sender name and device id sit outside the bundle
+   * signature, so the copy verifies and pins the peer's real key somewhere the peer never chose.
+   *
+   * <p>Worth having because every other control returns "fine" on that row. The safety number is
+   * computed from the two identity keys, so the extra row shows the same digits as the real one, and
+   * the peer — asked by voice — confirms them, because they are their own.
+   */
+  public static java.util.List<SignalProtocolAddress> addressesAlreadyPinningTheSameKey(
+      final SignalProtocolAddress address) {
+    if (sInstance == null || sInstance.mAccount == null || address == null) {
+      return new java.util.ArrayList<>();
+    }
+    final var store = sInstance.mAccount.getSignalProtocolStore().getIdentityKeyStore();
+    return store.addressesAlreadyPinning(store.getIdentity(address), address);
+  }
+
+  /**
    * Whether an identity key is currently pinned at this address.
    *
    * <p>Exists so a caller can tell "a key was rejected here" from "a key was rejected here and

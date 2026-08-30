@@ -70,6 +70,14 @@ public class NoWriteResultIsDiscardedTest {
     DELIBERATE.put("processPreKeyResponse->warnIfKeyWasRejected", "called for its effect");
     DELIBERATE.put("processUpdatedPreKeyResponse->warnIfKeyWasRejected", "called for its effect");
     DELIBERATE.put("addContact->warnIfKeyWasRejected", "called for its effect");
+    // The same shape as its neighbour: a warning raiser whose boolean says "I raised one", read
+    // only where a caller needs to know whether to write something else on the banner. These two
+    // sites want the warning, not the answer.
+    DELIBERATE.put("processPreKeyResponse->warnIfThisKeyIsPinnedElsewhere", "called for its effect");
+    DELIBERATE.put("addContact->warnIfThisKeyIsPinnedElsewhere", "called for its effect");
+    DELIBERATE.put("processSignalMessage->warnIfThisKeyIsPinnedElsewhere", "called for its effect");
+    DELIBERATE.put("processUpdatedPreKeyResponse->warnIfThisKeyIsPinnedElsewhere",
+        "called for its effect");
     DELIBERATE.put("decryptMessageAndShowMessageInMainInputField->warnIfIdentityChanged",
         "the result is captured into a local on the line above; this is the second, effect-only use");
     // The persists below are best-effort saves on paths with no channel to the user. Every
