@@ -5,6 +5,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.amnesica.kryptey.inputmethod.signalprotocol.stores.PreKeyMetadataStoreImpl;
@@ -161,5 +162,43 @@ public class OneTimePreKeyTest {
     assertEquals(Integer.valueOf(5), preKeys.findUnusedPreKeyId());
     preKeys.loadPreKey(5);
     assertNull(preKeys.findUnusedPreKeyId());
+  }
+
+  /**
+   * Asking for a pre-key that is not there is a refusal, not a crash.
+   *
+   * <p>{@code loadPreKey} declares {@link org.signal.libsignal.protocol.InvalidKeyIdException} and
+   * libsignal calls it from inside the decrypt path. Delete the {@code containsKey} guard and
+   * control falls into the {@code Objects.requireNonNull} on the next line, which raises an
+   * unchecked {@code NullPointerException} out of a store callback whose signature promised a
+   * checked one - the crash class {@code StoredRecordUnreadableException} exists to prevent. That
+   * deletion was measured: it survives the whole suite, while the identical guard in
+   * {@link com.amnesica.kryptey.inputmethod.signalprotocol.stores.KyberPreKeyStoreImpl} is killed
+   * by {@code KyberPreKeyTest::missingKyberPreKeyRaisesInvalidKeyId}. The classical half simply had
+   * no equivalent.
+   *
+   * <p>Reached in production when a peer's opening message names a one-time pre-key that
+   * {@code pruneUsedPreKeys} has since dropped. {@code PreKeyRotationTest} already catches this
+   * exception type around this call, so the contract was depended on before it was asserted.
+   *
+   * <p>The two assertions before it are not decoration. Without them this case would also pass on a
+   * store where {@code loadPreKey} throws for every id, which is a store that has stopped working
+   * entirely - an absence that holds in the broken world as well as the correct one is not evidence.
+   */
+  @Test
+  public void amissingPreKeyRaisesTheDeclaredTypeRatherThanCrashing() throws Exception {
+    final PreKeyStoreImpl preKeys = new PreKeyStoreImpl();
+    KeyUtil.generateAndStoreOneTimePreKey(store, 5);
+    preKeys.storePreKey(5, store.loadPreKey(5));
+
+    assertNotNull("precondition: a pre-key that IS present must load", preKeys.loadPreKey(5));
+    assertFalse("precondition: and the id under test must genuinely be absent",
+        preKeys.containsPreKey(99));
+
+    assertThrows("a pre-key id the store does not hold must raise the checked type libsignal's "
+            + "callback declares. Without the containsKey guard this is a NullPointerException out "
+            + "of the decrypt path instead, which no caller can handle and which reaches the user "
+            + "as a dead keyboard rather than as one unreadable message",
+        org.signal.libsignal.protocol.InvalidKeyIdException.class, () -> preKeys.loadPreKey(99));
   }
 }

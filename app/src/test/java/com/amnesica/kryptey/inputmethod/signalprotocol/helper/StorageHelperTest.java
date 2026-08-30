@@ -14,6 +14,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.ProtocolIdentifier;
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.CryptoBox;
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.GcmCryptoBox;
 import com.amnesica.kryptey.inputmethod.signalprotocol.storage.StorageCryptoException;
+import com.amnesica.kryptey.inputmethod.signalprotocol.stores.IdentityKeyStoreImpl;
 import com.amnesica.kryptey.inputmethod.signalprotocol.stores.PreKeyMetadataStoreImpl;
 import com.amnesica.kryptey.inputmethod.signalprotocol.stores.SignalProtocolStoreImpl;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil;
@@ -318,6 +319,69 @@ public class StorageHelperTest {
     preferences.edit().remove(ProtocolIdentifier.PROTOCOL_ADDRESS.toString()).commit();
 
     assertNull("a load missing only the protocol address must abort",
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
+  }
+
+  /**
+   * The same, for the user id - the first of the four refusals, and one of the two nothing enforced.
+   *
+   * <p>A mutation sweep deleted all four {@code return null} arms on this path at once and read the
+   * failures: every one of them named the protocol store or the metadata store. Both of those are
+   * covered. This one and {@link #anAccountWithNoIdentityKeyPairAbortsTheLoad} were masked - the
+   * store's own refusal aborted first, so the suite never reached them. Isolated (the other two
+   * restored) they both survive.
+   *
+   * <p>What it costs: {@code name} is handed straight to the {@code Account} constructor, and the
+   * write-back that follows the next raise persists whatever was built. So an unreadable
+   * {@code UNIQUE_USER_ID} becomes an account with a null name written over the ciphertext that
+   * still held the real one.
+   */
+  @Test
+  public void aMissingUniqueUserIdAloneAbortsTheLoad() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+    assertNotNull("precondition: everything else must still be readable, which is the whole hazard "
+            + "- a fixture that breaks every value passes with every guard deleted, because the "
+            + "first surviving refusal aborts",
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
+
+    preferences.edit().remove(ProtocolIdentifier.UNIQUE_USER_ID.toString()).commit();
+
+    assertNull("a load missing only the user id must abort, not build an account whose name is "
+            + "null and then persist it on the next raise",
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
+  }
+
+  /**
+   * A protocol store that reads back without an identity key pair must abort the load.
+   *
+   * <p>Distinct from the store being unreadable, which {@code :189} already covers and which the
+   * suite already kills. This is the store deserialising perfectly and answering {@code null} for
+   * the one field every trust decision is computed from. Without the guard the account is built
+   * anyway, and {@code isContactKeyTrustworthy}, the safety number and every identity comparison
+   * afterwards read from an object whose identity is absent.
+   *
+   * <p>Constructed the way it would actually arise - a stored store whose identity key store is
+   * present but empty - rather than by making the read fail, because a read that fails trips the
+   * earlier refusal instead and the case would pass with this guard deleted.
+   */
+  @Test
+  public void anAccountWithNoIdentityKeyPairAbortsTheLoad() {
+    final StorageHelper helper = new StorageHelper(context, workingBox());
+    helper.storeAllInformationInSharedPreferences(newAccount());
+    assertNotNull("precondition: the account must load before the identity is taken out of it",
+        new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
+
+    final SignalProtocolStoreImpl withoutIdentity = new SignalProtocolStoreImpl();
+    withoutIdentity.setIdentityKeyStore(new IdentityKeyStoreImpl());
+    assertNull("precondition: this is the shape under test - a store that reads back fine and has "
+        + "no identity key pair", withoutIdentity.getIdentityKeyPair());
+    new StorageHelper(context, workingBox())
+        .storeSignalProtocolInSharedPreferences(withoutIdentity);
+
+    assertNull("a stored protocol store with no identity key pair must abort the load. Building "
+            + "the account regardless leaves every later trust decision reading from a null "
+            + "identity",
         new StorageHelper(context, workingBox()).getAccountFromSharedPreferences());
   }
 
