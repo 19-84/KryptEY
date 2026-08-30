@@ -394,6 +394,12 @@ public class TypingDestinationTest {
 
     // Not "empty" - a legitimate commit of the ciphertext follows the send and refills the commit
     // buffer, which is correct. The property is that the PLAINTEXT is not still in there.
+    //
+    // And that first assertion is carried by that commit rather than by forgetCachedText: commitText
+    // clears and refills the SAME buffer, and this fixture's listener commits immediately after the
+    // send, so the plaintext is gone either way. Measured - deleting the clear inside
+    // forgetCachedText leaves this line green while reddening five other tests, two of them below in
+    // this file. The load-bearing one here is the committed-text cache beneath it.
     assertFalse("the keyboard's commit buffer must not keep the plaintext after a send: "
             + bufferField(connection, "mTempObjectForCommitText"),
         bufferField(connection, "mTempObjectForCommitText").toString().contains(SECRET));

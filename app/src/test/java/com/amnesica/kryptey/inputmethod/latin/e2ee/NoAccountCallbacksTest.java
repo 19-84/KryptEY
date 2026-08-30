@@ -215,7 +215,10 @@ public class NoAccountCallbacksTest {
     assertTrue("and it must say the message was not encrypted - what must NOT happen is the "
             + "plaintext being handed to the messenger. Shown: " + toast,
         toast.contains("could not be encrypted"));
-    assertEquals("the plaintext must still be in the compose box and nowhere else",
+    assertEquals("the plaintext must still be in the compose box. NOT 'and nowhere else' - this "
+            + "fixture's listener discards what it is given and there is no host field, so where "
+            + "else it might have gone is not observable here. TypingDestinationTest is where that "
+            + "half is measured",
         "the meeting is at nine",
         ((EditText) strip.findViewById(R.id.e2ee_input_field)).getText().toString());
   }

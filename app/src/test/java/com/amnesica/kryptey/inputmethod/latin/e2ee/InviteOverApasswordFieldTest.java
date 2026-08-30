@@ -205,6 +205,23 @@ public class InviteOverApasswordFieldTest {
         committed.length() > 64);
   }
 
+  /*
+   * A third case used to sit here: "the compose box must stay empty" after pressing Invite over a
+   * password box. It was withdrawn because it could not fail.
+   *
+   * The send path stages the invite into the compose box (E2EEStripView sets the text) and then
+   * empties it on the way out, through clearUserInputString -> clearComposeFieldAndCaches. So with
+   * the guard deleted the box is still empty by the time the click returns, and the assertion held
+   * in both worlds - measured: removing the guard reddened its three siblings in this file and its
+   * two in VisiblePasswordFieldGuardTest, and left that one green.
+   *
+   * The property it named is real and is held elsewhere, by
+   * TypingDestinationTest.everyPathThatEmptiesTheComposeBoxEmptiesTheKeyboardsCopy, which is about
+   * the clearing rather than about the password guard. Restoring it here would need a probe inside
+   * onTextInput reading the box mid-flight - which couples a password-field test to the ORDER of two
+   * statements in the send path, so a later reorder breaks a test named for the guard.
+   */
+
   /**
    * And over a password box it must not.
    *
@@ -232,17 +249,6 @@ public class InviteOverApasswordFieldTest {
         E2EEStripView.INFO_PASSWORD_FIELD, ShadowToast.getTextOfLatestToast());
   }
 
-  /** Nor may it be staged in the strip's own box, which the guard had just emptied. */
-  @Test
-  public void aninviteMustNotBeStagedInTheComposeBoxOverApasswordField() {
-    theHostFieldIsApasswordBox();
-
-    pressInvite();
-
-    assertEquals("the compose box must stay empty: setHostFieldIsPassword cleared it on the way "
-            + "in, and re-filling it puts content back on a screen the guard had just cleared",
-        0, composeBox().getText().length());
-  }
 
   /**
    * Encrypt and Decrypt must refuse over a password box too, and nothing tests that they do.
