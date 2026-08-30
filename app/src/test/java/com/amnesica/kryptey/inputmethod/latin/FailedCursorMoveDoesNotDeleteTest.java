@@ -218,4 +218,70 @@ public class FailedCursorMoveDoesNotDeleteTest {
               + "characters: " + delete[0], delete[0] >= 0);
     }
   }
+
+  /**
+   * Anti-vacuity guard for the test below: the delete-pointer slide really does reach
+   * {@code setSelection} and really does move the caret model.
+   *
+   * <p>Without this, the refusal below passes on a harness that never got as far as the guard - the
+   * mistake this file's other anti-vacuity guard exists to stop.
+   */
+  @Test
+  public void adeletePointerSlideStillMovesTheCaret() {
+    ime.mInputLogic.onUpdateSelection(10, 13);
+    hostConnection.overAnswerSelectedText = true;
+
+    ime.onMoveDeletePointer(2);
+
+    assertEquals("a two-step slide must move the caret model's start by two",
+        12, ime.mInputLogic.mConnection.getExpectedSelectionStart());
+    assertEquals("and leave its end where it was",
+        13, ime.mInputLogic.mConnection.getExpectedSelectionEnd());
+  }
+
+  /**
+   * The same property as {@link #apointerSlideMustNotInvertTheCaretModel}, on the other slide.
+   *
+   * <p>{@code onMoveDeletePointer} carries a {@code start > end} guard identical to the one
+   * {@code onMovePointer} was given, and its comment says so - "the guard the sibling nine lines
+   * below has had all along". Only one of the two arms was ever driven: deleting this one's guard
+   * left the whole suite green.
+   *
+   * <p>Both arms compute {@code start} from {@code getUnicodeSteps}, which can return up to twice
+   * the step count it was handed when the host over-answers {@code getSelectedText} - the one host
+   * reply that is not clamped - so both can ask {@code setSelection} for a reversed pair. It is
+   * this arm that reaches it with a plain forward slide on the delete key, because it adds the
+   * steps to the selection START while comparing against the unmoved END.
+   *
+   * <p>The consequence is the one the sibling's comment names: {@code setSelection} does not order
+   * its arguments, an inverted model makes {@code hasSelection()} true with {@code end < start},
+   * and the next backspace hands {@code deleteTextBeforeCursor} a NEGATIVE character count - which
+   * sizes the service-lifetime composing buffer from it and moves the caret model forward on a
+   * backspace.
+   */
+  @Test
+  public void adeletePointerSlideMustNotInvertTheCaretModel() {
+    ime.mInputLogic.onUpdateSelection(10, 13);
+
+    // The host answers getSelectedText with far more than the three characters it declared, which
+    // is what lets getUnicodeSteps hand back the full slide.
+    hostConnection.overAnswerSelectedText = true;
+
+    ime.onMoveDeletePointer(5);
+
+    assertTrue("the caret model must never be left inverted: the next backspace reads "
+            + "end - start as the number of characters to delete. Model was "
+            + ime.mInputLogic.mConnection.getExpectedSelectionStart() + ".."
+            + ime.mInputLogic.mConnection.getExpectedSelectionEnd(),
+        ime.mInputLogic.mConnection.getExpectedSelectionStart()
+            <= ime.mInputLogic.mConnection.getExpectedSelectionEnd());
+
+    hostConnection.deletes.clear();
+    pressBackspace();
+
+    assertEquals("the backspace must still reach the editor", 1, hostConnection.deletes.size());
+    assertEquals("and must delete exactly the three characters the host declared selected, not a "
+            + "negative count computed from a caret model the slide inverted",
+        3, hostConnection.deletes.get(0)[0]);
+  }
 }
