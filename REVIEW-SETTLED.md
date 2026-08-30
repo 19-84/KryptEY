@@ -915,3 +915,65 @@ verifier and makes the next honest format change fail for the wrong reason.
 That is a tripwire against stranded mutants, not a coverage signal: it kills any constant-folded
 mutant regardless of behaviour. Mutate by DELETING a guard. One sweep in this session read as "killed"
 partly on that tripwire before the behavioural failures beside it were checked.
+
+## Sweep 4: what it found unenforced, and what it found merely unreachable
+
+55 guards deleted across 9 full-suite runs over `signalprotocol/storage/`, `signalprotocol/stores/`
+and `StorageHelper`'s load path. 40 killed, 15 survive. Six of the survivors were real and are now
+fixed with tests verified in both directions. The rest are recorded here so the next round does not
+re-derive them.
+
+**Not findings, argued rather than fixed.**
+
+*`requireEncryptedOnly`'s third arm* - an envelope under the permitted key that will not decrypt.
+The cleartext arm beside it was a real finding and is fixed. This one is not, because with a single
+permitted key the deletion changes where the refusal happens and not whether it happens: `get`
+reaches `decode`, `decode` throws, `readLogFrom` catches it and `ChatLogUnavailableException`
+reaches the user either way. It would start to matter if the permitted set ever grew past one key,
+or if any caller wrote to that store before reading it. Reasoned from the path, not measured -
+recorded as such deliberately, because the honest statement is weaker than the measured ones above.
+
+*`migrateToEncryptedInternal`'s undecryptable-marker refusal.* Deleting it lets a migration proceed
+on a store whose schema marker will not open, but any envelope in that store then trips the
+anti-laundering check and any cleartext trips the seal - both of which ARE enforced, the latter four
+times over. The window is a store holding an undecryptable marker, only cleartext payloads, on a
+device that never sealed: an interrupted 0.1.5 upgrade whose master key changed mid-flight. Real,
+narrow, and not attacker-driven. The natural test for it also disarms the two guards that make the
+window narrow, which is the four-vacuous-fixtures shape recorded above for the chat-log move.
+
+*`SharedPreferencesKeyValueStore.remove`'s commit check.* Dead code: `KeyValueStore.remove` is
+declared, implemented, and called by nothing in `app/src/main`. `StorageHelper` removes keys through
+`SharedPreferences.edit().remove()` directly. Its two siblings are both killed by `BatchCommitsOnceTest`.
+Delete the method or leave it, but it is not an unenforced control.
+
+*`SessionStoreImpl.loadExistingSessions`' null-record throw.* The code's own comment says it is
+unreachable - libsignal's multi-session entry point, and this app performs no group or
+multi-recipient send. The sweep confirms nothing executes it. Its neighbour IS killed.
+
+*`mergeEntriesSharingAname`'s two guards.* The loaded retired-name list can exceed its per-name bound
+in memory on an upgrading store; `Account.retireDisplayName`'s own trim - which IS pinned - re-bounds
+it at the next retirement. The length check fires only for a `String[]` of length < 2, which the
+store's JSON shape does not produce.
+
+**Kills that are weaker than they look.** Worth knowing, because a kill is not automatically a
+measurement of the thing you think it measures.
+
+- `GcmCryptoBox`'s nonce-length refusal is killed only by its message assertion: `System.arraycopy`
+  throws anyway, so a `StorageCryptoException` is raised either way, with different text. What is
+  enforced is the diagnosis, not the refusal.
+- Its truncated-envelope refusal is killed by exception TYPE - without it a 0-byte envelope raises
+  `ArrayIndexOutOfBoundsException`. A genuine kill, and worth knowing the guard's value is the type.
+- `SignedPreKeyStoreImpl`'s missing-id refusal was killed *incidentally*, by a JNI null-pointer
+  inside a test named for the archive window. Now named directly by
+  `PreKeyRotationTest::amissingSignedPreKeyRaisesTheDeclaredType`, so rewriting that other test no
+  longer silently turns this guard into a survivor.
+
+**Still open, re-confirmed rather than newly found.** `StorageHelper`'s chat-log move read-back check
+survives at HEAD. That is the entry above with four recorded vacuous fixtures; this sweep re-measured
+it and did not improve on them.
+
+**Scope note for the next sweep.** `SignalProtocolStoreImpl` has nothing to mutate - all 217 lines are
+pure delegation, no branch, no guard, no state beyond field initialisation. Strike it from future
+scopes. And `AndroidKeystoreCryptoBox`'s real `load`, `generate`, `deleteAlias` and `isDeviceSecure`
+are reachable on the JVM only through the `KeystoreOps` fake, so mutating them there produces
+guaranteed survivors that say nothing. The seal was the exception and it is now covered on device.

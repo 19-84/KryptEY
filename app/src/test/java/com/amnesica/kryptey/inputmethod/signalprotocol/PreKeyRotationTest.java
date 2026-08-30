@@ -245,4 +245,33 @@ public class PreKeyRotationTest {
     assertEquals("the allocator must stop at the first free id, not keep scanning past it",
         expected, allocated.intValue());
   }
+
+  /**
+   * A signed pre-key id the store does not hold must raise the declared type.
+   *
+   * <p>This guard IS killed today, and that is why it is worth a test of its own: it is killed
+   * incidentally, by {@code AninviteSurvivesTheRotationItSpansTest::andAnanswerOlderThanTheArchive-
+   * WindowDoesNot}, which fails with a JNI null-pointer deep in libsignal and is named for the
+   * archive window rather than for this refusal. No test names it. Rewrite that one - and it is a
+   * test about a different subject, so someone will - and the guard silently becomes a survivor.
+   *
+   * <p>The same shape as the classical and Kyber cases: without {@code containsKey}, a
+   * {@code null} reaches {@code new SignedPreKeyRecord(...)} and comes back as an unchecked throw
+   * out of a store callback whose signature declares {@code InvalidKeyIdException}. Reached when a
+   * peer answers with a bundle naming a signed pre-key that rotation has since archived away.
+   */
+  @Test
+  public void amissingSignedPreKeyRaisesTheDeclaredType() throws Exception {
+    final int present = metadata.getActiveSignedPreKeyId();
+    org.junit.Assert.assertNotNull("precondition: a signed pre-key that IS present must load",
+        store.loadSignedPreKey(present));
+    assertFalse("precondition: and the id under test must genuinely be absent",
+        store.getSignedPreKeyStore().containsSignedPreKey(4242));
+
+    org.junit.Assert.assertThrows("a signed pre-key id the store does not hold must raise the "
+            + "checked type libsignal's callback declares, not an unchecked throw out of the "
+            + "handshake",
+        org.signal.libsignal.protocol.InvalidKeyIdException.class,
+        () -> store.loadSignedPreKey(4242));
+  }
 }
