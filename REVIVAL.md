@@ -3191,9 +3191,29 @@ does nothing about that. The two mitigations Android offers both break the app f
 exist to serve: a password `inputType` hides the message from the user typing it, and
 `importantForAccessibility="no"` makes the compose box unusable to anyone who needs a screen reader.
 Checked and worth knowing: this fork has **no** `accessibility/` package at all — AOSP's spoken key
-feedback was stripped — so nothing announces individual keystrokes, and the exposure is passive
-reading of a field the user must be able to read too. Recorded as a limit of the design rather than
-a defect.
+feedback was stripped — so nothing announces individual keystrokes. Recorded as a limit of the
+design rather than a defect.
+
+**This entry said "the exposure is passive reading of a field the user must be able to read too",
+and that understates it.** A service is not limited to reading. One with `canPerformGestures`, or
+simply `performAction(ACTION_CLICK)` on a node found by view id, reaches every control on the strip
+— including Verify, which asserts the user compared twelve digits by voice, and Reject, which
+destroys a pin. It needs no overlay and no touch, so the obscured-touch guard added for the
+tapjacking case does nothing about it: that guard reads `MotionEvent` flags, and this path produces
+no `MotionEvent` at all.
+
+Two consequences worth having written down. The **conclusion is unchanged** — still not fixable,
+still accepted — because Android offers no way to refuse accessibility *actions* while permitting
+accessibility *reads*, and refusing both makes the app unusable for the people the API exists for.
+But anyone reading the old sentence while designing a mitigation would reach for
+`importantForAccessibility` and believe they had addressed the whole channel, when they would have
+addressed the half that was already the smaller one.
+
+And it joins two adversary classes that this file had kept apart. An adversary with one-time ADB
+authorisation can enable a service with `settings put secure enabled_accessibility_services` — no
+UI, no consent dialog — and then read the chat log through a channel `FLAG_SECURE` does not touch.
+That makes the exposure reachable by the same adversary the backup and `run-as` entries were written
+for, rather than only by a user who chose to install a screen reader.
 
 Also checked while there: no setting in `latin/settings/` touches the strip, the clipboard or the
 E2EE path at all, so there is no configuration that weakens any of this.

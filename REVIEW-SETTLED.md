@@ -459,3 +459,55 @@ What is still unexamined is the extract mode itself: the `ExtractEditText` the p
 that mode is not this app's view, and nothing has looked at what it holds or where its content goes.
 The two properties this project relies on — `FLAG_SECURE` and autofill's blindness to the compose
 box — are now measured there, and that is a floor rather than an audit.
+
+## The clipboard listener's adversary, named
+
+`REVIVAL.md` frames the strip's clipboard listener as something "the messenger can arm". On Android
+8.0–9 — API 26 to 28, which this app supports and whose floor its README advertises — **any**
+installed app with zero permissions can read and write the primary clip from the background.
+Background clipboard restriction arrived in API 29.
+
+**Checked first, because the obvious worry is wrong: there is no confidentiality loss.** This app
+never puts anything on the clipboard. The only `setPrimaryClip` call in `app/src/main` is the
+pre-API-28 arm of `clearClipboard()`, writing an empty string. Ciphertext reaches the messenger
+through `commitText`, and so does an invite. A third-party clipboard reader therefore gets only the
+envelope the user pasted in — which the messenger already has by construction, since it delivered
+it.
+
+What is actually wrong is **attribution**, and it is a documentation defect rather than a code one.
+On 26–28 a background app can raise the strip's banners, light Decrypt and drive the clipboard-fed
+state machine at a moment the user is typing into their bank app and attributes nothing to their
+messenger. And `clearClipboard()` exists precisely for this adversary — it protects nothing against
+the messenger, which authored the ciphertext it is clearing — yet no comment or document names the
+adversary it is for.
+
+Deliberately not fixed with a banner saying the clipboard is public. The banner is a contested
+resource in this app: four separate defects have been found where one message erased a standing
+security warning, and an advisory the user cannot act on competing for that line risks erasing a
+warning about a substituted key.
+
+## Key material is not zeroed on any retirement path
+
+Retiring a key is the one place zeroing would buy something, and no path does it: `removePreKey`,
+`pruneUsedPreKeys`, `removeSignedPreKey`, `removeOldSignedPreKeys`, `removeKyberPreKey`,
+`deleteSession` and `deleteAllSessions` all drop a reference to a `byte[]` and let the collector
+have it. This fork also makes copies of its own — the identity private scalar is serialised into a
+JVM array on every `Account` construction, and Base64'd into a `String`, which cannot be zeroed even
+in principle.
+
+**Recorded, not fixed, and the reason is that the obvious fix is dangerous.**
+`Arrays.fill(record, (byte) 0)` before `store.remove(id)` is unsafe as written: `PreKeyStoreImpl`
+hands the store's own array to `new PreKeyRecord(...)` without copying, and `pruneUsedPreKeys` runs
+*inside* bundle construction. A zeroing prune that races a record libsignal is still reading, or one
+Jackson is mid-serialisation on, produces an invite or a stored record full of zeros — trading an
+unobservable residue for a corrupted bundle.
+
+**No user-facing text overstates this**, which was checked rather than assumed: the README scopes
+its claim to the master key and the Keystore box narrows it further in the right direction. The
+honest statement is narrower than "keys are erased": after a used one-time pre-key, an old signed
+pre-key or a deleted session is removed, the private half is gone from disk on the next commit and
+still in the heap.
+
+The unverified half is named: whether libsignal 0.86 keeps private keys in native memory and drops
+them there. That decides whether these JVM copies are the only ones or merely extra, and it was not
+measured.
