@@ -796,9 +796,19 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
    - The **seam** between the inherited keyboard and the strip is where the live defects are: seven
      in two rounds, including a redirection of the user's plaintext into the messenger's own field.
      It has its own section below.
-   - Genuinely unexamined still: the rendering and layout bulk of `keyboard/`, `latin/utils/`,
-     `latin/settings/`. Only the debug switches have been looked at there, and only because they
-     are keyloggers in this app specifically. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
+   - Partly examined since, and the difference is worth stating precisely because "unexamined"
+     invites a round to re-spend ground already covered. Three sweeps have landed there, each
+     answering one question and recorded in the ledger as answering only that:
+     **`latin/settings/` persists no text** — every write across its eighteen files is an appearance
+     or key-press value, with no personalisation setting, no gesture data and no dictionary write;
+     **nothing anywhere logs typed text**, with the one candidate site logging a host-supplied
+     `CompletionInfo` behind a compile-time `false`; and **the 196 shipped layout files add no
+     capability** — the complete set of action codes is delete, language switch, settings, shift,
+     space, tab, alpha/symbol switch and a zero-width non-joiner, with no voice key, no clipboard
+     key and no emoji key.
+     What is still genuinely unexamined is the *correctness* half: the rendering and geometry of
+     `keyboard/`, and `latin/utils/` beyond its logging. The security question has an answer there;
+     the behaviour question does not. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
    them were one pattern: guards written `a == null || b == null` where every test supplies both, so
    only the both-present arm ever runs. Nine of those were closed with tests; the rest were either
    already covered by later commits (the sweep runs against a snapshot, so re-verifying before
@@ -809,6 +819,21 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
    The pattern is worth recording because it is systematic rather than incidental: **fixtures
    construct the healthy state, so guards that fire on the unhealthy state are never
    discriminated.** Line coverage reports those lines as covered.
+
+   **A later round turned the technique on the test suite itself and it was the most productive
+   brief this branch has run.** Not "are these lines covered" but "can this test fail": apply a
+   mutant to production, run all 1412 tests, and see which named test stays green. Eight did — a
+   guard comparing a list of strings instead of the behaviour it names, an assertion that was
+   literally `f(x) == f(x)`, a `copies <= 1` satisfied by zero, a predicate accepting
+   `BuildConfig.DEBUG`, and five fixtures whose writes silently never landed so the method under
+   test took its failure arm. Every one of them had assertions, so no count of `assert` tokens
+   could have found them; several were the test standing *closest* to the property, which is the
+   worst place for a hollow one.
+
+   Three of the fixes for those were themselves hollow on the first attempt and were caught the
+   same way. The rule this yields is narrower and more useful than "write more tests": **a test you
+   have not seen fail is a test you have not seen work**, and the cheapest way to see it fail is to
+   break the code it names on purpose.
 
 ## Settled during review
 
