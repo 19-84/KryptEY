@@ -161,6 +161,60 @@ public class MessageStoreIsNotAlaunderingOracleTest {
         "anything at all", messageFile.getString(STORE_KEY, null));
   }
 
+  /**
+   * Cleartext under the log's OWN key must refuse the store, not be read as the user's history.
+   *
+   * <p>{@code requireEncryptedOnly} makes three refusals and only the first was enforced. Both
+   * existing cases above plant a value under {@code PROTOCOL_STORE} - a key that may not be in this
+   * file at all - so they trip the unexpected-key check and return before the other two are
+   * reached. A sweep deleted the cleartext and undecryptable arms with the unexpected-key arm left
+   * intact: neither test failed. This is the case nobody had constructed.
+   *
+   * <p>The attacker plants a chat log of their own authorship under the one key that legitimately
+   * belongs here, having emptied the file first so no marker and no envelope remain. With the
+   * refusal gone the store comes up; {@code get} finds no marker, sees the value is not an
+   * envelope, finds no readable envelope beside it to object about - and returns it. The planted
+   * messages are then the user's history, attributed to the user's own contacts, with nothing to
+   * distinguish them from messages they actually received.
+   *
+   * <p>Planted as real serialized {@link StorageMessage}s rather than as {@code "[]"} on purpose: a
+   * value that fails to parse would make the mutant fail at the deserializer for an unrelated
+   * reason, and the case would then be evidence of nothing. This one parses.
+   */
+  @Test
+  public void cleartextUnderThelogsOwnKeyMakesTheStoreRefuseToOpen() {
+    final ArrayList<StorageMessage> planted = new ArrayList<>();
+    planted.add(new StorageMessage(StorageMessage.chatLogKey("bobAddress", 3), "bobAddress", "me",
+        Instant.now(), "a message the user never received"));
+    final String plantedJson =
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.JsonUtil.toJson(planted);
+    assertTrue("precondition: the planted log must be well-formed, or the mutant would fail at the "
+        + "deserializer rather than on the guard under test", plantedJson.startsWith("["));
+
+    // Emptied first, which is what makes this the attack rather than a corrupted file: no marker to
+    // vouch for a mix, and no surviving envelope for the read-side guard to object about.
+    messageFile.edit().clear().putString(LOG_KEY, plantedJson).commit();
+    assertNull("precondition: no marker, so nothing downstream refuses on the marker's behalf",
+        messageFile.getString("__kryptey_storage_schema", null));
+
+    final Account loaded = helper().getAccountFromSharedPreferences();
+    assertNotNull("the account itself must still load - the account file is untouched", loaded);
+
+    try {
+      final ArrayList<StorageMessage> read = loaded.getUnencryptedMessages();
+      throw new AssertionError("cleartext under the log's own key was opened and returned as the "
+          + "user's chat log: " + read.size() + " message(s), the first reading '"
+          + (read.isEmpty() ? "" : read.get(0).getUnencryptedMessage()) + "'. This file has never "
+          + "legitimately held cleartext - every write to it goes through put.");
+    } catch (final com.amnesica.kryptey.inputmethod.signalprotocol.ChatLogUnavailableException
+        expected) {
+      // Refusing is the point.
+    }
+
+    assertEquals("and the planted value must be left exactly as found, not sealed on the "
+        + "attacker's behalf", plantedJson, messageFile.getString(LOG_KEY, null));
+  }
+
   /** The legitimate interrupted write still works: an envelope with no marker reads back. */
   @Test
   public void anenvelopeWithNoMarkerIsStillReadable() {
