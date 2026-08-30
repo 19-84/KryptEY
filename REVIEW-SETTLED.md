@@ -652,3 +652,29 @@ about that, and the eight found this session all had assertions. The technique t
 mutation: break the production code the test names and see whether it still passes. This audit is a
 cheap floor, not a substitute, and it is recorded that way so the next round does not mistake a
 clean count for a clean suite.
+
+## What a peer can make the session record weigh
+
+The last open growth question. The Double Ratchet retains message keys for messages it has not seen,
+so out-of-order delivery still decrypts — and the peer decides how many that is, because they simply
+send. This app stores whatever libsignal serialises and sets no cap of its own: the retention limits
+live inside the library, not in any Java this fork owns.
+
+So the answerable question is what the record actually weighs when a peer pushes on it, and that is
+measured rather than reasoned: a settled session is **1,079 bytes**; after 300 messages sent and
+never received it is **12,680 bytes** — about **39 bytes per skipped message**.
+
+With libsignal's own per-chain retention limit that puts the worst case at tens of kilobytes per
+chain and a few hundred at most per contact. Large enough to notice in a store that is rewritten on
+every save, small enough that a peer cannot fill the device with it, and — the point — **bounded by
+the library rather than by anything here**. The per-key figure is the useful half, because it is what
+changes if the library changes.
+
+**Not guarded, and the reason matters.** A cap of this app's own would mean discarding keys libsignal
+expects to hold, which breaks out-of-order delivery — the exact thing the retention exists for. An
+out-of-order message is ordinary on a messenger, not an attack, so a guard here would trade a bounded
+disk cost for dropped messages.
+
+The test carries the control that makes the number mean something: the last message must still
+decrypt after the skips. If it did not, the keys were not retained, the growth would be measuring
+something else, and the figure above would be noise.
