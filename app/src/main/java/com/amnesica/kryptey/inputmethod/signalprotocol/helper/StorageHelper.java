@@ -216,7 +216,7 @@ public class StorageHelper {
     // The chat log is handed over as a way to read it, not as its contents.
     //
     // This is the whole point of the change: loading an account happens on setInputView, which runs
-    // every time the keyboard is raised in any app, and the log is the one part of the store that
+    // on input-view creation - a theme or ui-mode change, not every raise - and the log is the one part of the store that
     // grows without bound. Parsing it here meant every raise paid for the user's entire history -
     // and the write-back that follows a reload re-serialised it too. Nothing on the raise path
     // reads a message; only the message-log screen does, and it can afford the read.

@@ -197,10 +197,20 @@ public class Account {
    *
    * <p>The log is the largest thing in the store and the only part of an account that grows without
    * bound - it has no size cap and no age cap, and a correspondent can add to it. Loading an account
-   * happens on {@code setInputView}, which runs every time the keyboard is raised, in every app. So
-   * the whole history was being parsed, and then re-serialised by the write-back, on every raise:
-   * measured at 20,000 messages, 72 ms to read and 194 ms to write, for data the keyboard almost
-   * never touches. Nothing on the raise path reads a message; only the message-log screen does.
+   * happens on {@code setInputView}, so the whole history was being parsed, and then re-serialised
+   * by the write-back, every time that ran: measured at 20,000 messages, 72 ms to read and 194 ms to
+   * write, for data the keyboard almost never touches. Nothing on that path reads a message; only
+   * the message-log screen does.
+   *
+   * <p>This paragraph used to say "every time the keyboard is raised, in every app", and that is
+   * not the cadence. {@code reloadAccount} runs from {@code LatinIME.setInputView}, whose only
+   * in-app caller fires on a theme or ui-mode change - which {@code E2EEStripView} states correctly
+   * beside its own reasoning, and a test asserts. Corrected rather than deleted because the
+   * conclusion does not move: the parse is still worth deferring, for process start, rotation and
+   * theme change rather than for a raise. Worth naming the cost the old sentence hid, though: the
+   * deferral keeps the plaintext log out of memory only until the first message in either
+   * direction, because both paths force the load through {@code addUnencryptedMessage}. It is a
+   * performance measure that buys a little privacy incidentally, not the other way round.
    *
    * <p>Passing null loads nothing and leaves the log EMPTY, not null. An earlier version of this
    * said "empty" and set null, which is the same erasure this class must never allow: a null log

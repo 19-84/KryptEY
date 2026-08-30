@@ -49,7 +49,7 @@ document, and anything that needs re-verifying should be re-verified rather than
 self-inflicted defect and it is recorded here because a reader chasing one of those hashes would
 otherwise conclude the claim was fabricated.
 
-One hundred and forty-six sections, written in the order things were found rather than by subject, so the
+One hundred and forty-seven sections, written in the order things were found rather than by subject, so the
 sweeps are scattered and the deferred list sits between two of them. Grouped here rather than
 reordered, because moving this much prose to tidy it is how paragraphs get lost.
 
@@ -97,6 +97,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The guard that armed once, and the three ways back in](#the-guard-that-armed-once-and-the-three-ways-back-in)
 - [One clear written for a different event](#one-clear-written-for-a-different-event)
 - [A guard that checked a list of names, not the thing the names are about](#a-guard-that-checked-a-list-of-names-not-the-thing-the-names-are-about)
+- [What the app promises about time, and what it does when nobody sends](#what-the-app-promises-about-time-and-what-it-does-when-nobody-sends)
 - [A displacer that is re-derived in the same pass](#a-displacer-that-is-re-derived-in-the-same-pass)
 - [The one notice a later write does not settle](#the-one-notice-a-later-write-does-not-settle)
 - [What the fix for the false permission then deleted](#what-the-fix-for-the-false-permission-then-deleted)
@@ -8128,3 +8129,48 @@ both answer false. It was true once and this file records the commit that fixed 
 survives the correction untouched, because it never depended on the explanation: what makes those
 fixtures dishonest is that the default write does not land and nobody asserts the return value. The
 diagnosis was stale; the measurement was not, and only the measurement was load-bearing.
+
+## What the app promises about time, and what it does when nobody sends
+
+A round asked how long things live rather than whether they are correct, and the most useful thing
+it found is a sentence about time that the code does not keep.
+
+The help said, without condition: *"Every 30 days your signed prekey will be renewed."*
+`refreshSignedPreKeyIfNecessary` has exactly two callers and both are outbound — inside `encrypt`,
+and inside `getPreKeyBundle`, which is reached only from the Invite button and `exportOwnKeyBundle`.
+Nothing on the raise path, the decrypt path or `processPreKeyResponse` calls it, and the app has no
+timer at all. **A user who reads messages and never sends one never rotates**, however long they
+wait, and believes a key they are still using has been replaced.
+
+There is a second, bounded cost in the same place. `deleteOlderSignedPreKeysIfNecessary` is called
+only from inside the refresh, and it is the only caller of `removeOldSignedPreKeys` and
+`removeOldKyberPreKeys` — so for a receive-only user the previous generation's private halves stay
+on disk indefinitely.
+
+Measured both directions, because a test that only shows "receiving does not rotate" cannot tell a
+finding about the trigger from rotation being broken outright: with the refresh overdue, decrypting
+leaves the active signed and Kyber ids untouched, and sending changes them.
+
+**The sentence was corrected and the trigger deliberately left alone.** Moving the refresh onto the
+decrypt or raise path would hand the messenger the rotation trigger — every relayed message becomes
+a possible key rotation plus a store write — and `SignalProtocolMain` already records why that is
+dangerous: a rotation mints private material that must reach disk before anything derived from it
+leaves the method, and on the contacts-unreadable arm writes are refused, so the rotation would
+exist in memory only. The help now says the renewal happens the next time you send or share an
+invite, and says plainly that it does not happen if you only read.
+
+**And the same round found seven comments stating a cadence the code does not have** — that
+`reloadAccount` runs on every keyboard raise. It runs from `LatinIME.setInputView`, whose only
+in-app caller fires on a theme or ui-mode change; this file says so correctly in one place and a
+test asserts it, while five files said otherwise. Two of the wrong ones were written during this
+session, one of them the week before, which is the point worth keeping: this branch corrected that
+sentence once and then wrote it again twice, because the correction lived in a comment nobody reads
+when editing a different file.
+
+The one that mattered is the deferred chat-log loader's justification, whose whole stated reason was
+a per-raise parse the app never pays. The deferral is still right — for process start, rotation and
+theme change — so the correction restates the conclusion rather than removing it. What it also now
+says is what the old sentence hid: the deferral keeps the plaintext log out of memory only until the
+first message in either direction, because both paths force the load. It is a performance measure
+that buys a little privacy incidentally, and reading it the other way round is how the question of
+how long the log actually lives went unasked.

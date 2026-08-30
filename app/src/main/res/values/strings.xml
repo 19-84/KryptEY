@@ -187,7 +187,7 @@
 
 			<h3>What is an update message?</h3>
 			<ul>
-				<li>Every 30 days your signed prekey will be renewed.</li>
+				<li>Your signed prekey is renewed once it is more than 30 days old - but the renewal happens the next time you send a message or share an invite, not on a timer. If you only ever read messages and never send one, it is not renewed.</li>
 				<li>For this purpose, a special message is sent, which consists of your renewed key information and your encrypted message.</li>
 				<li>For you and your chat partner this means no additional effort, because the message will be generated automatically when you send the next encrypted message.</li>
 			</ul>
