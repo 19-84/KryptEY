@@ -5,6 +5,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.storage.TestStores;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.view.ContextThemeWrapper;
@@ -17,6 +18,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
+import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
 import com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses;
 
 import org.junit.Before;
@@ -290,5 +292,100 @@ public class VerifiedBadgeRenderTest {
             + "badges overlap and the verified one draws on top, so this is a green tick on a "
             + "contact whose key just changed", View.INVISIBLE, verifiedVisibility(reused));
     assertEquals("...and must show the unverified one", View.VISIBLE, unverifiedVisibility(reused));
+  }
+
+  /**
+   * The adapter's map fallback: unreachable, and harmless if it were not.
+   *
+   * <p>{@code ListAdapterContacts.getItem} catches a {@code ClassCastException} and rebuilds the row
+   * from a {@code LinkedHashMap}, reading {@code "verified"} straight out of it. The last review
+   * round left this as an open question, phrased exactly right: <em>if it is reachable, it is a
+   * badge built from a map rather than from the store.</em> Two tests, because the answer has two
+   * halves and only one of them is a property of today's call sites.
+   *
+   * <p>This half is reachability, and it has to be measured rather than read off the declared type.
+   * The only thing that could ever put a map in that list is Jackson: {@code contactList} is an
+   * {@code ArrayList<Contact>}, but erasure means the field's type is not a promise about what the
+   * objects in it are at runtime - a generic deserialisation lands {@code LinkedHashMap}s in a list
+   * whose static type says {@code Contact} and nothing complains until somebody casts. So the
+   * element is fetched through a wildcard, which is the only way to ask the question honestly.
+   */
+  @Test
+  public void astoreRoundTripHandsBackContactsRatherThanMaps() throws Exception {
+    storedContact();
+    assertTrue("precondition: the account must persist",
+        new StorageHelper(RuntimeEnvironment.getApplication(), box())
+            .storeAllInformationInSharedPreferences(me));
+
+    final Account loaded = new StorageHelper(RuntimeEnvironment.getApplication(), box())
+        .getAccountFromSharedPreferences();
+    assertNotNull("precondition: the account must reload", loaded);
+    assertFalse("precondition: the reloaded account must carry the contact",
+        loaded.getContactList().isEmpty());
+
+    final Object first = ((java.util.List<?>) loaded.getContactList()).get(0);
+    assertFalse("a full store round trip must not hand back a LinkedHashMap - if it ever does, the "
+            + "fallback in getItem stops being dead code and every row in the list is rebuilt from "
+            + "a map", first instanceof java.util.LinkedHashMap);
+    assertTrue("...it must hand back a real Contact", first instanceof Contact);
+  }
+
+  /**
+   * And the other half: the fallback branch itself, driven for real.
+   *
+   * <p>Not a replica of what it does - the map goes into the adapter's own list, so the
+   * {@code ClassCastException} is thrown and caught by production code and the row really is built
+   * out of {@code LinkedHashMap.get("verified")}. The map claims {@code verified=true} at an address
+   * holding no pinned key, which is the shape that would matter: a row asserting a trust decision
+   * the store cannot back.
+   *
+   * <p>It renders unverified, because {@code isContactKeyTrustworthy} re-derives the answer from the
+   * store - a pin must exist and must not stand rejected - rather than believing the flag on the
+   * object handed to it. That is what makes the dead branch safe rather than merely unreached, and
+   * it is the reason this test is worth keeping even though the branch cannot currently be entered.
+   */
+  @Test
+  public void arowRebuiltFromAmapGetsNoBadgeTheStoreCannotBack() {
+    final SignalProtocolAddress unpinned = ProtocolAddresses.of("nobody-in-the-store", 1);
+    assertNull("precondition: this address must hold no pinned key, or the map is not the only "
+            + "thing claiming the badge",
+        me.getSignalProtocolStore().getIdentityKeyStore().getIdentity(unpinned));
+
+    final java.util.LinkedHashMap<String, Object> asJackson = new java.util.LinkedHashMap<>();
+    asJackson.put("firstName", "Mallory");
+    asJackson.put("lastName", "Map");
+    asJackson.put("signalProtocolAddressName", unpinned.getName());
+    asJackson.put("deviceId", unpinned.getDeviceId());
+    asJackson.put("verified", true);
+
+    final ArrayList<Object> items = new ArrayList<>();
+    items.add(asJackson);
+    final ListAdapterContacts adapter = new ListAdapterContacts(
+        new ContextThemeWrapper(RuntimeEnvironment.getApplication(),
+            R.style.KeyboardTheme_LXX_Pure_Day),
+        R.layout.e2ee_contact_list_element_view, items);
+
+    assertTrue("precondition: the fallback must actually have run and read the flag out of the map",
+        ((Contact) adapter.getItem(0)).isVerified());
+
+    final View row = adapter.getView(0, null, null);
+    assertNotNull("the adapter must render a row", row);
+    assertEquals("a row rebuilt from a map must not show a verified badge over an address with no "
+            + "pinned key - the badge is re-derived from the store, not read off the map",
+        View.INVISIBLE, verifiedVisibility(row));
+    assertEquals("...it must show the unverified one", View.VISIBLE, unverifiedVisibility(row));
+  }
+
+  private static final javax.crypto.SecretKey KEY =
+      new javax.crypto.spec.SecretKeySpec(new byte[32], "AES");
+
+  private StorageHelper.CryptoBoxFactory box() {
+    return (ctx, hasExistingData) ->
+        new com.amnesica.kryptey.inputmethod.signalprotocol.storage.GcmCryptoBox() {
+          @Override
+          protected javax.crypto.SecretKey key() {
+            return KEY;
+          }
+        };
   }
 }

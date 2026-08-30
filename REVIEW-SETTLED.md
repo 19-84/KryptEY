@@ -717,3 +717,39 @@ What remains is already recorded in the crypto box's own scope note and is not n
 rewrites by rename, so the *pre-migration* file's blocks are unlinked rather than overwritten, and
 that cleartext can persist in freed blocks. That is a bound on what any migration can promise, not a
 defect in this one.
+
+## The contact adapter's map fallback is unreachable, and safe if it ever is not
+
+The trust-model round left this open, phrased exactly right: `ListAdapterContacts.getItem` catches a
+`ClassCastException` and rebuilds the row from a `LinkedHashMap`, reading `"verified"` straight out
+of it — *if it is reachable, it is a badge built from a map rather than from the store.*
+
+Both halves are now measured rather than argued, in `VerifiedBadgeRenderTest`.
+
+**Reachability.** It cannot be read off the declared type. `contactList` is an `ArrayList<Contact>`,
+but erasure means that field is not a promise about what is in it at runtime: a generic
+deserialisation lands `LinkedHashMap`s in a list whose static type says `Contact`, and nothing
+complains until somebody casts. So the element is fetched through a wildcard after a real store round
+trip. It comes back a `Contact`.
+
+It comes back a `Contact` because of **one line**. The store genuinely hands back maps;
+`JsonUtil.convertContactsList` is what turns them into contacts. Neutering that one call — return the
+input unchanged, which compiles — makes the round-trip test fail. The fallback is therefore not
+paranoia about a hypothetical: it is a second line of defence behind a single conversion call that
+nothing else in the suite was pinning. Two tests now fail if it is removed.
+
+**Consequence if it were reached.** None, and this is the half worth keeping. The fallback branch is
+driven for real — the map goes into the adapter's own list, so production throws and catches the
+`ClassCastException` and the row really is built from `LinkedHashMap.get("verified")` — claiming
+`verified=true` at an address holding no pinned key. It renders **unverified**, because
+`isContactKeyTrustworthy` re-derives the answer from the store rather than believing the flag on the
+object handed to it.
+
+That control found the gap that was actually worth finding. Mutating the badge to read
+`contact.isVerified()` instead of consulting the store kills only the new test: every pre-existing
+badge test stays green, because in their fixtures the flag and the store always agree. The suite
+could not distinguish *a badge asserted by the object* from *a badge derived from the store* — which
+is the distinction the whole trust model rests on. It can now.
+
+Also recorded, not chased: `Contact` carries exactly the five fields the map copies, so a map-built
+row would not even lose data if `updateContactInContactList` replaced a live row with one.
