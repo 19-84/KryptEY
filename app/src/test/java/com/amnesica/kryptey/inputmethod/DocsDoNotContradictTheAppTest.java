@@ -292,6 +292,32 @@ public class DocsDoNotContradictTheAppTest {
     }
   }
 
+  /**
+   * And both copies must say the comparison needs an invite in each direction.
+   *
+   * <p>The instruction to compare before sending anything private was, on its own, unfollowable at
+   * the moment it is given. An invite carries only the sender's own key and creates nothing for the
+   * recipient, so after one arrives the receiver has a number and the sender has none — no pinned
+   * key, no contact row. The only step in the documented flow that would give the sender digits is
+   * the send the instruction forbids.
+   *
+   * <p>Measured both ways in {@code WhoCanReadAnumberAfterAninviteTest}: one-way leaves only the
+   * receiver with a number, and swapping invites gives both sides the same one. The second half is
+   * why this advice can be given at all — telling people to exchange invites is only honest if the
+   * resulting pair of sessions works, and that is asserted rather than hoped.
+   */
+  @Test
+  public void bothCopiesSayAninviteIsNeededInEachDirection() throws IOException {
+    for (final String doc : new String[] {"HELP.md", "app/src/main/res/values/strings.xml"}) {
+      final String text = read(doc).replaceAll("\\s+", " ");
+      assertTrue(doc + " tells the user to compare a security number before sending, without "
+              + "saying the other side needs their invite too. Until it arrives the peer has "
+              + "nothing to compare against, so the instruction cannot be followed and the only "
+              + "step that would fix it is the send it forbids",
+          text.contains("Send them your own invite too"));
+    }
+  }
+
   /** And the receiving side must be told to compare before its first send, in both copies. */
   @Test
   public void bothCopiesTellTheInviteeToCompareBeforeSending() throws IOException {

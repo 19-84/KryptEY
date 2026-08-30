@@ -19,7 +19,11 @@
 - Copy the invite message to your clipboard and click on the "decrypt" button.
 - A new context menu will open where you have to save the name of the chat partner. Then click on
   the "done" button.
-- Before you send anything private, compare the security number with them by voice or in person -
+- Send them your own invite too, so that they can see a security number for you. An invite only
+  carries the sender's own key - so after theirs arrives, only YOU have a number, and they have
+  nothing to compare against until yours reaches them. Once you have each other's invites, both of
+  you see the same number.
+- Then, before you send anything private, compare that number with them by voice or in person -
   see "How can I verify that my chat partner is who they claim to be?". The invite reached you
   through the messenger, and that comparison is the only step in this list that tells your chat
   partner apart from the messenger.
