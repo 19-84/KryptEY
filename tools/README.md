@@ -84,7 +84,7 @@ round already covered.
 
 ## Instrumentation tests
 
-`tools/test-on-emulator` runs them. There are 34, and the count in this sentence is checked against
+`tools/test-on-emulator` runs them. There are 35, and the count in this sentence is checked against
 the source by `DocsDoNotContradictTheAppTest` — it said 17 for several rounds after the suite had
 grown past it, which is the kind of claim this project treats as a defect rather than as tidying.
 

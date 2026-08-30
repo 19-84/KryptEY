@@ -156,6 +156,32 @@ public class AutofillDoesNotReachTheKeyboardTest {
    */
   @Test
   public void thecomposeBoxIsNeverOfferedToTheAutofillService() throws Exception {
+    assertComposeBoxIsNeverOffered(
+        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+  }
+
+  /**
+   * And the same in landscape, which on most phones is a different IME window mode entirely.
+   *
+   * <p>{@code values-land/config.xml} is the only folder setting
+   * {@code config_use_fullscreen_mode} true, and {@code smallestWidth} outranks orientation - so
+   * tablets take false from {@code values-sw430dp} and a phone under 430dp takes true from
+   * {@code values-land}. In landscape the keyboard therefore runs in the platform's
+   * fullscreen/extract mode, with an {@code ExtractEditText} the app does not own.
+   *
+   * <p>That matters here specifically. The reason this whole class can be believed is partly that
+   * the IME window is not focusable, and a reviewer named it as the load-bearing unknown: extract
+   * mode is where that could change, and every measurement in this file had been taken in portrait.
+   * The AOSP reading is that the window stays non-focusable and {@code ExtractEditText} fakes focus
+   * so that it can - a reading, not a measurement. This is the measurement.
+   */
+  @Test
+  public void thecomposeBoxIsNeverOfferedInLandscapeEither() throws Exception {
+    assertComposeBoxIsNeverOffered(
+        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+  }
+
+  private void assertComposeBoxIsNeverOffered(final int orientation) throws Exception {
     assertEquals("precondition", AUTOFILL_SERVICE, setting("autofill_service"));
     assertEquals("precondition", IME_ID, setting("default_input_method"));
 
@@ -164,6 +190,9 @@ public class AutofillDoesNotReachTheKeyboardTest {
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
     final Activity activity = instrumentation.startActivitySync(intent);
     try {
+      activity.setRequestedOrientation(orientation);
+      instrumentation.waitForIdleSync();
+      Thread.sleep(1_500L);
       final EditableFieldActivity typed = (EditableFieldActivity) activity;
       final InputMethodManager imm =
           (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);

@@ -17,8 +17,20 @@
       settled when nothing had tested it.
     -->
     <application>
+        <!--
+          configChanges so a rotation does not recreate it.
+
+          A device test rotates this activity to measure the keyboard in landscape, where it runs in
+          the platform's fullscreen/extract mode. Without this, setRequestedOrientation destroys and
+          recreates the activity, the test's reference goes stale, and the run fails on "the host
+          field never gained window focus" - a harness failure the test correctly names as one
+          rather than reporting it as a finding about autofill.
+
+          Debug-only scaffolding, so this changes nothing that ships.
+        -->
         <activity
             android:name="com.amnesica.kryptey.inputmethod.EditableFieldActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="false"
             android:label="KryptEY test field" />
 

@@ -437,10 +437,25 @@ anti-vacuity control that the portrait one cannot supply for it: the landscape w
 differ from the portrait block, or `setRequestedOrientation` did not take and the new assertion is
 simply the old one run twice. That control passes, so the rotation is real.
 
-**What is still open, stated rather than implied.** The reviewer named a second unknown and could not
-settle it by reading: whether extract mode clears `FLAG_NOT_FOCUSABLE` on the IME window. That
-matters because this project's autofill negative result rests partly on that window being
-non-focusable, and `AutofillDoesNotReachTheKeyboardTest` runs in portrait only. Nothing here has
-measured it. The AOSP reading is that the window stays non-focusable and `ExtractEditText` fakes
-focus precisely so that it can — but that is a reading, not a measurement, and it is the next thing
-to run on this surface.
+**And the second unknown is now measured too.** The reviewer could not settle by reading whether
+extract mode clears `FLAG_NOT_FOCUSABLE`, which matters because the autofill negative result rests
+partly on the IME window being non-focusable and `AutofillDoesNotReachTheKeyboardTest` ran in
+portrait only.
+
+Rather than measure the flag — a proxy — the test now measures the property the flag exists for.
+That class is parameterised by orientation and runs its whole experiment twice, so the landscape run
+inherits all three of its controls: a new autofill request genuinely arrived after the keyboard was
+up, the structure it produced is populated and names fields by id, and the keyboard was still
+running when it was built. With those holding, the compose box is absent from the structure in
+landscape exactly as in portrait. The autofill result survives the second window mode.
+
+One harness fact worth keeping, because it cost a run: `setRequestedOrientation` destroys and
+recreates the activity, so the test's reference goes stale and it fails on "the host field never
+gained window focus" — which the test correctly names as a harness failure rather than reporting it
+as a finding about autofill. The debug-only test activity now declares `configChanges` for
+orientation, so the rotation is delivered rather than restarted. Nothing that ships is affected.
+
+What is still unexamined is the extract mode itself: the `ExtractEditText` the platform creates in
+that mode is not this app's view, and nothing has looked at what it holds or where its content goes.
+The two properties this project relies on — `FLAG_SECURE` and autofill's blindness to the compose
+box — are now measured there, and that is a floor rather than an audit.
