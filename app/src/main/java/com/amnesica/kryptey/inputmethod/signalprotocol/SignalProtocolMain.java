@@ -226,6 +226,20 @@ public class SignalProtocolMain {
     final Account loaded = sInstance.mStorageHelper.getAccountFromSharedPreferences();
     if (loaded == null || loaded.contactsWereUnreadable()) return false;
     sInstance.mAccount = loaded;
+
+    // Counted, like the other path that replaces the account.
+    //
+    // It was not, and mAccountReloads' javadoc claimed to count every replacement by the stored
+    // copy - so the claim was false for the MORE frequent of the two paths: this one runs on every
+    // keyboard raise while a store fault stands, and reloadAccount runs on a theme change.
+    //
+    // The reader is clearAstoreNoticeThatHasBeenResolved, whose whole argument is that a reload
+    // voids the rule rather than satisfying it: after one, the in-memory log is the stored copy,
+    // still holding the entries a failed prune never removed, so the next landed write persists the
+    // orphaned plaintext instead of erasing it. Retiring the notice on that write takes the sentence
+    // down at the exact moment the leak becomes permanent. Uncounted, this reload was invisible to
+    // that guard, which is the one sequence it exists to refuse.
+    sInstance.mAccountReloads++;
     return true;
   }
 
