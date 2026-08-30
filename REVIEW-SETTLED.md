@@ -508,9 +508,25 @@ honest statement is narrower than "keys are erased": after a used one-time pre-k
 pre-key or a deleted session is removed, the private half is gone from disk on the next commit and
 still in the heap.
 
-The unverified half is named: whether libsignal 0.86 keeps private keys in native memory and drops
-them there. That decides whether these JVM copies are the only ones or merely extra, and it was not
-measured.
+**The half that was unverified is now measured, and it sharpens the finding rather than softening
+it.** Whether libsignal keeps private keys in native memory decides whether this fork's own copies
+are the only JVM-heap ones or merely extra. Read straight off the shipped artifact with `javap`
+rather than from memory of the library:
+
+`org.signal.libsignal.protocol.ecc.ECPrivateKey` extends `NativeHandleGuard$SimpleOwner`, whose only
+field is `private final long nativeHandle`, and which declares `protected abstract void release(long)`
+and a `protected void finalize()`. So the private scalar lives in Rust memory behind a handle; the
+Java object holds a number, and the bytes are freed through `release` on finalisation.
+
+Which means the copies named above are **additions**, not duplicates of something the JVM already
+held: `identityKeyPair.getPrivateKey().serialize()` pulls the scalar out of native memory into an
+un-zeroed Java array on every `Account` construction, and `JsonUtil` Base64s the same key into a
+`String` on every save. Those are the JVM-heap exposure, and they are this fork's rather than the
+library's.
+
+Still unmeasured, and named so it is not read as covered: whether libsignal's Rust side zeroes the
+buffer on `release` rather than merely freeing it. That is a question about the library's internals,
+not about anything this repo can see with `javap`.
 
 ## The sender-key store cannot grow, because nothing ever writes to it
 
