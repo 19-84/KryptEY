@@ -511,3 +511,20 @@ still in the heap.
 The unverified half is named: whether libsignal 0.86 keeps private keys in native memory and drops
 them there. That decides whether these JVM copies are the only ones or merely extra, and it was not
 measured.
+
+## The sender-key store cannot grow, because nothing ever writes to it
+
+A round asking what grows without bound over a long-lived install left this one open, saying plainly
+it had not established whether `SenderKeyStoreImpl` has a live writer. It does not.
+
+`storeSenderKey` is called from exactly one place in `app/src/main` — `SignalProtocolStoreImpl`'s
+implementation of the same interface method, which delegates. That method exists because
+`SignalProtocolStore` requires it, and its real caller would be libsignal's `GroupSessionBuilder`.
+There is no `GroupSessionBuilder`, no `GroupCipher` and no `SenderKeyDistributionMessage` anywhere in
+the tree, so nothing ever reaches it: this app has no group-session path at all, which is consistent
+with the README's "1-to-1 conversations" scope.
+
+The class already said so in its own javadoc, and the reason to check rather than read it is that
+this branch has now corrected several comments that were true when written and false later. This one
+is still true, and it is worth having as a measurement rather than a claim: the map is empty for the
+life of every install, so it is not a growth surface and does not need a cap.
