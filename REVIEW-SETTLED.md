@@ -863,3 +863,55 @@ withdrawn. What survives from the sweep is one genuine finding, and it was not f
 names: the address-rendering defect, where a predicate compared two renderings of one address, was
 constant-false in production, and had no coverage because the branch could not be entered. That came
 from reading the code.
+
+## Five guards a mutation sweep found unenforced, and what happened to each
+
+A round mutated 22 security-relevant guards in `signalprotocol/` and `latin/e2ee/adapter/` across six
+full-suite runs, deleting each and asking whether 1454 tests noticed. **Seventeen were killed by tests
+that name the thing they are about** — trust-on-first-use, never-trust-on-change, the rejection
+outranking the badge, the badge not outliving its key, the badge derived from the store rather than
+the object, `saveIdentity` replacing rather than appending, the deletion rollback, the retired-name
+de-duplication, the adapter's trust read. The trust core is in good shape, and the survivors are
+uniformly in the **rollback, reporting and defence-in-depth layers around** those predicates.
+
+**Fixed and mutation-verified.** A failed Verify write restores the badge and the rejection it
+retracted, and dropped the pending identity change. The two halves were written together and only the
+rejection half had a test. `hasUnacceptedIdentityChange` is what raises the substitution warning and
+is the last refusal in `isContactKeyTrustworthy`, so the sequence was: a forged bundle at a pinned
+address, the strip warns, the user opens Verify and confirms the number, the write fails - and they
+are told nothing was recorded while the warning comes down permanently, because the dismissal
+happened in memory and was never re-recorded. Now covered; deleting the restore fails exactly that
+test.
+
+**Identified, not covered: the chat-log migration's read-back check.** `moveMessageLogToItsOwnFile`
+is copy-verify-delete, and deleting the verify - so the original goes whether or not the copy reads
+back - leaves the suite green. The cost if it ever bites is every message the user has, unattended on
+upgrade, with nothing reported.
+
+Four attempts to test it were all vacuous, and the shapes are recorded because each looks correct:
+
+1. A crypto box that refuses to open anything. The account never loads, the migration never runs, and
+   the original survives for an unrelated reason - green with the guard deleted.
+2. A box refusing only the log's key. Both files use the same key name, so the AAD cannot tell the
+   account file's copy from the message file's: refusing the key also blocks reading the original,
+   and the migration again never runs.
+3. A box refusing the *second* open of that key, to model "the write did not survive". Same result.
+4. Instrumented: `opensOfTheLog=0`, no copy in the message file. **The migration does not execute in
+   that fixture at all**, so all three controls were measuring a path that never ran.
+
+The next attempt should start by asserting the migration RAN - the copy present in the message file -
+before asserting anything about the original. A test that cannot show it reached the code it names is
+worth less than no test, because it reads as coverage.
+
+**Recorded as defence in depth, deliberately untested.** `rejectContactKey`'s live-list badge clear
+(the badge is safe anyway: `isContactKeyTrustworthy` re-derives from the store and `wasKeyRejected`
+returns true, and that check IS enforced); and both structural refusals in
+`requireTheBundleWasIssuedAsOneUnit`, which the wire cannot reach today because `BinaryEnvelope.decode`
+mandates the signature field and rejects a zero-length one. Writing tests for those means constructing
+envelopes the decoder cannot produce, which pins the current wire format into a unit test of the
+verifier and makes the next honest format change fail for the wrong reason.
+
+**Harness note.** `NoStrandedMutantsTest` fails on `if (false)` / `if (true)` in production source.
+That is a tripwire against stranded mutants, not a coverage signal: it kills any constant-folded
+mutant regardless of behaviour. Mutate by DELETING a guard. One sweep in this session read as "killed"
+partly on that tripwire before the behavioural failures beside it were checked.

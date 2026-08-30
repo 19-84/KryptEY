@@ -211,6 +211,70 @@ public class TrustDecisionsReportAfailedWriteTest {
         SignalProtocolMain.wasKeyRejected(bob.getSignalProtocolAddress()));
   }
 
+  /**
+   * ...and it must put back the pending identity change it dismissed.
+   *
+   * <p>The twin of the case above, and the half nothing enforced: a mutation deleting the
+   * {@code recordIdentityChange} restore left the whole suite green, while deleting the
+   * {@code markKeyRejected} restore eight lines above it is killed by that test. The two were added
+   * together and only one was measured.
+   *
+   * <p>What a lost pending record costs is the warning itself.
+   * {@code hasUnacceptedIdentityChange} is what raises the key-substitution notice on the strip, and
+   * it is the last refusal in {@code isContactKeyTrustworthy}. So: an attacker forges a bundle at a
+   * pinned address, the strip says a different key was offered, the user opens Verify and confirms
+   * the number - and the write does not land. They are told nothing was recorded. The badge rolls
+   * back, the rejection rolls back, and the warning about the offered key comes down anyway and
+   * stays down, because the dismissal happened in memory and was never re-recorded. The next write
+   * from any later operation persists the emptied map.
+   *
+   * <p>Dismissing before the write and restoring after is deliberate, and moving the dismissal after
+   * {@code accountWriteSucceeded()} instead would be worse: that call is what writes the account, so
+   * a dismissal after it is not in the bytes that reached disk and the change returns on the next
+   * reload - which is every {@code setInputView}. The user answers the warning and meets it again one
+   * keyboard raise later, which is a failure this file has already been fixed for twice.
+   */
+  @Test
+  public void afailedVerifyPutsBackThePendingChangeItDismissed() throws Exception {
+    // A substitution on record at Bob's address: someone offered a different key and it was refused.
+    final Account impostor = freshPeerOfferingAdifferentKeyAtBobsAddress();
+    assertTrue("precondition: a pending identity change must stand, or there is nothing to dismiss",
+        SignalProtocolMain.hasUnacceptedIdentityChange(bob.getSignalProtocolAddress()));
+
+    writesFail = true;
+    assertFalse("precondition: the verify must report failure",
+        SignalProtocolMain.verifyContact(bob));
+
+    assertTrue("a verify that could not be recorded must leave the pending change standing. It is "
+            + "what raises the substitution warning and the last refusal in isContactKeyTrustworthy, "
+            + "so losing it takes the warning down permanently while telling the user nothing was "
+            + "recorded - the app forgetting, on their behalf, that a key was ever offered.",
+        SignalProtocolMain.hasUnacceptedIdentityChange(bob.getSignalProtocolAddress()));
+  }
+
+  /**
+   * Offers a DIFFERENT key at Bob's address, which is what records a pending change.
+   *
+   * <p>Unlike its sibling below, the pin must already be there: {@code recordIdentityChange} is
+   * reached when a bundle presents a key that is not the one pinned, so an address with nothing
+   * pinned takes the trust-on-first-use arm instead and records nothing.
+   */
+  private Account freshPeerOfferingAdifferentKeyAtBobsAddress() throws Exception {
+    assertNotNull("precondition: a key must already be pinned, or the offer is a first sighting",
+        SignalProtocolMain.getInstance().getAccount().getSignalProtocolStore()
+            .getIdentityKeyStore().getIdentity(bob.getSignalProtocolAddress()));
+
+    final Account keep = SignalProtocolMain.getInstance().getAccount();
+    SignalProtocolMain.initialize(null);
+    final String bundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(keep);
+
+    // Refused, and that is the point: the pin does not move, and the offer is recorded as pending.
+    SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(bundle), bob.getSignalProtocolAddress());
+    return keep;
+  }
+
   /** Puts a fresh key at Bob's address, the way a re-invite after a rejection does. */
   private Account freshPeerPinnedAtBobsAddress() throws Exception {
     final Account keep = SignalProtocolMain.getInstance().getAccount();
