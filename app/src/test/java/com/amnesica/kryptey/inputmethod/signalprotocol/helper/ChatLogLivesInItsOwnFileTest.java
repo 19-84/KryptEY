@@ -148,6 +148,52 @@ public class ChatLogLivesInItsOwnFileTest {
     }
   }
 
+  /**
+   * And the mirror: building the ACCOUNT's store must not claim a device with a log is new.
+   *
+   * <p>The same disjunction, the other way round, and only one half of it was ever tested.
+   * {@code secureStore} asks {@code hasEncryptedData} of the account file OR the log's file, and a
+   * sweep narrowed it to the account file alone: the whole suite stayed green, while the identical
+   * deletion in {@code messageStore} is killed instantly by the case above. The reason is visible
+   * in that case's fixture - it sets up account file full, log's store built. Nobody had set up the
+   * reverse, which is the only state where this half of the disjunction changes the answer.
+   *
+   * <p>The state is not hypothetical. {@code SharedPreferencesImpl.loadFromDisk} swallows a parse
+   * failure and installs an empty map, so a corrupt {@code protocol.xml} reads as "no data" while
+   * {@code protocol_messages.xml} is untouched and still holds the user's history. With the second
+   * disjunct gone the box is told nothing is at stake, mints a replacement master key instead of
+   * refusing - and because this store is always built first and both stores share one alias, the
+   * log's own refusal then finds a live alias and never fires. The surviving history becomes
+   * permanently unreadable, and the user is shown a working, empty keyboard rather than told
+   * anything is wrong.
+   *
+   * <p>The whole account file is cleared rather than just its keys, for the reason
+   * {@link #putTheLogBackInTheAccountFile} documents in reverse: a leftover schema row would make
+   * {@code hasEncryptedData} answer true on its own strength, and the case would pass with the
+   * disjunct deleted.
+   */
+  @Test
+  public void abuildingTheAccountsStoreNeverClaimsAdeviceWithAlogIsNew() {
+    assertNotNull("precondition: the log must be in its own file",
+        messageFile.getString(LOG_KEY, null));
+    accountFile.edit().clear().commit();
+    assertTrue("precondition: the account file must look like a device that lost it - empty, with "
+        + "no schema row to answer on its own", accountFile.getAll().isEmpty());
+    hasExistingDataAnswers.clear();
+
+    helper().getAccountFromSharedPreferences();   // forces the account's store to be built
+
+    assertFalse("no crypto box was built, so this test checked nothing",
+        hasExistingDataAnswers.isEmpty());
+    for (final Boolean answer : hasExistingDataAnswers) {
+      assertTrue("a crypto box was told this device holds no existing data while the log's file "
+              + "still holds the user's history. This store is built first and both stores share "
+              + "one Keystore alias, so a replacement key minted here is one the log's store then "
+              + "finds already live - its own refusal never runs, and the history is unreadable "
+              + "for good.", answer);
+    }
+  }
+
   /** An existing install's log is moved out of the account file, intact. */
   @Test
   public void thelogIsMovedOutOfTheAccountFileOnTheNextLoad() {
