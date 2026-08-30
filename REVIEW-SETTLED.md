@@ -583,14 +583,26 @@ app whenever the phone is sideways. The other lever — setting `config_use_full
 overflow measurement taken *in the mode that would be removed*, and two other screens were
 deliberately left unwrapped on the strength of the same analysis.
 
-**What is unverified, and it decides everything.** Whether the platform independently marks the IME
-window secure when the input target is secure. If it does, there is nothing here. If it does not,
-there is a second and worse question, because `onSensitiveContentVisibilityChanged` calls
-`clearFlags(FLAG_SECURE)` unconditionally — this app would then be actively stripping a flag the
-platform had set. That is one emulator run in a class that already owns the rotation harness and its
-anti-vacuity control: a host activity that sets `FLAG_SECURE`, rotated, with the strip's own
-predicate false, asserting on the IME window block. It is the next thing to run on this surface, and
-it is recorded here rather than guessed at.
+**Measured, and the exposure is real.** A host activity that sets `FLAG_SECURE`, rotated to
+landscape, with the strip's own predicate false: the host's window block carries `SECURE` — asserted
+as an anti-vacuity control, so `addFlags` demonstrably took — and the IME window block does not. The
+text the framework mirrors into the keyboard's window is therefore screenshottable while the
+application it came from believes it is protected.
+
+**One half is still unresolved, and the attempt to resolve it failed for an instructive reason.**
+The question is whether the platform sets the flag on the IME window itself, which would mean this
+app is *stripping* it rather than merely failing to add it — `onSensitiveContentVisibilityChanged`
+calls `clearFlags` unconditionally. The probe was to remove that clear and re-measure. It came back
+confounded: with nothing clearing the flag, it persisted from the earlier phase of the same test,
+where a sensitive strip screen had legitimately set it. So the landscape assertion passed for the
+wrong reason, and the run tripped a different control instead — the one asserting the ordinary
+keyboard is *not* secure, which is exactly what that control is for. Answering it properly needs a
+test that never shows a sensitive screen first, and that is the next thing on this surface.
+
+The measured state is **pinned** in `FlagSecureReachesTheWindowOnDeviceTest` as `assertFalse`, not
+left unasserted. If it ever becomes true — a platform that propagates the flag, or a deliberate fix
+— that assertion fails and this entry has to be rewritten rather than quietly rotting, which is the
+failure this branch has corrected in its own documents four times.
 
 Two related notes from the same audit, both worth keeping:
 

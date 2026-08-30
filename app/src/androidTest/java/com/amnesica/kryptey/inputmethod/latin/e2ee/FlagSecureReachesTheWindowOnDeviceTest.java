@@ -2,6 +2,7 @@ package com.amnesica.kryptey.inputmethod.latin.e2ee;
 
 import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -88,6 +89,21 @@ public class FlagSecureReachesTheWindowOnDeviceTest {
 
   private static boolean secure(final String block) {
     return block.contains("SECURE");
+  }
+
+  /**
+   * The block of {@code dumpsys} describing the test host activity's own window.
+   *
+   * <p>Needed as an anti-vacuity control for the landscape host-secure measurement: if
+   * {@code addFlags(FLAG_SECURE)} on the host never took, the question being asked of the IME
+   * window is meaningless.
+   */
+  private static String hostWindowBlock(final String dump) {
+    final int at = dump.indexOf("EditableFieldActivity");
+    if (at < 0) return "";
+    final int start = dump.lastIndexOf("Window #", at);
+    final int next = dump.indexOf("Window #", at);
+    return dump.substring(start < 0 ? at : start, next < 0 ? dump.length() : next);
   }
 
   @Test
@@ -217,6 +233,64 @@ public class FlagSecureReachesTheWindowOnDeviceTest {
               + "this project's measured properties had been checked. Window block was:\n"
               + landscapeSensitive,
           secure(landscapeSensitive));
+
+      // The question the extract-mode audit could not settle by reading.
+      //
+      // In landscape this keyboard runs in the platform's fullscreen/extract mode, and the
+      // framework mirrors the HOST field's text into an ExtractEditText inside the IME's own
+      // window. isShowingSensitiveContent() enumerates this app's own views and model state and has
+      // no term for anything it does not own - so with an empty compose box and no strip screen up,
+      // the IME window is deliberately not secure while displaying another application's text.
+      //
+      // What decides whether that costs anything is whether the PLATFORM marks the IME window
+      // secure on its own when the input target is secure. If it does, there is nothing here. If it
+      // does not, there is a worse question, because onSensitiveContentVisibilityChanged calls
+      // clearFlags(FLAG_SECURE) unconditionally - this app would then be stripping a flag the
+      // platform had set. Measured rather than reasoned about, either way.
+      instrumentation.runOnMainSync(() -> activity.getWindow()
+          .addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE));
+      activity.setRequestedOrientation(
+          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+      instrumentation.waitForIdleSync();
+      Thread.sleep(2_000L);
+
+      final String withSecureHost = windowDump();
+      final String hostBlock = hostWindowBlock(withSecureHost);
+      assertTrue("anti-vacuity: the HOST window must actually be secure, or the assertion below is "
+              + "asking about a protection that was never applied. Host block was:\n" + hostBlock,
+          secure(hostBlock));
+
+      final boolean imeSecureBesideSecureHost = secure(imeWindowBlock(withSecureHost));
+      System.out.println("MEASURED landscape, secure host: imeSecure=" + imeSecureBesideSecureHost);
+
+      instrumentation.runOnMainSync(() -> activity.getWindow()
+          .clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE));
+      activity.setRequestedOrientation(
+          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+      instrumentation.waitForIdleSync();
+      Thread.sleep(1_500L);
+
+      // Pinned as measured, not asserted as desired.
+      //
+      // This is an exposure, recorded in REVIEW-SETTLED and deliberately not fixed: in landscape
+      // the keyboard runs in extract mode, the framework mirrors the host's text into a view inside
+      // the IME's window, and isShowingSensitiveContent has no term for content this app does not
+      // own - so a host protecting itself with FLAG_SECURE loses that through the keyboard.
+      //
+      // Not fixed because the obvious fix is one this project already made and reverted: a
+      // FLAG_SECURE IME window blanks the entire system screenshot, so the predicate was narrowed
+      // to the states where this app's own plaintext is on screen. Widening it for extract mode
+      // reinstates that under another name.
+      //
+      // Pinned false rather than left unasserted so the state is recorded and cannot change
+      // unnoticed. If this ever goes true - a platform that propagates the flag, or a deliberate
+      // fix here - this test fails and the ledger entry needs rewriting rather than quietly
+      // rotting, which is the failure mode this branch has corrected in its own documents four
+      // times.
+      assertFalse("the IME window is now secure beside a secure host in landscape. That is better "
+              + "than what was measured, but it means the recorded exposure is stale - update "
+              + "REVIEW-SETTLED rather than deleting this assertion",
+          imeSecureBesideSecureHost);
 
       assertTrue("and the flag must come back off when the sensitive screen closes, or ordinary "
               + "typing stops screenshotting for the rest of the keyboard's life",
