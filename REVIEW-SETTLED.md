@@ -589,15 +589,24 @@ as an anti-vacuity control, so `addFlags` demonstrably took — and the IME wind
 text the framework mirrors into the keyboard's window is therefore screenshottable while the
 application it came from believes it is protected.
 
-**One half is still unresolved, and the attempt to resolve it failed for an instructive reason.**
-The question is whether the platform sets the flag on the IME window itself, which would mean this
-app is *stripping* it rather than merely failing to add it — `onSensitiveContentVisibilityChanged`
-calls `clearFlags` unconditionally. The probe was to remove that clear and re-measure. It came back
-confounded: with nothing clearing the flag, it persisted from the earlier phase of the same test,
-where a sensitive strip screen had legitimately set it. So the landscape assertion passed for the
-wrong reason, and the run tripped a different control instead — the one asserting the ordinary
-keyboard is *not* secure, which is exactly what that control is for. Answering it properly needs a
-test that never shows a sensitive screen first, and that is the next thing on this surface.
+**And the other half is now resolved: the platform does not propagate, so this app strips nothing.**
+The worry was that `onSensitiveContentVisibilityChanged` calls `clearFlags` unconditionally, which
+would mean the app removes a protection the platform applied. `WhoSetsFlagSecureInExtractModeOnDeviceTest`
+answers it by construction: it never shows a sensitive strip screen, so the app never raises the flag
+either, and any `SECURE` on the IME window could only be the platform's. Run with the clear disabled,
+the window is still not secure. Nothing in this app touches it, and it is not secure — so the
+exposure is a property of the platform's extract mode rather than a defect in the flag handling.
+`clearFlags` is exonerated, which is worth stating because the alternative reading would have made
+this a serious bug in this code.
+
+Getting there took three failed runs, and all three failures were the harness rather than the
+subject. The first probe was confounded: with nothing clearing the flag it persisted from an earlier
+phase of the same test where a sensitive screen had legitimately raised it, so the assertion passed
+for the wrong reason and a different control caught it. The second and third failed on "must find
+the input-method window" — the new test waited for `imm.isActive`, which says a client has an input
+connection and not that the keyboard window exists. The sibling class states that distinction in as
+many words and waits for the key view. The lesson is not the fact, which was already written down;
+it is that it was written down in the class next door and still repeated.
 
 The measured state is **pinned** in `FlagSecureReachesTheWindowOnDeviceTest` as `assertFalse`, not
 left unasserted. If it ever becomes true — a platform that propagates the flag, or a deliberate fix

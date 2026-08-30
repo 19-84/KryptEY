@@ -163,7 +163,23 @@ docker exec "$NAME" $ADB shell settings put secure autofill_service \
 # it is bounded at one, the first attempt's device state is still captured and printed, and a run
 # that only passed the second time says so in its result line rather than reporting a clean pass.
 # A reproducible failure fails both attempts and is reported exactly as before.
+#
+# KRYPTEY_TEST_CLASS narrows the run to one class or method, for probing. A full device run is about
+# eight minutes and most questions here need two or three runs to settle - measure, mutate the
+# production code, measure again - so paying eight minutes a time for an answer about one class is
+# most of why device questions get deferred. Unset, everything runs, which is what CI and every
+# report in this repo means by "the device suite".
+#
+#   KRYPTEY_TEST_CLASS=com.amnesica.kryptey.inputmethod.latin.e2ee.SomeTest ./tools/test-on-emulator
+#   KRYPTEY_TEST_CLASS=com...SomeTest#oneMethod ./tools/test-on-emulator
 run_instrumentation() {
+  if [ -n "${KRYPTEY_TEST_CLASS:-}" ]; then
+    echo "==> NARROWED to $KRYPTEY_TEST_CLASS - this is not the full device suite"
+    docker exec "$NAME" $ADB shell am instrument -w -r \
+      -e class "$KRYPTEY_TEST_CLASS" \
+      com.amnesica.kryptey.test/androidx.test.runner.AndroidJUnitRunner
+    return
+  fi
   docker exec "$NAME" $ADB shell am instrument -w -r \
     com.amnesica.kryptey.test/androidx.test.runner.AndroidJUnitRunner
 }
