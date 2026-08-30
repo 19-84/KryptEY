@@ -36,6 +36,8 @@ public class VerifyContactTest {
   private Account me;
   private Account peer;
   private SignalProtocolAddress peerAddress;
+  /** Kept so a test can replay the exact bytes the peer sent, rather than a fresh export. */
+  private String peerBundle;
 
   @Before
   public void setUp() throws Exception {
@@ -49,7 +51,7 @@ public class VerifyContactTest {
         peer.getDeviceId());
 
     SignalProtocolMain.getInstance().setAccount(peer);
-    final String peerBundle = SignalProtocolMain.exportOwnKeyBundle();
+    peerBundle = SignalProtocolMain.exportOwnKeyBundle();
     SignalProtocolMain.getInstance().setAccount(me);
     SignalProtocolMain.processPreKeyResponseMessage(
         EnvelopeCodec.fromWire(peerBundle), peerAddress);
@@ -64,6 +66,81 @@ public class VerifyContactTest {
     contacts.add(contact);
     me.setContactList(contacts);
     return contact;
+  }
+
+  /**
+   * Replaying the peer's own genuine invite must not take the badge away.
+   *
+   * <p>{@code recordIdentityChangeIfOffered} returns early when the offered key equals the pinned
+   * one, and the identical guard inside {@code IdentityKeyStoreImpl.recordIdentityChange} is
+   * covered by {@code IdentityChangeTest::recordingIsIgnoredWhenNothingIsActuallyDisplaced}. That
+   * makes the caller's copy look like dead duplication, and the method's own comment says so -
+   * "idempotent with buildSession's own recording ... the second is a no-op". A mutation sweep
+   * deleted the caller's arm and the whole suite stayed green.
+   *
+   * <p>It is not duplication. {@code clearVerificationFor(address)} and the write-back sit AFTER
+   * the guard and are not shadowed by the store's copy, so with the arm gone a re-invite carrying
+   * the SAME key still clears the verification. Measured: verified=true trustworthy=true becomes
+   * verified=false trustworthy=false.
+   *
+   * <p>What that hands a hostile messenger is a button. It forges nothing, modifies nothing, needs
+   * no key material - it re-sends a correctly signed invite it already carried, and the user's
+   * green badge disappears with no pending change to dismiss and no warning saying why. The only
+   * recovery is another voice comparison the app never prompts for, and it can be repeated after
+   * every one.
+   */
+  @Test
+  public void areplayedGenuineInviteMustNotUnverifyTheContact() throws Exception {
+    final Contact contact = storedContact();
+    SignalProtocolMain.verifyContact(contact);
+    assertTrue("precondition: the user compared the safety number and it was recorded",
+        me.getContactList().get(0).isVerified());
+    assertTrue("precondition: and that makes the contact trustworthy",
+        SignalProtocolMain.isContactKeyTrustworthy(me.getContactList().get(0)));
+
+    // Byte for byte what the peer already sent. Not a forgery - a copy.
+    assertTrue("precondition: the replayed invite must still be accepted, or this test measures a "
+            + "refusal rather than the guard",
+        SignalProtocolMain.processPreKeyResponseMessage(
+            EnvelopeCodec.fromWire(peerBundle), peerAddress));
+
+    assertTrue("a re-invite carrying the key already pinned is an ordinary re-invite, not a "
+            + "substitution. Clearing the verification here lets any messenger drop the badge at "
+            + "will by replaying a message it already holds",
+        me.getContactList().get(0).isVerified());
+    assertTrue("and the contact must still be trustworthy",
+        SignalProtocolMain.isContactKeyTrustworthy(me.getContactList().get(0)));
+    assertFalse("with nothing pending for the user to dismiss",
+        SignalProtocolMain.hasUnacceptedIdentityChange(peerAddress));
+  }
+
+  /**
+   * The positive control: a genuinely different key at that address DOES clear the verification.
+   *
+   * <p>Without this, the case above would pass on a build where {@code recordIdentityChangeIfOffered}
+   * never runs at all - an absence that holds in the broken world as well as the correct one. This
+   * asserts the path is live and does its job, so the case above is about the guard rather than
+   * about the method being reachable.
+   */
+  @Test
+  public void adifferentKeyAtThatAddressStillClearsTheVerification() throws Exception {
+    final Contact contact = storedContact();
+    SignalProtocolMain.verifyContact(contact);
+    assertTrue("precondition: verified", me.getContactList().get(0).isVerified());
+
+    // A third party offering its own identity at the address the user already pinned.
+    SignalProtocolMain.initialize(null);
+    final Account impostor = SignalProtocolMain.getInstance().getAccount();
+    SignalProtocolMain.getInstance().setAccount(impostor);
+    final String impostorBundle = SignalProtocolMain.exportOwnKeyBundle();
+    SignalProtocolMain.getInstance().setAccount(me);
+
+    SignalProtocolMain.processPreKeyResponseMessage(
+        EnvelopeCodec.fromWire(impostorBundle), peerAddress);
+
+    assertFalse("a key substitution at a verified address must clear the verification - this is "
+            + "the behaviour the case above must NOT fire on",
+        me.getContactList().get(0).isVerified());
   }
 
   @Test

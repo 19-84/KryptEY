@@ -58,6 +58,67 @@ public class TrustScopingTest {
     return KeyUtil.generateIdentityKeyPair().getPublicKey();
   }
 
+  // -------------------------------------------------- one address, one rejection
+
+  /**
+   * Marking the same address rejected twice must leave ONE entry, or the user can never clear it.
+   *
+   * <p>{@code rejectedAddresses} is a {@code List}, and {@code clearRejection} answers it with
+   * {@code List.remove(Object)} - which removes the first occurrence and stops. So the dedupe on
+   * the way in is not tidiness; it is the only thing making the removal on the way out complete.
+   * A mutation sweep deleted the {@code contains} check and the whole suite stayed green.
+   *
+   * <p>Two entries at one address are reachable without any attacker: {@code markKeyRejected} is
+   * called from {@code rejectContactKey}, behind a button the user can press more than once, and
+   * again from {@code verifyContact}'s failed-write rollback.
+   *
+   * <p>What the second entry costs: the user compares the safety number, it matches, the app
+   * records the comparison - and the warning does not come down. {@code isContactKeyTrustworthy}
+   * refuses the badge for as long as a rejection stands, so it is a warning nobody can answer.
+   * Measured with the guard deleted: after two rejections and one successful clear,
+   * {@code wasKeyRejected} is still true.
+   */
+  @Test
+  public void rejectingTwiceStillClearsInOne() {
+    store.markKeyRejected(ALICE);
+    store.markKeyRejected(ALICE);
+    assertTrue("precondition: the address must read as rejected", store.wasKeyRejected(ALICE));
+
+    assertTrue("precondition: the clear must report that it removed something - otherwise this "
+        + "case would pass on a store that never recorded the rejection at all",
+        store.clearRejection(ALICE));
+
+    assertFalse("one comparison that matched must clear the rejection outright. A second stored "
+            + "entry survives it, and the user is left with a warning they have already answered "
+            + "and cannot answer again",
+        store.wasKeyRejected(ALICE));
+  }
+
+  /**
+   * And the same for the out-of-band list, which dedupes for a different reason.
+   *
+   * <p>{@code outOfBandAddresses} records provenance rather than a user decision, so a duplicate
+   * does not strand a warning. It is pinned because the mutation survives and the fix is one line:
+   * {@code removeIdentity} and {@code acceptIdentityChange} both drop provenance with a single
+   * {@code remove}, so a second entry would silently keep an out-of-band claim alive across a key
+   * the user has already replaced.
+   */
+  @Test
+  public void markingOutOfBandTwiceStillDropsInOne() {
+    final IdentityKey key = someIdentity();
+    store.saveIdentity(ALICE, key);
+    store.markKeyOutOfBand(ALICE);
+    store.markKeyOutOfBand(ALICE);
+    assertTrue("precondition: the key must read as out-of-band",
+        store.isKeyOutOfBand(ALICE));
+
+    store.removeIdentity(ALICE);
+
+    assertFalse("forgetting the key must drop its provenance completely; a surviving duplicate "
+            + "keeps an out-of-band claim attached to an address whose key is gone",
+        store.isKeyOutOfBand(ALICE));
+  }
+
   // ------------------------------------------------------------- scoping
 
   /** Accepting one contact's change must not silently clear another's warning. */
