@@ -12,6 +12,7 @@ import android.text.method.ScrollingMovementMethod;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
@@ -630,6 +631,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (mVerifyContactRejectButton == null) return;
     mVerifyContactRejectButton.setContentDescription(
         "The number does not match - forget this contact's key");
+    refuseTapsThroughAnotherWindow(mVerifyContactRejectButton);
     mVerifyContactRejectButton.setOnClickListener(v -> {
       if (chosenContact == null) return;
       // Same binding as Verify, and for a harsher reason: rejectContactKey acts purely by address
@@ -779,6 +781,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   private void createVerifyContactVerifyButtonClickListener() {
     if (mVerifyContactVerifyButton == null) return;
+    refuseTapsThroughAnotherWindow(mVerifyContactVerifyButton);
     mVerifyContactVerifyButton.setOnClickListener(v -> {
       try {
         // false means "this could not be recorded" - no contact, no account, or nothing pinned to
@@ -5370,6 +5373,61 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!mInputEditText.hasFocus()) mInputEditText.requestFocus();
     mRichInputConnection.setOtherIC(mInputEditText);
     mRichInputConnection.setShouldUseOtherIC(true);
+  }
+
+  /**
+   * A notice for a tap that arrived through another application's window.
+   *
+   * <p>Its own sentence, because the user has to be told the press did nothing and why. The
+   * platform's own answer - {@code android:filterTouchesWhenObscured} - discards the touch in
+   * silence, which turns every security control dark for anyone running a blue-light filter, a
+   * screen dimmer, a chat head or accessibility magnification, with nothing on screen to explain
+   * it. That is this file's recorded "refusal that locked the keyboard" failure, and a refusal the
+   * user cannot see is indistinguishable from a broken button.
+   */
+  static final String INFO_TAP_CAME_THROUGH_ANOTHER_WINDOW = "Something is drawn over this "
+      + "keyboard, so that press was ignored. An app on top of the screen can put a button where "
+      + "you did not expect one. Close whatever is overlaying the screen and try again.";
+
+  /**
+   * Whether a touch reached a security control through some other app's window.
+   *
+   * <p>The controls this guards are all single, unconfirmed taps, and that is deliberate: a
+   * standing warning must always leave one deliberate response available, so this app has no
+   * confirmation dialog anywhere. The design assumes the tap came from the user, and Android says
+   * when it did not - {@code FLAG_WINDOW_IS_OBSCURED} is set when another window was over the
+   * touched point. An app holding "Display over other apps" can place a full-screen
+   * {@code TYPE_APPLICATION_OVERLAY}, a higher policy layer than {@code TYPE_INPUT_METHOD}, mark it
+   * {@code FLAG_NOT_TOUCHABLE}, and let taps fall through to whatever it drew over. The platform
+   * began blocking untrusted touches itself in API 31; this app supports 26 and says so in its
+   * README, so 26-30 is the range where nothing else is watching.
+   *
+   * <p>What that buys the attacker is specific: Verify asserts that the user read twelve digits
+   * aloud and heard the same ones back, which is the single claim this app makes that the user
+   * cannot re-derive from anything on screen. Reject destroys a pin. Delete destroys a
+   * conversation. None of them asks twice.
+   *
+   * <p>PARTIALLY obscured is deliberately not refused. A partially-obscured window is the ordinary
+   * state under a status-bar chip or a notification shade peek, and refusing it would be the silent
+   * dead button by another route.
+   */
+  private boolean tapCameThroughAnotherWindow(final MotionEvent event) {
+    if (event == null) return false;
+    if ((event.getFlags() & MotionEvent.FLAG_WINDOW_IS_OBSCURED) == 0) return false;
+    setInfoUnlessWarned(INFO_TAP_CAME_THROUGH_ANOTHER_WINDOW);
+    return true;
+  }
+
+  /**
+   * Wires one security-consequential control to refuse taps delivered through another window.
+   *
+   * <p>Applied at the touch stage rather than inside each click listener, so the click never
+   * happens at all - a listener that checks afterwards has already been entered, and several of
+   * these do their work before any early return.
+   */
+  private void refuseTapsThroughAnotherWindow(final View button) {
+    if (button == null) return;
+    button.setOnTouchListener((v, event) -> tapCameThroughAnotherWindow(event));
   }
 
   /**
