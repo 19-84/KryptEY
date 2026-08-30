@@ -51,7 +51,7 @@ public class NojavadocDescribesAmemberItIsNotAttachedToTest {
    * larger steps: the mechanical cases - two blocks describing the same member, or a doc stranded
    * above an unrelated field - are gone from everywhere else.
    */
-  private static final int KNOWN = 15;
+  private static final int KNOWN = 11;
 
   private static Path repositoryRoot() {
     Path here = Paths.get("").toAbsolutePath();

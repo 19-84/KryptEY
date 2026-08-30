@@ -1911,9 +1911,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * that will drift: this file already carries a test forbidding one claim from being shared
    * between two messages for the opposite reason, and the moment one copy is reworded the two arms
    * start describing the same event differently.
-   */
-  /**
-   * The caution owed when a key was pinned by THIS paste.
+   *
+   * <p>What it says: the caution owed when a key was pinned by THIS paste.
    *
    * <p>Gated on the event actually having happened, and "happened" means <em>changed</em>, not
    * "is true now". {@code hasPinnedKey} alone is satisfied by a pin that survived a deletion —
@@ -2152,12 +2151,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /**
-   * Whether an info message means encrypt and decrypt cannot work.
-   *
-   * <p>Separated so it can be tested: the watcher itself needs an inflated IME, and this is the
-   * decision, not the wiring.
-   */
-  /**
    * What the strip does when the clipboard holds something of ours: re-arm, then maybe say so.
    *
    * <p>One implementation, called by the real listener and by the test seam, because the ORDER is
@@ -2190,6 +2183,12 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
+  /**
+   * Whether an info message means encrypt and decrypt cannot work.
+   *
+   * <p>Separated so it can be tested: the watcher itself needs an inflated IME, and this is the
+   * decision, not the wiring.
+   */
   static boolean disablesActionButtons(final String message) {
     if (message == null) return false;
     // startsWith, not equals. The banner may now carry a "Sending to: X" line under a standing
@@ -2222,39 +2221,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   /**
-   * Decides whether Encrypt and Decrypt are usable, and paints that.
-   *
-   * <p>The banner text is still consulted, and that half is unchanged: it is how "no contact
-   * chosen" and "the store cannot be decrypted" reach the buttons. What it is NOT allowed to be any
-   * more is the WHOLE answer. Deriving the button state from rendered prose means every message
-   * anyone adds to this file is a silent decision about whether both actions are offered, with
-   * ENABLED as the default for anything unrecognised - and the password-field notice was exactly
-   * that: {@code setHostFieldIsPassword(true)} wrote "Encryption and decryption are turned off
-   * here" onto the banner, the watcher read a string that was not one of the two named ones, and
-   * both buttons came ON. Focusing another app's password box was the only event in this app that
-   * turned the action buttons on by announcing that they were off.
-   *
-   * <p>{@code actionsAreAvailable()} is the fact behind that sentence, so it is asked directly. The
-   * two click paths already refuse on it, which is why the defect was a lie about state rather than
-   * a way to run either action - but the buttons are the control surface and the prose is beside
-   * it, and an app whose only lasting surface says one thing while its buttons say the other has
-   * spent the credibility it needs for the warnings that matter.
-   *
-   * <p>Called from the text watcher AND from {@code setHostFieldIsPassword}, because the guard can
-   * change without the banner changing: {@code setInfoUnlessWarned} correctly refuses to write the
-   * notice over a standing security warning, and with no banner change there was no watcher, so
-   * over a password box with a substitution warning on screen both buttons stayed lit - the one
-   * state where both of the app's reasons to refuse are live at once.
-   */
-  /**
-   * Whether the chosen contact's row is known to have reached disk.
+   * Contacts whose row is known not to have reached disk, and the write count at that moment.
    *
    * <p>A fact, kept because the alternative was reading it back out of the banner - and the banner
    * is composed warning-first, so any warning sharing it moved the notice off the start of the
    * string and a prefix match missed it precisely when a security warning was already on screen.
-   */
-  /**
-   * Contacts whose row is known not to have reached disk, and the write count at that moment.
    *
    * <p>Keyed by address and kept apart from the banner, because both of the places this lived
    * before could be taken away by something that had nothing to do with the fact.
@@ -2347,6 +2318,31 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private long mAccountReloadsWhenNoticeRaised = -1;
 
+  /**
+   * Decides whether Encrypt and Decrypt are usable, and paints that.
+   *
+   * <p>The banner text is still consulted, and that half is unchanged: it is how "no contact
+   * chosen" and "the store cannot be decrypted" reach the buttons. What it is NOT allowed to be any
+   * more is the WHOLE answer. Deriving the button state from rendered prose means every message
+   * anyone adds to this file is a silent decision about whether both actions are offered, with
+   * ENABLED as the default for anything unrecognised - and the password-field notice was exactly
+   * that: {@code setHostFieldIsPassword(true)} wrote "Encryption and decryption are turned off
+   * here" onto the banner, the watcher read a string that was not one of the two named ones, and
+   * both buttons came ON. Focusing another app's password box was the only event in this app that
+   * turned the action buttons on by announcing that they were off.
+   *
+   * <p>{@code actionsAreAvailable()} is the fact behind that sentence, so it is asked directly. The
+   * two click paths already refuse on it, which is why the defect was a lie about state rather than
+   * a way to run either action - but the buttons are the control surface and the prose is beside
+   * it, and an app whose only lasting surface says one thing while its buttons say the other has
+   * spent the credibility it needs for the warnings that matter.
+   *
+   * <p>Called from the text watcher AND from {@code setHostFieldIsPassword}, because the guard can
+   * change without the banner changing: {@code setInfoUnlessWarned} correctly refuses to write the
+   * notice over a standing security warning, and with no banner change there was no watcher, so
+   * over a password box with a substitution warning on screen both buttons stayed lit - the one
+   * state where both of the app's reasons to refuse are live at once.
+   */
   private void refreshActionButtons() {
     // The same guard setMainInfoTextTextChangeListener carries, and no more: the buttons come from
     // the same inflate and the watcher already dereferenced them unguarded, so a null check on them
