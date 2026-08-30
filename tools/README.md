@@ -115,6 +115,20 @@ about a tree that never existed. It fails in the confusing direction too: the ru
 finding is real, and neither matches the code you have. Queue the edit and run again; a full JVM
 suite is under seven minutes.
 
+## Running one test class
+
+`./tools/build-in-docker :app:testDebugUnitTest --tests '*SomeTest*'` finishes in about **12
+seconds**, against 6-7 minutes for the whole suite. Several `--tests` flags can be combined.
+
+This matters more than it sounds. Mutation testing is the only reliable coverage oracle this project
+has - delete a guard, see whether anything goes red - and at seven minutes a question it gets
+rationed. At twelve seconds it does not. Four sweeps in this repo were run the slow way before anyone
+checked.
+
+The full suite is still what a finding is confirmed against: a narrowed run cannot tell you that a
+mutation is unattributed by the *whole* suite, only that the class you suspected did not catch it.
+Both numbers belong in a report - narrow to find, full to confirm.
+
 ## Instrumentation tests
 
 `tools/test-on-emulator` runs them. There are 41, and the count in this sentence is checked against
