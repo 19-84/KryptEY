@@ -243,4 +243,76 @@ public class InviteOverApasswordFieldTest {
             + "in, and re-filling it puts content back on a screen the guard had just cleared",
         0, composeBox().getText().length());
   }
+
+  /**
+   * Encrypt and Decrypt must refuse over a password box too, and nothing tests that they do.
+   *
+   * <p>Three call sites ask {@code actionsAreAvailable()} before doing anything: Invite, Encrypt and
+   * Decrypt. A round deleted all three at once and ran the whole {@code latin} package: only the
+   * Invite site's tests went red. The other two refusals were enforced by nothing — every test that
+   * mentions the password field asserts the predicate's value or the buttons' {@code isEnabled()},
+   * and none presses a lit-looking control while the host field is a password box.
+   *
+   * <p>{@code View.performClick()} invokes a listener whatever the enabled state, and this file's
+   * history records a state where both buttons stayed lit over a password box with these guards the
+   * only thing refusing. The repaint is reliable today, so this is defence in depth — but it is the
+   * layer {@code INFO_PASSWORD_FIELD}'s own sentence is written about: <em>"a decrypted message is
+   * never written into another app's password box"</em>. {@code decryptMessageInClipboard} is what
+   * would write it, and it was the untested one.
+   *
+   * <p>Driven through the real IME, so the strip has a live input connection and the refusal is what
+   * stops the commit rather than a null dereference on the way to it.
+   */
+  @Test
+  public void encryptRefusesOverApasswordBox() {
+    theHostFieldIsApasswordBox();
+    committed = null;
+
+    final View encrypt = liveStrip().findViewById(R.id.e2ee_button_encrypt);
+    assertNotNull(encrypt);
+    org.robolectric.shadows.ShadowToast.reset();
+    encrypt.performClick();
+    ShadowLooper.idleMainLooper();
+
+    // The TOAST, not the absence of a commit. Nothing commits here either way - with the guard gone
+    // the press falls through to "choose a contact first" and still writes nothing - so asserting
+    // an empty host field passes in both worlds and measures the fixture rather than the refusal.
+    // Which sentence is shown is the one observable that differs, and it is also the thing the user
+    // gets: the reason.
+    assertEquals("pressing Encrypt over a password box must be refused BY THE PASSWORD GUARD, and "
+            + "say so. A dark button is a hint and not a control - performClick reaches the listener "
+            + "regardless - so this sentence is the evidence the guard ran. Shown: "
+            + org.robolectric.shadows.ShadowToast.getTextOfLatestToast(),
+        E2EEStripView.INFO_PASSWORD_FIELD,
+        org.robolectric.shadows.ShadowToast.getTextOfLatestToast());
+    assertNull("...and nothing may reach the host field", committed);
+  }
+
+  @Test
+  public void decryptRefusesOverApasswordBox() {
+    theHostFieldIsApasswordBox();
+    committed = null;
+
+    final android.content.ClipboardManager clipboard =
+        (android.content.ClipboardManager) RuntimeEnvironment.getApplication()
+            .getSystemService(Context.CLIPBOARD_SERVICE);
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", "anything at all"));
+
+    final View decrypt = liveStrip().findViewById(R.id.e2ee_button_decrypt);
+    assertNotNull(decrypt);
+    org.robolectric.shadows.ShadowToast.reset();
+    decrypt.performClick();
+    ShadowLooper.idleMainLooper();
+
+    // Same reasoning as its sibling: with the guard gone the press reads the clipboard, fails to
+    // decrypt what is there, and still commits nothing - so only the sentence distinguishes the two
+    // worlds. This is the call site INFO_PASSWORD_FIELD's promise is about.
+    assertEquals("pressing Decrypt over a password box must be refused by the password guard and "
+            + "say so - this is the call site that would write a decrypted message into the host "
+            + "field, and the sentence promises in so many words that it never does. Shown: "
+            + org.robolectric.shadows.ShadowToast.getTextOfLatestToast(),
+        E2EEStripView.INFO_PASSWORD_FIELD,
+        org.robolectric.shadows.ShadowToast.getTextOfLatestToast());
+    assertNull("...and nothing may reach the host field", committed);
+  }
 }
