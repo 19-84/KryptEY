@@ -445,6 +445,35 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private final String INFO_NAME_TOO_LONG = "That name is too long to show next to the contact's address tag. Use a shorter one - the tag is what tells two contacts with similar names apart.";
   private final String INFO_NAME_LOOKS_LIKE_A_TAG = "Names cannot contain '#'. The app shows a tag starting with # beside each contact to tell similar names apart, and a name that imitates one would defeat that.";
   private final String INFO_SAME_ADDRESS_DIFFERENT_NAME = "Not added: this invite is for the identity you already have saved as \"%2$s\", so \"%1$s\" would be a second name for the same person. If you meant to rename them, delete the old contact first. If someone told you this is a different person, they are using an identity you already have to introduce themselves as somebody else.";
+  /**
+   * The shared-name wording for when the two rows hold the SAME identity key.
+   *
+   * <p>{@code INFO_DUPLICATE_CONTACT_NAME} tells the user to compare the security number against
+   * each row, because "the one they confirm is theirs". That is the correct instruction for an
+   * impostor, who holds a different key and therefore shows different digits. It is the wrong
+   * instruction here, and wrong in the direction that costs something: a relayed invite carries the
+   * peer's REAL key, so both rows show the same number, the peer confirms both, and a user following
+   * the sentence literally is told to pick by a signal that cannot distinguish them.
+   *
+   * <p>So the question it asks is one the peer can actually answer. How many invites they sent is
+   * something they know; which of two rows in someone else's contact list is theirs is not - the
+   * rows are told apart by a tag derived under the reader's own per-install secret, which the peer
+   * cannot compute and has never seen.
+   *
+   * <p>It keeps the same ending as its sibling, because the ending has to be an action that ends the
+   * condition: this warning is raised from the shared-name check and lowered by it, so deleting
+   * either row puts it down. The pin is deliberately left behind by a deletion, which is why the
+   * condition is the shared NAME and not the shared key - a warning keyed on the pin could not be
+   * ended by anything the user can do, and this file has twice paid for a sentence with no exit.
+   */
+  private final String INFO_DUPLICATE_NAME_SAME_KEY = "You already have a contact called %s, and "
+      + "this one holds the SAME key. One person's key belongs to one address, and even "
+      + "reinstalling gives them a new one - so these two entries did not both come from them. "
+      + "Comparing security numbers will NOT tell them apart, because both show the same number. "
+      + "Ask them whether they sent you two invites, and do not send anything private to either "
+      + "until you have agreed a fresh invite with them by some other channel. To end this notice, "
+      + "delete one of them - it stays while two contacts share a name.";
+
   private final String INFO_DUPLICATE_CONTACT_NAME = "You already have a contact called %s, and this is a different one - not a replacement. A reinstall really does create a new contact, and so does someone pretending to be them. Both now appear in your list, tagged by address. Compare the security number by voice against EACH of them: the one they confirm is theirs. To end this notice, delete the one they do not confirm - it stays while two contacts share a name.";
 
   /**
@@ -1651,7 +1680,6 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         // there is one definition of when this warning is true rather than two that drift.
         warnIfKeyWasRejected(chosenContact);
         warnIfThisKeyIsPinnedElsewhere(chosenContact);
-      warnIfThisKeyIsPinnedElsewhere(chosenContact);
         {
           // Through the guarded writer: an attacker whose substitution was just refused posts one
           // more ordinary invite under a fresh name at a fresh address, the user accepts it -
@@ -2708,7 +2736,23 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // i.e. the one furthest along.
     final boolean live = SignalProtocolMain.hasLiveContactWithSameDisplayName(
         contact.getFirstName(), contact.getLastName(), contact.getSignalProtocolAddress());
-    return live ? INFO_DUPLICATE_CONTACT_NAME : INFO_RETIRED_CONTACT_NAME;
+    if (!live) return INFO_RETIRED_CONTACT_NAME;
+
+    // The same key at both addresses outranks the ordinary duplicate wording.
+    //
+    // Not a stylistic preference between two true sentences: the ordinary one instructs the user to
+    // compare the number against each row and keep "the one they confirm", and in this state that
+    // instruction cannot be carried out, because both rows show the same digits and the peer
+    // confirms both. Asked here rather than added to the re-asserted warnings in selectContact,
+    // which is where it looks like it belongs: the pin survives contact deletion, so a warning
+    // conditioned on the pin has no action that ends it and would sit on the banner for the life of
+    // the install - the retired-name failure this file has already paid for once. Conditioned on the
+    // shared NAME, it is raised, re-derived and lowered exactly like its sibling.
+    if (!SignalProtocolMain.addressesAlreadyPinningTheSameKey(
+        contact.getSignalProtocolAddress()).isEmpty()) {
+      return INFO_DUPLICATE_NAME_SAME_KEY;
+    }
+    return INFO_DUPLICATE_CONTACT_NAME;
   }
 
   private void setInfoTextViewMessage(final TextView textView, final String message) {
@@ -3344,11 +3388,11 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    * and it does not tell them to delete anything: which row is the one they meant is a question only
    * they can answer, and the app guessing would delete a conversation.
    */
-  private final String INFO_SAME_KEY_AT_ANOTHER_ADDRESS = "Careful: the key just stored for %s is "
+  private final String INFO_SAME_KEY_AT_ANOTHER_ADDRESS = "Careful: the key saved for %s is "
       + "the same key already saved for %s. One person's key belongs to one address, and even "
       + "reinstalling gives them a new one - so these two entries did not both come from them. "
       + "Comparing security numbers will NOT tell them apart, because both show the same number. "
-      + "Ask them which one they sent, and do not send anything private to the other.";
+      + "Ask them whether they sent you two invites: if they sent one, something in between made the other. Do not send anything private to either until you have agreed a fresh invite with them by some other channel.";
 
   /**
    * Warns when an arriving key is already pinned at a different address.
@@ -4494,6 +4538,10 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private boolean standingWarningIsAboutAsharedName() {
     if (mStandingWarningText == null) return false;
     return mStandingWarningText.startsWith(literalPrefixOf(INFO_DUPLICATE_CONTACT_NAME))
+        // The same-key wording is a shared-name warning too, and has to be recognised as one or it
+        // is raised by that condition and never lowered by it - a sentence with no exit, arrived at
+        // by adding a third wording and updating only the two readers that were easy to find.
+        || mStandingWarningText.startsWith(literalPrefixOf(INFO_DUPLICATE_NAME_SAME_KEY))
         || mStandingWarningText.startsWith(literalPrefixOf(INFO_RETIRED_CONTACT_NAME));
   }
 

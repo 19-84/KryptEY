@@ -2423,7 +2423,7 @@ public class SignalProtocolMain {
    * <p>Keyed on the exact envelope timestamp rather than "the last one", so a message that arrived
    * in between cannot be removed by mistake.
    *
-   * @return whether an entry was found and removed
+   * @return whether the entry was removed AND the removal reached disk
    */
   public static boolean discardRecordedMessage(final SignalProtocolAddress signalProtocolAddress,
                                                final Instant timestamp) {
@@ -2432,8 +2432,18 @@ public class SignalProtocolMain {
     }
     final boolean removed = sInstance.mAccount.removeUnencryptedMessage(
         signalProtocolAddress.getName(), signalProtocolAddress.getDeviceId(), timestamp);
-    if (removed) sInstance.storeAllAccountInformationInSharedPreferences();
-    return removed;
+    if (!removed) return false;
+
+    // Whether it reached DISK, not whether it left memory.
+    //
+    // This returned "found and removed" and threw the write's answer away, which is the same defect
+    // removeContact was changed for and the same one this file keeps finding: the rollback exists
+    // because encrypt writes the plaintext to the log before the encoder runs, so when the encoder
+    // refuses an over-long message the entry has to come back out. If that write is lost, the entry
+    // is gone from memory and still on disk - the next reload restores a log entry for a message
+    // nobody received, and the plaintext of a draft the user was told could not be sent stays
+    // sealed there with nothing to notice it.
+    return sInstance.storeAllAccountInformationInSharedPreferences();
   }
 
   private boolean sessionExists(SignalProtocolAddress signalProtocolAddress) {

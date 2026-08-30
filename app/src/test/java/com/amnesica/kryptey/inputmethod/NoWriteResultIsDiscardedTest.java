@@ -78,30 +78,25 @@ public class NoWriteResultIsDiscardedTest {
     DELIBERATE.put("processSignalMessage->warnIfThisKeyIsPinnedElsewhere", "called for its effect");
     DELIBERATE.put("processUpdatedPreKeyResponse->warnIfThisKeyIsPinnedElsewhere",
         "called for its effect");
-    DELIBERATE.put("decryptMessageAndShowMessageInMainInputField->warnIfIdentityChanged",
-        "the result is captured into a local on the line above; this is the second, effect-only use");
     // The persists below are best-effort saves on paths with no channel to the user. Every
     // operation that makes the user a PROMISE consumes the result instead: verify and reject report
     // it, deleting a contact reports it, and the chat log has its own flag - those were the three
     // this guard was built after. Inventing a notice for each of the rest would mean designing UI
     // for states nobody has specified, and a failed write on any of them is surfaced by the next
     // operation that does have a channel.
-    DELIBERATE.put("buildSession->storeAllAccountInformationInSharedPreferences",
-        "the caller reports whether the session was built; a lost write is re-derived from the peer");
-    DELIBERATE.put("createAndAddContactToList->storeAllAccountInformationInSharedPreferences",
-        "the add-contact path reports its own outcome and the row is visible immediately");
-    DELIBERATE.put("decrypt->storeAllAccountInformationInSharedPreferences",
-        "the chat-log half has its own flag, which is the half with a user-visible consequence");
     DELIBERATE.put("dismissIdentityChange->storeAllAccountInformationInSharedPreferences",
         "no production caller; the wired exit is verifyContactInContactList, which does report");
-    DELIBERATE.put("encrypt->storeAllAccountInformationInSharedPreferences",
-        "the chat-log half has its own flag; the ciphertext has already gone to the messenger");
-    DELIBERATE.put("getPreKeyBundle->storeAllAccountInformationInSharedPreferences",
-        "a lost pre-key allocation costs one invite, and the allocator mints again on the next");
     DELIBERATE.put("importOutOfBandKeyBundle->storeAllAccountInformationInSharedPreferences",
         "no production caller");
-    DELIBERATE.put("recordIdentityChangeIfOffered->storeAllAccountInformationInSharedPreferences",
-        "the record is re-made by the next bundle carrying the same substituted key");
+    DELIBERATE.put("initialize->storeAllAccountInformationInSharedPreferences",
+        "a best-effort write-back after reloading an existing account, so a store predating a "
+            + "persisted field does not churn its display tags; a lost write costs one more churn "
+            + "on the next raise and then settles");
+    DELIBERATE.put("acceptIdentityChange->storeAllAccountInformationInSharedPreferences",
+        "no production caller, the same reason dismissIdentityChange is exempt above");
+    DELIBERATE.put("setChosenContact->warnIfNameIsShared",
+        "called for its effect on a recipient change; the answer is used by selectContact, which "
+            + "is the caller that acts on it");
     DELIBERATE.put("processUpdatedPreKeyResponse->decryptMessageAndShowMessageInMainInputField",
         "this arm asks lastAttachedBundleWasRefused instead, which is the fact it wanted - the "
             + "return value had stopped meaning 'the bundle was accepted'");
@@ -163,6 +158,61 @@ public class NoWriteResultIsDiscardedTest {
     return found;
   }
 
+  /**
+   * Every exemption must still name a site that exists and still discards.
+   *
+   * <p>An exemption is a written claim that dropping one particular write is <em>correct</em>. When
+   * the site it names stops discarding — because somebody did the work and made it report — the
+   * claim stays behind and keeps licensing a call that is no longer there. Nothing notices, because
+   * a stale exemption cannot fail: it only ever suppresses.
+   *
+   * <p>That is not hypothetical. A review round re-ran this test's own algorithm against the tree
+   * and found eight of nineteen entries matching nothing, six of them {@code storeAll…} sites that
+   * now assign into a reported flag and carry a paragraph each explaining why the result must not be
+   * dropped — one of which calls itself the highest-value record in the file. The exemptions beside
+   * them still said a lost write there was re-derivable. Both cannot be true, and the guard was
+   * quietly holding the door open for whichever one somebody edited next.
+   *
+   * <p>So the map is checked against the scan rather than against anyone's memory of it. This is the
+   * same rot assertion {@code AconditionWarningIsLoweredWithItsConditionTest} already carries for
+   * its classification, for the same reason: a list maintained by attention is maintained by exactly
+   * the attention that missed the defect.
+   */
+  @Test
+  public void everyExemptionStillNamesAsiteThatDiscardsAwrite() throws IOException {
+    final Set<String> live = new TreeSet<>();
+
+    for (final String relative : FILES) {
+      final String text = withoutCommentsAndStrings(new String(
+          Files.readAllBytes(mainSources().resolve(relative)), StandardCharsets.UTF_8));
+      final Set<String> answering = booleanMethods(text);
+      final Matcher statement = Pattern.compile(
+          // The condition class stops at a newline and a brace, and an `if (...)` guard may sit
+          // in front of the call. Both come from one bug: `[^;]*` matched newlines, so starting at
+          // a multi-line `if (` header the match ran on until it found the `);` ending the NEXT
+          // statement - swallowing it and capturing "if" as the callee. "if" is not a boolean
+          // method, so the real call was skipped. The single-line form `if (x) write();` was lost
+          // the same way. Both shapes hid a write whose result nobody reads.
+          "(?m)^\\s*(?:if\\s*\\([^;{\\n]*\\)\\s*)?(?:[\\w]+\\.)*(\\w+)\\s*\\([^;{\\n]*\\)\\s*;").matcher(text);
+      while (statement.find()) {
+        final String called = statement.group(1);
+        if (!answering.contains(called)) continue;
+        if (isContinuation(text, statement.start())) continue;
+        live.add(enclosingMethodName(text, statement.start()) + "->" + called);
+      }
+    }
+
+    final List<String> stale = new ArrayList<>();
+    for (final String site : new TreeSet<>(DELIBERATE.keySet())) {
+      if (!live.contains(site)) stale.add(site);
+    }
+
+    assertEquals("these exemptions no longer name a site that discards a write, so each is a "
+            + "standing claim about code that is not there - and an exemption cannot fail, it can "
+            + "only suppress. Delete them, or if the site moved, re-point them: " + stale,
+        0, stale.size());
+  }
+
   @Test
   public void noboolReturningMethodIsCalledAsABareStatement() throws IOException {
     final Map<String, List<String>> offenders = new LinkedHashMap<>();
@@ -179,7 +229,13 @@ public class NoWriteResultIsDiscardedTest {
 
       // A bare statement: start of a line, an optional receiver, the call, then a semicolon.
       final Matcher statement = Pattern.compile(
-          "(?m)^\\s*(?:[\\w]+\\.)*(\\w+)\\s*\\([^;]*\\)\\s*;").matcher(text);
+          // The condition class stops at a newline and a brace, and an `if (...)` guard may sit
+          // in front of the call. Both come from one bug: `[^;]*` matched newlines, so starting at
+          // a multi-line `if (` header the match ran on until it found the `);` ending the NEXT
+          // statement - swallowing it and capturing "if" as the callee. "if" is not a boolean
+          // method, so the real call was skipped. The single-line form `if (x) write();` was lost
+          // the same way. Both shapes hid a write whose result nobody reads.
+          "(?m)^\\s*(?:if\\s*\\([^;{\\n]*\\)\\s*)?(?:[\\w]+\\.)*(\\w+)\\s*\\([^;{\\n]*\\)\\s*;").matcher(text);
       while (statement.find()) {
         final String called = statement.group(1);
         if (!answering.contains(called)) continue;

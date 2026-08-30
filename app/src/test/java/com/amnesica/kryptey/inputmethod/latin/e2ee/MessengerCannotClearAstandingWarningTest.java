@@ -187,6 +187,47 @@ public class MessengerCannotClearAstandingWarningTest {
       }
     });
     warnings.add(new Warning() {
+      @Override public String name() {
+        return "the same-key warning when the two rows also share a name";
+      }
+
+      /**
+       * The FACT, not the sentence.
+       *
+       * <p>Which sentence carries it changes with the state - the arrival wording names the two
+       * addresses, and once the rows also share a name the shared-name warning carries it instead,
+       * because that is the one re-derived on every selection. Both say it. Pinning the exact
+       * sentence would make this row a test of which wording won rather than of whether the user is
+       * still told the thing that matters.
+       */
+      @Override public String fragment() { return "both show the same number"; }
+
+      @Override public void raise() throws Exception {
+        // The same relay move as the row above, with the one difference that makes it the case the
+        // attack actually produces: the user names the second row after the person it claims to be
+        // from. The row above names it "Robert Smith", which collides with nothing, so the
+        // shared-name warning never fires there and that row cannot see this interaction at all.
+        //
+        // Two review rounds found this independently. The same-key warning is raised only on arrival
+        // and re-derived nowhere, and the shared-name warning is re-derived on every selection and
+        // writes the slot unconditionally - so one tap on a contact replaced the only sentence that
+        // says comparing numbers cannot tell these two rows apart with one instructing the user to
+        // do exactly that and keep "the one they confirm". The peer confirms both: it is their real
+        // key at both addresses.
+        final var original = EnvelopeCodec.fromWire(peerBundle);
+        final var relabelled =
+            com.amnesica.kryptey.inputmethod.signalprotocol.BundleSigning.asEditedInTransit(
+                original,
+                new com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope(
+                    original.getPreKeyResponse(), "an-address-the-relay-picked", 1));
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_first_name_input_field)).setText("Bob");
+        ((android.widget.EditText) strip.findViewById(
+            R.id.e2ee_add_contact_last_name_input_field)).setText("Jones");
+        strip.addContactForTest(relabelled);
+      }
+    });
+    warnings.add(new Warning() {
       @Override public String name() { return "the identity-change warning"; }
       @Override public String fragment() { return "different key"; }
       @Override public void raise() throws Exception {
@@ -641,7 +682,13 @@ public class MessengerCannotClearAstandingWarningTest {
       "INFO_INVITE_REFUSED", "INFO_INVITE_REFUSED_SESSION_KEPT",
       "INFO_INVITE_REFUSED_BUT_KEY_PINNED", "INFO_IDENTITY_CHANGED_EXISTING",
       "INFO_PINNED_AFTER_REJECT", "INFO_DUPLICATE_CONTACT_NAME", "INFO_RETIRED_CONTACT_NAME",
-      "INFO_SAME_ADDRESS_DIFFERENT_NAME", "INFO_SAME_KEY_AT_ANOTHER_ADDRESS"));
+      "INFO_SAME_ADDRESS_DIFFERENT_NAME", "INFO_SAME_KEY_AT_ANOTHER_ADDRESS",
+      // Swept by the colliding-name row above rather than by one of its own: it is not
+      // raised by a call site at all, it is the wording warnIfNameIsShared selects when the
+      // two same-named rows hold one key. The row raises the arrival wording and then fires
+      // the selection event, which is exactly the path that swaps one for the other, and it
+      // asserts the fact both sentences carry rather than either sentence.
+      "INFO_DUPLICATE_NAME_SAME_KEY"));
 
   /**
    * Constants the scan reaches that are not warnings at all.
