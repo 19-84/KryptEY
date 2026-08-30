@@ -830,3 +830,36 @@ Recorded also because the failure mode is reusable: a predicate comparing two re
 address is silent, permanent, and invisible to any test that builds its fixture with the same
 rendering the predicate uses. `ProtocolAddresses.key` is the canonical form and the chat log uses it;
 `String.valueOf` is the idiom everywhere else. Any comparison that crosses those two is wrong.
+
+## Searching for a name is not measuring coverage
+
+A sweep looked for user-facing constants and write-reporting accessors that no test mentions, on the
+theory that an unmentioned control is an untested one. It produced three candidates. **All three were
+wrong**, and the same way each time.
+
+- `INFO_INVITE_NOT_SAVED` — reported as having no test at all. `AnInviteWhoseKeysWereNotKeptIsRefusedTest`
+  already covered that refusal in both directions, injecting the failure with a `StorageHelper` whose
+  write returns false and asserting on the real host field.
+- The verify-screen race guard — reported as having neither of its sentences asserted anywhere.
+  `ThebuttonsActOnTheKeyThatWasOnScreenTest` covers it in five cases, including the one distinguishing
+  the two sentences against the digits actually painted.
+- `lastSessionWriteReachedDisk` — zero references by name in the whole suite. Inverting it to always
+  report success fails **ten** tests across four classes, one of them named for the send path the
+  sweep claimed was uncovered.
+
+The reason is structural rather than bad luck. A name search finds tests that *mention* a thing. The
+best tests here never mention it: they install a failing store, press a button, and assert what the
+banner says or what reached the host field. Naming the accessor would couple them to an
+implementation detail they deliberately avoid. So the method is biased toward flagging exactly the
+controls that are covered by the strongest kind of test, and its output reads as a list of gaps.
+
+**Mutation is the oracle.** Invert the production behaviour and see what fails: it costs one suite run
+per candidate instead of a grep, and it answers the question actually being asked - does anything
+depend on this - rather than a proxy for it. Every verdict about coverage on this branch should be
+reached that way, and the three above are what it costs not to.
+
+Two of the three had already been committed as new tests before the duplication was noticed, and were
+withdrawn. What survives from the sweep is one genuine finding, and it was not found by searching for
+names: the address-rendering defect, where a predicate compared two renderings of one address, was
+constant-false in production, and had no coverage because the branch could not be entered. That came
+from reading the code.
