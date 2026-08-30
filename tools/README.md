@@ -99,6 +99,14 @@ emulator share a Gradle cache volume, so two `build-in-docker` invocations at on
 `build-in-docker` alongside the emulator's own build step — deadlock on `journal-1.lock` and fail
 with a message that names neither the other process nor the cause. Run them one at a time.
 
+**`test-on-emulator` counts as one of them**, and that is easy to miss because it does not look like a
+build: it boots a device for ten minutes first, and only then reaches its own `assembleDebugAndroidTest`
+step. So a check of "is a build running?" comes back clean at the moment you launch it and is wrong
+several minutes later, which is exactly how two builds ended up live at once here twice. If anything
+else may want the lock, either run the emulator alone or expect the collision - it has so far
+serialised badly rather than deadlocked, roughly doubling wall time, but the deadlock is the same
+lock.
+
 The second thing, learned the same way: **do not edit a source file while a suite is running.** A
 number of the guards here are source scanners - they read the working tree with `Files.readAllBytes`
 at test execution time, not from the compiled classes. So an edit made after the compile step and
