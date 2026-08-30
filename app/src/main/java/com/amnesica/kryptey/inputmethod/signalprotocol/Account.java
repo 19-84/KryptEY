@@ -436,13 +436,22 @@ public class Account {
    * collapsed, pressing a real entry out of the bound with a hundred variants instead of a hundred
    * repeats. Writer and reader now fold identically, which is the only way a bound on "distinct
    * names" means anything.
+   *
+   * @param renderedAddress the address as {@link
+   *     com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses#key} renders it -
+   *     name, {@code U+001F}, device id. NOT {@code String.valueOf(address)}, which renders
+   *     {@code name.deviceId} and is the idiom used throughout the view. The only reader of this
+   *     list compares against {@code ProtocolAddresses.key}, so an entry written the other way can
+   *     never match and the suppression it exists for silently stops working. This parameter was
+   *     called {@code addressName}, which invited exactly that: every test that writes one passes a
+   *     bare name or a dotted form, and not one of them writes what production writes.
    */
   public void retireDisplayName(final String firstName, final String lastName,
-                                final String addressName) {
+                                final String renderedAddress) {
     if (firstName == null && lastName == null) return;
     final String first = firstName == null ? "" : firstName;
     final String last = lastName == null ? "" : lastName;
-    final String address = addressName == null ? "" : addressName;
+    final String address = renderedAddress == null ? "" : renderedAddress;
 
     final LinkedList<String[]> retired = getRetiredDisplayNames();
 

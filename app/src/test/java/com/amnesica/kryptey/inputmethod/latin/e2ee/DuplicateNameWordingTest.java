@@ -288,7 +288,13 @@ public class DuplicateNameWordingTest {
     final SignalProtocolAddress secondAddress = ProtocolAddresses.of("a-second-address", 1);
 
     victim.setContactList(new ArrayList<>());
-    victim.retireDisplayName("Bob", "Jones", String.valueOf(peerAddress));
+    victim.retireDisplayName("Bob", "Jones",
+        // ProtocolAddresses.key, because that is what removeContact writes. String.valueOf
+        // renders name.deviceId and the reader compares against name+U+001F+deviceId, so a
+        // fixture written that way builds a retirement production cannot produce - which is
+        // exactly how a withdrawn test came to pass against a predicate that never fired.
+        com.amnesica.kryptey.inputmethod.signalprotocol.util.ProtocolAddresses
+            .key(peerAddress));
 
     acceptInviteFrom(attackerBundle, "Bob", "Jones", secondAddress);
 
