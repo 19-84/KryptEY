@@ -528,3 +528,35 @@ The class already said so in its own javadoc, and the reason to check rather tha
 this branch has now corrected several comments that were true when written and false later. This one
 is still true, and it is worth having as a measurement rather than a claim: the map is empty for the
 life of every install, so it is not a growth surface and does not need a cap.
+
+## What the shipped keyboard layouts can actually do
+
+The 196 layout files under `res/xml*` — `kbd_*`, `rowkeys_*`, `key_styles_*` — have never been read
+by anyone. REVIVAL records a round against the layout *parser*; the shipped XML it parses was
+unexamined, and it is a plausible place to hide something, because a key is a declaration rather
+than code and eleven rounds of Java review would not see it.
+
+Swept for the only question that matters on that surface: **can a key do something the strip does
+not know about, or send anything off the device?** Every action code any layout emits, enumerated
+from the key styles:
+
+`key_delete`, `key_language_switch`, `key_settings`, `key_shift`, `key_space`, `key_tab`,
+`key_switch_alpha_symbol`, and a zero-width non-joiner. That is the whole set.
+
+Three absences are worth stating, because each is a channel this app would otherwise have:
+
+- **No voice-input key.** AOSP ships one — `key_shortcut`, which hands audio to a recogniser. Not in
+  the layouts, not in `Constants`, not in `KeyboardId`: `grep` for `key_shortcut`, `shortcut_key`,
+  `voice_key` and `CODE_SHORTCUT` across `res/` and `java/` returns nothing at all. A keyboard whose
+  premise is that plaintext never leaves the device cannot have a microphone key, and this fork does
+  not have one.
+- **No clipboard or paste key.** Nothing in any layout references the clipboard, so the only
+  clipboard interaction is the strip's own listener.
+- **No emoji or search key**, both of which are network- or provider-backed on stock keyboards.
+
+`key_settings` is the one that opens an app screen, and it reaches `SettingsActivity` through an
+explicit class rather than an implicit action.
+
+A clean negative result, and worth recording as one: the layout surface adds no capability beyond
+editing text and switching layouts. It does not close the rest of that directory — the rendering and
+geometry of those files is still unexamined, and this says nothing about it.
