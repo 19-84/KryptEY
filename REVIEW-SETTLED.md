@@ -678,3 +678,26 @@ disk cost for dropped messages.
 The test carries the control that makes the number mean something: the last message must still
 decrypt after the skips. If it did not, the keys were not retained, the growth would be measuring
 something else, and the figure above would be noise.
+
+## The legacy migration never widens the cleartext window
+
+A round on data lifetime named this as unchecked: whether the preferences map holds cleartext during
+the one-time 0.1.5 conversion, since that map is backed by a file.
+
+It does, and it cannot not — but the app introduces none of it. The conversion reads values that are
+**already** cleartext on disk, written by a version that predates the sealing, and replaces each with
+a sealed one. There is no path that writes a new cleartext value: every write in the storage layer
+goes through the sealing store. So the map holds what the old version left there, for as long as it
+takes to convert it, and the migration only ever narrows that exposure.
+
+Two properties of that loop are worth having recorded alongside, because they are what make the
+narrowing safe rather than merely intended. It writes a `MIGRATING` marker **before touching any
+value**, so a death half-way through is distinguishable by the next run from a substitution. And it
+reads each sealed value back before continuing, refusing to mark the store encrypted if a write did
+not persist — a storage layer can fail a write silently, and marking the store converted over
+surviving cleartext is unrecoverable.
+
+What remains is already recorded in the crypto box's own scope note and is not new: `SharedPreferences`
+rewrites by rename, so the *pre-migration* file's blocks are unlinked rather than overwritten, and
+that cleartext can persist in freed blocks. That is a bound on what any migration can promise, not a
+defect in this one.
