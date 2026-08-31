@@ -784,9 +784,19 @@ one forged bundle. The app's own advice steers toward this state: the duplicate-
 is pushed into renaming one.
 
 The residual harm there is the thinnest of the family and is stated rather than waved at: the rows are
-distinguishable by name and by address tag, the pin is the peer's real key so confidentiality holds,
-and every later key event at either address is still covered by the identity-change and rejection
-warnings. What the user loses is knowing that one of the two rows was minted by the messenger.
+distinguishable by name and by address tag, and every later key event at either address is still
+covered by the identity-change and rejection warnings.
+
+**An earlier version of this paragraph said "the pin is the peer's real key so confidentiality
+holds", and that was too strong.** Round 12 found the case it misses, and it is worth stating
+because a reader deciding whether to close this would read the old sentence and conclude the cost was
+only informational. Confidentiality holds *against the messenger* — the key is the peer's own, so the
+relay cannot read anything. It does not follow that the message goes where the user thinks. If the
+replayed invite belongs to contact C and the user names the new row "B", then messages the user
+believes they are sending to B are encrypted to C's key and readable by C: a mis-delivery to another
+of the user's own contacts. Not escalated, because the same add raises the compare-the-number caution
+and the two rows carry different address tags — but "confidentiality holds" was the wrong summary,
+and what the user loses is more than knowing that one of the two rows was minted by the messenger.
 
 If it is ever closed, the banner is the wrong surface. The contact row is the right one:
 `ListAdapterContacts.getView` already recomputes trust per bind and already owns a two-state badge and

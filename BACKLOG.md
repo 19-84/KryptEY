@@ -179,6 +179,59 @@ weaker, lower-ranked line goes.
 - `KeyboardSwitcher.isShowingMoreKeysPanel()` is the one accessor in that class not null-checking
   `mKeyboardView`, while seven siblings do. Its single caller is already guarded on the same field.
 
+## From round 12 (second clean pass — confidentiality and composition)
+
+Round 12 reported **no HIGH or CRITICAL**. Deliberately independent of round 11: it went at what
+crosses between host apps, what reaches disk, and authenticity under composition, and it swept call
+sites rather than guards.
+
+**Two sweeps, both largely enforced.** Every statement in the cross-app clearing paths —
+`onKeyboardHidden`, `clearDecryptedContent`, `clearComposeFieldAndCaches`, `forgetAbandonedInvite`,
+and both arms of `setHostFieldIsPassword` — was deleted individually: **15 of 15 killed.** There is
+no unenforced statement left in the dismissal or password-guard paths. Of the 16 trust-warning raiser
+call sites, **13 were killed**; the three survivors are all on `addContact` and are listed below.
+
+Read and closed without a mutant, so the next round can skip them: `allowBackup=false` plus
+`dataExtractionRules`; `SettingsActivity` is exported but `FragmentUtils.isValidFragment` allow-lists
+seven fragments, so `EXTRA_SHOW_FRAGMENT` injection is shut; no dictionary or personalisation
+machinery exists in this fork, so there is no plaintext learning path; the only `setPrimaryClip`
+writes an empty clip; `createFingerprint` binds to the two identity keys and reads the pin, never the
+session or the pending key; `removeContact` keeps the pin and `rejectedAddresses` outlives
+`removeIdentity`; no `String.format` takes an attacker-derived format string.
+
+### MEDIUM
+
+- **`E2EEStripView.java:1825` — `warnIfThisKeyIsPinnedElsewhere(chosenContact)` on `addContact`'s
+  ciphertext arm is driven by nothing.** Deleting it leaves the full suite green. Not an equivalent
+  mutant: this is the inviter's side, where a bundle-less `PreKeySignalMessage` pins by
+  trust-on-first-use, and it is one of the five arrival sites of the one warning REVIEW-SETTLED
+  records as re-derived by nothing.
+- **`E2EEStripView.java:1704` — `warnIfIdentityChanged(chosenContact)` on the accepted-bundle arm is
+  pinned only by bookkeeping.** Killed by exactly one test, `NoWriteResultIsDiscardedTest >
+  everyExemptionStillNamesAsiteThatDiscardsAwrite` — an exemption list that names the site, not a
+  behavioural assertion. Its premise is reachable (a forged bundle records a pending change;
+  `removeContact` clears neither the pin nor `pendingIdentities`; the peer's genuine re-invite then
+  lands on this arm), and its own comment says `warnIfKeyWasRejected` defers to it, so the pair can
+  go silent together. Worth a real test even at MEDIUM.
+- **`E2EEStripView.java:1853` — `cautionThatAkeyWasPinned` on the ciphertext arm survives.** Close to
+  equivalent: the shared caution at `:5023` already fires on this path, so deleting it only
+  downgrades the wording. Its comment's second justification ("it also repaints the banner") is
+  stale — `showChosenContactInMainInfoField()` repaints unconditionally.
+
+### LOW
+
+- `SenderKeyStoreImpl.java:44` is the only store method interpolating a whole record object into a
+  `Log.d` in a non-minified release build. Unreachable today (no group send).
+- Toasts carry `labelFor(contact)` — display name plus keyed address tag — in a separate window that
+  the IME window's `FLAG_SECURE` does not cover, so `notifySensitiveVisibility` cannot reach them.
+  Same residue class the banner path already accepts.
+- `IdentityKeyStoreImpl.saveIdentity`'s `REPLACED_EXISTING` arm does not clear `outOfBandAddresses`
+  while `acceptIdentityChange` and `removeIdentity` both do. Inert, but the three persisted
+  collections are otherwise kept in step.
+- `E2EEStripView.java:1313` renders the safety number with `String.format(Locale.getDefault(),
+  "%05d", ...)`, so under a locale whose default numbering system is non-Latin the digits render in
+  Eastern-Arabic or Devanagari while the peer reads Latin. Display only; the comparison is spoken.
+
 ## Unexamined
 
 - The **correctness** half of `keyboard/` (rendering, geometry) and `latin/utils/` beyond logging.
