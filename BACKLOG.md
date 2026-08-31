@@ -112,6 +112,73 @@ These are recorded in full in REVIVAL.md; listed here so the backlog is one plac
 - **QR for out-of-band exchange.** String transfer works both ways and the help text is written and
   tested. QR is a ZXing dependency decision.
 
+## From round 11 (first pass under the highs-and-criticals rule)
+
+Round 11 reported **no HIGH or CRITICAL**. Its angle: can the host app kill the keyboard through the
+previously unswept half (`keyboard/`, `latin/utils/`, `latin/common/`, `compat/`), plus a mutation
+sweep over the files neither swept nor named by any test (`Account`, `chat/`, `ProtocolAddresses`,
+`JsonUtil`, `E2EEStrip`, both list adapters, `WholeRowsListView`).
+
+### Three candidates that died at harm construction — do not re-walk
+
+**`KeyboardSwitcher.java:358` — NPE from a keyboard-less view.** A real latent defect:
+`getKeyboardSwitchState()` treats `mKeyboardLayoutSet != null` as proof `mKeyboardView` holds a
+Keyboard, but the layout set is never reset while `onCreateInputView` replaces the view wholesale.
+Not HIGH: every route goes through `isImeSuppressedByHardwareKeyboard()`, whose
+`!onEvaluateInputViewShown() &&` short-circuits unless a hardware keyboard is attached and visible.
+No adversary-chosen trigger — the other input is a `uiMode`/dynamic-colour change, a system event
+the host cannot force (rotation does not change `uiMode`).
+
+**`KeyboardSwitcher.java:163` — NPE on a null `mKeyboardLayoutSet`.** The dangerous half of a pair;
+its sibling `requestUpdatingShiftState` is safe only by accident, because `updateAlphabetShiftState`
+opens with the exact inverse guard. Not HIGH: needs `mKeyboardLayoutSet == null` while
+`mKeyboardView != null`, i.e. the first `onStartInputView` bailed early. `InputMethodService` creates
+the input view in `initialize()` before dispatching `onStartInputView`, so the state could not be
+built and the host does not choose it.
+
+**`clearInviteRefusalIfAbout` — a replayed genuine bundle drops the refusal record.**
+`E2EEStripView.java:5133`. Same shape as the confirmed badge-drop finding, and a re-delivered copy of
+a genuinely issued bundle satisfies every check (no freshness term anywhere). Not HIGH: it is the
+designed exit — the app's own advice is "ask them to send another" — the method is scoped twice
+over, the identity-change record and any rejection survive, and `warnIfIdentityChanged` runs earlier
+in the same pass and is re-derived from the store, so the stronger warning stays on screen. Only the
+weaker, lower-ranked line goes.
+
+### Survivors with no constructed harm — LOW
+
+- `Account.java:550` `messages == null` in `removeAllUnencryptedMessages`. Unreachable:
+  `getUnencryptedMessages()` throws rather than returning null on a failed load, and the only
+  `setUnencryptedMessages` caller is guarded.
+- `JsonUtil.java:197` stored-address validation throw. Its own comment records that the JSON is
+  app-private and sealed per value.
+- `ListAdapterContacts.java:46`, `WholeRowsListView.java:48` and `:52` — view-layer null/zero guards.
+
+### MEDIUM
+
+- **`ListAdapterMessages.getView` has no else-arm.** A `StorageMessage` whose sender and recipient
+  both differ from the account name leaves the recycled row's text and visibility untouched, so it
+  repaints the previous message on the previous side. Every stored message carries the account name
+  in one of the two fields, so nothing reaches it today.
+- **`E2EEStripView` arm asymmetries**, from a systematic arm x action table: the add-contact
+  refused-bundle arm is the only bundle arm asking neither `warnIfKeyWasRejected` nor
+  `warnIfThisKeyIsPinnedElsewhere`; the message-only arm is the only decrypt arm whose calls to those
+  two are conditional on `PREKEY_TYPE`; the add-contact ciphertext arm posts the pin caution twice
+  into one slot with two wordings. In each case the user still receives a warning on that arm, and
+  the condition cannot newly become true where the question is skipped.
+
+### LOW
+
+- `changeHeightOfMessageListView` sets `params.height = 700` in raw pixels, overriding the layout's
+  `250dp`, so the list height varies about fourfold across densities. Rendering only.
+- `ListAdapterContacts.getItem`'s LinkedHashMap fallback unboxes `(Integer) get("deviceId")` and
+  `(Boolean) get("verified")` inside a `catch (ClassCastException)` where the outer `catch (Exception)`
+  cannot see the result. Nothing produces a non-`Contact` element today.
+- `KeyboardId.boundedActionLabel` truncates with `substring(0, 128)`, which can split a surrogate
+  pair. `drawText` and `codePointCount` both tolerate it.
+- `LocaleUtils.sLocaleCache` is an unbounded static `HashMap`; keys come from the app's own subtypes.
+- `KeyboardSwitcher.isShowingMoreKeysPanel()` is the one accessor in that class not null-checking
+  `mKeyboardView`, while seven siblings do. Its single caller is already guarded on the same field.
+
 ## Unexamined
 
 - The **correctness** half of `keyboard/` (rendering, geometry) and `latin/utils/` beyond logging.
