@@ -56,15 +56,29 @@ public class NoSecondWireTextDecodesTheSameTest {
         new PreKeyResponse(identity.getPublicKey(), devices), "peer", 3));
   }
 
-  @Test
-  public void nosingleByteChangeProducesAsecondSpellingOfTheSameEnvelope() throws Exception {
-    final byte[] canonical = BinaryEnvelope.encode(bundleEnvelope());
+  /**
+   * The sweep itself, so it can be pointed at more than one envelope shape.
+   *
+   * <p>It was written against one locally-built fixture and stayed that way, which is how the
+   * {@code hasKyber} flag went undriven: this file's own {@code bundleEnvelope()} passes
+   * {@code null} for the Kyber pre-key, so that byte is always {@code 0} and every mutation of it
+   * truncates the envelope instead of exercising the flag. The identical guard seven lines above it
+   * in the decoder, on {@code hasPreKey}, is killed by this very test. A shared Kyber-carrying
+   * fixture sat in the same package the whole time.
+   *
+   * <p>The lesson is worth more than the fix: the marker for an untested twin here was not a
+   * comment, it was <b>a field set to null in a fixture</b>.
+   */
+  private void assertExactlyOneWireTextDecodesTo(final MessageEnvelope envelope, final String what)
+      throws Exception {
+    final byte[] canonical = BinaryEnvelope.encode(envelope);
     assertNotNull(canonical);
-    assertTrue("the fixture must produce a real envelope to mutate", canonical.length > 40);
+    assertTrue(what + ": the fixture must produce a real envelope to mutate",
+        canonical.length > 40);
 
     // Re-encoding the decoded original is what "the same envelope" means below.
     final byte[] reference = BinaryEnvelope.encode(BinaryEnvelope.decode(canonical));
-    assertEquals("the encoder must be stable, or this test compares nothing",
+    assertEquals(what + ": the encoder must be stable, or this test compares nothing",
         java.util.Arrays.toString(canonical), java.util.Arrays.toString(reference));
 
     final List<String> malleable = new ArrayList<>();
@@ -87,11 +101,64 @@ public class NoSecondWireTextDecodesTheSameTest {
       }
     }
 
-    assertTrue("this test must actually reach the decoder; if every mutation was refused before "
-        + "parsing, it is measuring nothing", accepted > 0);
-    assertEquals("a second wire text decodes to the same envelope. Two spellings of one message is "
+    assertTrue(what + ": this sweep must actually reach the decoder; if every mutation was "
+        + "refused before parsing, it is measuring nothing", accepted > 0);
+    assertEquals(what + ": a second wire text decodes to the same envelope. Two spellings of one "
+        + "message is "
         + "what the canonical-encoding check and requireExhausted both say cannot happen, and a "
         + "byte with more than one accepted value is where it happens:\n"
         + String.join("\n", malleable), 0, malleable.size());
+  }
+
+  /** The original shape: a bundle with a one-time pre-key and NO Kyber key. */
+  @Test
+  public void nosingleByteChangeProducesAsecondSpellingOfTheSameEnvelope() throws Exception {
+    assertExactlyOneWireTextDecodesTo(bundleEnvelope(), "bundle without a Kyber key");
+  }
+
+  /**
+   * The shape this app actually emits, and the one the sweep could not see.
+   *
+   * <p>PQXDH is mandatory here, so every invite this app sends carries a Kyber pre-key. With
+   * {@code requireFlag} gone from that byte, every real invite has 254 alternative wire texts that
+   * decode to an identical envelope and satisfy both the canonical-encoding check and
+   * {@code requireExhausted}.
+   */
+  @Test
+  public void akyberCarryingBundleHasOneWireText() throws Exception {
+    assertExactlyOneWireTextDecodesTo(
+        WireFixtures.carryingSignatureShapedBytes(AwireBundleFixture.bundleEnvelope()),
+        "bundle carrying a Kyber key");
+  }
+
+  /**
+   * A bundle and a ciphertext in one envelope - the shape an invite reply takes.
+   *
+   * <p>Both presence flags are set here, so it is the only shape in which a mutation of one can be
+   * masked by the structure the other imposes.
+   */
+  @Test
+  public void acombinedBundleAndCiphertextHasOneWireText() throws Exception {
+    final MessageEnvelope combined = AwireBundleFixture.bundleEnvelope();
+    combined.setCiphertextMessage(new byte[] {9, 8, 7, 6, 5, 4, 3, 2});
+    combined.setCiphertextType(3);
+    assertExactlyOneWireTextDecodesTo(WireFixtures.carryingSignatureShapedBytes(combined),
+        "bundle and ciphertext together");
+  }
+
+  /**
+   * And the commonest shape of all: a message with no bundle beside it.
+   *
+   * <p>The ciphertext is 64 bytes rather than a token handful, so the envelope clears the
+   * "is this a real envelope" floor the sweep asserts. A short one does not, and the first version
+   * of this case failed on exactly that - which is the floor doing its job: an envelope too small
+   * to be realistic is one whose sweep would cover almost nothing.
+   */
+  @Test
+  public void aciphertextOnlyEnvelopeHasOneWireText() throws Exception {
+    final byte[] ciphertext = new byte[64];
+    for (int i = 0; i < ciphertext.length; i++) ciphertext[i] = (byte) (i + 1);
+    assertExactlyOneWireTextDecodesTo(
+        new MessageEnvelope(ciphertext, 3, "peer", 3), "ciphertext only");
   }
 }
