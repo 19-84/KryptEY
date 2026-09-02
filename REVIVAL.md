@@ -3806,8 +3806,34 @@ file alone no longer rewinds the log, so the messages stay while the contact lis
 belonging to a contact the rolled-back list no longer holds match nobody — `belongsTo` compares the
 full rendered address — so they are inert rather than misattributed, which is the same disposition
 the legacy migration settled on. `StoreRollbackTest` pins both the full rollback and that partial
-one. The cap-versus-keep question is untouched by any of this — the log still grows
-forever, still peer-paced.
+one.
+
+**The cap-versus-keep question is not untouched — it is now a different question, and this entry
+said otherwise for several rounds.** Before the lazy load and the file split, an uncapped log was
+paid for on every keyboard raise, in every app: a full parse and a full re-serialisation, 294 ms at
+20,000 messages. That is what made it urgent. It is gone. The log is not read to raise the keyboard
+and is omitted from the save batch when nothing has loaded it, so the raise path no longer scales
+with history at all.
+
+What is actually left, stated so the decision is about the real costs rather than the original ones:
+
+- **Disk, unbounded and peer-paced.** 5.35 MB at 20,000 messages. A correspondent can add to it and
+  the user cannot decline. This is the half that has not improved.
+- **The history screen gets slower as the log grows**, and that is user-initiated - a screen someone
+  opened, not a keystroke they were waiting on. A different order of annoyance from a keyboard that
+  hesitates in someone else's app.
+
+**And there is a third option the split itself demonstrates.** The move from "capped or not" to
+"where does it live" was the whole idea of putting the log in its own file; the same move applies
+again. A hot log of recent messages and an archive file loaded only when someone scrolls back would
+bound the common path without deleting anything, which is the objection to capping.
+
+Its cost should be stated plainly, because it is the cost this branch has already paid once:
+**splitting the log created the laundering oracle.** A third file means redoing the
+`requireEncryptedOnly` reasoning for it - working out what may legitimately appear there, what a
+relay could plant, and what refuses to open. That analysis took a re-sweep of Phase 1 to get right
+the first time, and it is a larger and more dangerous piece of work than a size cap. Recorded as an
+option with its price, not as a recommendation.
 
 **One pre-existing gap closed on the way past.** `migrateLegacyKeys` refused to run against a
 contact list that failed to load — the answer is one-shot and irreversible — but had no equivalent
