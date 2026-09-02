@@ -50,6 +50,29 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     return false;
   }
 
+  /** Clears every field and listener on a recycled row, so it acts on nobody. */
+  private View blankRow(final View row) {
+    final int[] textViews = {R.id.e2ee_contact_first_name_element,
+        R.id.e2ee_contact_last_name_element, R.id.e2ee_contact_address_tag_element};
+    for (final int id : textViews) {
+      final TextView view = row.findViewById(id);
+      if (view != null) {
+        view.setText("");
+        view.setOnClickListener(null);
+      }
+    }
+    final int[] buttons = {R.id.e2ee_contact_button_delete_contact,
+        R.id.e2ee_verify_contact_verified_button, R.id.e2ee_verify_contact_unverified_button};
+    for (final int id : buttons) {
+      final ImageButton button = row.findViewById(id);
+      if (button != null) {
+        button.setOnClickListener(null);
+        button.setVisibility(View.INVISIBLE);
+      }
+    }
+    return row;
+  }
+
   public View getView(final int position, View convertView, ViewGroup parent) {
     if (convertView == null) {
       LayoutInflater layoutInflater = (LayoutInflater) getContext().getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
@@ -57,6 +80,15 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
     }
 
     final Contact contact = (Contact) getItem(position);
+    if (contact == null) {
+      // A row this adapter cannot build a contact for renders empty and inert.
+      //
+      // Removing the listeners is the part that matters, not the blanking. This View is recycled,
+      // so a row left carrying the previous contact's listeners means Delete and Verify still act
+      // on that contact while the row shows nothing - a destructive action aimed at a row the user
+      // cannot see the name of.
+      return blankRow(convertView);
+    }
 
     final TextView firstNameTextView = convertView.findViewById(R.id.e2ee_contact_first_name_element);
     // Sanitised, like every other surface that shows a name. This was the ONE place setting the
@@ -115,20 +147,37 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
 
   @Override
   public Object getItem(int position) {
-    Contact contact = null;
-    try {
-      contact = (Contact) mContacts.get(position);
-    } catch (ClassCastException e) {
-      LinkedHashMap linkedHashMap = (LinkedHashMap) mContacts.get(position);
-      return new Contact((String) linkedHashMap.get("firstName"),
-          (String) linkedHashMap.get("lastName"),
-          (String) linkedHashMap.get("signalProtocolAddressName"),
-          (Integer) linkedHashMap.get("deviceId"),
-          (Boolean) linkedHashMap.get("verified"));
-    } catch (Exception e) {
-      e.printStackTrace();
+    final Object stored = mContacts.get(position);
+    if (stored instanceof Contact) return stored;
+
+    // Jackson hands back a LinkedHashMap where a Contact was expected when a stored list is read
+    // without its element type, so the fallback rebuilds one. It used to sit INSIDE a
+    // {@code catch (ClassCastException)}, which is where the defect was: an exception thrown from
+    // within a catch block is not seen by that try's other handlers, so the casts and the two
+    // unboxings below escaped {@code getItem} entirely - past the {@code catch (Exception)} written
+    // directly beneath them - and landed in {@code getView} during list layout.
+    //
+    // Now the shape is checked rather than assumed, and a row that cannot be rebuilt answers null.
+    // Unreachable today: nothing in this app puts a non-Contact in that list. It is written this
+    // way because the alternative is a handler that looks like it covers the code above it and
+    // does not.
+    if (!(stored instanceof LinkedHashMap)) return null;
+    final LinkedHashMap<?, ?> fields = (LinkedHashMap<?, ?>) stored;
+    final Object firstName = fields.get("firstName");
+    final Object lastName = fields.get("lastName");
+    final Object addressName = fields.get("signalProtocolAddressName");
+    final Object deviceId = fields.get("deviceId");
+    final Object verified = fields.get("verified");
+    if (!(firstName instanceof String) || !(lastName instanceof String)
+        || !(addressName instanceof String) || !(deviceId instanceof Integer)) {
+      // No address or no device id means no address to compare, so every trust question about the
+      // row would answer from a value this code invented. An inert row is the honest rendering.
+      return null;
     }
-    return contact;
+    // A missing or malformed verified flag reads as NOT verified, which is the safe direction: the
+    // badge is the one indicator this screen carries, and inventing it is worse than omitting it.
+    return new Contact((String) firstName, (String) lastName, (String) addressName,
+        (Integer) deviceId, verified instanceof Boolean && (Boolean) verified);
   }
 
   public void setListener(final ListAdapterContactInterface listener) {
