@@ -114,11 +114,33 @@ singleton in an input method, holding the view it manages; the "leak" lasts exac
 process that needs it. Changing it means changing how the IME holds its keyboard, which is not a
 lint fix.
 
-**`StringFormatMatches` (75) is the one worth a session of its own.** These are format strings whose
-arguments do not match their use, which is an `IllegalFormatException` at runtime rather than a
-style complaint. All 75 are in inherited AOSP strings and translations, and none is on a path this
-fork added - but "inherited" is not "harmless", and nobody has checked which of them a user can
-actually reach. Unexamined, deliberately listed rather than left inside a number.
+**`StringFormatMatches` (75): examined, and not a crash. The entry above this one said it was, and
+that was wrong.**
+
+The previous version of this section called these "an `IllegalFormatException` at runtime rather
+than a style complaint" and set them aside as the next real piece of work. Reading them says
+otherwise, and the correction is left visible because the claim was made in a commit message too.
+
+All 75 are **two** string resources - `abbreviation_unit_milliseconds` (74, once per translation)
+and `abbreviation_unit_percent` (1). Both declare `%s`; all three call sites pass an `int`:
+
+```
+res.getString(R.string.abbreviation_unit_milliseconds, value)   // value is an int
+```
+
+`%s` accepts any `Object`, so the autoboxed `Integer` formats through `toString()` and no exception
+is possible. Lint flags it because passing an `int` to `%s` is usually a sign the author meant
+`%d` - a reasonable suspicion, and false here. Every translation checked uses `%s`, so there is no
+mismatched-translation case either, which is the shape that WOULD throw.
+
+Worth noting the one behavioural difference, since it argues for leaving it alone: `%s` renders the
+number through `Integer.toString`, while `%d` would render it in the formatting locale's digits.
+These are millisecond and percentage values in a settings screen, and nothing compares them across
+devices - unlike the safety number, where the same distinction was a real defect and was fixed the
+other way.
+
+So the lint baseline contains **no unexamined category with behaviour behind it**. That is the
+result; it is less interesting than a finding, and it is the honest one.
 
 ## Unexamined
 
