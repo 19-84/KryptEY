@@ -143,6 +143,14 @@ android {
         // is not hypothetical - it was measured on this very guard, whose mutant survived until
         // this line existed.
         inputs.file('../REVIEW-SETTLED.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        // BACKLOG.md and the lint baseline, because DocsDoNotContradictTheAppTest reads both to
+        // check that the backlog's summary of the baseline matches the baseline. Undeclared, the
+        // test task stays UP-TO-DATE when either changes and the guard replays its last result -
+        // the trap EveryFileATestReadsIsATaskInputTest exists for, walked into while writing that
+        // very check: a control that drifted the quoted figure came back green because the task
+        // never ran.
+        inputs.file('../BACKLOG.md').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('lint-baseline.xml').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)

@@ -363,4 +363,39 @@ public class DocsDoNotContradictTheAppTest {
               || text.contains("hidden in a decoy text"));
     }
   }
+  /**
+   * The lint-baseline figures BACKLOG.md quotes must be the ones in the baseline.
+   *
+   * <p>That file's summary of the baseline went stale once already: it said "502 filtered errors"
+   * and stood six commits after a section of the same document had counted them properly. A summary
+   * contradicting the thing it summarises is the one defect class on this branch that no behavioural
+   * test catches, and three instances were found in two days by reading rather than by any guard.
+   *
+   * <p>So the checkable part is checked. Three numbers, all mechanical: how many issues the baseline
+   * holds, how many distinct ids, and how many of them are the inherited `UnusedResources` that make
+   * the total misleading on its own.
+   */
+  @Test
+  public void thebacklogQuotesTheRealLintBaselineFigures() throws IOException {
+    final String baseline = read("app/lint-baseline.xml");
+    final String backlog = read("BACKLOG.md");
+
+    final java.util.List<String> ids = new java.util.ArrayList<>();
+    final java.util.regex.Matcher matcher =
+        java.util.regex.Pattern.compile("<issue\\s+id=\"([^\"]+)\"").matcher(baseline);
+    while (matcher.find()) ids.add(matcher.group(1));
+
+    final long unused = ids.stream().filter("UnusedResources"::equals).count();
+    final int distinct = new java.util.HashSet<>(ids).size();
+
+    assertTrue("the baseline must actually hold issues, or this checks nothing", ids.size() > 100);
+    assertTrue("BACKLOG.md must quote the real issue count " + ids.size() + "; it is the figure a "
+            + "reader uses to decide whether the baseline hides anything",
+        backlog.contains(String.valueOf(ids.size())));
+    assertTrue("...and the real number of distinct ids, " + distinct,
+        backlog.contains(String.valueOf(distinct)));
+    assertTrue("...and how many are the inherited UnusedResources, " + unused + " - without that "
+            + "share the total reads as unexamined defects when it is mostly one category",
+        backlog.contains(String.valueOf(unused)));
+  }
 }
