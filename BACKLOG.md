@@ -147,8 +147,10 @@ result; it is less interesting than a finding, and it is the honest one.
 - `latin/utils/` beyond its logging, minus `RecapitalizeStatus`. That package had no tests at all;
   its riskiest class now has five properties (`RecapitalizeRewritesOnlyTheCaseTest`), chosen because
   it is the buffer `performRecapitalization` deletes and re-commits and which that method's own
-  comment says can hold decrypted plaintext. The rest of the package - `CapsModeUtils`,
-  `SubtypeLocaleUtils`, `XmlParseUtils`, `ResourceUtils` - is still unexamined for behaviour.
+  comment says can hold decrypted plaintext. `CapsModeUtils` (which decides auto-capitalisation, so
+  which character the user gets) and `ResourceUtils`' device-override matcher (which picks per-device
+  keyboard dimensions) now have their contracts asserted too. Still unexamined: `SubtypeLocaleUtils`,
+  `XmlParseUtils` - the latter is thin, being exception classes and two checks around parse errors.
 - The **rendering** half of `keyboard/` - what is painted, and how it looks. The **geometry** half
   is now answered: `EveryKeyIsWhereItIsDrawnTest` asserts, over every key of a real inflated
   keyboard, that a key contains its own drawn centre, that no two keys are painted over each other,
