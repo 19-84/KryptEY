@@ -137,7 +137,16 @@ public class IgnoredTestsAreAccountedForTest {
       if (source.getFileName().toString().equals("IgnoredTestsAreAccountedForTest.java")) continue;
       final String text = new String(Files.readAllBytes(source), StandardCharsets.UTF_8);
 
-      for (final String marker : new String[] {"@Ignore", "assumeTrue(", "assumeFalse("}) {
+      // "@Ignore" matches the ordinary form. A fully-qualified @org.junit.Ignore is legal Java and
+      // does NOT contain that substring, so it evaded this scan entirely - measured: the plain form
+      // failed this test and the qualified one passed, on the same disabled device method. This
+      // guard is what tools/test-on-emulator calls "the only thing that catches a device test
+      // disabled by an @Ignore", so a spelling it cannot see is the whole guard for that spelling.
+      //
+      // The assume markers need no equivalent: Assume.assumeTrue( and org.junit.Assume.assumeTrue(
+      // both still contain "assumeTrue(".
+      for (final String marker : new String[] {
+          "@Ignore", "@org.junit.Ignore", "assumeTrue(", "assumeFalse("}) {
         int from = 0;
         while (true) {
           final int at = text.indexOf(marker, from);
@@ -147,7 +156,7 @@ public class IgnoredTestsAreAccountedForTest {
           // Only a real annotation or call, never the word inside a comment or a string literal.
           final int lineStart = text.lastIndexOf('\n', at) + 1;
           final String before = text.substring(lineStart, at).trim();
-          if (marker.equals("@Ignore")) {
+          if (marker.startsWith("@")) {
             if (!before.isEmpty()) continue;
             // The annotation disables the first method declared after it.
             final Matcher next = method.matcher(text);
