@@ -197,7 +197,11 @@ result; it is less interesting than a finding, and it is the honest one.
   the useful check is over DATA rather than a function: every locale the app claims to support must
   actually produce a subtype, which ties together a hand-maintained locale array, separate resource
   arrays and a set of layout-name constants that nothing else relates. Still unexamined:
-  `XmlParseUtils`, which is thin - exception classes and two checks around parse errors.
+  `XmlParseUtils`, which is thin - and was closed by measurement rather than by that reasoning. It
+  is reached only from keyboard inflation, so the obvious conclusion is that inflating a real
+  keyboard covers it. Measured: deleting `checkEndTag`'s refusal leaves both inflation tests green,
+  because the 196 shipped layouts are well-formed and a guard that fires only on bad input is not
+  exercised by good input. `AmalformedLayoutIsRefusedLoudlyTest` now pins it.
 - The **rendering** half of `keyboard/` - what is painted, and how it looks. The **geometry** half
   is now answered: `EveryKeyIsWhereItIsDrawnTest` asserts, over every key of a real inflated
   keyboard, that a key contains its own drawn centre, that no two keys are painted over each other,
