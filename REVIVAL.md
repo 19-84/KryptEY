@@ -809,9 +809,27 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
      capability** — the complete set of action codes is delete, language switch, settings, shift,
      space, tab, alpha/symbol switch and a zero-width non-joiner, with no voice key, no clipboard
      key and no emoji key.
-     What is still genuinely unexamined is the *correctness* half: the rendering and geometry of
-     `keyboard/`, and `latin/utils/` beyond its logging. The security question has an answer there;
-     the behaviour question does not. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
+     What was still genuinely unexamined at that point was the *correctness* half: the rendering and
+     geometry of `keyboard/`, and `latin/utils/` beyond its logging. The security question had an
+     answer there; the behaviour question did not.
+
+     **Most of that half has an answer now, and the sentence above was left standing for 26 commits
+     after it stopped being true.** `EveryKeyIsWhereItIsDrawnTest` asserts the geometry over every
+     key of a real inflated keyboard: each key contains its own drawn centre, no two keys are
+     painted over each other, and the proximity grid offers the key under the touch. In
+     `latin/utils/`, which had no tests at all, four classes now have their contracts pinned -
+     `RecapitalizeStatus` (the buffer `performRecapitalization` deletes and re-commits, which its
+     own comment says can hold decrypted plaintext), `CapsModeUtils` (which decides which character
+     a key press produces, and is a copy of a platform method nothing here compares against),
+     `ResourceUtils`' device-override matcher, and `SubtypeLocaleUtils` - where the useful check is
+     over data rather than a function: every locale the app offers must actually produce a subtype,
+     which ties together a hand-maintained array, separate resource arrays and a set of layout-name
+     constants that nothing else relates.
+
+     What remains unexamined is narrower and worth naming precisely rather than leaving as a
+     category: the *rendering* half of `keyboard/` - what is painted, as opposed to where - which
+     Robolectric cannot answer because it does not rasterise, and `XmlParseUtils`, which is four
+     exception classes and two checks around parse errors. The `SignalProtocolMain` sweep was 151 mutants and 44 survivors, and almost all of
    them were one pattern: guards written `a == null || b == null` where every test supplies both, so
    only the both-present arm ever runs. Nine of those were closed with tests; the rest were either
    already covered by later commits (the sweep runs against a snapshot, so re-verifying before
