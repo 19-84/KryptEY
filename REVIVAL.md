@@ -207,6 +207,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [The one thing a list actually does](#the-one-thing-a-list-actually-does)
 - [Which kind of hollow](#which-kind-of-hollow)
 - [Three states called two, and a response that cleared the wrong warning](#three-states-called-two-and-a-response-that-cleared-the-wrong-warning)
+- [Six ways a verification looks like a result and is not](#six-ways-a-verification-looks-like-a-result-and-is-not)
 - [The one structural lesson from the review rounds](#the-one-structural-lesson-from-the-review-rounds)
 
 **How this document, and its tests, have been wrong**
