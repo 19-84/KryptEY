@@ -151,6 +151,15 @@ android {
         // never ran.
         inputs.file('../BACKLOG.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('lint-baseline.xml').withPathSensitivity(PathSensitivity.RELATIVE)
+        // EverySerialisedClassIsKeptTest reads the rules to learn which packages are kept.
+        inputs.file('proguard-rules.pro').withPathSensitivity(PathSensitivity.RELATIVE)
+        // DependencyVerificationIsOnTest reads both to check that verification is still on. Neither
+        // was tracked, so that guard could replay a stale pass while somebody turned it off - and
+        // the guard against undeclared inputs could not see them either, because its literal scan
+        // had no .properties in its extension list and build-in-docker has no extension at all.
+        inputs.file('../gradle.properties').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../tools/build-in-docker').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../tools/verify-cold').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)

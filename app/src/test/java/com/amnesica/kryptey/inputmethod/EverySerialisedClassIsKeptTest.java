@@ -59,7 +59,12 @@ public class EverySerialisedClassIsKeptTest {
   private static List<String> keptPackages(final String rules) {
     final List<String> kept = new ArrayList<>();
     final java.util.regex.Matcher matcher = java.util.regex.Pattern
-        .compile("(?m)^-keep(?:classmembers)?\\s+class\\s+([A-Za-z0-9_.]+)\\.\\*\\*")
+        // -keep only. NOT -keepclassmembers, which keeps the MEMBERS of classes that survive and
+        // does nothing to stop the class itself being renamed - and a renamed class is exactly what
+        // breaks Jackson. The first version accepted both, so narrowing the real -keep rule to a
+        // package that does not exist left this test green: the -keepclassmembers rule beside it
+        // still named signalprotocol and the scan counted it as protection.
+        .compile("(?m)^-keep\\s+class\\s+([A-Za-z0-9_.]+)\\.\\*\\*")
         .matcher(rules);
     while (matcher.find()) kept.add(matcher.group(1));
     return kept;

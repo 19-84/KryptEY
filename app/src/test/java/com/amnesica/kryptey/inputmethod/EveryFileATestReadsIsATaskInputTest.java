@@ -73,8 +73,9 @@ public class EveryFileATestReadsIsATaskInputTest {
    */
   private static Set<String> pathsTestsRead() throws IOException {
     final Pattern literal = Pattern.compile(
-        "\"((?:\\.\\./)?(?:app/)?(?:src/[a-zA-Z]+/[a-zA-Z/]+|[A-Za-z0-9_./-]+"
-            + "\\.(?:md|gradle|txt|xml|yml|yaml)))\"");
+        "\"((?:\\.\\./)?(?:app/)?(?:src/[a-zA-Z]+/[a-zA-Z/]+|tools/[A-Za-z0-9_.-]+"
+            + "|[A-Za-z0-9_./-]+"
+            + "\\.(?:md|gradle|txt|xml|yml|yaml|pro|cfg|properties)))\"");
     final Set<String> found = new LinkedHashSet<>();
 
     try (Stream<Path> walk = Files.walk(testSources())) {
