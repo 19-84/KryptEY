@@ -760,8 +760,24 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
    compare"). It also requires the text to keep pointing at the voice comparison, because avoiding
    one exposure is not a replacement for the check. QR would still be a dependency decision (ZXing);
    string transfer needs none, and needed no new mechanism either. *Not* on this list any more: UI for accepting an identity change. That is
-   now a decision rather than a gap — the exit is discard via deletion, and adopt-in-place stays
-   unavailable on purpose.
+   now a decision rather than a gap, and adopt-in-place stays unavailable on purpose.
+
+   **"The exit is discard via deletion" was wrong, and the code has said so all along.**
+   `acceptIdentityChange`'s own javadoc names the two wired exits: `dismissIdentityChange` (the pin
+   is right, discard what was offered) and `rejectContactKey` (the pin is wrong, forget it). Both
+   are reached from the verify screen, which is where the warning already sends the user - "open
+   them in your contact list and compare the number".
+
+   Deletion is not an exit at all, and that is deliberate rather than an oversight. Measured by
+   `ApendingSubstitutionSurvivesDeletingTheRowTest`: after
+   `removeContactFromContactListAndProtocol`, `hasUnacceptedIdentityChange` is still true. The
+   record outlives the row on purpose - otherwise deleting a contact and re-adding them would be a
+   clean first sighting, which is the silent trust-on-first-use the whole pin mechanism exists to
+   prevent.
+
+   This makes the decision more coherent than the entry described, not less. The model is: compare
+   the number, then say which key was right. Deleting the row is neither of those answers and does
+   not pretend to be one.
 2. ~~**A screen showing the offered safety number beside the pinned one.**~~ **Blocked, and on
    purpose — it should not be built while adopt-in-place stays unavailable.** The mechanism is
    trivial: `getPendingIdentity` supplies the offered key and `createFingerprint` would need only to
