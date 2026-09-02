@@ -144,6 +144,13 @@ result; it is less interesting than a finding, and it is the honest one.
 
 ## Unexamined
 
-- The **correctness** half of `keyboard/` (rendering, geometry) and `latin/utils/` beyond logging.
-  Three sweeps answered the security question there; nothing has answered the behaviour question.
+- `latin/utils/` beyond its logging. Three sweeps answered the security question across
+  `keyboard/` and `latin/utils/`; the behaviour question there is still open.
+- The **rendering** half of `keyboard/` - what is painted, and how it looks. The **geometry** half
+  is now answered: `EveryKeyIsWhereItIsDrawnTest` asserts, over every key of a real inflated
+  keyboard, that a key contains its own drawn centre, that no two keys are painted over each other,
+  and that the proximity grid offers the key under the touch. Those hold. Note what that test does
+  NOT claim: it compares drawn rectangles for overlap, never hitboxes, because `mHitbox` extends to
+  halfway towards each adjacent key by design so no touch lands in a dead gap - a test forbidding
+  hitboxes to meet would assert the opposite of the design.
 - **Lint**: 502 filtered errors in the baseline.
