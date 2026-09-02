@@ -41,7 +41,14 @@ public class SenderKeyStoreImpl implements SenderKeyStore {
 
   @Override
   public void storeSenderKey(SignalProtocolAddress sender, UUID distributionId, SenderKeyRecord record) {
-    Log.d(TAG, "Storing SenderKeyRecord with address: " + sender + " and distributionId: " + distributionId + " and record: " + record);
+    // The record itself is not logged, and its sibling loadSenderKey never logged one.
+    //
+    // Whether SenderKeyRecord.toString() says anything about key material is libsignal's decision,
+    // not this app's, and it can change under a dependency bump. Release builds here are not
+    // minified, so Log.d survives into them. Logging the identifiers is what the rest of this
+    // package does and it is all this line ever needed.
+    Log.d(TAG, "Storing SenderKeyRecord with address: " + sender
+        + " and distributionId: " + distributionId);
     store.put(new SenderKey(sender.getName(), sender.getDeviceId(), distributionId.toString()),
         record.serialize());
   }

@@ -52,6 +52,20 @@ public final class LocaleUtils {
   private static final HashMap<String, Locale> sLocaleCache = new HashMap<>();
 
   /**
+   * A ceiling on the cache, which is static and lives for the process.
+   *
+   * <p>Every caller today passes either a {@link Subtype}'s own locale or a string from this app's
+   * resources, so the key space is closed and small - this is not a leak anyone can drive. The
+   * bound is here because that is a property of the six call sites rather than of this method,
+   * which accepts any string and would keep every distinct one forever.
+   *
+   * <p>Clearing rather than evicting one entry: the values are pure functions of their keys and
+   * cost a {@code split} and a constructor to rebuild, so the simplest bound that cannot be wrong
+   * is the right one. Well above the number of locales this app ships.
+   */
+  private static final int MAX_CACHED_LOCALES = 256;
+
+  /**
    * Creates a locale from a string specification.
    *
    * @param localeString a string specification of a locale, in a format of "ll_cc_variant" where
@@ -72,6 +86,7 @@ public final class LocaleUtils {
         locale = new Locale(elements[0] /* language */, elements[1] /* country */,
             elements[2] /* variant */);
       }
+      if (sLocaleCache.size() >= MAX_CACHED_LOCALES) sLocaleCache.clear();
       sLocaleCache.put(localeString, locale);
       return locale;
     }
