@@ -144,8 +144,11 @@ result; it is less interesting than a finding, and it is the honest one.
 
 ## Unexamined
 
-- `latin/utils/` beyond its logging. Three sweeps answered the security question across
-  `keyboard/` and `latin/utils/`; the behaviour question there is still open.
+- `latin/utils/` beyond its logging, minus `RecapitalizeStatus`. That package had no tests at all;
+  its riskiest class now has five properties (`RecapitalizeRewritesOnlyTheCaseTest`), chosen because
+  it is the buffer `performRecapitalization` deletes and re-commits and which that method's own
+  comment says can hold decrypted plaintext. The rest of the package - `CapsModeUtils`,
+  `SubtypeLocaleUtils`, `XmlParseUtils`, `ResourceUtils` - is still unexamined for behaviour.
 - The **rendering** half of `keyboard/` - what is painted, and how it looks. The **geometry** half
   is now answered: `EveryKeyIsWhereItIsDrawnTest` asserts, over every key of a real inflated
   keyboard, that a key contains its own drawn centre, that no two keys are painted over each other,
