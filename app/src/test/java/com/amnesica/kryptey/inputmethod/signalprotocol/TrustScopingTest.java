@@ -119,6 +119,41 @@ public class TrustScopingTest {
         store.isKeyOutOfBand(ALICE));
   }
 
+  /**
+   * Provenance belongs to the key it was established for, on all three paths that replace one.
+   *
+   * <p>{@code acceptIdentityChange} and {@code removeIdentity} both drop the out-of-band record
+   * when the pinned key goes, and the first states the reason: a new key did not arrive through the
+   * channel the old one did. {@code saveIdentity}'s {@code REPLACED_EXISTING} arm replaces a pinned
+   * key too and did not drop it - an inconsistency rather than a decision, and one a review found
+   * by comparing the three rather than by anything failing.
+   *
+   * <p>Inert today, and the test says so rather than implying a live defect: libsignal's
+   * {@code isTrustedIdentity} refuses a displaced key before {@code saveIdentity} is reached, so
+   * this arm does not run in production. It is pinned because the alternative is that whoever makes
+   * it reachable has to notice this on their own, from a store whose other two replacers already
+   * behave the other way.
+   */
+  @Test
+  public void replacingApinnedKeyDropsTheOutOfBandClaimWithIt() {
+    final IdentityKey original = someIdentity();
+    store.saveIdentity(ALICE, original);
+    store.markKeyOutOfBand(ALICE);
+    assertTrue("precondition: the original key must be recorded as out-of-band",
+        store.isKeyOutOfBand(ALICE));
+
+    final IdentityKey replacement = someIdentity();
+    assertEquals("precondition: this must be the replacing arm, not a first sighting",
+        com.amnesica.kryptey.inputmethod.signalprotocol.stores.IdentityKeyStoreImpl
+            .IdentityChange.REPLACED_EXISTING,
+        store.saveIdentity(ALICE, replacement));
+
+    assertFalse("the out-of-band claim was made about the key that has just been replaced. Left "
+            + "standing it says the NEW key arrived through a trusted channel, which is exactly "
+            + "what did not happen - and it is what the other two replacers already avoid",
+        store.isKeyOutOfBand(ALICE));
+  }
+
   // ------------------------------------------------------------- scoping
 
   /** Accepting one contact's change must not silently clear another's warning. */

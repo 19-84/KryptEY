@@ -106,6 +106,19 @@ public class IdentityKeyStoreImpl implements IdentityKeyStore {
     // here otherwise, since isTrustedIdentity runs first). The pending record, if any, is now
     // satisfied.
     pendingIdentities.remove(addressKey(address));
+    // And the provenance goes with the key it belonged to, which is what the other two replacers
+    // already do and this one did not.
+    //
+    // acceptIdentityChange and removeIdentity both drop it here, for the reason acceptIdentityChange
+    // states: a new key did not arrive through the channel the old one did, so an out-of-band claim
+    // must not carry over to it. This arm replaces a pinned key too, so the same sentence applies
+    // and the omission was an inconsistency rather than a decision.
+    //
+    // Inert today - libsignal's isTrustedIdentity refuses a displaced key before saveIdentity is
+    // called, so REPLACED_EXISTING is not reached in production - which is why this is a
+    // consistency fix and not a defect report. The three persisted collections are kept in step so
+    // that whoever makes this arm reachable does not have to notice this on their own.
+    outOfBandAddresses.remove(addressKey(address));
     return IdentityChange.REPLACED_EXISTING;
   }
 

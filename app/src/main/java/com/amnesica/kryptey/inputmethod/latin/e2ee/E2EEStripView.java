@@ -1304,13 +1304,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     }
   }
 
+  /**
+   * A safety-number segment, in digits that mean the same thing on both devices.
+   *
+   * <p>{@code Locale.ROOT}, not {@code Locale.getDefault()}. The default locale's numbering system
+   * decides the glyphs, so on a device set to a locale using Eastern-Arabic or Devanagari digits
+   * this rendered the number in those while the peer read Latin ones. Two devices holding the
+   * IDENTICAL key would then show visibly different numbers.
+   *
+   * <p>That is worse than cosmetic on this screen. The whole instruction is "compare the number",
+   * and a comparison that fails between two honest devices teaches the user that mismatches are
+   * normal - which is the one lesson this screen must not teach, because a real mismatch is the
+   * only signal it exists to deliver.
+   */
+  static String formatCodeSegment(final int value) {
+    return String.format(Locale.ROOT, "%05d", value);
+  }
+
   private void setCodeSegment(final TextView codeView, String segment) {
     ValueAnimator valueAnimator = new ValueAnimator();
     valueAnimator.setObjectValues(0, Integer.parseInt(segment));
 
     valueAnimator.addUpdateListener(animation -> {
       int value = (int) animation.getAnimatedValue();
-      codeView.setText(String.format(Locale.getDefault(), "%05d", value));
+      codeView.setText(formatCodeSegment(value));
     });
 
     valueAnimator.setEvaluator((TypeEvaluator<Integer>) (fraction, startValue, endValue)
