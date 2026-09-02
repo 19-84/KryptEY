@@ -149,8 +149,11 @@ result; it is less interesting than a finding, and it is the honest one.
   it is the buffer `performRecapitalization` deletes and re-commits and which that method's own
   comment says can hold decrypted plaintext. `CapsModeUtils` (which decides auto-capitalisation, so
   which character the user gets) and `ResourceUtils`' device-override matcher (which picks per-device
-  keyboard dimensions) now have their contracts asserted too. Still unexamined: `SubtypeLocaleUtils`,
-  `XmlParseUtils` - the latter is thin, being exception classes and two checks around parse errors.
+  keyboard dimensions) now have their contracts asserted too, as has `SubtypeLocaleUtils` - where
+  the useful check is over DATA rather than a function: every locale the app claims to support must
+  actually produce a subtype, which ties together a hand-maintained locale array, separate resource
+  arrays and a set of layout-name constants that nothing else relates. Still unexamined:
+  `XmlParseUtils`, which is thin - exception classes and two checks around parse errors.
 - The **rendering** half of `keyboard/` - what is painted, and how it looks. The **geometry** half
   is now answered: `EveryKeyIsWhereItIsDrawnTest` asserts, over every key of a real inflated
   keyboard, that a key contains its own drawn centre, that no two keys are painted over each other,
