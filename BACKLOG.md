@@ -107,10 +107,15 @@ whose whole value is telling the user which contact an action applied to. The ba
 the same residue. Revisit if a toast ever carries message content, which none does today.
 
 **Two `KeyboardSwitcher` NPE guards were added without tests** (`isShowingKeyboardId` not checking
-`getKeyboard()`, `setKeyboard` not checking its view or layout set). The states are exactly the ones
-round 11 tried and could not construct, so a test would assert against a state nothing produces -
-the vacuous shape this branch keeps rejecting. The guards are cheap, the reasoning is in the code,
-and if either state ever becomes reachable the guard is already there.
+`getKeyboard()`, `setKeyboard` not checking its layout set). The states are exactly the ones round 11
+tried and could not construct, so a test would assert against a state nothing produces - the vacuous
+shape this branch keeps rejecting. The guards are cheap, the reasoning is in the code, and if either
+state ever becomes reachable the guard is already there.
+
+Amended after round 13: this entry originally said `setKeyboard` checks "its view or layout set",
+which was true of the code and wrong about what the code could do. The view half could never fire -
+`setMainKeyboardFrame`, called the line above, dereferences `mKeyboardView` first - so that check
+now lives at the first dereference and the guard here is the layout set only.
 
 ## Deferred by decision, not by severity
 
@@ -188,7 +193,7 @@ result; it is less interesting than a finding, and it is the honest one.
 
 ## Unexamined
 
-- `latin/utils/` beyond its logging, minus `RecapitalizeStatus`. That package had no tests at all;
+- ~~`latin/utils/` beyond its logging.~~ **Closed.** That package had no tests at all;
   its riskiest class now has five properties (`RecapitalizeRewritesOnlyTheCaseTest`), chosen because
   it is the buffer `performRecapitalization` deletes and re-commits and which that method's own
   comment says can hold decrypted plaintext. `CapsModeUtils` (which decides auto-capitalisation, so
@@ -209,4 +214,9 @@ result; it is less interesting than a finding, and it is the honest one.
   NOT claim: it compares drawn rectangles for overlap, never hitboxes, because `mHitbox` extends to
   halfway towards each adjacent key by design so no touch lands in a dead gap - a test forbidding
   hitboxes to meet would assert the opposite of the design.
-- **Lint**: 502 filtered errors in the baseline.
+- ~~**Lint**: 502 filtered errors in the baseline.~~ **Stale, and it survived in this file for six
+  commits after the section above corrected it.** The real figure is 602 across 23 ids, 427 of them
+  inherited `UnusedResources`; all four entries with behaviour behind them were read, three fixed
+  and one shown moot; the 75 `StringFormatMatches` are `%s` receiving an `int`, which cannot throw.
+  Left visible rather than deleted, because a one-line summary contradicting a section of the same
+  document is exactly what a reader skimming for open work would act on.
