@@ -2052,6 +2052,44 @@ replayed invites and saturate at libsignal's 40 archived states; `retiredDisplay
 `rejectedAddresses`, `pendingIdentities` and `trustedKeys` are all bounded by construction.
 
 
+## Six ways a verification looks like a result and is not
+
+The rounds above found defects in the app. A later pass found defects in the things that check the
+app, and the failure modes were consistent enough to be worth naming together. Every one of these
+was hit at least once, several more than once, and all of them present as a passing run or a red one
+that means nothing.
+
+1. **A build failure is not a test result.** A control that does not compile - a fixture naming
+   identifiers that do not exist - stops before any assertion. Hit twice, both times while writing a
+   control, which is exactly where the failure has to be meaningful.
+2. **An UP-TO-DATE task is not a test result.** Gradle skips a task whose declared inputs have not
+   changed, so editing a file the task reads but does not declare replays the previous verdict.
+   Four files were found undeclared this way, including two protecting dependency verification.
+3. **A control that did not apply is not a test result.** A search-and-replace that matched nothing
+   leaves the source untouched, and the run that follows passes for the honest reason that nothing
+   was broken. Caught only because the applying step printed a line and the line was absent.
+4. **A control Gradle has already seen is not a test result.** Re-applying an identical edit hits an
+   up-to-date check from the earlier attempt. Two runs in a row proved nothing; changing one string
+   in the fixture produced a real answer.
+5. **A swallowed exit code is not a test result.** Piping a script into `grep` reports grep's
+   status. A device run that aborted at the install step read as a completed one.
+6. **A failure for the wrong reason is not a test result, and this is the dangerous one.** All five
+   above look green. This one is red - the outcome a control wants - and is therefore the least
+   likely to be examined. `KRYPTEY_TEST_CLASS` with a wrong package produces
+   `FAILURES!!! Tests run: 1, Failures: 1`, and the failure is `initializationError`: no tests
+   matched. Identical to a genuine failure at the summary line. Read the failing method's name, not
+   the count.
+
+**And the guards themselves had holes, seven of them, all the same shape.** Every scanner that
+matched on a literal had a spelling it could not see: `@org.junit.Ignore` where `@Ignore` was
+sought, `Log.wtf(` where `Log.[dviwe](` was, `new java.lang.Thread(` where `new Thread(` was,
+`@com.fasterxml.jackson.annotation.JsonProperty`, `addAll` where `add(` was counted, and an
+extension list that was one short three separate times. Four of those seven were in guards written
+*after* the pattern had been documented twice, which is the part worth keeping: knowing a defect
+class by name is not much protection against committing it. What changed was not the rate of
+committing them but the speed of noticing - checking what a scan MISSED rather than only what it
+found.
+
 ## The one structural lesson from the review rounds
 
 Two findings in a row came from the same shape of mistake, and it is worth stating separately from
