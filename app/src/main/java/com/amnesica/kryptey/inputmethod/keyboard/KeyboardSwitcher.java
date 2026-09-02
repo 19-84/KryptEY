@@ -159,6 +159,21 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     setMainKeyboardFrame(currentSettingsValues, toggleState);
     // TODO: pass this object to setKeyboard instead of getting the current values.
     final MainKeyboardView keyboardView = mKeyboardView;
+    if (keyboardView == null || mKeyboardLayoutSet == null) {
+      // The dangerous half of a pair, and its sibling is safe only by accident.
+      //
+      // resetKeyboardStateToAlphabet reaches here through LatinIME's "restarting and the input type
+      // did not change" branch, which can run before any layout set exists if the first
+      // onStartInputView bailed early. Its sibling requestUpdatingShiftState survives the same
+      // state only because KeyboardState.updateAlphabetShiftState happens to open with the inverse
+      // guard - nothing in this class arranges that.
+      //
+      // Logged rather than swallowed: there is no correct keyboard to install without these, so
+      // returning is the only option, and a silent one would turn a missing keyboard into a mystery
+      // for whoever meets it.
+      Log.w(TAG, "setKeyboard with no view or no layout set; leaving the keyboard as it is");
+      return;
+    }
     final Keyboard oldKeyboard = keyboardView.getKeyboard();
     final Keyboard newKeyboard = mKeyboardLayoutSet.getKeyboard(keyboardId);
     keyboardView.setKeyboard(newKeyboard);
@@ -352,7 +367,19 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
   }
 
   public boolean isShowingKeyboardId(int... keyboardIds) {
-    if (mKeyboardView == null || !mKeyboardView.isShown()) {
+    // getKeyboard(), not just the view.
+    //
+    // getKeyboardSwitchState treats a non-null mKeyboardLayoutSet as proof that the view holds a
+    // Keyboard, and that does not follow: onCreateInputView replaces mKeyboardView wholesale while
+    // the layout set is left alone, so a fresh view can be shown with no keyboard on it and the
+    // caller's guard satisfied. Nothing in LatinIME's IMS callbacks catches an NPE out of here.
+    //
+    // Not reachable by anything the host app chooses - the route runs through
+    // isImeSuppressedByHardwareKeyboard, which short-circuits unless a hardware keyboard is
+    // attached and visible - which is why this is a guard and not a bug report. A view with no
+    // keyboard is not showing any of the ids asked about, so false is the answer, not an accident.
+    if (mKeyboardView == null || !mKeyboardView.isShown()
+        || mKeyboardView.getKeyboard() == null) {
       return false;
     }
     int activeKeyboardId = mKeyboardView.getKeyboard().mId.mElementId;

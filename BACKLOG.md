@@ -26,73 +26,47 @@ the suite stayed green" establishes that a guard is unenforced, not that it matt
 
 ---
 
-## Open — MEDIUM
+## Closed
 
-**`requireFlag(hasKyber)` is driven by nothing.** `BinaryEnvelope.java:396`; the twin at `:389`
-(`hasPreKey`) is killed by `NoSecondWireTextDecodesTheSameTest`. Cause is the fixture, not the
-guard: that test defines its own local `bundleEnvelope()` passing `null` for the Kyber pre-key,
-while the shared `AwireBundleFixture.bundleEnvelope()` in the same package carries one — so the
-`hasKyber` byte is always `0` and every mutation of it truncates instead of exercising the flag.
-Every bundle this app emits carries a Kyber key (PQXDH is mandatory), so with the guard gone each
-real invite has 254 alternative wire texts that decode identically and satisfy both the
-canonical-encoding check and `requireExhausted`. MEDIUM: malleability, no key substitution, the
-issuing signature still covers the content. Fix is a sweep over the Kyber-carrying fixture; verified
-red on the mutant when round 10 probed it.
+Every MEDIUM and every actionable LOW raised by rounds 10-12 has been fixed, each verified in both
+directions - green with the fix, red with the old behaviour restored - with the measured output
+quoted in its commit. In commit order:
 
-**`exactlyItsOwnEncoding` at two of its three call sites.** `BinaryEnvelope.java:404` (Kyber public
-key) and `:425` (`ec()`, used for both the signed and the one-time pre-key). The tested arm is
-`:325` (identity key), via `AkeyFieldCarriesOnlyItsKeyTest.apaddedKeyFieldIsRefused`, which only
-ever calls `padTheIdentityKeyField`. The byte-flip test cannot reach these: padding needs two
-simultaneous changes (length prefix plus inserted bytes), which its own javadoc excludes.
-MEDIUM and INFERRED — mutated, no user-visible harm constructed. Worth noting the capacity is
-asymmetric the wrong way: the tested field has a u8 length (≤222 spare bytes), these have u16, so
-roughly 4 KB of attacker bytes ride inside an envelope the parser then declares exhausted, and the
-signature re-encodes the padding away so a padded genuine invite still verifies.
+| What | Commit |
+|---|---|
+| `warnIfIdentityChanged` on `addContact`'s accepted-bundle arm, pinned only by an exemption list | `b151b1e` |
+| `warnIfThisKeyIsPinnedElsewhere` on the ciphertext arm - the inviter's own path | `92d837d` |
+| The malleability sweep could not see the Kyber field every real invite carries | `b6a0f7e` |
+| `exactlyItsOwnEncoding` at both fields `ec()` reads | `d49c597` |
+| A caution justified by a repaint the next line now does | `c01bc96` |
+| `ListAdapterMessages.getView`'s missing third arm | `59c8715` |
+| Safety-number digits rendered in the device locale; `saveIdentity` kept out-of-band provenance | `e1f394d` |
+| A 128-unit bound that cut a surrogate pair in half; a missing null check | `6747af1` |
+| A fallback that threw from inside the `catch` meant to cover it | `9e791cb` |
+| An unbounded static locale cache; a record object in a release log line | `973639d` |
 
-**`requireEncryptedOnly`'s undecryptable-envelope arm.** `EncryptedKeyValueStore.java:202`. Deleting
-it moves where the refusal happens, not whether it happens: with a single permitted key, `decode`
-throws at read time and the user meets the same `ChatLogUnavailableException`. Reasoned from the
-code path, **not measured** — that distinction is the entry. It would start to matter if the
-permitted set grew past one key, or if any caller wrote to that store before reading it.
+**Three were not defects and are recorded as such rather than "fixed".** The Kyber
+`exactlyItsOwnEncoding` call never fires - `KEMPublicKey` rejects an over-long array before it is
+reached, which is why no harm could be constructed - and it is kept as a hedge against a libsignal
+upgrade, with the test saying out loud that a future failure reading "trailing bytes" means that
+upgrade happened. `saveIdentity`'s provenance drop and `SenderKeyStoreImpl`'s log line are both on
+paths nothing reaches; both commits say so instead of implying a live defect.
 
-**`migrateToEncryptedInternal`'s undecryptable-marker refusal.** `EncryptedKeyValueStore.java:211`.
-Defence in depth behind two guards that are enforced. The window is a store holding an undecryptable
-marker, only cleartext payloads, on a device that never sealed — an interrupted 0.1.5 upgrade whose
-master key changed mid-flight. Real, narrow, not attacker-driven. The natural test for it also
-disarms the two guards that make the window narrow.
+## Open
 
-**Chat-log move read-back check.** `StorageHelper.java:490`. Still survives at HEAD; re-confirmed by
-sweep 4 rather than newly found. Four vacuous fixture shapes are recorded in REVIEW-SETTLED — the
-next attempt must first assert the migration RAN (the copy present in the message file) before
-asserting anything about the original.
+**Toast text is outside the IME window's `FLAG_SECURE`, and this is accepted.** Toasts carry
+`labelFor(contact)` - a display name the user chose plus its address tag - in their own window, so
+`notifySensitiveVisibility` cannot reach them and a screen capture during one includes the label.
+Not changed, for two reasons. The content is a name the messenger already knows, since it is their
+contact; and the alternative is toasts that no longer say which contact they are about, on a surface
+whose whole value is telling the user which contact an action applied to. The banner path accepts
+the same residue. Revisit if a toast ever carries message content, which none does today.
 
-## Open — LOW
-
-**`SharedPreferencesKeyValueStore.remove`'s commit check.** Dead code: `KeyValueStore.remove` is
-declared, implemented, and called by nothing in `app/src/main`. Delete the method or leave it, but
-it is not an unenforced control.
-
-**`SessionStoreImpl.loadExistingSessions`' null-record throw.** The code's own comment calls it
-unreachable — libsignal's multi-session entry point, and this app performs no group or
-multi-recipient send. The sweep confirms nothing executes it.
-
-**`mergeEntriesSharingAname`'s two guards.** The loaded retired-name list can exceed its per-name
-bound in memory on an upgrading store; `Account.retireDisplayName`'s own trim — which is pinned —
-re-bounds it at the next retirement. The length check fires only for a `String[]` of length < 2,
-which the store's JSON shape does not produce.
-
-**`BinaryEnvelope:365`'s `registrationId > 16380` range check.** libsignal accepts 2,000,000 without
-throwing. The harm is the 17-bit covert channel the comment claims, nothing more.
-
-**`bundleSignature.length == 0` and its twin in `requireTheBundleWasIssuedAsOneUnit`.** Two guards
-for one fact, neither observable alone; `verifySignature(msg, new byte[0])` returns false, so
-removing both is a refusal rather than a crash. `AwrongLengthSignatureIsRefusedRatherThanThrownTest`
-sweeps lengths 1–255 and skips 0.
-
-**A null-address `TrustedKey` would NPE out of the trust store.** `IdentityKeyStoreImpl:348` and both
-`trustedKeys.removeIf(...)` lambdas call `getSignalProtocolAddress().equals(...)` with no null check,
-while `:333/:335` — the defended member of the same family — does check. No route to one was
-constructed.
+**Two `KeyboardSwitcher` NPE guards were added without tests** (`isShowingKeyboardId` not checking
+`getKeyboard()`, `setKeyboard` not checking its view or layout set). The states are exactly the ones
+round 11 tried and could not construct, so a test would assert against a state nothing produces -
+the vacuous shape this branch keeps rejecting. The guards are cheap, the reasoning is in the code,
+and if either state ever becomes reachable the guard is already there.
 
 ## Deferred by decision, not by severity
 
@@ -111,126 +85,6 @@ These are recorded in full in REVIVAL.md; listed here so the backlog is one plac
   it. Coupled, and deliberately not built: the screen would ask a question the app then ignores.
 - **QR for out-of-band exchange.** String transfer works both ways and the help text is written and
   tested. QR is a ZXing dependency decision.
-
-## From round 11 (first pass under the highs-and-criticals rule)
-
-Round 11 reported **no HIGH or CRITICAL**. Its angle: can the host app kill the keyboard through the
-previously unswept half (`keyboard/`, `latin/utils/`, `latin/common/`, `compat/`), plus a mutation
-sweep over the files neither swept nor named by any test (`Account`, `chat/`, `ProtocolAddresses`,
-`JsonUtil`, `E2EEStrip`, both list adapters, `WholeRowsListView`).
-
-### Three candidates that died at harm construction — do not re-walk
-
-**`KeyboardSwitcher.java:358` — NPE from a keyboard-less view.** A real latent defect:
-`getKeyboardSwitchState()` treats `mKeyboardLayoutSet != null` as proof `mKeyboardView` holds a
-Keyboard, but the layout set is never reset while `onCreateInputView` replaces the view wholesale.
-Not HIGH: every route goes through `isImeSuppressedByHardwareKeyboard()`, whose
-`!onEvaluateInputViewShown() &&` short-circuits unless a hardware keyboard is attached and visible.
-No adversary-chosen trigger — the other input is a `uiMode`/dynamic-colour change, a system event
-the host cannot force (rotation does not change `uiMode`).
-
-**`KeyboardSwitcher.java:163` — NPE on a null `mKeyboardLayoutSet`.** The dangerous half of a pair;
-its sibling `requestUpdatingShiftState` is safe only by accident, because `updateAlphabetShiftState`
-opens with the exact inverse guard. Not HIGH: needs `mKeyboardLayoutSet == null` while
-`mKeyboardView != null`, i.e. the first `onStartInputView` bailed early. `InputMethodService` creates
-the input view in `initialize()` before dispatching `onStartInputView`, so the state could not be
-built and the host does not choose it.
-
-**`clearInviteRefusalIfAbout` — a replayed genuine bundle drops the refusal record.**
-`E2EEStripView.java:5133`. Same shape as the confirmed badge-drop finding, and a re-delivered copy of
-a genuinely issued bundle satisfies every check (no freshness term anywhere). Not HIGH: it is the
-designed exit — the app's own advice is "ask them to send another" — the method is scoped twice
-over, the identity-change record and any rejection survive, and `warnIfIdentityChanged` runs earlier
-in the same pass and is re-derived from the store, so the stronger warning stays on screen. Only the
-weaker, lower-ranked line goes.
-
-### Survivors with no constructed harm — LOW
-
-- `Account.java:550` `messages == null` in `removeAllUnencryptedMessages`. Unreachable:
-  `getUnencryptedMessages()` throws rather than returning null on a failed load, and the only
-  `setUnencryptedMessages` caller is guarded.
-- `JsonUtil.java:197` stored-address validation throw. Its own comment records that the JSON is
-  app-private and sealed per value.
-- `ListAdapterContacts.java:46`, `WholeRowsListView.java:48` and `:52` — view-layer null/zero guards.
-
-### MEDIUM
-
-- **`ListAdapterMessages.getView` has no else-arm.** A `StorageMessage` whose sender and recipient
-  both differ from the account name leaves the recycled row's text and visibility untouched, so it
-  repaints the previous message on the previous side. Every stored message carries the account name
-  in one of the two fields, so nothing reaches it today.
-- **`E2EEStripView` arm asymmetries**, from a systematic arm x action table: the add-contact
-  refused-bundle arm is the only bundle arm asking neither `warnIfKeyWasRejected` nor
-  `warnIfThisKeyIsPinnedElsewhere`; the message-only arm is the only decrypt arm whose calls to those
-  two are conditional on `PREKEY_TYPE`; the add-contact ciphertext arm posts the pin caution twice
-  into one slot with two wordings. In each case the user still receives a warning on that arm, and
-  the condition cannot newly become true where the question is skipped.
-
-### LOW
-
-- `changeHeightOfMessageListView` sets `params.height = 700` in raw pixels, overriding the layout's
-  `250dp`, so the list height varies about fourfold across densities. Rendering only.
-- `ListAdapterContacts.getItem`'s LinkedHashMap fallback unboxes `(Integer) get("deviceId")` and
-  `(Boolean) get("verified")` inside a `catch (ClassCastException)` where the outer `catch (Exception)`
-  cannot see the result. Nothing produces a non-`Contact` element today.
-- `KeyboardId.boundedActionLabel` truncates with `substring(0, 128)`, which can split a surrogate
-  pair. `drawText` and `codePointCount` both tolerate it.
-- `LocaleUtils.sLocaleCache` is an unbounded static `HashMap`; keys come from the app's own subtypes.
-- `KeyboardSwitcher.isShowingMoreKeysPanel()` is the one accessor in that class not null-checking
-  `mKeyboardView`, while seven siblings do. Its single caller is already guarded on the same field.
-
-## From round 12 (second clean pass — confidentiality and composition)
-
-Round 12 reported **no HIGH or CRITICAL**. Deliberately independent of round 11: it went at what
-crosses between host apps, what reaches disk, and authenticity under composition, and it swept call
-sites rather than guards.
-
-**Two sweeps, both largely enforced.** Every statement in the cross-app clearing paths —
-`onKeyboardHidden`, `clearDecryptedContent`, `clearComposeFieldAndCaches`, `forgetAbandonedInvite`,
-and both arms of `setHostFieldIsPassword` — was deleted individually: **15 of 15 killed.** There is
-no unenforced statement left in the dismissal or password-guard paths. Of the 16 trust-warning raiser
-call sites, **13 were killed**; the three survivors are all on `addContact` and are listed below.
-
-Read and closed without a mutant, so the next round can skip them: `allowBackup=false` plus
-`dataExtractionRules`; `SettingsActivity` is exported but `FragmentUtils.isValidFragment` allow-lists
-seven fragments, so `EXTRA_SHOW_FRAGMENT` injection is shut; no dictionary or personalisation
-machinery exists in this fork, so there is no plaintext learning path; the only `setPrimaryClip`
-writes an empty clip; `createFingerprint` binds to the two identity keys and reads the pin, never the
-session or the pending key; `removeContact` keeps the pin and `rejectedAddresses` outlives
-`removeIdentity`; no `String.format` takes an attacker-derived format string.
-
-### MEDIUM
-
-- **`E2EEStripView.java:1825` — `warnIfThisKeyIsPinnedElsewhere(chosenContact)` on `addContact`'s
-  ciphertext arm is driven by nothing.** Deleting it leaves the full suite green. Not an equivalent
-  mutant: this is the inviter's side, where a bundle-less `PreKeySignalMessage` pins by
-  trust-on-first-use, and it is one of the five arrival sites of the one warning REVIEW-SETTLED
-  records as re-derived by nothing.
-- **`E2EEStripView.java:1704` — `warnIfIdentityChanged(chosenContact)` on the accepted-bundle arm is
-  pinned only by bookkeeping.** Killed by exactly one test, `NoWriteResultIsDiscardedTest >
-  everyExemptionStillNamesAsiteThatDiscardsAwrite` — an exemption list that names the site, not a
-  behavioural assertion. Its premise is reachable (a forged bundle records a pending change;
-  `removeContact` clears neither the pin nor `pendingIdentities`; the peer's genuine re-invite then
-  lands on this arm), and its own comment says `warnIfKeyWasRejected` defers to it, so the pair can
-  go silent together. Worth a real test even at MEDIUM.
-- **`E2EEStripView.java:1853` — `cautionThatAkeyWasPinned` on the ciphertext arm survives.** Close to
-  equivalent: the shared caution at `:5023` already fires on this path, so deleting it only
-  downgrades the wording. Its comment's second justification ("it also repaints the banner") is
-  stale — `showChosenContactInMainInfoField()` repaints unconditionally.
-
-### LOW
-
-- `SenderKeyStoreImpl.java:44` is the only store method interpolating a whole record object into a
-  `Log.d` in a non-minified release build. Unreachable today (no group send).
-- Toasts carry `labelFor(contact)` — display name plus keyed address tag — in a separate window that
-  the IME window's `FLAG_SECURE` does not cover, so `notifySensitiveVisibility` cannot reach them.
-  Same residue class the banner path already accepts.
-- `IdentityKeyStoreImpl.saveIdentity`'s `REPLACED_EXISTING` arm does not clear `outOfBandAddresses`
-  while `acceptIdentityChange` and `removeIdentity` both do. Inert, but the three persisted
-  collections are otherwise kept in step.
-- `E2EEStripView.java:1313` renders the safety number with `String.format(Locale.getDefault(),
-  "%05d", ...)`, so under a locale whose default numbering system is non-Latin the digits render in
-  Eastern-Arabic or Devanagari while the peer reads Latin. Display only; the comparison is spoken.
 
 ## Unexamined
 
