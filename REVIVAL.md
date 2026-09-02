@@ -706,9 +706,14 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
     root, as java resources rather than `jniLibs`, so the existing `jniLibs` exclusion never saw
     them. Excluded once measured: arm64 115 → 74 MB, armeabi-v7a 109 → 68 MB, on every build host.
   - **Of the 74 MB that remains, 64.2 MB is DWARF debug information**, not code. `.debug_str` alone
-    is 43.8 MB against a `.text` of **4.7 MB**. AGP's `stripReleaseDebugSymbols` runs and prints
-    *"Unable to strip … packaging them as they are"* because the build image has no NDK; a host with
-    one strips automatically and lands near 10 MB.
+    is 43.8 MB against a `.text` of **4.7 MB**. AGP's `stripReleaseDebugSymbols` ran and printed
+    *"Unable to strip … packaging them as they are"*, because the build image had no NDK at the
+    time this was measured; a host with one strips automatically and lands near 10 MB.
+    **Past tense now, and confirmed rather than assumed:** `tools/Dockerfile` installs the NDK from
+    image `:38` onward (see "Fixed at the source" below), and a release build at HEAD produces
+    **9.3 MB arm64 / 7.7 MB armeabi-v7a with zero "Unable to strip" warnings**. This bullet stood in
+    the present tense for the whole period after that fix landed, which would tell a reader the
+    shipped APK is still 74 MB.
   - **So "the cost of PQXDH" is roughly 10 MB, not 115.** The decision to accept 115 was reasonable
     given the premise and the premise was never checked.
 
