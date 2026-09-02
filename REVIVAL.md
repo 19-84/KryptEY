@@ -4339,6 +4339,32 @@ fail.*
   it. Note also the capability required: write access to the app's private storage, strictly larger
   than anything the messenger has in this threat model. That is why it stays deferred, and the tests
   are why that judgement can now be checked instead of trusted.
+
+  **"Not solvable at the storage layer" is true and stops one step short.** This app already
+  demonstrates a store that survives exactly the capability this attack needs: the anti-laundering
+  seal is a Keystore alias, and restoring an old `protocol.xml` does not remove it. That is the same
+  trust boundary a rollback counter wants, one layer over from where the entry looked.
+
+  A sketch, **not implemented and not measured**, recorded so the deferral is a decision about cost
+  rather than about possibility:
+
+  - Keep an epoch number `E` in the store, and mint a Keystore alias `kryptey.epoch.E` alongside it.
+    On load, if the file says `E` while an alias for some `E' > E` exists, the file is older than
+    the device knows it should be - which is exactly the condition `StoreRollbackTest` constructs.
+  - Bounded at one or two aliases: delete `E-1` when minting `E`. The check is a single
+    `containsAlias(E+1)` rather than a scan.
+  - The seal shows the shape works and what it costs: an alias generated "with the cheapest
+    parameters that will not prompt the user". One keygen per epoch, where an epoch could be a
+    launch or a session rather than a message.
+
+  Three things make this cleaner here than it would be in most apps, and one makes it harder.
+  `allowBackup="false"` means there is no legitimate restore path to false-positive on. The Keystore
+  is cleared on uninstall, which is when the files go too, so the two stay consistent. And the seal
+  has already been through the device testing this would need. The hard part is not detection but
+  **response**: a store that reports itself rolled back is a state the app currently has no wording
+  for, and inventing one is the same problem as every other warning on this branch - what it says has
+  to be true, actionable, and not teachable-away. Detection without an answer to that is a defect
+  rather than a fix.
 - **Bundle replay.** No freshness check, so replaying a captured envelope forces a session rebuild.
   Halved (the bundle was being processed twice per message) but not eliminated. **Now measured
   rather than described** (`BundleReplayTest`): a replay is accepted and replaces the session, but
