@@ -152,6 +152,19 @@ public class AciphertextAddThatPinsAknownKeyIsWarnedAboutTest {
     assertTrue("precondition: the add must have created a row", victim.getContactList().size() >= 1);
     assertTrue("a first, ordinary ciphertext add has nothing pinned elsewhere and must not be "
         + "warned about: " + banner(), !banner().contains("same key already saved"));
+
+    // And the pin caution must say what actually happened on this arm.
+    //
+    // cautionThatAkeyWasPinned takes contactWasCreated, and this arm passes true because it made a
+    // row; the shared caution on the decrypt path passes false and says "A key for ... has been
+    // stored". A sweep found this call site unenforced, and the difference it makes is exactly
+    // these two sentences - so pin the one that is true here rather than asserting that some
+    // caution appeared, which both wordings would satisfy.
+    assertTrue("the ciphertext arm creates a contact, so its caution must say so rather than the "
+            + "decrypt path's \"a key has been stored\": " + banner(),
+        banner().contains("created"));
+    assertTrue("...and it must still carry the compare-by-voice instruction: " + banner(),
+        banner().contains("compare the security number by voice"));
   }
 
   @Test

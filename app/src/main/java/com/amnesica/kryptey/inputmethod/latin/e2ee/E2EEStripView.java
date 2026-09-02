@@ -1845,11 +1845,17 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // would let a relay raise a warning about anyone in order to silence the one notice that
       // fires because nothing was noticed.
       //
-      // It also, not incidentally, repaints the banner. Nothing else on this path does, so the
-      // banner was left reading "No contact chosen" while a contact WAS chosen and Encrypt aimed at
-      // them - and since disablesActionButtons matches that exact sentence, Encrypt and Decrypt
-      // stayed dark. The user was handed a decrypted message and no way to answer it, on the flow
-      // the help calls "automatically selected".
+      // What this call is NOT for any more: it used to be the only thing repainting the banner on
+      // this path, and this comment said so for several rounds after that stopped being true.
+      // showChosenContactInMainInfoField() on the next line repaints unconditionally now - its own
+      // comment records why it was moved out - so the repaint justification here is stale. Left in
+      // corrected form rather than deleted, because a reader who deletes this call on the strength
+      // of "the shared caution already fires" needs to know what else goes with it.
+      //
+      // What remains is the wording. This arm CREATED a row, so the sentence says "Contact X
+      // created"; the shared caution on the decrypt path passes contactWasCreated=false and says
+      // "A key for X has been stored". Without this call the user is told a key was stored on the
+      // one arm where a contact was also made.
       cautionThatAkeyWasPinned(keyPinnedBeforeThisAdd);
       // And the banner is repainted whether or not anything was pinned.
       //
