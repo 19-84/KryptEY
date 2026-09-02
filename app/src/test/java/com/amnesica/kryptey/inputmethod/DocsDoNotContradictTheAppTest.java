@@ -389,13 +389,21 @@ public class DocsDoNotContradictTheAppTest {
     final int distinct = new java.util.HashSet<>(ids).size();
 
     assertTrue("the baseline must actually hold issues, or this checks nothing", ids.size() > 100);
-    assertTrue("BACKLOG.md must quote the real issue count " + ids.size() + "; it is the figure a "
-            + "reader uses to decide whether the baseline hides anything",
-        backlog.contains(String.valueOf(ids.size())));
-    assertTrue("...and the real number of distinct ids, " + distinct,
-        backlog.contains(String.valueOf(distinct)));
-    assertTrue("...and how many are the inherited UnusedResources, " + unused + " - without that "
-            + "share the total reads as unexamined defects when it is mostly one category",
-        backlog.contains(String.valueOf(unused)));
+    // Each number must sit NEXT TO the thing it counts, not merely appear somewhere in the file.
+    //
+    // The first version asked only whether the digits were present anywhere. That is satisfied by
+    // any unrelated mention - a commit hash, a line number, another count - so the guard would keep
+    // passing while the sentence it exists to check drifted. It is the same weakness as a scanner
+    // matching a literal: technically an assertion, and not about what it claims.
+    assertTrue("BACKLOG.md must say how many issues the baseline holds, next to the words that say "
+            + "what the number is. Expected " + ids.size() + " with 'filtered issues' beside it",
+        backlog.contains(ids.size() + " filtered issues"));
+    assertTrue("...and the number of distinct ids beside its label: expected " + distinct
+            + " with 'distinct ids' beside it",
+        backlog.contains(distinct + " distinct ids"));
+    assertTrue("...and how many are the inherited UnusedResources, beside that name: expected "
+            + unused + ". Without that share the total reads as unexamined defects when it is "
+            + "mostly one category",
+        backlog.contains("| " + unused + " | UnusedResources"));
   }
 }
