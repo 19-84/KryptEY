@@ -129,6 +129,26 @@ The full suite is still what a finding is confirmed against: a narrowed run cann
 mutation is unattributed by the *whole* suite, only that the class you suspected did not catch it.
 Both numbers belong in a report - narrow to find, full to confirm.
 
+## The retry covers the run, not the install
+
+`test-on-emulator` retries the instrumentation stage once, because this harness has produced
+failures that did not reproduce. **An install failure happens before that stage and is not
+retried.** Seen once: `adb install` died with a platform `NullPointerException` inside
+`StorageManager.getVolumes()` - the storage service had not come up after the mandatory reboot - and
+the script aborted correctly with a non-zero status having produced no test result at all.
+
+That is a limitation rather than a defect: `set -e` stops the run and the exit status says so. What
+it means for a caller is that **a run which produced no result and a run which passed are
+distinguishable only by the exit status**, so capture it. Piping the script into `grep` reports
+grep's status, not the script's, and a failed run then reads as a completed one.
+
+Two more ways a device run can look like a result without being one:
+
+- `KRYPTEY_TEST_CLASS` with a wrong package produces `FAILURES!!! Tests run: 1, Failures: 1` and the
+  failure is `initializationError` - the runner reports "no tests matching that name" as a failing
+  test. Identical to a genuine failure at the summary line. Read the failing method's name.
+- The narrowed form runs one class; the banner says so (`==> NARROWED`), and it is not the suite.
+
 ## Instrumentation tests
 
 `tools/test-on-emulator` runs them. There are 41, and the count in this sentence is checked against

@@ -177,6 +177,32 @@ followed touched unmodified source and passed, which reads exactly like a scanne
 own correctness. A control that does not apply is not a control, and it looks identical to a good
 result unless the applying step prints something.
 
+## Does the device suite discriminate?
+
+The JVM guards were all driven with a defect they should catch. The device suite had not been: 41/41
+had been reported several times while the only device tests ever watched failing were the five seal
+ones, which were controlled when they were written.
+
+**Controlled now, on the property that exists only on device.** `FLAG_SECURE` is what REVIVAL calls
+"the change that most needs a device before it is trusted" - window flags behave differently across
+vendors and nothing in this environment can run the keyboard. Removing `addFlags(FLAG_SECURE)` from
+`LatinIME` makes `FlagSecureReachesTheWindowOnDeviceTest.asensitiveScreenMakesTheImeWindowSecure`
+fail with its own assertion and the real `dumpsys` block:
+
+    the chat log is on screen and the IME window is not marked secure ... every screen holding
+    decrypted plaintext is screenshottable
+
+So that test notices. The other 35 remain uncontrolled - each costs a ~15 minute device run, and
+nothing suggests they are wrong; this is recorded so the next person knows which have been watched
+failing and which have only been watched passing.
+
+**Two false results on the way, both of which looked like answers**, and they are written into
+`tools/README.md` because they are properties of the harness rather than of this branch: an install
+failure produces no test result and is not covered by the script's retry, and a wrong package in
+`KRYPTEY_TEST_CLASS` produces `Tests run: 1, Failures: 1` where the failure is `initializationError`.
+The second is the dangerous one - every other false result this session was green, and that one is
+red, which is the outcome a control is hoping for and therefore the one least likely to be inspected.
+
 ## Deferred by decision, not by severity
 
 These are recorded in full in REVIVAL.md; listed here so the backlog is one place.
