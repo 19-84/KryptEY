@@ -192,9 +192,28 @@ fail with its own assertion and the real `dumpsys` block:
     the chat log is on screen and the IME window is not marked secure ... every screen holding
     decrypted plaintext is screenshottable
 
-So that test notices. The other 35 remain uncontrolled - each costs a ~15 minute device run, and
-nothing suggests they are wrong; this is recorded so the next person knows which have been watched
-failing and which have only been watched passing.
+So that test notices. The other 35 have not been watched failing, and that is a different state
+from being wrong - recorded here so the next person knows which is which.
+
+**They are not uniform, and two categories need no control.** `AutofillDoesNotReachTheKeyboardTest`
+asserts a PLATFORM property - whether the framework reaches views inside an IME's own window - and
+its own javadoc records that nothing in the layout or the code sets `importantForAutofill`, because
+the branch chose to measure rather than add a guard it could not show a need for. There is no
+app-side line to mutate, and the test is self-controlled by design: it establishes that autofill
+fired, that the structure identifies fields by id and contains the host's own field, and that the
+keyboard was bound, before believing the absence.
+
+More generally **13 of the 16 device classes carry an explicit setup check** - an assertion whose
+message begins "precondition", "fixture", "premise" or "control" - which is the shape that stops an
+absence being believed for the wrong reason. The three that do not are
+`ProtocolRoundTripOnRealHardware`, `StripRoundTripOnDevice` and `AndroidKeystoreCryptoBox`, and all
+three assert positive round-trip outcomes rather than absences, which is the case where a setup
+check earns least.
+
+*The first version of this count said five classes, because it searched for the word
+"precondition" alone and `AcontactSwitchDoesNotRepaintThePreviousNumber` writes "fixture:". That is
+the same literal-matching defect this file documents seven times over, committed in the measurement
+used to describe it.*
 
 **Two false results on the way, both of which looked like answers**, and they are written into
 `tools/README.md` because they are properties of the harness rather than of this branch: an install
