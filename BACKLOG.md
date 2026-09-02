@@ -117,6 +117,41 @@ which was true of the code and wrong about what the code could do. The view half
 `setMainKeyboardFrame`, called the line above, dereferences `mKeyboardView` first - so that check
 now lives at the first dereference and the guard here is the layout set only.
 
+## The claims audit, and what it left
+
+Once the listed backlog was empty, the remaining work turned out not to be in the list. Both
+`REVIVAL.md` and `REVIEW-SETTLED.md` carry findings marked settled on the strength of somebody
+having read the code - and a claim verified by reading has nothing that notices it becoming false.
+Every absolute claim in both documents was enumerated and checked.
+
+**Eight guards came out of it**, each verified in both directions:
+
+| claim | guard |
+|---|---|
+| the shipped layouts add no capability | `NolayoutAddsAcapabilityTest` |
+| nothing anywhere logs typed text | `NothingLogsWhatTheUserTypedTest` |
+| `latin/settings/` persists no text | `SettingsPersistNoTextTest` |
+| only this app's fragments can be launched | `OnlyThisAppsOwnFragmentsCanBeLaunchedTest` |
+| every serialised class is kept by ProGuard | `EverySerialisedClassIsKeptTest` |
+| nothing runs off the IME main thread | `NothingRunsOffTheImeMainThreadTest` |
+| BACKLOG's lint figures match the baseline | `DocsDoNotContradictTheAppTest` |
+| the geometry a touch uses is the geometry drawn | `EveryKeyIsWhereItIsDrawnTest` |
+
+**Three claims were wrong**, and checking is the only reason anyone knows: the layout count had no
+denominator anyone could reproduce; the action-code list named eight of twelve; and the lint summary
+said 502 when the section below it said 602.
+
+**Claims found already guarded, so nobody need re-check them:** the decoy corpus carries no
+character from the payload alphabet (`FairyTaleInitTest`); `EnvelopeCodec.fromWire` never throws
+unchecked (`ClipboardFuzzTest` runs the real listener sequence and fails on anything that is not an
+`IOException`); the debug switches are compile-time false (`DebugLoggingStaysOffTest`);
+`deSimplifyJsonKeys` (`EncodeHelperTest`); the inflate loop's budget (`DecompressionBudgetTest`).
+
+**Left unguarded on purpose.** `MSG_PENDING_IMS_CALLBACK` is recorded as dead code, and a test that
+dead code stays dead is a test of nothing. The ProGuard rules themselves cannot be exercised without
+turning `minifyEnabled` on, which is a build change rather than a test - so what is guarded is the
+pairing that rots, not the rules.
+
 ## Deferred by decision, not by severity
 
 These are recorded in full in REVIVAL.md; listed here so the backlog is one place.
