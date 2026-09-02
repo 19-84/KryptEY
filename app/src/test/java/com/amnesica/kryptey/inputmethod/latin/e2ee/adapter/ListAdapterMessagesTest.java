@@ -130,4 +130,39 @@ public class ListAdapterMessagesTest {
     assertEquals(View.VISIBLE, others(reused).getVisibility());
     assertEquals("theirs", others(reused).getText().toString());
   }
+
+  /**
+   * A message this adapter cannot attribute must render as nothing, not as the previous one.
+   *
+   * <p>{@code getView} claimed a side when the account name matched the sender, and the other when
+   * it matched the recipient, and did nothing at all when it matched neither. {@code ListView}
+   * hands the same {@code View} back for a different position, so that row kept every field the
+   * previous row had set: the previous message, on the previous side, under this message's
+   * position. Nothing new is disclosed - the user has already seen that text - but it is presented
+   * as a different message than it is, on the one screen whose job is to say who said what.
+   *
+   * <p>Not reachable today, and the test exists anyway: every stored message carries the account
+   * name in one of the two fields, so one arm always claims it. The recycled view is passed in
+   * explicitly here because that is the only way the defect appears - a fresh row would inflate
+   * blank and look correct.
+   */
+  @Test
+  public void amessageMatchingNeitherSideDoesNotRepaintThePreviousOne() {
+    final ListAdapterMessages adapter = adapterFor(sent("I will be there at nine"),
+        new StorageMessage(PEER, "someone-else", "a-third-party",
+            Instant.ofEpochMilli(1_700_000_002_000L), "not attributable to this account"));
+
+    final View recycled = adapter.getView(0, null, new android.widget.FrameLayout(context));
+    assertEquals("precondition: the first row must render on the own side, or the recycled view "
+        + "carries nothing for the second row to keep", "I will be there at nine",
+        own(recycled).getText().toString());
+
+    final View reused = adapter.getView(1, recycled, new android.widget.FrameLayout(context));
+
+    assertEquals("an unattributable message must not leave the previous message's text on screen "
+            + "under its own position", "", own(reused).getText().toString());
+    assertEquals("nor on the other side", "", others(reused).getText().toString());
+    assertEquals("and the own side must be hidden", View.GONE, own(reused).getVisibility());
+    assertEquals("and the others side too", View.GONE, others(reused).getVisibility());
+  }
 }

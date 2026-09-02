@@ -65,6 +65,30 @@ public class ListAdapterMessages extends ArrayAdapter<Object> {
 
       ownMessageTimestampTextView.setVisibility(View.GONE);
       ownMessageTextView.setVisibility(View.GONE);
+    } else {
+      // A row this adapter cannot attribute renders as nothing, rather than as whatever the
+      // recycled view was showing before.
+      //
+      // Both arms above set text and visibility on the side they claim and hide the other, so a
+      // message matching NEITHER left every field exactly as the previous row had it - and
+      // ListView hands the same View back for a different position, so the row would repaint the
+      // previous message, on the previous side, under this message's position. The text is one the
+      // user was shown before, so nothing new is disclosed; what is wrong is that it is presented
+      // as a different message than it is, on the one screen whose job is to say who said what.
+      //
+      // Not reachable today: every stored message carries the account name in getSenderUUID or
+      // getRecipientUUID, so one of the two arms always claims it. This is what the third arm of a
+      // two-arm decision is for - the shape of the data changing without this file being read.
+      // Clearing the text as well as hiding it, so a later bind that makes a side visible cannot
+      // find a stale sentence waiting in it.
+      ownMessageTextView.setText("");
+      ownMessageTimestampTextView.setText("");
+      othersMessageTextView.setText("");
+      othersMessageTimestampTextView.setText("");
+      ownMessageTextView.setVisibility(View.GONE);
+      ownMessageTimestampTextView.setVisibility(View.GONE);
+      othersMessageTextView.setVisibility(View.GONE);
+      othersMessageTimestampTextView.setVisibility(View.GONE);
     }
     return convertView;
   }
