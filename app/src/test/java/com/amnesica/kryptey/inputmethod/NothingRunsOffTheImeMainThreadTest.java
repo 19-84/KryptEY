@@ -54,7 +54,7 @@ public class NothingRunsOffTheImeMainThreadTest {
    * "traceable by reading" stops being true the moment work is deferred.
    */
   private static final Pattern OFF_THREAD = Pattern.compile(
-      "new\\s+Thread\\s*\\(|ExecutorService|Executors\\s*\\.|AsyncTask|HandlerThread"
+      "new\\s+(?:[\\w.]*\\.)?Thread\\s*\\(|ExecutorService|Executors\\s*\\.|AsyncTask|HandlerThread"
           + "|runOnUiThread|\\.post\\s*\\(|\\.postDelayed\\s*\\(");
 
   /** Durable by design: apply() is asynchronous, which is the same hazard by another name. */

@@ -108,6 +108,11 @@ public class OnlyThisAppsOwnFragmentsCanBeLaunchedTest {
         .compile("sLatinImeFragments\\.add\\(\\s*([A-Za-z0-9_.]+)\\.class").matcher(body);
     while (matcher.find()) added.add(matcher.group(1));
 
+    assertTrue("the allow-list is populated by addAll, which this count cannot read - it counts "
+        + "add(X.class) calls. Either list the fragments individually or teach this test the new "
+        + "shape; a count that silently sees none would pass with the list wide open",
+        !body.contains("sLatinImeFragments.addAll"));
+
     assertEquals("the allow-list has changed size. Every entry is a class any app on the device "
             + "can ask this exported activity to instantiate, so an addition is a decision: "
             + added, PERMITTED.length, added.size());

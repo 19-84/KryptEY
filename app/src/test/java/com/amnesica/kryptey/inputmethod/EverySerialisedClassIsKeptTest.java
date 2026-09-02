@@ -83,7 +83,11 @@ public class EverySerialisedClassIsKeptTest {
       for (final Path file : (Iterable<Path>) files
           .filter(p -> p.toString().endsWith(".java"))::iterator) {
         final String body = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-        if (!body.contains("@JsonProperty") && !body.contains("@JsonCreator")) continue;
+        // Qualified forms too: @com.fasterxml.jackson.annotation.JsonProperty is legal and does
+        // not contain "@JsonProperty". Same evasion the input guard and the disabled-test guard
+        // both had, found by reading this one after fixing those.
+        if (!java.util.regex.Pattern.compile("@(?:[\\w.]*\\.)?Json(?:Property|Creator)\\b")
+            .matcher(body).find()) continue;
         annotated++;
 
         final String type = mainSources().relativize(file).toString()

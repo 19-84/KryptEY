@@ -48,9 +48,16 @@ public class NothingLogsWhatTheUserTypedTest {
    */
   private static final String PERMITTED_FILE = "E2EEInputConnection.java";
 
-  /** Any {@code Log} call that concatenates something. Strings are blanked before this runs. */
+  /**
+   * Any {@code Log} call that concatenates something. Strings are blanked before this runs.
+   *
+   * <p>{@code wtf} is listed separately because {@code [dviwe]} does not match it - the character
+   * after {@code Log.w} is {@code t}, not an open bracket - and {@code Log.wtf} is the level a
+   * developer reaches for when something should never happen, which is exactly when a payload gets
+   * dumped to help work out why.
+   */
   private static final Pattern LOG_CALL =
-      Pattern.compile("Log\\.[dviwe]\\s*\\([^;]*?\\)\\s*;", Pattern.DOTALL);
+      Pattern.compile("Log\\.(?:wtf|[dviwe])\\s*\\([^;]*?\\)\\s*;", Pattern.DOTALL);
 
   private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
 
