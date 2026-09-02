@@ -75,4 +75,86 @@ final class AwireBundleFixture {
     out.write(encoded, rest, encoded.length - rest);
     return out.toByteArray();
   }
+
+  /**
+   * The length-prefix offsets of the three key fields inside the bundle's single device.
+   *
+   * <p>Walked rather than searched for, the same discipline {@link #padTheIdentityKeyField} uses:
+   * a fixture that hunts for a byte pattern can quietly start editing a different field when the
+   * format changes, and then reports the guard it was aiming at as covered.
+   *
+   * <p>Returns {@code {signedKeyLenAt, preKeyLenAt, kyberKeyLenAt}}, with {@code -1} where the
+   * optional field is absent. The Kyber length is a u16 and the other two are u8, which is the one
+   * asymmetry that matters here: it is why the untested field can carry roughly 4 KB of rider bytes
+   * where the tested one is capped at 222.
+   */
+  private static int[] keyFieldLengthOffsets(final byte[] e) {
+    final int nameLength = e[2] & 0xFF;
+    final int identityLengthAt = 3 + nameLength + 1;
+    final int identityLength = e[identityLengthAt] & 0xFF;
+
+    int p = identityLengthAt + 1 + identityLength;   // deviceCount
+    p += 1;                                          // device deviceId
+    p += 1;                                          // registrationId
+    p += 4;                                          // signedPreKeyId
+    p += 4;                                          // signedKeyLen
+    final int signedKeyLenAt = p;
+    p += 1 + (e[p] & 0xFF);                          // past the signed key
+    p += 1 + (e[p] & 0xFF);                          // past its signature
+
+    int preKeyLenAt = -1;
+    if ((e[p] & 0xFF) != 0) {
+      p += 1 + 4;                                    // hasPreKey, preKeyId
+      preKeyLenAt = p;
+      p += 1 + (e[p] & 0xFF);                        // past the one-time key
+    } else {
+      p += 1;
+    }
+
+    int kyberKeyLenAt = -1;
+    if ((e[p] & 0xFF) != 0) {
+      p += 1 + 4;                                    // hasKyber, kyberPreKeyId
+      kyberKeyLenAt = p;
+    }
+    return new int[] {signedKeyLenAt, preKeyLenAt, kyberKeyLenAt};
+  }
+
+  /** Appends eight bytes to the field whose length prefix sits at {@code lengthAt}. */
+  private static byte[] padFieldAt(final byte[] encoded, final int lengthAt, final boolean u16) {
+    if (lengthAt < 0) throw new IllegalStateException("the fixture does not carry that field");
+    final int prefixWidth = u16 ? 2 : 1;
+    final int length = u16
+        ? (((encoded[lengthAt] & 0xFF) << 8) | (encoded[lengthAt + 1] & 0xFF))
+        : (encoded[lengthAt] & 0xFF);
+
+    final ByteArrayOutputStream out = new ByteArrayOutputStream();
+    out.write(encoded, 0, lengthAt);
+    final int padded = length + 8;
+    if (u16) {
+      out.write((padded >>> 8) & 0xFF);
+      out.write(padded & 0xFF);
+    } else {
+      out.write(padded);
+    }
+    out.write(encoded, lengthAt + prefixWidth, length);
+    for (int i = 0; i < 8; i++) out.write(0x41);
+    final int rest = lengthAt + prefixWidth + length;
+    out.write(encoded, rest, encoded.length - rest);
+    return out.toByteArray();
+  }
+
+  /** Pads the signed pre-key's public key - one of the two fields {@code ec()} reads. */
+  static byte[] padTheSignedPreKeyField(final byte[] encoded) {
+    return padFieldAt(encoded, keyFieldLengthOffsets(encoded)[0], false);
+  }
+
+  /** Pads the one-time pre-key's public key - the other field {@code ec()} reads. */
+  static byte[] padTheOneTimePreKeyField(final byte[] encoded) {
+    return padFieldAt(encoded, keyFieldLengthOffsets(encoded)[1], false);
+  }
+
+  /** Pads the Kyber public key, whose length prefix is a u16. */
+  static byte[] padTheKyberPreKeyField(final byte[] encoded) {
+    return padFieldAt(encoded, keyFieldLengthOffsets(encoded)[2], true);
+  }
 }
