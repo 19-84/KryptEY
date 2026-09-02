@@ -152,6 +152,31 @@ dead code stays dead is a test of nothing. The ProGuard rules themselves cannot 
 turning `minifyEnabled` on, which is a build change rather than a test - so what is guarded is the
 pairing that rots, not the rules.
 
+## Do the scanners actually fire?
+
+`EveryFileATestReadsIsATaskInputTest` turned out to have a completeness gap that hid three inputs -
+it looked for a fixed list of file extensions, and `.pro`, `.properties` and extensionless
+`tools/` scripts were not in it. **A guard that closes a class of defect is itself subject to that
+class**, so every source scanner in the suite was then driven with a defect it is supposed to catch.
+
+| scanner | defect introduced | result |
+|---|---|---|
+| `NoWriteResultIsDiscardedTest` | a bare `storeAllAccountInformationInSharedPreferences();` | fires |
+| `AnaddressIsRenderedOneWayPerRealmTest` | `ProtocolAddresses.key(...)` used inside the view | fires |
+| `NostatementIsWrittenTwiceInArowTest` | the same call twice in succession | fires |
+| `InstrumentationTestsCleanUpTheKeystoreTest` | an `@After` that stops resetting the alias | fires |
+| `DebugLoggingStaysOffTest` | `DEBUG_PREVIOUS_TEXT = true` | fires, two cases |
+| `EveryFileATestReadsIsATaskInputTest` | an undeclared `.pro` read | fires, after the fix |
+
+All six discriminate. The one gap found was the one already fixed.
+
+**One note on method, because it nearly produced a false pass.** The first attempt at the debug-switch
+control searched for `public static final boolean DEBUG = false` and matched nothing - the switches
+are named `DEBUG_EVENT`, `DEBUG_LISTENER`, `DEBUG_PREVIOUS_TEXT`, `DEBUG_ENABLED`. The run that
+followed touched unmodified source and passed, which reads exactly like a scanner confirming its
+own correctness. A control that does not apply is not a control, and it looks identical to a good
+result unless the applying step prints something.
+
 ## Deferred by decision, not by severity
 
 These are recorded in full in REVIVAL.md; listed here so the backlog is one place.
