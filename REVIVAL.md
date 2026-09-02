@@ -810,10 +810,21 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
      **`latin/settings/` persists no text** — every write across its eighteen files is an appearance
      or key-press value, with no personalisation setting, no gesture data and no dictionary write;
      **nothing anywhere logs typed text**, with the one candidate site logging a host-supplied
-     `CompletionInfo` behind a compile-time `false`; and **the 196 shipped layout files add no
-     capability** — the complete set of action codes is delete, language switch, settings, shift,
-     space, tab, alpha/symbol switch and a zero-width non-joiner, with no voice key, no clipboard
-     key and no emoji key.
+     `CompletionInfo` behind a compile-time `false`; and **the shipped layout files add no
+     capability** — with no voice key, no clipboard key and no emoji key.
+
+     *Two corrections to that last clause, both from checking it rather than re-reading it.* The
+     count said "196 shipped layout files" and no directory total matches: 406 XML files across the
+     four `xml*` dirs, 334 in `xml/` alone. `kbd_*` plus `rowkeys_*` happens to equal 196 without
+     the sentence saying so, and a number whose denominator is unstated cannot be checked - so the
+     count is dropped rather than guessed at. And the action-code list was incomplete: the layouts
+     reference **twelve** `!code/` constants, not the eight named here. The five missing were
+     enter, capslock, shift-enter, action-next and action-previous - all keyboard-internal, so the
+     security conclusion held, but a list offered as complete was not.
+
+     The claim is now a guard rather than a paragraph: `NolayoutAddsAcapabilityTest` pins the exact
+     set, so a thirteenth code has to be added there deliberately, beside the sentence saying why it
+     is safe.
      What was still genuinely unexamined at that point was the *correctness* half: the rendering and
      geometry of `keyboard/`, and `latin/utils/` beyond its logging. The security question had an
      answer there; the behaviour question did not.
