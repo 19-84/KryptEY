@@ -759,7 +759,28 @@ navbar colour and `RECEIVER_NOT_EXPORTED` genuinely remain unentered.
    phrasings an author reaching for encouragement would write ("trusted automatically", "no need to
    compare"). It also requires the text to keep pointing at the voice comparison, because avoiding
    one exposure is not a replacement for the check. QR would still be a dependency decision (ZXing);
-   string transfer needs none, and needed no new mechanism either. *Not* on this list any more: UI for accepting an identity change. That is
+   string transfer needs none, and needed no new mechanism either.
+
+   **Calling QR "a dependency decision" understates it, and the two directions have very different
+   prices.** This app requests exactly one permission: `VIBRATE`. For a keyboard - the app class
+   users are most right to be suspicious of - that is a substantive property, and it is the kind of
+   thing a careful person checks before installing.
+
+   *Scanning* a peer's code needs `android.permission.CAMERA`. That takes the app from one trivial
+   permission to two, one of them among the most sensitive Android has, on an app whose entire pitch
+   is that it needs to be trusted with very little. The runtime prompt would say a keyboard wants
+   camera access, and no explanation in the app gets read before that dialog.
+
+   *Showing* a code needs no permission at all - only rendering, which is a small library or a
+   hand-rolled matrix encoder. And showing is the direction that carries the invite: this app
+   displays its own bundle, the peer reads it with whatever QR app they already have, and pastes the
+   text into their keyboard. That is out-of-band transfer without a camera, and it composes with the
+   string transfer that already works rather than replacing it.
+
+   So the decision is not one thing. Export-only QR is cheap and needs no new permission; scanning is
+   a permission change this app has otherwise avoided entirely. Recorded because nothing in this
+   document said the word camera, and a reader weighing "QR: worth it?" would have priced only the
+   library. *Not* on this list any more: UI for accepting an identity change. That is
    now a decision rather than a gap, and adopt-in-place stays unavailable on purpose.
 
    **"The exit is discard via deletion" was wrong, and the code has said so all along.**
