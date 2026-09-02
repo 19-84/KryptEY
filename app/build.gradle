@@ -165,6 +165,8 @@ android {
         // checksum - so a guard on it that could replay a stale pass would be worth very little.
         inputs.file('../gradle/wrapper/gradle-wrapper.jar').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../gradle/wrapper/gradle-wrapper.properties').withPathSensitivity(PathSensitivity.RELATIVE)
+        // TheImageDescriptionMatchesTheImageTest reads the Dockerfile that defines the build image.
+        inputs.file('../tools/Dockerfile').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)
