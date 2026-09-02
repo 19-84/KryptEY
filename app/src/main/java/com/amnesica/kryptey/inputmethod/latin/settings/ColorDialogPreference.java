@@ -79,6 +79,11 @@ public final class ColorDialogPreference extends DialogPreference
 
   @Override
   protected void onBindDialogView(final View view) {
+    // DialogPreference.onBindDialogView binds the dialog's message view from getDialogMessage().
+    // Neither of these preferences sets a message, so skipping it changed nothing - which is why
+    // nothing broke - but the override was quietly not honouring its contract, and the first person
+    // to add a message would find it silently absent.
+    super.onBindDialogView(view);
     final int color = mValueProxy.readValue(getKey());
     mSeekBarRed.setProgress(Color.red(color));
     mSeekBarGreen.setProgress(Color.green(color));
@@ -144,6 +149,12 @@ public final class ColorDialogPreference extends DialogPreference
   private String getValueText(final int value) {
     String temp = Integer.toHexString(value);
     for (; temp.length() < 8; temp = "0" + temp) ;
-    return temp.substring(2).toUpperCase();
+    // Locale.ROOT, though no hex digit is one the locale rules touch.
+    //
+    // The case that makes toUpperCase() locale-sensitive is Turkish 'i', and this string is drawn
+    // from 0-9 and a-f, so there is nothing here to get wrong today. Pinned to ROOT anyway because
+    // it costs nothing and stops the correctness of a colour code depending on a rule about a
+    // character it happens not to contain.
+    return temp.substring(2).toUpperCase(java.util.Locale.ROOT);
   }
 }

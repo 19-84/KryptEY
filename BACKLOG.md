@@ -86,6 +86,40 @@ These are recorded in full in REVIVAL.md; listed here so the backlog is one plac
 - **QR for out-of-band exchange.** String transfer works both ways and the help text is written and
   tested. QR is a ZXing dependency decision.
 
+## The lint baseline, read rather than counted
+
+602 filtered issues, 23 distinct ids - and the count on its own said nothing, because **427 of them
+are `UnusedResources`** inherited from the AOSP fork. The distribution is the useful artefact:
+
+| count | id | disposition |
+|---|---|---|
+| 427 | UnusedResources | AOSP inheritance, no behaviour |
+| 75 | StringFormatMatches | translation-vs-format mismatches in inherited strings |
+| 23 | MissingTranslation | inherited |
+| 21 | ContentDescription | accessibility, inherited layouts |
+| 15 | ObsoleteSdkInt | inherited |
+| 26 | everything else | see below |
+
+Four had behaviour or security consequences and were read individually. Three are fixed
+(`ColorDialogPreference`'s `toUpperCase` and both `onBindDialogView` overrides); the fourth is a
+non-issue and is recorded here so nobody re-opens it:
+
+**`DataExtractionRules` is moot, not unfixed.** Lint says `android:dataExtractionRules` applies only
+to Android 12+ and advises also setting `android:fullBackupContent` for `minSdkVersion` 26. This app
+sets `android:allowBackup="false"`, so no backup mechanism runs on any API level and the suggested
+attribute would do nothing. Adding it to silence lint would be adding a line that has no effect.
+
+**`StaticFieldLeak` on `KeyboardSwitcher` is inherent to the class.** It is a process-scoped
+singleton in an input method, holding the view it manages; the "leak" lasts exactly as long as the
+process that needs it. Changing it means changing how the IME holds its keyboard, which is not a
+lint fix.
+
+**`StringFormatMatches` (75) is the one worth a session of its own.** These are format strings whose
+arguments do not match their use, which is an `IllegalFormatException` at runtime rather than a
+style complaint. All 75 are in inherited AOSP strings and translations, and none is on a path this
+fork added - but "inherited" is not "harmless", and nobody has checked which of them a user can
+actually reach. Unexamined, deliberately listed rather than left inside a number.
+
 ## Unexamined
 
 - The **correctness** half of `keyboard/` (rendering, geometry) and `latin/utils/` beyond logging.

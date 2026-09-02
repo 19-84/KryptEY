@@ -102,6 +102,9 @@ public final class SeekBarDialogPreference extends DialogPreference
 
   @Override
   protected void onBindDialogView(final View view) {
+    // See the note on the same override in ColorDialogPreference: the base implementation binds the
+    // dialog's message view, this preference sets no message, and the contract is honoured anyway.
+    super.onBindDialogView(view);
     final int value = mValueProxy.readValue(getKey());
     mValueView.setText(mValueProxy.getValueText(value));
     mSeekBar.setProgress(getProgressFromValue(clipValue(value)));
