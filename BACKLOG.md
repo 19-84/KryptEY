@@ -52,6 +52,50 @@ upgrade, with the test saying out loud that a future failure reading "trailing b
 upgrade happened. `saveIdentity`'s provenance drop and `SenderKeyStoreImpl`'s log line are both on
 paths nothing reaches; both commits say so instead of implying a live defect.
 
+## From round 13 (a review of my own unreviewed changes)
+
+Two clean rounds had left the backlog empty, and I then made ten production changes to close it -
+each with a test, but author and test-writer were the same party. Round 13 reviewed exactly that
+diff. **No HIGH, no CRITICAL.** Six of the changes were confirmed genuinely pinned by reverting each
+and watching its test go red with no sibling case failing beside it, and `saveIdentity`'s
+`REPLACED_EXISTING` arm was traced rather than taken on trust: dead through every production path,
+and the added line only removes a trust claim, which is the fail-safe direction.
+
+Both MEDIUMs it found were mine, and both are fixed:
+
+**`blankRow` disarmed Delete permanently.** It hides the button; the ordinary path set a listener on
+it and never set visibility back, unlike the verified/unverified pair where both arms set both. Once
+a row had been blanked, every later contact bound into that recycled `View` had no Delete button. My
+test drove real -> blanked; the review drove blanked -> real. A one-directional test of a recycling
+path tests half of it.
+
+**`setKeyboard`'s null-view guard could never fire.** `setMainKeyboardFrame`, called the line above,
+dereferences `mKeyboardView` first, so the NPE the guard named had already been thrown - and its log
+line described a state it could not be reached in. That is the same "handler that looks like it
+covers the code above it" defect fixed in `ListAdapterContacts.getItem` five commits earlier, then
+committed again here. The check now lives at the first dereference.
+
+Three careless fixes it warned off, worth keeping: dropping `setVisibility(INVISIBLE)` from
+`blankRow` puts a Delete button on a nameless row; `GONE` instead of `INVISIBLE` reflows the row,
+because the last-name view is `layout_toStartOf` that button; and hoisting the keyboard guard above
+`setMainKeyboardFrame` skips the frame-visibility update on the hardware-keyboard path.
+
+### LOW, from the same round
+
+- `boundedActionLabel` still ends in a lone high surrogate if units 126 AND 127 are both high
+  surrogates - already-malformed host input, same tolerated consumers, no change in outcome.
+- `ListAdapterContacts.getItem` no longer catches `IndexOutOfBoundsException` from
+  `mContacts.get(position)`; old and new both end in an exception out of list layout, so the
+  diagnosis changes and the outcome does not.
+- `setKeyboard`'s silent return leaves `KeyboardState` believing a transition succeeded while the
+  view keeps its old keyboard. Only reachable with no layout set, and the alternative was an NPE.
+- `isShowingMoreKeysPanel`'s guard is inert: its one caller is already inside
+  `if (visibleKeyboardView.isShown())`. Consistency with seven siblings, as its javadoc says.
+- Four changes are pinned by no test and verified inert rather than merely untested: both
+  `super.onBindDialogView` calls (neither dialog layout contains any `@android:id`, so the base
+  implementation binds nothing), `toUpperCase(Locale.ROOT)` on a `0-9a-f` string (an equivalent
+  mutant), and the `SenderKeyStoreImpl` log line.
+
 ## Open
 
 **Toast text is outside the IME window's `FLAG_SECURE`, and this is accepted.** Toasts carry

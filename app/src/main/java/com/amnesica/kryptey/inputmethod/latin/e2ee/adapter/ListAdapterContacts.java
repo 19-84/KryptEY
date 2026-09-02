@@ -129,6 +129,14 @@ public class ListAdapterContacts extends ArrayAdapter<Object> {
 
     final ImageButton deleteContactButton = convertView.findViewById(R.id.e2ee_contact_button_delete_contact);
     deleteContactButton.setOnClickListener(v -> mListener.removeContact(contact));
+    // Visibility set explicitly, because blankRow takes it away and this View is recycled.
+    //
+    // The verified/unverified pair below already do this - both arms of the trust check set both
+    // visibilities - and this button did not, because nothing had ever hidden it. blankRow does,
+    // so without this line a row that was once blanked renders every later contact bound into it
+    // with no Delete button at all. Found by review driving the recycle the other way round: the
+    // test written with blankRow only went real -> blanked.
+    deleteContactButton.setVisibility(View.VISIBLE);
 
     final ImageButton verifiedContactButton = convertView.findViewById(R.id.e2ee_verify_contact_verified_button);
     final ImageButton unverifiedContactButton = convertView.findViewById(R.id.e2ee_verify_contact_unverified_button);

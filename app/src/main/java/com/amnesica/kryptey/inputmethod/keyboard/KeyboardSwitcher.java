@@ -159,19 +159,21 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     setMainKeyboardFrame(currentSettingsValues, toggleState);
     // TODO: pass this object to setKeyboard instead of getting the current values.
     final MainKeyboardView keyboardView = mKeyboardView;
-    if (keyboardView == null || mKeyboardLayoutSet == null) {
-      // The dangerous half of a pair, and its sibling is safe only by accident.
+    if (mKeyboardLayoutSet == null) {
+      // The layout set only. A "view is null" half used to sit here too and could never fire:
+      // setMainKeyboardFrame, called on the line above, dereferences mKeyboardView first, so the
+      // NPE this guard claimed to prevent had already been thrown. That check now lives where the
+      // dereference is, and this one says only what it can actually decide.
       //
-      // resetKeyboardStateToAlphabet reaches here through LatinIME's "restarting and the input type
-      // did not change" branch, which can run before any layout set exists if the first
-      // onStartInputView bailed early. Its sibling requestUpdatingShiftState survives the same
-      // state only because KeyboardState.updateAlphabetShiftState happens to open with the inverse
-      // guard - nothing in this class arranges that.
+      // Reached through LatinIME's "restarting and the input type did not change" branch, which
+      // can run before any layout set exists if the first onStartInputView bailed early. Its
+      // sibling requestUpdatingShiftState survives the same state only because
+      // KeyboardState.updateAlphabetShiftState happens to open with the inverse guard - nothing in
+      // this class arranges that.
       //
-      // Logged rather than swallowed: there is no correct keyboard to install without these, so
-      // returning is the only option, and a silent one would turn a missing keyboard into a mystery
-      // for whoever meets it.
-      Log.w(TAG, "setKeyboard with no view or no layout set; leaving the keyboard as it is");
+      // Logged rather than swallowed: there is no keyboard to install without a layout set, so
+      // returning is the only option, and a silent one would make a missing keyboard a mystery.
+      Log.w(TAG, "setKeyboard with no layout set; leaving the keyboard as it is");
       return;
     }
     final Keyboard oldKeyboard = keyboardView.getKeyboard();
@@ -282,6 +284,13 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
       final KeyboardSwitchState toggleState) {
     final int visibility = isImeSuppressedByHardwareKeyboard(settingsValues, toggleState)
         ? View.GONE : View.VISIBLE;
+    // Guarded here because this is the FIRST dereference, which is the whole point.
+    //
+    // setKeyboard used to carry a "view is null" check one line below its call to this method, so
+    // the NPE it named had already been thrown by the line above it. Review caught that: a handler
+    // that looks like it covers the code above it, which is the same shape this branch fixed in
+    // ListAdapterContacts.getItem a few commits earlier and then committed again here.
+    if (mKeyboardView == null || mMainKeyboardFrame == null) return;
     mKeyboardView.setVisibility(visibility);
     // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
     // @see #getVisibleKeyboardView() and

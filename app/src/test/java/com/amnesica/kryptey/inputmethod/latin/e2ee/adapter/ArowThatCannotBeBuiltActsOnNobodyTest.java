@@ -129,4 +129,41 @@ public class ArowThatCannotBeBuiltActsOnNobodyTest {
             + "name, so the user cannot see who it would remove", false,
         delete.hasOnClickListeners());
   }
+
+  /**
+   * And the other direction: a blanked row reused for a real contact is whole again.
+   *
+   * <p>The case above drives real -> blanked, which is the direction the fix was written for. A
+   * review drove blanked -> real and found what that misses: {@code blankRow} hides the Delete
+   * button, and the ordinary path set a listener on it without ever setting its visibility back -
+   * unlike the verified/unverified pair, where both arms of the trust check set both. So once a
+   * row had been blanked, every later contact bound into that recycled {@code View} rendered with
+   * no Delete button.
+   *
+   * <p>A one-directional test of a recycling path tests half of it. This is the other half.
+   */
+  @Test
+  public void ablankedRowReusedForArealContactIsWholeAgain() {
+    final Contact real = new Contact("Alice", "Smith", "alice-uuid", 3, false);
+    final ListAdapterContacts adapter = adapterOver(mapWithoutAdeviceId(), real);
+
+    final View blanked = adapter.getView(0, null, null);
+    assertEquals("precondition: the first row must have been blanked, or this recycles nothing "
+            + "interesting", "",
+        ((TextView) blanked.findViewById(R.id.e2ee_contact_first_name_element))
+            .getText().toString());
+
+    final View reused = adapter.getView(1, blanked, null);
+
+    assertEquals("the real contact's name must render", "Alice",
+        ((TextView) reused.findViewById(R.id.e2ee_contact_first_name_element))
+            .getText().toString());
+
+    final ImageButton delete = reused.findViewById(R.id.e2ee_contact_button_delete_contact);
+    assertNotNull(delete);
+    assertEquals("and Delete must come back - a row that was once blanked must not leave every "
+            + "later contact in that recycled View undeletable", View.VISIBLE,
+        delete.getVisibility());
+    assertEquals("with its listener armed again", true, delete.hasOnClickListeners());
+  }
 }
