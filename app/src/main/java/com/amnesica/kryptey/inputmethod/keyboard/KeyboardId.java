@@ -113,8 +113,23 @@ public final class KeyboardId {
   private static String boundedActionLabel(final CharSequence actionLabel) {
     if (actionLabel == null) return null;
     final String label = actionLabel.toString();
-    return label.length() <= MAX_CUSTOM_ACTION_LABEL_CHARS
-        ? label : label.substring(0, MAX_CUSTOM_ACTION_LABEL_CHARS);
+    if (label.length() <= MAX_CUSTOM_ACTION_LABEL_CHARS) return label;
+
+    // Cut on a character, not in the middle of one.
+    //
+    // The bound counts UTF-16 units, so a label whose 128th and 129th units are the two halves of
+    // one code point - any emoji, and every character outside the BMP - was split, leaving a lone
+    // high surrogate as the last unit of the label. Both consumers tolerate it today (drawText
+    // renders a replacement glyph, codePointCount counts it), which is why nothing failed; what is
+    // wrong is that the value is no longer a well-formed string, and it is one this class puts in a
+    // cache key and hands to the renderer.
+    //
+    // Dropping the orphan rather than keeping its pair, because keeping it would mean exceeding the
+    // bound, and the bound is the thing protecting the draw path from an unbounded host label.
+    final int end = Character.isHighSurrogate(label.charAt(MAX_CUSTOM_ACTION_LABEL_CHARS - 1))
+        ? MAX_CUSTOM_ACTION_LABEL_CHARS - 1
+        : MAX_CUSTOM_ACTION_LABEL_CHARS;
+    return label.substring(0, end);
   }
 
   private static int computeHashCode(final KeyboardId id) {

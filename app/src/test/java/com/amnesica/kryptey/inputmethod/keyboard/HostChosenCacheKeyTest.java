@@ -199,6 +199,49 @@ public class HostChosenCacheKeyTest {
         carried.length() <= 128);
   }
 
+  /**
+   * And the bound cuts on a character rather than through one.
+   *
+   * <p>The limit counts UTF-16 units, so a label whose 128th and 129th units are the two halves of
+   * one code point was split, leaving a lone high surrogate as the last unit. Both consumers
+   * tolerate that - {@code drawText} paints a replacement glyph and {@code codePointCount} counts
+   * it - which is exactly why nothing failed and nothing noticed. What was wrong is that the value
+   * stopped being a well-formed string, and this class puts it in a cache key and hands it to the
+   * renderer.
+   *
+   * <p>The label is built so the split lands mid-pair on purpose: 127 ASCII characters followed by
+   * emoji, which puts a high surrogate at index 127 and its low surrogate at 128, the first unit
+   * the bound discards.
+   */
+  @Test
+  public void theboundDoesNotCutAcharacterInHalf() {
+    final StringBuilder label = new StringBuilder();
+    for (int i = 0; i < 127; i++) label.append('a');
+    for (int i = 0; i < 20; i++) label.append("\uD83D\uDE00");   // U+1F600, a surrogate pair
+    assertTrue("fixture: the 128th unit must be the high half of a pair, or this tests nothing",
+        Character.isHighSurrogate(label.charAt(127)));
+
+    ime.onStartInputView(fieldLabelled(label.toString()), false);
+    ShadowLooper.idleMainLooper();
+
+    String carried = null;
+    for (final Object key : cache().keySet()) {
+      final String value = ((KeyboardId) key).mCustomActionLabel;
+      if (value != null) {
+        carried = value;
+        break;
+      }
+    }
+    assertNotNull("the keyboard must have carried the host's label, or this measures nothing",
+        carried);
+    assertTrue("the bound must still hold: " + carried.length(), carried.length() <= 128);
+    assertTrue("the truncated label must be a well-formed string - a lone surrogate is not a "
+            + "character, and this value is both a cache key and the string the renderer is "
+            + "handed. Last unit was 0x"
+            + Integer.toHexString(carried.charAt(carried.length() - 1)),
+        !Character.isHighSurrogate(carried.charAt(carried.length() - 1)));
+  }
+
   /** And an ordinary label is untouched, so the bound is not quietly mangling real ones. */
   @Test
   public void anordinaryActionLabelIsUnchanged() {

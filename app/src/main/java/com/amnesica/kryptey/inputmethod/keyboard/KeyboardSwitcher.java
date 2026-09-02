@@ -364,8 +364,16 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     return false;
   }
 
+  /**
+   * Whether a more-keys panel is up.
+   *
+   * <p>Null-checked like the seven accessors around it. Its one caller happens to early-return on
+   * this same field first, so the omission was safe by the caller's shape rather than by anything
+   * this class does - and a class where seven of eight accessors guard is one where the eighth
+   * reads as an oversight to anyone adding a second caller.
+   */
   public boolean isShowingMoreKeysPanel() {
-    return mKeyboardView.isShowingMoreKeysPanel();
+    return mKeyboardView != null && mKeyboardView.isShowingMoreKeysPanel();
   }
 
   public View getVisibleKeyboardView() {
