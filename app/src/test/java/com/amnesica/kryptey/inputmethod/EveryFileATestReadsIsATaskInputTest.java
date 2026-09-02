@@ -75,7 +75,7 @@ public class EveryFileATestReadsIsATaskInputTest {
     final Pattern literal = Pattern.compile(
         "\"((?:\\.\\./)?(?:app/)?(?:src/[a-zA-Z]+/[a-zA-Z/]+|tools/[A-Za-z0-9_.-]+"
             + "|[A-Za-z0-9_./-]+"
-            + "\\.(?:md|gradle|txt|xml|yml|yaml|pro|cfg|properties)))\"");
+            + "\\.(?:md|gradle|txt|xml|yml|yaml|pro|cfg|properties|jar|json|kts)))\"");
     final Set<String> found = new LinkedHashSet<>();
 
     try (Stream<Path> walk = Files.walk(testSources())) {

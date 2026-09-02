@@ -160,6 +160,11 @@ android {
         inputs.file('../gradle.properties').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../tools/build-in-docker').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../tools/verify-cold').withPathSensitivity(PathSensitivity.RELATIVE)
+        // TheWrapperThatRunsEverythingIsPinnedTest reads both. The jar runs before dependency
+        // verification and before the distribution checksum - it is the code that enforces that
+        // checksum - so a guard on it that could replay a stale pass would be worth very little.
+        inputs.file('../gradle/wrapper/gradle-wrapper.jar').withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file('../gradle/wrapper/gradle-wrapper.properties').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../README.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../HELP.md').withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file('../KRYPTEY.md').withPathSensitivity(PathSensitivity.RELATIVE)
