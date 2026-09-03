@@ -443,6 +443,53 @@ first arrangement in this project that would deserve the phrase "two devices". I
 work against a guest that already cannot finish the existing suite at API 35, which is why it is
 written down here rather than attempted.
 
+## What a send costs, and which platforms can carry it
+
+This app is a channel on top of somebody else's messenger, so a per-message character limit decides
+whether it can be used on a given platform at all. That number was quoted in three places in this
+repo - `MAX_DECODABLE_CHARS`' reasoning, `E2EEStrip`'s javadoc, `EnvelopeCodec`'s - and measured by
+hand once. `HowManyCharactersAsendActuallyCostsTest` now pins it as ranges, driven with three
+defects: `fromWire` no longer stripping whitespace, the `\p{C}` routing predicate narrowed to
+`\p{Cf}`, and 40 characters of padding on the wire.
+
+Measured (raw/base64 encoder, at `6604e98`):
+
+| | Raw | FairyTale |
+|---|---|---|
+| Invite / key bundle | 2,572 | 4,006-4,119 |
+| Pending session, 1-byte message | 2,404 | 3,714-3,775 |
+| Pending session, 500-byte message | 3,068 | 4,723-4,782 |
+| Established session, 1-byte message | **200** | 377-446 |
+| Established session, 500-byte message | 860 | 1,415 |
+
+**The cliff is the finding.** A session that is merely pending carries the pre-key material on every
+message; once the peer has replied once, the same message costs a twelfth as much. That state is
+invisible in the UI and it is what decides whether a platform works: at Discord's and Signal's 2,000
+characters, an established conversation fits comfortably and the handshake cannot be sent at all.
+
+Three things worth keeping from the analysis:
+
+- **Above 865 characters the platform stops binding** and `CHAR_THRESHOLD_RAW` takes over, so a
+  65,536-character WhatsApp message and a 4,096-character Telegram message carry identical
+  conversation. **Below 200 nothing fits at any length** - TikTok comments (150) and single-segment
+  SMS (160) are excluded outright.
+- **FairyTale's length is non-deterministic.** It pads with randomly chosen decoy sentences, so the
+  same invite measured 4,006 and 4,119 on two runs. Against Telegram's 4,096 that is a coin flip,
+  and the failure lands on the recipient. Worth making deterministic or bounding.
+- **A split invite can be rejoined with a SPACE and not a newline**, because `fromWire` strips
+  whitespace while `decodeMessage` routes any `\p{C}` to the FairyTale decoder. Pasting two chat
+  messages gives newlines, so the one workaround available on a constrained platform is the one a
+  user will get wrong. Chunked invites as a real feature would turn every "chat only" platform into
+  a working one; the codec already tolerates the concatenation and only the UI is missing.
+
+A tension worth naming rather than solving here: **FairyTale exists for deniability and costs about
+1.6x**, so it is affordable exactly where limits are generous and unaffordable on the tight
+platforms where a base64 blob is most conspicuous. The tighter the channel, the more the traffic
+looks like ciphertext.
+
+The full catalog of platform limits is not in this repo - it is recollection rather than measurement
+and would rot here. What is in the repo is the half that can be checked: the numbers above.
+
 ## Release readiness, and what the rating rested on
 
 Asked to rate how release-ready this is, the answer was 4/10 - fine for a personal build, not for
