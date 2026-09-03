@@ -397,6 +397,52 @@ dispatch, IME binding. Those are the claims a real Android 15 is most needed for
 environment is least able to give, because their load is what makes the guest miss the five-second
 input-dispatch deadline. They need hardware.
 
+## Two people who cannot see each other
+
+`EndToEndConversationTest` and `ProtocolRoundTripOnRealHardwareTest` both put Alice and Bob in one
+JVM and produce a conversation by swapping which `Account` is active. Both say so in their own
+javadoc, so this was known rather than hidden - but what it costs was not written down anywhere.
+
+What a single process shares: one heap, so either identity's private key is reachable from the
+other; one `SignalProtocolMain` singleton and one set of static test seams; one libsignal load; one
+source of randomness. **The defect that shape cannot detect is the worst one this protocol can
+have** - a key, a session or a plaintext read out of the sender's own store rather than out of what
+arrived over the wire. In one process that read succeeds and the test goes green.
+
+`TwoUsersInSeparateProcessesTest` gives each identity its own JVM. The only thing that crosses
+between them is text on a pipe, which is the discipline a real user is under when they paste an
+invite into a messenger. It asserts, in eight cases:
+
+- the peers really are separate JVMs, and neither is the test's own process - checked with a token
+  minted once per JVM and asked for twice, so a per-call random fails the premise rather than
+  satisfying it
+- they really are two identities, and neither knows the other before anything is exchanged
+- an invite crosses as pasteable text, a session builds from it, and a message comes back
+- the conversation runs in the direction it was not established from
+- both sides independently read the **same 60-digit safety number**
+- the plaintext is absent from the ciphertext **bytes** - not from the base64 wire text, where a
+  string containing a space could never appear anyway, which is a mistake this suite made once
+- a third party holding the invite and the ciphertext recovers nothing
+- one character changed in transit is refused
+
+Driven with four defects, each failing exactly the case that should catch it: a per-call JVM token
+(`theyReallyAreTwoProcesses`), `SEND` returning the plaintext as its ciphertext
+(`theyExchangeKeysAndThenMessages`), `RECV` inventing a plaintext instead of failing
+(`athirdPersonHoldingTheTranscriptLearnsNothing` and `amessageAlteredOnTheWireIsRefused`), and
+`SAFETY` computing over the peer's own address (`bothSidesReadTheSameSafetyNumber`).
+
+**What it does not claim.** Two processes on one machine are not two devices. Both run the desktop
+libsignal, both pass a null `Context`, so neither has an Android Keystore or persists anything - the
+keystore half is covered separately and on a real Android 15 runtime. And no real messenger carries
+anything: the wire here is a pipe.
+
+**The next step, and its cost.** Genuinely two installs means two Android users on one emulator
+(`pm create-user`, `am instrument --user 10`), which gives separate data directories *and* separate
+Keystore entries, with the invite and ciphertext shuttled between them by the harness. That is the
+first arrangement in this project that would deserve the phrase "two devices". It is roughly a day's
+work against a guest that already cannot finish the existing suite at API 35, which is why it is
+written down here rather than attempted.
+
 ## Release readiness, and what the rating rested on
 
 Asked to rate how release-ready this is, the answer was 4/10 - fine for a personal build, not for
@@ -435,8 +481,12 @@ keystore that the emulator can only imitate.
 **It has never run inside a real messenger.** The threat model is "the host app is hostile" and the
 host has always been a test activity. Every assumption about `inputType`, cursor reporting,
 `commitText` handling, autofill structure and clipboard behaviour is asserted against Robolectric
-shims and one emulator. Two-device interop over an actual wire has not happened either: every
-end-to-end test puts both parties in one process.
+shims and one emulator.
+
+*Amended.* This paragraph also said "two-device interop over an actual wire has not happened either:
+every end-to-end test puts both parties in one process". The second clause was true and is not now -
+see "Two people who cannot see each other" below. The first clause stands: two processes on one
+machine is not two devices, and no real messenger has ever carried anything.
 
 **The release APK is unsigned and the publish path is unverified.** `assembleRelease` produces
 `app-arm64-v8a-release-unsigned.apk`; there is no signing config, so signing, upload and F-Droid
