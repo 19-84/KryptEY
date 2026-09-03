@@ -375,11 +375,27 @@ blocked by emulator capacity rather than by the app.** No test failed on its ass
 here licenses a claim that the app works on Android 15; it licenses "20 device tests pass at 35 and
 the rest could not be run here".
 
-The next lever, if this is worth more wall-clock, is narrowing: `KRYPTEY_TEST_CLASS` pointed at the
-keystore classes runs the highest-value device claims with no window system in the loop, which is
-what saturates the guest. The claims that need a real Android 15 - `FLAG_SECURE`, autofill
-traversal, input dispatch - are the ones this environment is least able to answer, and they are the
-ones that most need hardware.
+**Narrowing gets a real answer out of 35.** `KRYPTEY_TEST_CLASS` pointed at the classes that need no
+window system runs the highest-value device claims without the load that saturates the guest. Two
+runs, both `PASSED`:
+
+| Classes | At API 35 |
+|---|---|
+| `AndroidKeystoreCryptoBoxTest` | `OK (11 tests)` |
+| `TheMigrationSealIsRealOnDeviceTest`, `ChatLogSplitAgainstARealKeystoreTest`, `ProtocolRoundTripOnRealHardwareTest` | `OK (11 tests)` |
+
+So **22 device tests pass on an Android 15 runtime**, and they are the ones that matter most: the
+whole key-resolution ladder, the anti-laundering seal's five cases including
+`destroyingTheMasterKeyLeavesTheDeviceSealed` and
+`cleartextPlantedAfterTheDeviceHasConvertedIsRefused`, the chat-log split against a real keystore,
+and `thesessionBuiltOnThisDeviceIsPqxdh`. The class list was read out of the run's own output rather
+than inferred from the count - both runs happen to report 11, which is exactly the coincidence that
+would have let a filter matching the wrong thing pass unnoticed.
+
+What is still unanswered at 35 is the window-system half - `FLAG_SECURE`, autofill traversal, input
+dispatch, IME binding. Those are the claims a real Android 15 is most needed for and the ones this
+environment is least able to give, because their load is what makes the guest miss the five-second
+input-dispatch deadline. They need hardware.
 
 ## Release readiness, and what the rating rested on
 

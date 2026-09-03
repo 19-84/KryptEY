@@ -222,7 +222,13 @@ than of the app. With the settle step, 20 of 41 tests pass and the run then ends
 `keyDispatchingTimedOut` — input dispatch has a five-second deadline and a software-emulated Android
 15 guest misses it, with the device showing 100% CPU, `system_app_anr` and long monitor contention
 across the system server. No test failed an assertion. Narrow with `KRYPTEY_TEST_CLASS` to get a
-real answer out of 35: the keystore classes need no window system, which is what saturates the guest.
+real answer out of 35: the keystore classes need no window system, which is what saturates the
+guest, and `-e class` takes a comma-separated list. Two such runs pass at 35 —
+`AndroidKeystoreCryptoBoxTest` (11 tests), and `TheMigrationSealIsRealOnDeviceTest` +
+`ChatLogSplitAgainstARealKeystoreTest` + `ProtocolRoundTripOnRealHardwareTest` (11 tests) — which
+is the key ladder, the anti-laundering seal, the chat-log split and PQXDH confirmed on an Android
+15 runtime. Read the class names out of the output rather than trusting the count: both runs
+report 11.
 
 `hide_error_dialogs` is written and verified twice, before the reboot and again after it, because
 the second write costs one adb call and the failure it catches costs a twenty-minute run.
