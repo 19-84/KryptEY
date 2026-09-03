@@ -10,16 +10,40 @@
 # for the boot; the tests themselves take about 9 seconds once it is up.
 set -e
 
-IMAGE="${KRYPTEY_EMU_IMAGE:-kryptey-emu:30}"
-NAME="${KRYPTEY_EMU_CONTAINER:-kryptey-emu-run}"
-BOOT_TIMEOUT="${KRYPTEY_EMU_BOOT_TIMEOUT:-1800}"
+# The API level to run against. 28 is the default because it is what every device result in this
+# repo was measured on; it is not the only level that matters and for a long time it was the only
+# one that ran. See tools/emulator/Dockerfile for which others are worth the wall-clock.
+#
+#   KRYPTEY_EMU_API=35 ./tools/test-on-emulator
+#
+# Each level gets its own image and its own container name, so runs at different levels do not
+# fight over the same container and a stale image is never silently reused for a new level.
+API="${KRYPTEY_EMU_API:-28}"
+case "$API" in
+  ''|*[!0-9]*) echo "!! KRYPTEY_EMU_API must be a number, got '$API'"; exit 1 ;;
+esac
+
+IMAGE="${KRYPTEY_EMU_IMAGE:-kryptey-emu-$API:1}"
+NAME="${KRYPTEY_EMU_CONTAINER:-kryptey-emu-run-$API}"
+# A newer guest is a slower cold boot under TCG, and 28's 1800s is not enough for 35 - a timeout
+# there reads as "the emulator did not boot" when it simply had not finished.
+if [ "$API" -ge 34 ]; then
+  BOOT_TIMEOUT="${KRYPTEY_EMU_BOOT_TIMEOUT:-4200}"
+  MEMORY=6144
+elif [ "$API" -ge 30 ]; then
+  BOOT_TIMEOUT="${KRYPTEY_EMU_BOOT_TIMEOUT:-4200}"
+  MEMORY=4096
+else
+  BOOT_TIMEOUT="${KRYPTEY_EMU_BOOT_TIMEOUT:-1800}"
+  MEMORY=3072
+fi
 ADB=/opt/android-sdk/platform-tools/adb
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
 if ! docker image inspect "$IMAGE" > /dev/null 2>&1; then
-  echo "==> building $IMAGE (this pulls a system image; several minutes)"
-  docker build -t "$IMAGE" tools/emulator
+  echo "==> building $IMAGE for API $API (this pulls a system image; several minutes)"
+  docker build --build-arg "API=$API" -t "$IMAGE" tools/emulator
 fi
 
 cleanup() {
@@ -36,13 +60,13 @@ cleanup
 # Deliberately NOT passing -cores. Multi-core TCG was tried and the guest's system server took a
 # native crash inside four minutes, taking every app down with it (DeadSystemException across the
 # board). More host CPU does not help a workload that is single-threaded per guest core anyway.
-echo "==> starting the emulator"
-docker run -d --name "$NAME" "$IMAGE" bash -lc '
-  export ANDROID_AVD_HOME=$HOME/.android/avd
-  nohup /opt/android-sdk/emulator/emulator -avd test28 -no-window -no-audio -no-snapshot \
-     -no-accel -gpu swiftshader_indirect -no-boot-anim -memory 3072 \
+echo "==> starting API $API (${MEMORY}MB, boot timeout ${BOOT_TIMEOUT}s)"
+docker run -d --name "$NAME" "$IMAGE" bash -lc "
+  export ANDROID_AVD_HOME=\$HOME/.android/avd
+  nohup /opt/android-sdk/emulator/emulator -avd test$API -no-window -no-audio -no-snapshot \
+     -no-accel -gpu swiftshader_indirect -no-boot-anim -memory $MEMORY \
      > /tmp/emu.log 2>&1 &
-  sleep infinity' > /dev/null
+  sleep infinity" > /dev/null
 
 echo "==> waiting for boot (up to ${BOOT_TIMEOUT}s)"
 deadline=$((SECONDS + BOOT_TIMEOUT))
@@ -61,7 +85,16 @@ until [ "$(docker exec "$NAME" $ADB shell getprop sys.boot_completed 2>/dev/null
   fi
   sleep 15
 done
-echo "==> booted: $(docker exec "$NAME" $ADB shell getprop ro.build.version.sdk | tr -d '\r') / $(docker exec "$NAME" $ADB shell getprop ro.product.cpu.abi | tr -d '\r')"
+booted_sdk="$(docker exec "$NAME" $ADB shell getprop ro.build.version.sdk | tr -d '\r')"
+echo "==> booted: $booted_sdk / $(docker exec "$NAME" $ADB shell getprop ro.product.cpu.abi | tr -d '\r')"
+# Asserted, not just printed. KRYPTEY_EMU_IMAGE can point at an image built for another level, and
+# a run that reports "PASSED" for API 35 while a 28 guest did the work is the exact shape of
+# wrong-and-confident this harness exists to avoid.
+if [ "$booted_sdk" != "$API" ]; then
+  echo "!! asked for API $API but the guest reports $booted_sdk. Refusing to attribute a result"
+  echo "!! to a level that did not run it."
+  exit 1
+fi
 
 # sys.boot_completed fires before the system services finish registering, and under software
 # emulation that gap is wide - wide enough that an install lands in it and adb reports
@@ -115,6 +148,46 @@ until docker exec "$NAME" $ADB shell service check input_method 2>/dev/null | gr
   if [ $SECONDS -ge $deadline ]; then echo "!! input-method service missing after reboot"; exit 1; fi
   sleep 10
 done
+
+# Written again after the reboot, and checked again.
+#
+# The pre-reboot write is what the reboot exists to activate, and it was assumed to survive. On a
+# newer guest that assumption is worth one adb call rather than a twenty-minute run: a factory-reset
+# or a settings provider that came up after the write leaves the value cleared, and the first thing
+# anyone would see is an ANR dialog holding focus with no explanation.
+docker exec "$NAME" $ADB shell settings put global hide_error_dialogs 1 > /dev/null 2>&1 || true
+if [ "$(docker exec "$NAME" $ADB shell settings get global hide_error_dialogs | tr -d '\r')" != "1" ]; then
+  echo "!! hide_error_dialogs did not survive the reboot. Refusing to run a suite that would lie."
+  exit 1
+fi
+
+# Let the guest finish waking up before asking it to run anything.
+#
+# This is the failure that made API 35 read as an app defect: the suite started while the boot's own
+# work was still in flight, SystemUI went not-responding under it, and its dialog took window focus -
+# so the test's field never got focus, the keyboard was never bound (mBoundToMethod=false), and the
+# instrumentation process died. Both attempts. It looked exactly like a keyboard that cannot bind on
+# Android 15, and it was a starved emulator, which is the same mistake this script's header records
+# having already made once with the google_apis image.
+#
+# So: wait for no ANR window to hold focus, then settle. The settle is not superstition - the
+# focus check passes the instant the dialog is dismissed, while whatever caused it is still running.
+echo "==> waiting for the guest to settle"
+SETTLE_TIMEOUT="${KRYPTEY_EMU_SETTLE_TIMEOUT:-900}"
+deadline=$((SECONDS + SETTLE_TIMEOUT))
+while docker exec "$NAME" $ADB shell dumpsys window 2>/dev/null \
+        | grep -E 'mCurrentFocus' | grep -q 'Application Not Responding'; do
+  if [ $SECONDS -ge $deadline ]; then
+    echo "!! an ANR dialog still holds window focus after ${SETTLE_TIMEOUT}s. A test run from here"
+    echo "!! reports the keyboard as unbindable, which is not what it would mean."
+    docker exec "$NAME" $ADB shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true
+    exit 1
+  fi
+  # Dismissing it is not possible once it exists - see the header - so the only move is to wait for
+  # whatever is holding it to finish and the dialog to go.
+  sleep 15
+done
+sleep "${KRYPTEY_EMU_SETTLE_SECONDS:-60}"
 
 # x86_64 is not a shipped ABI, so it has to be asked for explicitly - see the splits block.
 #

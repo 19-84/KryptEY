@@ -232,10 +232,24 @@ resolve `libsignal` at all. Replaced with `mavenCentral()` under `dependencyReso
 - `gradle/verification-metadata.xml` — 386 components pinned by SHA-256, enforced in CI
 - CI actions pinned to commit SHAs, not mutable tags
 
-**targetSdk stays at 33.** compileSdk is 35, but Android 15 enforces edge-to-edge and this fork has
-*zero* inset handling anywhere — the bottom key row would render behind the navigation bar, making
-space and enter partially dead. That is feature work, not a build fix. It is the main thing blocking
-a targetSdk bump.
+**targetSdk was 33; it is now 35.** This paragraph used to say it stays at 33, on the reasoning that
+Android 15 enforces edge-to-edge and this fork has zero inset handling, so the bottom key row would
+render behind the navigation bar. That reasoning was half right and the half it got wrong is the
+interesting half.
+
+The keyboard is not an Activity. Edge-to-edge enforcement applies to activities, and the IME window
+is laid out against the navigation bar by the window manager either way — the key rows were never at
+risk. The one Activity in this app is `SettingsActivity`, a `PreferenceActivity` with no inset
+handling of its own, and there the concern was real and worse than cosmetic: on three-button
+navigation the bottom preference row sits behind an opaque strip that takes the touches, so it
+cannot be operated at all. That is fixed with a `setOnApplyWindowInsetsListener` gated on API 35,
+which is a dozen lines rather than the feature work this paragraph called it.
+
+What the raise cost, and it was not nothing: two live defects surfaced, one of them dating from long
+before this branch. See BACKLOG.md, "Raising targetSdk, and the two defects it found". Neither was
+caused by the raise; both were hidden by the stale target. `TargetSdkIsNotStaleTest` now holds
+`targetSdk` equal to `compileSdk` and checks the code answering each behaviour change in between is
+still present.
 
 ### Phase 1 — keys at rest
 
@@ -628,8 +642,19 @@ further decryption.
 - Negative controls on the highest-stakes regressions (legacy-peer crash, one-time pre-key
   overwrite, Jackson fixture corruption)
 
-**A note on which SDK the tests run at.** Robolectric runs at `compileSdk` — 35 — unless a test
-says otherwise, and `minSdk` is 26. Every `SDK_INT <` branch in the app is therefore code real users
+**A note on which SDK the tests run at.** Robolectric runs at **`targetSdk`** unless a test says
+otherwise — not `compileSdk`, which is what this sentence claimed for most of the branch's life. The
+two were 33 and 35, so every unannotated test ran at 33 while this document said 35, and nobody was
+going to notice a two-level discrepancy in a claim nothing checked.
+
+It was not harmless. 33 is one of only two levels in 26–35 at which a focus-dependent path in the
+strip happens to work, so the JVM suite was green on a path that was broken at the level the device
+suite runs — for the whole revival. That is written up in BACKLOG.md under "Raising targetSdk". The
+two figures are now the same (35) and `TargetSdkIsNotStaleTest` keeps them that way, which removes
+the discrepancy rather than fixing the reasoning that produced it: a claim about the harness,
+checked by nobody, is the shape to distrust here.
+
+`minSdk` is 26. Every `SDK_INT <` branch in the app is therefore code real users
 on API 26–32 execute and that no test had ever entered. `LegacyApiClipboardTest` closes the one that
 is a security behaviour rather than a compatibility detail: `clearClipboard()`, called on every exit
 of the decrypt path, uses `clearPrimaryClip()` only from API 28 and overwrites the clip below that.

@@ -7,7 +7,28 @@ android {
     defaultConfig {
         applicationId "com.amnesica.kryptey"
         minSdk 26
-        targetSdk 33
+        // targetSdk tracks compileSdk deliberately. TargetSdkIsNotStaleTest holds them equal.
+        //
+        // This was 33 for the whole revival, which is not a neutral default: targetSdk is how the
+        // platform decides which behaviour changes apply to you, and a stale one opts the app out
+        // of hardening it would otherwise get for free. It also runs out - Play's minimum moves
+        // every year, and 33 is already below it.
+        //
+        // What the raise actually turns on here, checked one release at a time:
+        //   34 - runtime receivers must declare an export flag. LatinIME already does, guarded on
+        //        TIRAMISU, and it was written for this raise before the raise happened.
+        //      - implicit intents may not resolve to non-exported components of this app. The one
+        //        implicit intent is ACTION_INPUT_METHOD_SETTINGS, aimed outward at the system.
+        //      - foreground services need a declared type. There are none.
+        //   35 - activities go edge-to-edge with no opt-out. SettingsActivity now consumes the
+        //        system-bar insets as padding; without that the preference list draws under the
+        //        status and navigation bars.
+        //      - elegantTextHeight defaults true for TextViews. The keyboard draws its own labels
+        //        with Canvas/Paint and is unaffected; the settings and strip UI are ordinary text.
+        //
+        // None of this is exercised by the device suite, which runs a single API 28 image - at
+        // 28 every one of these changes is inert. See BACKLOG.md "The API-level matrix".
+        targetSdk 35
         versionCode 24
         versionName "0.1.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -126,6 +147,17 @@ android {
     // depend on their compilation costs a few seconds and turns silent rot into a build failure.
     tasks.matching { it.name == 'testDebugUnitTest' }.configureEach {
         dependsOn 'compileDebugAndroidTestJavaWithJavac'
+        // Gradle's default for a Test task is 512MB, and that is not enough here any more.
+        //
+        // Robolectric builds one sandbox per (SDK, config) pair and each holds a separate
+        // classloader over a full android-all jar. A suite that ran at a single SDK fitted; the
+        // moment two tests were pinned across an SDK matrix - see StripCarriedStateRound4Test -
+        // the JVM ran out of heap, and it did NOT fail in those tests. It failed in whatever
+        // happened to run afterwards, as an OutOfMemoryError surfacing as
+        // "Error inflating class <unknown>" three classes away. A memory ceiling reached in one
+        // test and paid for by another is the worst kind of red suite to read, which is why this
+        // is a declared number with a reason rather than a default nobody chose.
+        maxHeapSize = '3g'
         // ReleasePackagingTest reads this build script at run time to check that libsignal's
         // desktop binaries stay excluded from the APK. Gradle has no way to know that, so without
         // this line the task stays UP-TO-DATE when the script changes and the test replays its last

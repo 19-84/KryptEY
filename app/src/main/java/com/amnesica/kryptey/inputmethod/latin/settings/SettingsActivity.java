@@ -21,10 +21,13 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceActivity;
 import android.util.Log;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 
@@ -161,9 +164,43 @@ public class SettingsActivity extends PreferenceActivity {
     return false;
   }
 
+  /**
+   * Keeps the settings list out from under the system bars once the app targets API 35.
+   *
+   * <p>An app targeting Android 15 gets edge-to-edge whether it asked for it or not, and there is
+   * no manifest opt-out that survives. The window then extends behind the status bar and the
+   * navigation bar, and a {@link PreferenceActivity} - which is a plain list with no inset handling
+   * of its own - draws its first row under the clock and its last row under the gesture pill. On a
+   * three-button navigation bar the bottom row is not merely cosmetically clipped: it is behind an
+   * opaque strip that takes the touches, so the last preference cannot be operated at all.
+   *
+   * <p>Gated on the API level rather than applied always, because below 35 the window is already
+   * laid out inside the bars and adding the insets again would pad the list twice.
+   *
+   * <p>{@code setOnApplyWindowInsetsListener} rather than a one-off read in {@code onCreate}: the
+   * insets are not known when the activity is created, and they change afterwards - rotation, a
+   * keyboard appearing, gesture navigation being switched to buttons. A value read once would be
+   * zero on the first frame and stale on every configuration change after it.
+   *
+   * <p>The listener returns the insets it was given rather than {@link WindowInsets#CONSUMED}.
+   * Consuming them here would stop the dispatch, and the action bar sits in the same hierarchy and
+   * needs the top inset too.
+   */
+  private void keepTheListOutFromUnderTheSystemBars() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return;
+    final View content = findViewById(android.R.id.content);
+    if (content == null) return;
+    content.setOnApplyWindowInsetsListener((view, insets) -> {
+      final android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+      view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+      return insets;
+    });
+  }
+
   @Override
   protected void onCreate(final Bundle savedState) {
     super.onCreate(savedState);
+    keepTheListOutFromUnderTheSystemBars();
     final ActionBar actionBar = getActionBar();
     if (actionBar != null) {
       actionBar.setDisplayHomeAsUpEnabled(true);

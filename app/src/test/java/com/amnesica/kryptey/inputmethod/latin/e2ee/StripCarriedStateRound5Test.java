@@ -35,6 +35,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 import org.robolectric.android.controller.ServiceController;
 import org.robolectric.shadows.ShadowLooper;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
@@ -399,6 +400,16 @@ public class StripCarriedStateRound5Test {
     assertEquals(View.GONE, raw.getVisibility());
   }
 
+  // Across the API range this app supports, not just the one the target happens to name.
+  //
+  // This test failed at 28, 30, 34 and 35 and passed at 31 and 33, and nothing in this repo could
+  // see it: the JVM suite runs at whatever targetSdk says - 33 for the whole revival - and the
+  // device suite runs 28 but not these tests. The defect was in composeInsideTheKeyboard, which
+  // raised the redirect and then left the affordances beside it to the focus listener, on a
+  // requestFocus() its own javadoc says fails silently. See paintComposeAffordances.
+  //
+  // Pinned as a matrix rather than at one level, because a single level is what hid it.
+  @Config(sdk = {26, 28, 30, 31, 33, 34, 35})
   @Test
   public void r4TheStripMustNotShowRawWhileItIsCarryingFairyTale() {
     final E2EEStripView first = liveStrip();

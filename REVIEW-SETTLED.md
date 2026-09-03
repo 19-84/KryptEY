@@ -249,11 +249,18 @@ happens to be true. That check now sits permanently in
 focus there fails the device suite instead of shipping.
 
 **The limit, stated rather than left implicit.** This was measured at API 28, which is what the
-emulator image runs; the app's `targetSdk` is 33. Android's focus rules are not guaranteed stable
-across that gap, and nothing here has measured API 33. What the check buys is that the answer is
-now observed on every device run rather than assumed — and that if it ever changes, it changes
-loudly. Robolectric cannot substitute: it grants focus unconditionally, so the JVM suite cannot tell
-the two outcomes apart and would report success either way.
+emulator image ran when it was written; `targetSdk` is now 35 and `tools/test-on-emulator` takes a
+`KRYPTEY_EMU_API` so other levels can be booted. Android's focus rules are not guaranteed stable
+across that gap. What the check buys is that the answer is observed on every device run rather than
+assumed — and that if it ever changes, it changes loudly.
+
+Two corrections to what this paragraph used to say. It said `targetSdk` is 33: that was true when
+written and is not now. And it said Robolectric "grants focus unconditionally, so the JVM suite
+cannot tell the two outcomes apart" — that is false, and expensively so. Measured across
+`sdk = {26, 28, 30, 31, 33, 34, 35}`, Robolectric grants focus on a strip rebuild at 31 and 33 and
+refuses it at the other five. The JVM suite could always tell the two outcomes apart; it was only
+ever asked at one level, and 33 was one of the two that say yes. A defect that behaves differently
+at five of seven levels sat green behind this sentence.
 
 ## Nothing in the keyboard writes the user's text anywhere
 

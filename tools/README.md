@@ -90,7 +90,8 @@ Every one of these has a default that is what you want; they exist for the awkwa
 | --- | --- | --- |
 | `KRYPTEY_TEST_CLASS` | `test-on-emulator` | Narrow the device run to one class or `Class#method`. A full device run is about eight minutes, and settling a device question usually takes three of them — measure, mutate the production code, measure again — which is most of why device questions get deferred. The run prints that it is narrowed, so its output cannot be mistaken for the full suite. |
 | `KRYPTEY_IMAGE` | `build-in-docker`, `verify-cold` | The pinned build image. Change it only to test an image bump. |
-| `KRYPTEY_EMU_IMAGE` | `test-on-emulator` | The pinned emulator image. |
+| `KRYPTEY_EMU_API` | `test-on-emulator` | The API level to boot, default 28. Selects the image (`kryptey-emu-<API>:1`), the AVD, the container name, the guest memory and the boot timeout, and it is **asserted after boot** — a guest reporting a different level aborts the run rather than letting a result be filed under a level that did not produce it. The image is built on first use for that level. See "The API level is a choice" below. |
+| `KRYPTEY_EMU_IMAGE` | `test-on-emulator` | The pinned emulator image. Overrides what `KRYPTEY_EMU_API` would pick; the post-boot level assertion still applies, so pointing this at an image built for another level fails loudly. |
 | `KRYPTEY_EMU_CONTAINER` | `test-on-emulator` | Container name, so two emulator runs can coexist. They otherwise collide on the name. |
 | `KRYPTEY_EMU_BOOT_TIMEOUT` | `test-on-emulator` | Seconds to wait for boot, default 1800. Under software emulation a cold boot is ten minutes and a loaded machine is slower. |
 
@@ -182,9 +183,52 @@ confident wrong answer.
 
     tools/test-on-emulator
 
-It builds `tools/emulator/Dockerfile` on first use (an Android 28 x86_64 system image, so expect a
-long first run), boots the emulator, builds the APKs, installs both, and runs the suite. Budget
-about ten minutes for the boot and nine seconds for the tests.
+It builds `tools/emulator/Dockerfile` on first use (an x86_64 system image, so expect a long first
+run), boots the emulator, builds the APKs, installs both, and runs the suite. Budget about ten
+minutes for the boot at API 28 and nine seconds for the tests.
+
+## The API level is a choice
+
+`minSdk` is 26 and `compileSdk`/`targetSdk` are 35. The device suite ran at 28 and only 28, for
+long enough that "the device suite" and "API 28" became the same phrase in this repo's own notes —
+so 26, 27 and 29 through 35 had never executed a line of this app, and every device claim on this
+branch is a claim about one platform version.
+
+That is now a knob rather than a fact of the harness:
+
+    KRYPTEY_EMU_API=35 tools/test-on-emulator
+    KRYPTEY_EMU_API=26 tools/test-on-emulator
+
+Two levels beyond 28 buy the most:
+
+- **35** is what the app compiles and targets. Every behaviour change the target opts into —
+  runtime receivers needing an export flag, activities forced edge-to-edge — is **inert at 28 by
+  definition**, so at 28 the code answering them is checked by `TargetSdkIsNotStaleTest` reading
+  source text and by nothing executing it. Raising `targetSdk` without ever booting 35 moves the
+  risk rather than removing it.
+- **26** is the `minSdk` floor and the bottom of the keystore ladder. `applyApi28Protections` is,
+  by its name, the code that does *not* run there; 26 is where the step-down is decided, and the
+  step-down records nowhere which rung it took.
+
+Newer guests are slower and hungrier under TCG, so the script gives 34+ 6144MB, 30–33 4096MB and a
+4200-second boot timeout, rather than 28's 3072MB and 1800s. It also waits, after the reboot, until
+no ANR window holds focus and then settles for a further minute — measured, not cautious: without
+it the API 35 run's instrumentation process died before a single test started, with SystemUI's ANR
+dialog holding window focus and `mBoundToMethod=false`, which reads precisely like a keyboard that
+cannot bind on Android 15.
+
+**A full run at 35 does not currently finish here**, and that is a property of the machine rather
+than of the app. With the settle step, 20 of 41 tests pass and the run then ends on
+`keyDispatchingTimedOut` — input dispatch has a five-second deadline and a software-emulated Android
+15 guest misses it, with the device showing 100% CPU, `system_app_anr` and long monitor contention
+across the system server. No test failed an assertion. Narrow with `KRYPTEY_TEST_CLASS` to get a
+real answer out of 35: the keystore classes need no window system, which is what saturates the guest.
+
+`hide_error_dialogs` is written and verified twice, before the reboot and again after it, because
+the second write costs one adb call and the failure it catches costs a twenty-minute run.
+
+What this does **not** buy is hardware. Every level here is still a software-emulated guest with a
+software keystore; see "What this environment still cannot do".
 
 There is no `/dev/kvm` on this machine and the CPU exposes no virtualisation extensions, which was
 read for a long time as "an emulator cannot run here". It was the wrong conclusion: KVM is an
@@ -210,6 +254,13 @@ Two things are easy to trip over:
   stream rather than trusting the exit status. Both directions were checked against real runs.
 
 ## What this environment still cannot do
+
+A physical device. Every result on this branch comes from a QEMU guest with no `/dev/kvm`, and its
+Android Keystore is a software implementation rather than anything behind a TEE. That matters most
+for exactly the code that most depends on it: the key ladder's lock-bound rungs, the behaviour on
+biometric re-enrolment, and the anti-laundering seal, which rests on Keystore aliases surviving a
+file-level rollback — a property of the real keystore that the emulator can only imitate. Running
+more API levels narrows the platform-version gap and does nothing about this one.
 
 StrongBox. The emulator has none, so the top rung of the key ladder is only ever exercised as a
 refusal that gets stepped down from. What a StrongBox-backed device actually does remains untested.

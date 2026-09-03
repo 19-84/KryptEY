@@ -3135,7 +3135,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       // theloweringSitesAreAllAccountedForTest, which fails if a fifth appears without being
       // written down - three comments in this file once said "two", and that is why nobody asked
       // what the add-contact one did to a draft still on screen.
-      changeVisibilityInputFieldButtons(hasFocus);
+      if (hasFocus) {
+        changeVisibilityInputFieldButtons(true);
+        return;
+      }
+      // Blur hides them only if the redirect is actually down.
+      //
+      // The paragraph above is why: focus loss does not lower the redirect, and any app can take
+      // focus away with showSoftInput. Hiding the affordances on blur anyway produced the state
+      // that combination makes inevitable - typing going into the encrypted compose box while the
+      // only thing on screen that says so has just disappeared. The user then has no clear button
+      // for a draft they wanted rid of, and no indicator of which encoding a send would use.
+      //
+      // It is reachable without an adversary. Every rebuild goes through it: at API 28, 30, 34 and
+      // 35 the new strip's box gains focus during inflation and loses it again after adoptState
+      // has raised the redirect, so a rotation or a dark-mode switch with a draft in the box lands
+      // here. At 31 and 33 it does not, which is why targetSdk 33 saw a green suite for a path
+      // that had been broken at the level the device suite runs on the whole time.
+      //
+      // The four sites that genuinely mean "typing goes to the host now" all lower the redirect
+      // first and then hide these explicitly - see stopComposingInsideTheKeyboard - so this
+      // reading is what they get, and nothing else needed to change.
+      paintComposeAffordances(mRichInputConnection != null && mRichInputConnection.isUsingOtherIC());
     });
 
     mClearUserInputButton.setVisibility(GONE);
@@ -5623,6 +5644,30 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     if (!mInputEditText.hasFocus()) mInputEditText.requestFocus();
     mRichInputConnection.setOtherIC(mInputEditText);
     mRichInputConnection.setShouldUseOtherIC(true);
+    // Painted here, from the redirect, rather than left to the focus listener.
+    //
+    // The affordances are the only thing on the strip that says typing lands in the compose box
+    // rather than in the messenger, and until this line they appeared as a SIDE EFFECT of
+    // requestFocus() succeeding. The javadoc above already says requestFocus() "returns false
+    // silently whenever the view cannot take focus at that moment" - and then the code relied on
+    // it anyway, one statement later, for the user-visible half.
+    //
+    // It does fail, and not rarely. adoptState calls this on every rebuild that carried a draft,
+    // and at that point the new strip is not yet attached: measured across a Robolectric SDK
+    // matrix, the focus lands at API 31 and 33 and does NOT land at 28, 30, 34 or 35 - so the
+    // draft comes back with the redirect UP and no clear button and no encoding indicator beside
+    // it. The user is typing into the encrypted box while the strip shows the state that means
+    // typing goes to the messenger, cannot clear a draft they wanted rid of, and cannot see which
+    // encoding a send would use.
+    //
+    // That this was invisible is the point worth keeping: the JVM suite ran at whatever targetSdk
+    // said, which was 33 - one of the two levels where the focus happens to land - and the device
+    // suite runs API 28 but not these tests. Raising the target to 35 is what surfaced it, on a
+    // path that had been broken at 28 the whole time.
+    //
+    // Only the raise. Blur still hides them through changeVisibilityInputFieldButtons(false), and
+    // that asymmetry is argued for in the focus listener: hiding them does not lower the redirect.
+    paintComposeAffordances(true);
   }
 
   /**
@@ -5821,19 +5866,35 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
    */
   private void changeVisibilityInputFieldButtons(boolean shouldBeVisible) {
     if (shouldBeVisible) composeInsideTheKeyboard();
-    if (mClearUserInputButton != null && mSelectEncodingFairyTaleButton != null && mSelectEncodingRawButton != null) {
-      if (shouldBeVisible) {
-        mClearUserInputButton.setVisibility(VISIBLE);
-        if (encodingMethod.equals(Encoder.FAIRYTALE)) {
-          mSelectEncodingFairyTaleButton.setVisibility(VISIBLE);
-        } else {
-          mSelectEncodingRawButton.setVisibility(VISIBLE);
-        }
+    paintComposeAffordances(shouldBeVisible);
+  }
+
+  /**
+   * Sets the compose affordances without touching the redirect.
+   *
+   * <p>Split out of {@link #changeVisibilityInputFieldButtons} so that
+   * {@link #composeInsideTheKeyboard} can paint them itself. It cannot call that method: that
+   * method's first statement calls this one's caller, and the pair would recurse until the stack
+   * ran out.
+   *
+   * <p>Why {@code composeInsideTheKeyboard} needs to paint them at all is the defect below.
+   */
+  private void paintComposeAffordances(boolean shouldBeVisible) {
+    if (mClearUserInputButton == null || mSelectEncodingFairyTaleButton == null
+        || mSelectEncodingRawButton == null) {
+      return;
+    }
+    if (shouldBeVisible) {
+      mClearUserInputButton.setVisibility(VISIBLE);
+      if (encodingMethod.equals(Encoder.FAIRYTALE)) {
+        mSelectEncodingFairyTaleButton.setVisibility(VISIBLE);
       } else {
-        mClearUserInputButton.setVisibility(GONE);
-        mSelectEncodingFairyTaleButton.setVisibility(GONE);
-        mSelectEncodingRawButton.setVisibility(GONE);
+        mSelectEncodingRawButton.setVisibility(VISIBLE);
       }
+    } else {
+      mClearUserInputButton.setVisibility(GONE);
+      mSelectEncodingFairyTaleButton.setVisibility(GONE);
+      mSelectEncodingRawButton.setVisibility(GONE);
     }
   }
 

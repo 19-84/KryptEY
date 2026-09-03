@@ -3,6 +3,31 @@
 
   <uses-permission android:name="android.permission.VIBRATE" />
 
+  <!--
+    Package visibility for the one query this app makes.
+
+    From targetSdk 30 the platform filters queryIntentActivities to packages this app can already
+    see, and it can see almost none. SettingsActivity.aimAtTheSystemSettingsIfWeCan queries for
+    handlers of ACTION_INPUT_METHOD_SETTINGS so it can narrow an implicit intent onto the real
+    settings app rather than leaving the user a chooser at the exact moment they have been told to
+    go and enable a keyboard - which is the moment a convincing clone is worth the most to an
+    attacker. Filtered, that query returns nothing, the method finds no system handler, and it
+    falls back to the implicit intent every time. Its own comment calls that fallback "not a fix";
+    without this element the fallback was the only path, on every device from Android 11 onward.
+
+    Declared as the exact intent rather than QUERY_ALL_PACKAGES, which is what that permission is
+    for and which stores treat as a policy matter. This makes visible the packages that answer this
+    one action and nothing else.
+
+    Nothing in this app enumerates installed packages for any other reason, and
+    OnlyTheSettingsIntentIsQueriedTest fails if a second query appears without a matching entry.
+  -->
+  <queries>
+    <intent>
+      <action android:name="android.settings.INPUT_METHOD_SETTINGS" />
+    </intent>
+  </queries>
+
   <application
     android:allowBackup="false"
     android:dataExtractionRules="@xml/data_extraction_rules"

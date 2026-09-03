@@ -296,6 +296,155 @@ other way.
 So the lint baseline contains **no unexamined category with behaviour behind it**. That is the
 result; it is less interesting than a finding, and it is the honest one.
 
+## Raising targetSdk, and the two defects it found
+
+`targetSdk` went 33 -> 35 to match `compileSdk`. The point was not the number; it was that a stale
+target opts the app out of platform behaviour changes and nothing anywhere notices. Two real
+defects fell out of it, and both had been live the whole time.
+
+**The compose affordances tracked focus, not the redirect.** `composeInsideTheKeyboard` raises the
+redirect - `setShouldUseOtherIC(true)`, so typing lands in the encrypted compose box - and then
+left the clear button and the encoding indicator beside it to be shown as a *side effect* of
+`requestFocus()` succeeding. Its own javadoc says `requestFocus()` "returns false silently whenever
+the view cannot take focus", and the `adoptState` call site's comment says relying on the focus
+listener firing is "the mechanism that method was written to distrust" - and the user-visible half
+relied on it anyway. Then the blur half hid them again while the redirect stayed up, which the
+focus listener's own comment argues at length that blur must not lower.
+
+Consequence, with no adversary: after any rebuild carrying a draft - a rotation, a dark-mode switch
+- the strip shows the state that means "typing goes to the messenger" while typing goes into the
+encrypted box, the user has no clear button for a draft they wanted rid of, and no indication of
+which encoding a send would use. Not a plaintext disclosure; the app misreporting its own state on
+the one surface that reports it.
+
+Why nothing saw it: **Robolectric runs at whatever `targetSdk` says**, which was 33 for the whole
+revival. Measured across an SDK matrix, the focus lands at 31 and 33 and does NOT land at 26, 28,
+30, 34 or 35. So the JVM suite was green at the one level that happened to work, and the device
+suite runs API 28 - where it was broken - but does not run these tests. Fixed by tying the
+affordances to `isUsingOtherIC()`; `StripCarriedStateRound4Test.p5` and
+`StripCarriedStateRound5Test.r4` are now pinned across `sdk = {26, 28, 30, 31, 33, 34, 35}`, and
+they fail at five of those seven levels against the old code.
+
+**The settings-app narrowing had been inert since Android 11.**
+`SettingsActivity.aimAtTheSystemSettingsIfWeCan` calls `queryIntentActivities` to point the
+first-run "go and enable a keyboard" intent at the real settings app rather than at a chooser a
+lookalike can sit in. From `targetSdk` 30 that call is filtered by package visibility and the
+manifest declared no `<queries>` - so it returned nothing, the method concluded there was no system
+handler, and fell back to the implicit intent, which its own comment calls "not a fix". A filtered
+query and a device with genuinely no handler are indistinguishable from inside that method, which
+is why it never looked wrong. Lint had been saying `QueryPermissionsNeeded` about it as a warning
+outside the baseline, where nothing read it. Fixed with a `<queries>` element naming that one
+action; `OnlyTheSettingsIntentIsQueriedTest` pins it and enumerates every visibility-filtered
+PackageManager call in the app so a second one cannot arrive undeclared.
+
+**Also from this: the test JVM's heap was never chosen.** Gradle's default for a `Test` task is
+512MB. Pinning two tests across an SDK matrix - each `(SDK, config)` pair is a Robolectric sandbox
+holding a classloader over a full `android-all` jar - exhausted it, and it did not fail in those
+tests. It failed in whatever ran next, as an `OutOfMemoryError` surfacing three classes away as
+`Error inflating class <unknown>`. `maxHeapSize` is now 3g with the reason written down.
+
+**Still open from the same lint pass**, both warnings, neither in the baseline, neither with
+behaviour behind it: `UselessParent` on a `ScrollView` in `e2ee_verify_contact_view.xml` (a
+redundant layout wrapper) and `ClickableViewAccessibility` on an `onTouch` lambda in
+`E2EEStripView` that does not call `performClick` - the same accessibility shape as two entries
+already baselined for `MainKeyboardView` and `MoreKeysKeyboardView`. LOW.
+
+## What an API 35 device run actually did
+
+The image builds and the guest boots - 369 seconds under TCG, faster than API 28, which is the
+assumption that had kept this closed. The APKs install, the IME is selectable, the autofill service
+registers. Then the suite does not finish, and the reason is worth writing down because it looks
+exactly like an app defect and is not one.
+
+**First attempt (4096MB, no settle step): the instrumentation process died before any test ran.**
+`dumpsys window` showed `mCurrentFocus=Window{... Application Not Responding: com.android.systemui}`
+and `mBoundToMethod=false`. Read naively that says the keyboard cannot bind on Android 15. What it
+says is that an ANR dialog held window focus, which is the failure this harness's own header
+records having already chased once on the google_apis image at 28 - and it produced a nearly
+published claim then too.
+
+**After hardening the harness** - 6144MB at API 34+, `hide_error_dialogs` re-asserted after the
+reboot, and a wait for no ANR window to hold focus plus a settle period - **20 of 41 tests passed**
+before the run ended on `keyDispatchingTimedOut`: "Waited 5087ms for FocusEvent". Input dispatch has
+a five-second deadline and a software-emulated guest at API 35 misses it. The device state around it
+is unambiguous about why: `100% TOTAL: 62% user + 33% kernel`, `system_app_anr`, "Long monitor
+contention" across AppOpsService and ActivityManager, "Skipped 43 frames".
+
+So the honest statement is: **API 35 device coverage is partial - 20 tests - and the remainder is
+blocked by emulator capacity rather than by the app.** No test failed on its assertions. Nothing
+here licenses a claim that the app works on Android 15; it licenses "20 device tests pass at 35 and
+the rest could not be run here".
+
+The next lever, if this is worth more wall-clock, is narrowing: `KRYPTEY_TEST_CLASS` pointed at the
+keystore classes runs the highest-value device claims with no window system in the loop, which is
+what saturates the guest. The claims that need a real Android 15 - `FLAG_SECURE`, autofill
+traversal, input dispatch - are the ones this environment is least able to answer, and they are the
+ones that most need hardware.
+
+## Release readiness, and what the rating rested on
+
+Asked to rate how release-ready this is, the answer was 4/10 - fine for a personal build, not for
+handing to anyone relying on it against a hostile messenger. The rating is worth less than its
+inputs, so the inputs are here. Every one of these is a gap in *evidence*, not a known defect: none
+of them is a bug report, and that is exactly why they are easy to leave un-listed.
+
+Ordered by how much of the app's security claim rests on the missing evidence.
+
+**The API-level matrix.** `minSdk` 26, `compileSdk`/`targetSdk` 35, and the device suite runs one
+image: `system-images;android-28;default;x86_64`. So 26, 27 and 29 through 35 have never executed a
+line of this app. That is not a rounding error for an IME - `InputMethodService` window handling,
+inset dispatch, autofill traversal and `FLAG_SECURE` propagation all changed across that span, and
+the `FLAG_SECURE` result this branch is proudest of was measured at 28 only. The `targetSdk` raise
+to 35 makes this sharper rather than softer: every behaviour change it opts into is inert at API 28,
+so the code answering those changes (`RECEIVER_NOT_EXPORTED`, the edge-to-edge insets) is checked by
+`TargetSdkIsNotStaleTest` reading source text and by nothing running it. Adding a second AVD is the
+cheapest real fix available here and is the one thing on this list that does not need hardware.
+
+**Partly done.** `tools/test-on-emulator` now takes `KRYPTEY_EMU_API`, builds a per-level image and
+asserts after boot that the guest is the level that was asked for. An API 35 AOSP x86_64 guest
+boots under TCG in about six minutes - faster than 28, which was the assumption that had kept this
+closed. The JVM suite also moved with the target: Robolectric emulates `targetSdk`, so 1573 tests
+that ran at 33 now run at 35, and two of them are pinned across a seven-level matrix. What is still
+one level is the *device* suite's routine run, and what is still zero is hardware.
+
+**No physical device, ever.** The emulator's Keystore is a software implementation. `minSdk` 26
+means `setIsStrongBoxBacked` and hardware attestation are reachable on real devices and absent here,
+and the whole key-resolution ladder in `AndroidKeystoreCryptoBox` - lock-bound rungs, the step-down
+on an insecure device, `applyApi28Protections` - has only ever been exercised against that software
+stub. A TEE fails differently: `KeyPermanentlyInvalidatedException` on biometric enrolment, vendor
+quirks in `setUserAuthenticationParameters`, StrongBox rate-limiting. The anti-laundering seal
+depends on Keystore aliases surviving a file-level rollback, which is a property of the *real*
+keystore that the emulator can only imitate.
+
+**It has never run inside a real messenger.** The threat model is "the host app is hostile" and the
+host has always been a test activity. Every assumption about `inputType`, cursor reporting,
+`commitText` handling, autofill structure and clipboard behaviour is asserted against Robolectric
+shims and one emulator. Two-device interop over an actual wire has not happened either: every
+end-to-end test puts both parties in one process.
+
+**The release APK is unsigned and the publish path is unverified.** `assembleRelease` produces
+`app-arm64-v8a-release-unsigned.apk`; there is no signing config, so signing, upload and F-Droid
+reproducible-build verification have never been exercised. `versionCode` 24 / `versionName` 0.1.5
+are inherited and have not been reconciled with anything this branch changed.
+
+**`minifyEnabled false`, so `proguard-rules.pro` has never been applied by an ordinary build.**
+`EverySerialisedClassIsKeptTest` checks the rules say the right thing; nothing checks that a
+minified build works. The rules are therefore correct as text and untested as behaviour - and the
+serialised classes they protect are the ones whose loss corrupts stored identities.
+
+**No external review.** Thirteen adversarial rounds ran, the last three clean at the
+highs-and-criticals bar. Every one of them was me or an agent I briefed, and this session
+repeatedly produced the defect classes it had just finished documenting - four guard holes were
+written *after* the pattern was written up twice. Self-review converging is weaker evidence than it
+feels like, and three clean rounds sit against a background rate that was still yielding HIGH
+findings a day earlier.
+
+**Performance is a desktop-JVM number.** Nothing has measured keystroke latency, key-derivation
+cost or cold-start on a phone. Under TCG the emulator is too slow for any of it to mean anything.
+
+None of the above is scheduled. They are recorded so that a later "it passed everything" has
+something to be checked against.
+
 ## Unexamined
 
 - ~~`latin/utils/` beyond its logging.~~ **Closed.** That package had no tests at all;
