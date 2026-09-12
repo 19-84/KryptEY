@@ -479,8 +479,15 @@ Three things worth keeping from the analysis:
 - **A split invite can be rejoined with a SPACE and not a newline**, because `fromWire` strips
   whitespace while `decodeMessage` routes any `\p{C}` to the FairyTale decoder. Pasting two chat
   messages gives newlines, so the one workaround available on a constrained platform is the one a
-  user will get wrong. Chunked invites as a real feature would turn every "chat only" platform into
-  a working one; the codec already tolerates the concatenation and only the UI is missing.
+  user will get wrong. **Done since:** `ChunkedWire` splits raw wire text against a limit the user
+  sets in Preferences and reassembles it from newline-separated pastes; REVIVAL.md's "A chat with
+  a character limit can now carry an invite" has the design and what it deliberately does not do.
+  **Left behind by it:** with a limit set and FairyTale chosen, a refused invite has already minted
+  the bundle's keys and a refused message has already stepped the sending chain. The refusal sits
+  in `encode`, after `SignalProtocolMain` has persisted; the log entry is rolled back and the key
+  material is not. An orphaned one-time pre-key and a skipped message key per press, no disclosure.
+  The fix is to encode before persisting, in `SignalProtocolMain`, which is a larger change than
+  the feature.
 
 A tension worth naming rather than solving here: **FairyTale exists for deniability and costs about
 1.6x**, so it is affordable exactly where limits are generous and unaffordable on the tight

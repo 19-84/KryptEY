@@ -25,6 +25,19 @@
         android:layout_marginBottom="5dp"
         android:gravity="center" />
 
+      <!-- Visible only while a split send has parts left to place; the strip sets its label. -->
+      <Button
+        android:id="@+id/e2ee_button_next_part"
+        style="?attr/e2eeStripInfoTextStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginBottom="5dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:paddingHorizontal="16dp"
+        android:textAllCaps="false"
+        android:visibility="gone" />
+
       <RelativeLayout
         android:id="@+id/e2ee_edit_text_layout"
         android:layout_width="match_parent"

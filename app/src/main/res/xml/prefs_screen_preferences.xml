@@ -45,4 +45,13 @@
     android:key="pref_delete_swipe"
     android:title="@string/delete_swipe"
     android:defaultValue="false" />
+  <ListPreference
+    android:key="pref_message_length_limit"
+    android:title="@string/message_length_limit"
+    android:summary="%s"
+    android:dialogTitle="@string/message_length_limit"
+    android:entries="@array/message_length_limit_entries"
+    android:entryValues="@array/message_length_limit_values"
+    android:defaultValue="0"
+    android:persistent="true" />
 </PreferenceScreen>

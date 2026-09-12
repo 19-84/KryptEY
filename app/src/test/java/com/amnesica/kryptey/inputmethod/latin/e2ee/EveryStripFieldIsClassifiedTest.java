@@ -110,7 +110,15 @@ public class EveryStripFieldIsClassifiedTest {
       // would hand back the erasure it was added to close, by a different route. The other three
       // warnings are re-derived from the account, which survives a rebuild on its own; this one is
       // re-derived from here, so here has to survive too.
-      "mRefusedInvites"));
+      "mRefusedInvites",
+      // The parts of a split send not yet placed in the chat, and how many there were. Carried
+      // because the alternative is an invite two thirds delivered with no way to deliver the rest
+      // except a fresh invite - and a rotation is something the chat app can force between parts.
+      "mPendingParts", "mPartsTotal",
+      // The parts of a split message collected so far. Carried because each cost the user a copy
+      // and a Decrypt press, and because they are ciphertext the clipboard already held, so keeping
+      // them across a rebuild discloses nothing the old view did not.
+      "mAssembler"));
 
   /**
    * Deliberately NOT carried, with the reason. Each of these has been argued and tested.

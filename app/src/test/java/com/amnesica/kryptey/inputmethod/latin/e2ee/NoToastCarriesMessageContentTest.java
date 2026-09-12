@@ -164,7 +164,11 @@ public class NoToastCarriesMessageContentTest {
     for (final ToastSite site : sites) {
       if (!site.args.contains("getMessage()")) continue;
       raw.add(site.toString());
-      if (!site.enclosingCatch.startsWith("TooManyCharsException")) {
+      // ChunkedWire.PartRefusedException is the one other exception whose text is safe to show:
+      // its class note commits every message to literals and part counts, and
+      // ChunkedWireTest.noRefusalMessageContainsWhatWasPasted holds it to that.
+      if (!site.enclosingCatch.startsWith("TooManyCharsException")
+          && !site.enclosingCatch.startsWith("ChunkedWire.PartRefusedException")) {
         unsafe.add(site + "   <- caught as: "
             + (site.enclosingCatch.isEmpty() ? "(no enclosing catch)" : site.enclosingCatch));
       }
@@ -172,8 +176,9 @@ public class NoToastCarriesMessageContentTest {
 
     assertEquals("these toast an exception's message verbatim into a window FLAG_SECURE does not "
         + "cover. That is safe only while the exception is TooManyCharsException, whose text is "
-        + "byte counts - a wider catch puts arbitrary text on screen from a method holding the "
-        + "user's plaintext:\n" + String.join("\n", unsafe), 0, unsafe.size());
+        + "byte counts, or ChunkedWire.PartRefusedException, whose text is part counts - a wider "
+        + "catch puts arbitrary text on screen from a method holding the user's plaintext:\n"
+        + String.join("\n", unsafe), 0, unsafe.size());
     assertTrue("expected to find the two known e.getMessage() toasts; finding none means the scan "
         + "has stopped matching and this test is now vacuous", raw.size() >= 2);
   }

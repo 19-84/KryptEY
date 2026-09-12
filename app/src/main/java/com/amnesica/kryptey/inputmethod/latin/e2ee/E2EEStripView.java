@@ -15,6 +15,7 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -41,6 +42,7 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.Encoder;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.TooManyCharsException;
 import com.amnesica.kryptey.inputmethod.signalprotocol.exceptions.UnknownContactException;
+import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.ChunkedWire;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 
 import org.signal.libsignal.protocol.SignalProtocolAddress;
@@ -241,6 +243,28 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   }
 
   private Encoder encodingMethod = Encoder.RAW; // raw is default
+
+  /**
+   * The parts of the last send that have not yet been handed to the host app, in order.
+   *
+   * <p>The strip can put text into the host's field but cannot press the host's send button, so a
+   * message split against the chat app's limit goes over one part per press: the first with the
+   * send itself, the rest through {@link #handOverNextPart}. Empty whenever nothing is pending.
+   * Carried across a rebuild - a rotation between part two and part three would otherwise leave
+   * the peer holding two thirds of an invite and the user with no way to produce the third except
+   * re-inviting, which is the advice this app most wants to avoid giving.
+   */
+  private final List<String> mPendingParts = new ArrayList<>();
+  /** How many parts the pending send has in all; zero when nothing is pending. */
+  private int mPartsTotal;
+  /**
+   * Collects the parts of a split message pasted one Decrypt press at a time. Carried, because the
+   * parts in it are the user's work and cost a copy each; they are ciphertext the clipboard already
+   * held, so carrying them discloses nothing the discarded view did not.
+   */
+  private ChunkedWire.Assembler mAssembler = new ChunkedWire.Assembler();
+  /** Visible only while parts are pending; its label says which part it will place. */
+  private Button mNextPartButton;
 
   // info texts
   /** Static so {@link #openingMessage} can be decided without an inflated view. */
@@ -580,6 +604,24 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
   /** The should-never-happen half; see the unchecked catch in sendPreKeyResponseMessageToApplication. */
   private final String INFO_INVITE_FAILED = "Could not build an invite.";
+
+  /**
+   * Split sends and split receives. Counts only, never content: every one of these reaches a toast.
+   *
+   * <p>The sentences say "the chat" and "the part button" rather than naming a platform, because
+   * which platform has which limit is not something this app can know or keep current - the limit
+   * is a number the user chose in settings, and that is all the app has to go on.
+   */
+  private final String INFO_PART_PLACED = "Part %1$d of %2$d is in the chat. Send it there, then press the Place part button above the keyboard for the next one.";
+  private final String INFO_ALL_PARTS_PLACED = "The last part is in the chat. Send it there.";
+  private final String INFO_PARTS_PENDING = "The last message is still going out in parts: %1$d of %2$d placed so far. Press the Place part button for the next one, or tap the text above the keyboard to give up on the rest - that tap also clears the chosen contact and the message box.";
+  private final String INFO_NEXT_PART_BUTTON = "Place part %1$d of %2$d";
+  private final String INFO_SPLIT_PART_DETECTED = "Part of a split message is on the clipboard. Press Decrypt to collect it.";
+  private final String INFO_SPLIT_PARTS_COLLECTED = "%1$d of %2$d parts collected. Copy the next part and press Decrypt, or tap the text above the keyboard to start over - that tap also clears the chosen contact and the message box.";
+  private final String INFO_SPLIT_PART_UNUSABLE = "That part could not be used.";
+  /** Said only when the banner tap actually dropped something; an ordinary tap stays silent. */
+  private final String INFO_PENDING_PARTS_DROPPED = "Gave up on the last message: %1$d of its %2$d parts were never placed in the chat, so it cannot be read.";
+  private final String INFO_COLLECTED_PARTS_DROPPED = "Started over: the %1$d parts collected so far were dropped.";
 
   private static class E2EEStripVisibilityGroup {
     private final View mE2EEStripView;
@@ -2141,6 +2183,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     mClearUserInputButton = findViewById(R.id.e2ee_button_clear_text);
     mSelectEncodingFairyTaleButton = findViewById(R.id.e2ee_button_select_encoding_fairytale);
     mSelectEncodingRawButton = findViewById(R.id.e2ee_button_select_encoding_raw);
+    mNextPartButton = findViewById(R.id.e2ee_button_next_part);
 
     setMainInfoTextTextChangeListener();
     setMainInfoTextClearChosenContactListener();
@@ -2148,6 +2191,7 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
 
     createButtonEncryptClickListener();
     createButtonDecryptClickListener();
+    createButtonNextPartClickListener();
     createButtonClearUserInputClickListener();
     createButtonRecipientClickListener();
     createButtonSelectEncryptionMethodClickListener();
@@ -2165,7 +2209,54 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // with an empty map and never on a tap - a statement whose comment described what it would do
     // if it were one line further in. The expiry that matters runs where the act happens, in
     // encryptAndSendInputFieldContent.
-    mInfoTextView.setOnClickListener(v -> resetChosenContactAndInfoText());
+    mInfoTextView.setOnClickListener(v -> {
+      // The one exit from a split send or a split collection that has gone wrong. Nothing else
+      // discards either: a failed decrypt keeps the parts, so that pasting ordinary text by mistake
+      // between part two and part three does not cost the user both.
+      abandonSplitWork();
+      resetChosenContactAndInfoText();
+    });
+  }
+
+  /**
+   * A part-count sentence, in Latin digits whatever the device's locale is.
+   *
+   * <p>The same decision {@link #formatCodeSegment} makes for the safety number, for a weaker but
+   * real version of the same reason: these sentences name a part number the user then has to find
+   * in the chat, and the header there is ASCII by construction - {@code ChunkedWire} builds it by
+   * integer concatenation. "Part 2 of 6 is in the chat" has to name the part the chat calls 2.
+   *
+   * <p>Cosmetic here, unlike on the safety-number screen, and said plainly because a neighbouring
+   * claim of mine was wrong: {@code ChunkedWire.setIdOf} was given {@code Locale.ROOT} too, on a
+   * guess that its {@code %02x} was producing non-Latin digits and breaking the parser. The control
+   * refuted it - {@code Formatter} localises decimal conversions, not {@code %x} - so that change is
+   * defence rather than a fix, and {@code ChunkedWireTest.asetIdIsLatinDigitsUnderAnyLocale} says so
+   * in its own javadoc.
+   */
+  private static String parts(final String format, final Object... arguments) {
+    return String.format(Locale.ROOT, format, arguments);
+  }
+
+  /**
+   * Forgets any parts waiting to be placed and any parts collected so far, and says so.
+   *
+   * <p>Said out loud because the tap's older meaning is "clear the recipient", and a sender using
+   * it for that mid-send would otherwise lose parts 2..N of a message the log already records as
+   * sent, with the button vanishing as the only sign. Silent when there was nothing to drop.
+   */
+  private void abandonSplitWork() {
+    if (!mPendingParts.isEmpty()) {
+      Toast.makeText(getContext(), parts(INFO_PENDING_PARTS_DROPPED,
+          mPendingParts.size(), mPartsTotal), Toast.LENGTH_LONG).show();
+    }
+    if (mAssembler.collected() > 0) {
+      Toast.makeText(getContext(), parts(INFO_COLLECTED_PARTS_DROPPED,
+          mAssembler.collected()), Toast.LENGTH_LONG).show();
+    }
+    mPendingParts.clear();
+    mPartsTotal = 0;
+    mAssembler.reset();
+    paintNextPartButton();
   }
 
   /** Held so the view can be unregistered when it is discarded. See releaseClipboardListener. */
@@ -2193,6 +2284,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         if (item == null || item.isEmpty()) return;
         if (isHTML) {
           item = HTMLHelper.replaceHtmlCharacters(item);
+        }
+
+        // A part of a split message is not decodable on its own, so it is recognised by its marker
+        // before decoding is tried - otherwise fromWire refuses it and Decrypt stays dark on the
+        // one thing the user needs Decrypt for.
+        if (ChunkedWire.isChunk(item)) {
+          onSplitPartOnClipboard();
+          return;
         }
 
         final String decodedItem = mE2EEStrip.decodeMessage(item);
@@ -2223,6 +2322,16 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       }
     };
     clipboardManager.addPrimaryClipChangedListener(mClipboardListener);
+  }
+
+  /**
+   * The same shape as {@link #onKryptEyItemOnClipboard}, for a part rather than a whole message:
+   * re-arm first, then the banner only where the banner may be written.
+   */
+  private void onSplitPartOnClipboard() {
+    refreshActionButtons();
+    if (!mayOverwriteInfoBanner()) return;
+    setInfoTextViewMessage(mInfoTextView, INFO_SPLIT_PART_DETECTED);
   }
 
   /**
@@ -2466,6 +2575,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     changeImageButtonState(mEncryptButton,
         state == ButtonState.ENABLED && sendingIsRefusedForTheChosenContact()
             ? ButtonState.DISABLED : state);
+    // The part button answers the password-field question only; see its painter.
+    paintNextPartButton();
   }
 
   /**
@@ -2828,6 +2939,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), INFO_PASSWORD_FIELD, Toast.LENGTH_LONG).show();
       return;
     }
+    // Before the contact check: the pending parts are an invite more often than not, sent with no
+    // contact chosen, and "choose a contact first" would hide the answer that explains the screen.
+    if (splitSendIsStillGoingOut()) return;
     if (chosenContact == null) {
       Toast.makeText(getContext(), INFO_CHOOSE_CONTACT_FIRST, Toast.LENGTH_SHORT).show();
       return;
@@ -3219,6 +3333,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       Toast.makeText(getContext(), INFO_PASSWORD_FIELD, Toast.LENGTH_LONG).show();
       return;
     }
+    // Before the bundle is built: building one consumes a one-time pre-key, and a second invite
+    // started while the first is half sent would leave the peer with parts of two.
+    if (splitSendIsStillGoingOut()) return;
     final String encoded;
     try {
       // Serialization can now fail (the binary codec validates what it is given), so it belongs
@@ -3291,8 +3408,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       return;
     }
 
+    // A part of a split message is collected rather than decoded, until the last one arrives and
+    // the whole takes the ordinary path below as if it had been pasted in one piece.
+    final String pasted = mEncryptedMessageFromClipboard.toString();
+    final String toDecode = ChunkedWire.isChunk(pasted) ? collectSplitPart(pasted) : pasted;
+    if (toDecode == null) return;
+
     try {
-      final String encodedMessage = mE2EEStrip.decodeMessage(mEncryptedMessageFromClipboard.toString());
+      final String encodedMessage = mE2EEStrip.decodeMessage(toDecode);
 
       final MessageEnvelope messageEnvelope = EnvelopeCodec.fromWire(encodedMessage);
       if (messageEnvelope == null) throw new IOException("Message is null. Abort!");
@@ -3325,6 +3448,49 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     showChosenContactInMainInfoField();
     mE2EEStrip.clearClipboard();
     changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
+  }
+
+  /**
+   * Feeds one pasted part to the assembler.
+   *
+   * @return the whole message once every part is present, or {@code null} after telling the user
+   *     what is still missing or why the part was refused - in which case the clipboard has been
+   *     cleared and Decrypt darkened, exactly as after a completed decrypt
+   */
+  private String collectSplitPart(final String pasted) {
+    try {
+      final String whole = mAssembler.accept(pasted);
+      if (whole != null) {
+        mAssembler.reset();
+        return whole;
+      }
+      Toast.makeText(getContext(), parts(INFO_SPLIT_PARTS_COLLECTED,
+          mAssembler.collected(), mAssembler.expected()), Toast.LENGTH_LONG).show();
+    } catch (ChunkedWire.PartRefusedException e) {
+      // Its text is literals and part counts by construction - see the class note on ChunkedWire -
+      // which is what makes showing it outside the secure window acceptable.
+      Toast.makeText(getContext(), e.getMessage(), Toast.LENGTH_LONG).show();
+      Log.e(TAG, "a pasted part was refused");
+    } catch (IOException e) {
+      Toast.makeText(getContext(), INFO_SPLIT_PART_UNUSABLE, Toast.LENGTH_LONG).show();
+      Log.e(TAG, "a pasted part could not be processed", e);
+    }
+    // The banner, on every path that consumed the clipboard: the listener wrote "a part is on the
+    // clipboard" when it was copied, and clearing the clipboard does not repaint - the listener
+    // returns on an empty clip - so a refusal used to leave that sentence standing over an empty
+    // clipboard and a dark Decrypt. The progress line while a set is open; the contact line
+    // otherwise, through the writer that already refuses over a standing warning.
+    if (mAssembler.expected() > 0) {
+      if (mayOverwriteInfoBanner()) {
+        setInfoTextViewMessage(mInfoTextView, parts(INFO_SPLIT_PARTS_COLLECTED,
+            mAssembler.collected(), mAssembler.expected()));
+      }
+    } else {
+      showChosenContactInMainInfoField();
+    }
+    mE2EEStrip.clearClipboard();
+    changeImageButtonState(mDecryptButton, ButtonState.DISABLED);
+    return null;
   }
 
   private void processSignalMessage(MessageEnvelope messageEnvelope, Contact sender) {
@@ -5212,6 +5378,114 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
   private void sendEncryptedMessageToApplication(CharSequence encryptedMessage) {
     if (encryptedMessage == null) return;
 
+    List<String> parts;
+    try {
+      parts = mE2EEStrip.partsOf(encryptedMessage.toString(), encodingMethod);
+    } catch (IOException noSplitFits) {
+      // encode() refused, a moment ago and against the same limit, anything it could not split -
+      // so this is reachable only through the test seam. The message is already encrypted and
+      // recorded, so the fail-safe is the pre-existing behaviour: hand it over whole and let the
+      // chat app be the one to refuse it.
+      Log.e(TAG, "could not split the message against the configured limit; sending it whole");
+      parts = java.util.Collections.singletonList(encryptedMessage.toString());
+    }
+    mPendingParts.clear();
+    mPendingParts.addAll(parts.subList(1, parts.size()));
+    mPartsTotal = mPendingParts.isEmpty() ? 0 : parts.size();
+
+    handToHost(parts.get(0));
+    clearUserInputString();
+    mE2EEStrip.clearClipboard();
+    paintNextPartButton();
+    if (!mPendingParts.isEmpty()) {
+      Toast.makeText(getContext(), parts(INFO_PART_PLACED, 1, mPartsTotal),
+          Toast.LENGTH_LONG).show();
+    }
+  }
+
+  /**
+   * Whether a split send is still waiting for parts to be placed, said out loud if so.
+   *
+   * <p>Asked by both senders before anything irreversible. Starting a new message over a half-sent
+   * one would either drop its remaining parts silently or interleave two messages' parts in the
+   * chat, and the pending ones are an invite more often than not.
+   */
+  private boolean splitSendIsStillGoingOut() {
+    if (mPendingParts.isEmpty()) return false;
+    Toast.makeText(getContext(), parts(INFO_PARTS_PENDING,
+        mPartsTotal - mPendingParts.size(), mPartsTotal), Toast.LENGTH_LONG).show();
+    return true;
+  }
+
+  private void createButtonNextPartClickListener() {
+    if (mNextPartButton == null) return;
+    mNextPartButton.setOnClickListener(v -> handOverNextPart());
+  }
+
+  /**
+   * Places the next pending part in the host's field.
+   *
+   * <p>The same first question the other three senders ask: over a password box the button is
+   * painted from carried state and can be visible, and a part of a key bundle committed there is
+   * the disclosure {@code mHostFieldIsPassword} exists to prevent.
+   */
+  private void handOverNextPart() {
+    if (mPendingParts.isEmpty()) {
+      // A stale button: nothing to place. Repainting hides it.
+      paintNextPartButton();
+      return;
+    }
+    if (!actionsAreAvailable()) {
+      Toast.makeText(getContext(), INFO_PASSWORD_FIELD, Toast.LENGTH_LONG).show();
+      return;
+    }
+    // Handed over before it is forgotten, so a failure to commit does not lose the part.
+    handToHost(mPendingParts.get(0));
+    mPendingParts.remove(0);
+    final int placed = mPartsTotal - mPendingParts.size();
+    if (mPendingParts.isEmpty()) {
+      mPartsTotal = 0;
+      Toast.makeText(getContext(), INFO_ALL_PARTS_PLACED, Toast.LENGTH_LONG).show();
+    } else {
+      Toast.makeText(getContext(), parts(INFO_PART_PLACED, placed, mPartsTotal),
+          Toast.LENGTH_LONG).show();
+    }
+    paintNextPartButton();
+  }
+
+  /**
+   * Shows the part button with the number it will place, or hides it when nothing is pending.
+   *
+   * <p>Dark over a password field, and for no other reason. The press refuses there anyway, but a
+   * lit control under "encryption and decryption are turned off here" is the app offering what it
+   * forbids - the invariant {@code TheButtonsNeverContradictTheBannerTest} states for the other
+   * two. NOT gated on the rest of what darkens those: an unreadable store or "no contact chosen"
+   * says nothing about parts of a message that is already built, and darkening them there would
+   * leave an invite two thirds delivered with re-inviting the only exit, which is the case carrying
+   * the parts across a rebuild exists to prevent. Repainted from {@code refreshActionButtons}, so
+   * the guard being armed or lowered reaches it.
+   */
+  private void paintNextPartButton() {
+    if (mNextPartButton == null) return;
+    if (mPendingParts.isEmpty()) {
+      mNextPartButton.setVisibility(GONE);
+      return;
+    }
+    mNextPartButton.setText(parts(INFO_NEXT_PART_BUTTON,
+        mPartsTotal - mPendingParts.size() + 1, mPartsTotal));
+    mNextPartButton.setEnabled(actionsAreAvailable());
+    mNextPartButton.setVisibility(VISIBLE);
+  }
+
+  /**
+   * Commits one string into whatever app holds the cursor, and nothing else.
+   *
+   * <p>Split out of the send so that a later part goes by exactly the route the first did - the
+   * redirect lowered, the keyboard's caches dropped, the listener - without the send's other work:
+   * a later part must not empty the compose box, because the user may have started the next
+   * message in it while the chat app was sending the previous part.
+   */
+  private void handToHost(final String text) {
     mRichInputConnection.setShouldUseOtherIC(false);
     // The keyboard's own copy of the draft goes with the redirect.
     //
@@ -5224,10 +5498,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // Same class as the buffers cleared when the keyboard is dismissed, at the moment nobody had
     // looked at. Dismissal is the obvious end of a message's life; pressing send is the common one.
     mRichInputConnection.forgetCachedText();
-    mListener.onTextInput((String) encryptedMessage);
+    mListener.onTextInput(text);
     mInputEditText.clearFocus();
-    clearUserInputString();
-    mE2EEStrip.clearClipboard();
   }
 
   /**
@@ -5322,6 +5594,14 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     private final long accountReloadsWhenNoticeRaised;
     private final boolean hostFieldIsPassword;
     private final Encoder encoding;
+    /**
+     * The parts of a split send not yet placed, and how many there were. Carried because the
+     * alternative is an invite two thirds delivered with no way to deliver the rest.
+     */
+    private final List<String> pendingParts;
+    private final int partsTotal;
+    /** The parts of a split message collected so far. */
+    private final ChunkedWire.Assembler assembler;
 
     private CarriedState(final CharSequence draft, final boolean wasComposing,
         final CharSequence banner, final boolean warningStanding,
@@ -5334,7 +5614,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         final long accountWritesLandedWhenStorageCautionRaised,
         final String standingStoreNotice, final long logWritesLandedWhenNoticeRaised,
         final long accountReloadsWhenNoticeRaised,
-        final boolean hostFieldIsPassword, final Encoder encoding) {
+        final boolean hostFieldIsPassword, final Encoder encoding,
+        final List<String> pendingParts, final int partsTotal,
+        final ChunkedWire.Assembler assembler) {
       this.draft = draft;
       this.wasComposing = wasComposing;
       this.banner = banner;
@@ -5355,6 +5637,9 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
       this.accountReloadsWhenNoticeRaised = accountReloadsWhenNoticeRaised;
       this.hostFieldIsPassword = hostFieldIsPassword;
       this.encoding = encoding;
+      this.pendingParts = pendingParts;
+      this.partsTotal = partsTotal;
+      this.assembler = assembler;
     }
   }
 
@@ -5435,7 +5720,8 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
         mStandingStorageCautionKind, mAccountWritesLandedWhenStorageCautionRaised,
         mStandingStoreNotice, mLogWritesLandedWhenNoticeRaised,
         mAccountReloadsWhenNoticeRaised,
-        mHostFieldIsPassword, encodingMethod);
+        mHostFieldIsPassword, encodingMethod,
+        new ArrayList<>(mPendingParts), mPartsTotal, mAssembler);
   }
 
   /** Restores what the outgoing view surrendered. */
@@ -5581,6 +5867,15 @@ public class E2EEStripView extends RelativeLayout implements ListAdapterContacts
     // the strip went on saying encryption was off over a password box while the actions were back
     // on, which is the exact pairing setHostFieldIsPassword's own comment records as a defect.
     setHostFieldIsPassword(carried.hostFieldIsPassword);
+
+    // A half-sent split message and a half-collected one, both restored whatever else happened.
+    // The button is repainted from the parts, so it reappears on the new strip saying the same
+    // number it said on the old one.
+    mPendingParts.clear();
+    if (carried.pendingParts != null) mPendingParts.addAll(carried.pendingParts);
+    mPartsTotal = carried.partsTotal;
+    if (carried.assembler != null) mAssembler = carried.assembler;
+    paintNextPartButton();
     // Choosing FairyTale is the user saying "do not let this look like ciphertext to somebody
     // glancing at my screen", which is the only thing the mode does - the app's own help text says
     // so, because every FairyTale message ends in a run of invisible characters nothing else

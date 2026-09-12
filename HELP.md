@@ -86,6 +86,22 @@
 - You can switch between the modes by clicking on the raw/book symbol in the KryptEY text field on
   the left.
 
+## The chat app says my message or invite is too long. What now?
+
+- Some chat apps refuse messages over a certain length, and an invite is long - about 2,500
+  characters - so it may be refused where an ordinary encrypted message is not.
+- In the keyboard's settings, under Preferences, set "Longest message the chat app allows" to a
+  number the chat app accepts. Anything longer is then placed in the chat in numbered parts: the
+  first with the encrypt or invite button, and each further one with the "Place part" button that
+  appears under the text above the keyboard. Send each part in the chat before placing the next.
+- Your chat partner copies each part in turn and presses decrypt after each one. The keyboard says
+  how many parts it still needs, and the message is read once the last one is in. The parts can
+  arrive in any order. If the chat app lets you copy several messages as plain text, pasting them
+  together also works - but if it adds names or times to the copy, copy one message at a time.
+- Parts only work in Raw mode. Fairy Tale text cannot be cut into parts, so with a limit set, a
+  Fairy Tale message that is too long is refused and you are told so.
+- Leave the setting off unless you need it. With it off, nothing changes.
+
 ## The app says something could not be saved. What does that mean?
 
 - It means the app could not write to its own storage - usually because the device has no free

@@ -217,6 +217,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A mutant was committed and pushed](#a-mutant-was-committed-and-pushed)
 - [Checked this round and clean](#checked-this-round-and-clean)
 - [A test that could not reach its own branch, and a device test in the wrong state](#a-test-that-could-not-reach-its-own-branch-and-a-device-test-in-the-wrong-state)
+- [A chat with a character limit can now carry an invite](#a-chat-with-a-character-limit-can-now-carry-an-invite)
 
 ---
 ## What was done, by phase
@@ -8517,3 +8518,106 @@ call, and that ordering is the whole of what makes it safe.
 Bounded meanwhile: the leak self-heals if any later log write lands in the same process, and the very
 next send is such a write. It becomes permanent only if a reload happens first, which the messenger
 can force.
+
+## A chat with a character limit can now carry an invite
+
+`HowManyCharactersAsendActuallyCostsTest` established that an invite costs about 2,572 characters
+and a message on a pending session about 2,404, against a 200-character message once the peer has
+replied. So a platform with a 2,000-character limit - Discord, Signal - could carry a conversation
+and not start one, and the one workaround (paste two halves together) failed on a newline, which is
+what pasting two chat messages produces. `ChunkedWire` is the fix, and this is what it is and is not.
+
+**The format** is `#K<part>/<total>#<set>#<body>`. `#` is outside the base64 alphabet, so an
+unchunked message can never begin with it and there is no ambiguity to resolve. `set` is six hex
+characters of SHA-256 over the whole wire text, and it exists for one case that is live rather than
+hypothetical: re-inviting is the app's own advice after a failed decrypt, so a second invite's parts
+land in the same chat as the first's, and joined blindly they decode to nothing. It is not an
+integrity check - the bundle's issuing signature is - and the class note says so.
+
+**The limit is a setting, not a detection.** "Longest message the chat app allows" in Preferences,
+a `ListPreference` of numbers with no platform named beside them, because which platform allows
+what is recollection and would rot in a UI string (BACKLOG.md says the same of its own table). Off
+by default, and with it off nothing on either side changes: `partsOf` returns the input in one
+piece and no header is ever written.
+
+**Sending is one part per press**, because the strip can put text into the host's field and cannot
+press the host's send button. The first part goes with the Encrypt or Invite press; a "Place part
+n of N" button appears under the banner for the rest and hides after the last. Both senders refuse
+to start anything new while parts are pending - a second invite would leave the peer holding parts
+of two - and the banner tap is the one exit, which drops the rest. The pending parts are carried
+across a rebuild, because a rotation between part two and part three is host-forceable and the
+alternative is an invite two thirds delivered with re-inviting as the only remedy. Over a password
+field the part button refuses like its three siblings.
+
+**Receiving is Decrypt-driven, not clipboard-driven.** The clipboard listener recognises a part by
+its marker and lights Decrypt - it has to, since a part is undecodable alone and `fromWire` would
+otherwise refuse it - but it collects nothing: collecting on a system callback that fires for every
+copy in every app would be acting on the clipboard rather than inspecting it. Each Decrypt press
+feeds the paste to an `Assembler`, which tolerates wrapping, several parts in one paste, and any
+order; the banner and a toast say how many of how many are in; the whole then takes the ordinary
+decode path as if pasted in one piece. A part of a different set is refused and the collection is
+kept, since the refusal is the point of the set id. The assembler is carried across a rebuild too.
+
+**What is refused, and where.** FairyTale text cannot be split - a `#K2/3#` header stapled to a
+fairy tale is ciphertext wearing a label, and FairyTale exists only for the glance-at-the-screen
+case - so with a limit set the decoy is chosen to fit it and a payload that still does not is
+refused in `E2EEStrip.encode`, inside the window where `encryptMessage` rolls the recorded message
+back. Raw text is validated against the limit in the same place, for the same reason: the split
+itself happens after the ratchet has advanced, so anything that could fail there is asked first.
+
+**The toast guard was extended, deliberately.** `NoToastCarriesMessageContentTest` admitted one
+exception whose text could be shown raw; it now admits two. `ChunkedWire.PartRefusedException`
+qualifies on the same argument as `TooManyCharsException` - every message is literals and part
+counts - and unlike that one it has a control: `noRefusalMessageContainsWhatWasPasted` drives every
+refusal with a marked body and asserts the body, the set id and the marker are absent from what
+would be shown.
+
+**Pinned by** `ChunkedWireTest` (every part fits with its header counted, including part ten of
+ten, whose header is a character wider than part one's; every part is non-empty at every size, so
+the declared total is the number sent; two sets never splice; a truncated part is caught when the
+set completes), `AninviteTooLongForTheChatGoesOverInPartsTest` (the real Invite button, the real
+part button, the host's field, and a rebuild in the middle) and
+`ThePartsOfAsplitInviteAreCollectedByDecryptTest` (a second account's invite through the real
+clipboard and Decrypt, ending on the add-contact screen, which opens only for a bundle the codec
+accepted from someone new).
+
+**One review round, seven findings, five fixed.** The part button stayed lit over a password field
+(now dark on `actionsAreAvailable()` alone, repainted from `refreshActionButtons`); a refused part
+left "a part is on the clipboard" standing over an empty clipboard (the progress line or the contact
+line is written instead); `isChunk` was `startsWith("#K")`, so "#Kubernetes" lit Decrypt and a press
+destroyed the clipboard (it now requires the whole header, whitespace removed); three toasts said
+"tap this text", which in a toast is the toast; and the banner tap dropped a half-sent message
+silently (it now says how many parts were never placed). Round two added that the same tap clears the chosen contact and the message box, so the three sentences that name it as the exit now say so; narrowed the help's claim about multi-message copies to what the recogniser accepts (a paste that BEGINS with a header); and made the settings row show the chosen limit. The two not fixed are pre-existing
+mechanisms this refusal reaches more often than the old ones did: a FairyTale invite refused for the
+limit has already minted its bundle's keys, and a FairyTale message refused for the limit has
+already stepped the sending chain. Both were true of the 8192-character refusals before this; both
+were practically unreachable then and are one settings choice away now. The cost is an orphaned
+one-time pre-key record and a skipped message key per refused press, no disclosure either way, and
+the fix is an ordering change in `SignalProtocolMain` rather than here. Recorded on BACKLOG.md.
+
+**The defect worth reading this section for: one split message in eleven was refused as damaged,
+and the test that found it looked like flakiness.** `Assembler.accept` cut a multi-part paste on the
+two-character marker `#K`. A part's body is base64 and may begin with `K`; the character before it
+is the header's own closing `#`. So `…#a7c91f#KLMN…` contains `#K`, the splitter cut there, and both
+sides of the cut were refused - the app telling the user their invite was damaged and to ask for
+another, which would fail at the same rate. Base64 reaches `K` one character in sixty-four and a
+message is several parts, so it fired about once in eleven.
+
+It surfaced as a strip test that passed alone and failed in the full suite, because whether it fires
+depends on the random key material in the invite being split. **The first diagnosis was wrong and is
+worth recording as the cheaper lesson**: the suite shares a JVM and another class sets a Devanagari
+default locale, so the guess was `setIdOf`'s `String.format("%02x")` producing non-Latin digits that
+its own `[0-9a-f]` parser rejects. The control refuted it - `Formatter` localises decimal
+conversions, not `%x` - and a test written for that hypothesis passed against the unfixed code,
+which is this branch's recurring lesson about controls appearing sound. The `Locale.ROOT` added
+there stays as defence, labelled as defence. The real cause was found by reading what can put a
+character outside `[A-Za-z0-9+/=]` into a piece, and the answer was that nothing did: the piece was
+a correct part, cut in the wrong place. Parts now separate on the whole header pattern, which is
+unambiguous because a body cannot contain `#` at all. Pinned by
+`abodyBeginningWithKisNotAsecondPart`, where every body begins with `K` so what was one run in
+eleven is every run.
+
+**Not done.** FairyTale's non-deterministic length against a fixed limit is unchanged and still on
+BACKLOG.md; splitting does not touch it. Nothing detects the platform's limit, and nothing should:
+the app cannot see which app holds the cursor with any reliability, and a wrong guess fails on the
+peer's side.

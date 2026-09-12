@@ -112,6 +112,7 @@
   <string name="space_swipe">Space swipe cursor move</string>
   <string name="delete_swipe">Delete swipe</string>
   <string name="matching_navbar_color">Use matching navigation bar color</string>
+  <string name="message_length_limit">Longest message the chat app allows</string>
   <string name="setup_message">KryptEY Keyboard is not enabled. Click OK to open Languages &amp; Input settings. You will need to select KryptEY Keyboard in your current keyboard to use it.</string>
   <string name="user_languages">Enabled keyboard languages</string>
   <string name="add_language">Add language</string>
@@ -184,6 +185,15 @@
 				<li>Fairy Tale mode makes a message look unremarkable to somebody glancing at your screen. It does not conceal anything from the messenger: every Fairy Tale message ends in a run of invisible characters that nothing else produces, and the visible sentence is one the app ships. If your reason for choosing it is to stop the messenger knowing that you encrypt, it does not do that.</li>
 				<li>In both modes, all messages are still encrypted and cannot be read by third parties - provided the key you pinned really belongs to your chat partner, which is what comparing the security number by voice establishes. Encryption on its own does not rule out the messenger, because the messenger is what delivered the key.</li>
 				<li>You can switch between the modes by clicking on the raw/book symbol in the KryptEY text field on the left.</li>
+			</ul>
+
+			<h3>The chat app says my message or invite is too long. What now?</h3>
+			<ul>
+				<li>Some chat apps refuse messages over a certain length, and an invite is long - about 2,500 characters - so it may be refused where an ordinary encrypted message is not.</li>
+				<li>In the keyboard\'s settings, under Preferences, set \"Longest message the chat app allows\" to a number the chat app accepts. Anything longer is then placed in the chat in numbered parts: the first with the encrypt or invite button, and each further one with the \"Place part\" button that appears under the text above the keyboard. Send each part in the chat before placing the next.</li>
+				<li>Your chat partner copies each part in turn and presses decrypt after each one. The keyboard says how many parts it still needs, and the message is read once the last one is in. The parts can arrive in any order. If the chat app lets you copy several messages as plain text, pasting them together also works - but if it adds names or times to the copy, copy one message at a time.</li>
+				<li>Parts only work in Raw mode. Fairy Tale text cannot be cut into parts, so with a limit set, a Fairy Tale message that is too long is refused and you are told so.</li>
+				<li>Leave the setting off unless you need it. With it off, nothing changes.</li>
 			</ul>
 
 			<h3>What is an update message?</h3>

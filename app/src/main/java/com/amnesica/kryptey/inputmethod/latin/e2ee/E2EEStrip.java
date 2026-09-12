@@ -15,6 +15,9 @@ import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.StorageMessage;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EncodeHelper;
+import com.amnesica.kryptey.inputmethod.compat.PreferenceManagerCompat;
+import com.amnesica.kryptey.inputmethod.latin.settings.Settings;
+import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.ChunkedWire;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.Encoder;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.FairyTaleEncoder;
@@ -37,6 +40,8 @@ import org.signal.libsignal.protocol.UntrustedIdentityException;
 import org.signal.libsignal.protocol.fingerprint.Fingerprint;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -192,9 +197,20 @@ public class E2EEStrip {
     // already tolerates a null encoder, so the two disagreed about what is acceptable input.
     if (encoder == null) throw new IOException("no encoder selected");
 
+    // The platform's limit, when the user has set one, is a second cap beside the recipient's.
+    //
+    // Raw text past it is handed over in parts (partsOf), so for RAW the limit only has to be
+    // large enough for a split to exist. FairyTale text cannot be split: its whole purpose is not to
+    // look like ciphertext, and a "#K2/3#" header stapled to a fairy tale is ciphertext wearing a
+    // label. So the decoy is chosen to fit the limit, and if the payload alone does not, the send
+    // is refused HERE - before the caller hands anything over, and inside the window in which
+    // encryptMessage rolls the recorded message back.
+    final int limit = messageLengthLimit();
+
     String encodedMessage = null;
     if (encoder.equals(Encoder.FAIRYTALE)) {
-      encodedMessage = FairyTaleEncoder.encode(message, mContext, MAX_DECODABLE_CHARS);
+      final int cap = limit > 0 ? Math.min(limit, MAX_DECODABLE_CHARS) : MAX_DECODABLE_CHARS;
+      encodedMessage = FairyTaleEncoder.encode(message, mContext, cap);
     } else if (encoder.equals(Encoder.RAW)) {
       encodedMessage = RawEncoder.encode(message);
     } else {
@@ -207,7 +223,55 @@ public class E2EEStrip {
               + "Shorten it, or switch to the raw encoder.",
           encodedMessage.length(), MAX_DECODABLE_CHARS));
     }
+    if (encodedMessage != null && limit > 0) {
+      if (encoder.equals(Encoder.FAIRYTALE) && encodedMessage.length() > limit) {
+        throw new TooManyCharsException(String.format(
+            "This message encodes to %d characters in fairytale mode and the chat app's limit is "
+                + "set to %d. Fairytale text cannot be sent in parts. Switch to raw mode, which "
+                + "can, or raise the limit in the keyboard's settings.",
+            encodedMessage.length(), limit));
+      }
+      if (encoder.equals(Encoder.RAW)) {
+        try {
+          ChunkedWire.split(encodedMessage, limit);
+        } catch (final IOException noSplitFits) {
+          throw new TooManyCharsException(String.format(
+              "This message encodes to %d characters and cannot be sent in parts of %d. Raise the "
+                  + "limit in the keyboard's settings.",
+              encodedMessage.length(), limit));
+        }
+      }
+    }
     return encodedMessage;
+  }
+
+  /**
+   * The per-message limit of the chat app the user is on, or zero for none.
+   *
+   * <p>Read on every use rather than cached, so a change in the settings screen applies to the next
+   * send without the keyboard being restarted. Package-private and non-static so a test can
+   * override it without touching the preference store.
+   */
+  int messageLengthLimit() {
+    return Settings.readMessageLengthLimit(
+        PreferenceManagerCompat.getDeviceSharedPreferences(mContext));
+  }
+
+  /**
+   * What to hand to the host app, in order.
+   *
+   * <p>One string - the input itself - when no limit is set, when the text fits, or when the encoder
+   * is FairyTale (see {@link #encode}: a FairyTale message past the limit was refused there, so what
+   * reaches this fits). Otherwise the {@link ChunkedWire} parts.
+   *
+   * @throws IOException if the limit is too small for any split, which {@link #encode} has already
+   *     refused for anything it produced; a caller handing over text from elsewhere may still see it
+   */
+  List<String> partsOf(final String encoded, final Encoder encoder) throws IOException {
+    if (encoded == null) throw new IOException("nothing to send");
+    final int limit = messageLengthLimit();
+    if (limit <= 0 || !Encoder.RAW.equals(encoder)) return Collections.singletonList(encoded);
+    return ChunkedWire.split(encoded, limit);
   }
 
 

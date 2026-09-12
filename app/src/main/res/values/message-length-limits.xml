@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Choices for the per-message limit encrypted text is split against. Numbers only, on purpose:
+  which platform allows what is recollection rather than measurement, and a platform name printed
+  here would rot the day that platform changed its limit. BACKLOG.md ("What a send costs") has the
+  arithmetic; the short answer is that nothing fits below 200 characters, so no smaller choice is
+  offered.
+-->
+<resources>
+  <string-array name="message_length_limit_entries" translatable="false">
+    <item>Off - everything goes as one message</item>
+    <item>280 characters</item>
+    <item>300 characters</item>
+    <item>500 characters</item>
+    <item>1000 characters</item>
+    <item>2000 characters</item>
+    <item>4096 characters</item>
+  </string-array>
+  <string-array name="message_length_limit_values" translatable="false">
+    <item>0</item>
+    <item>280</item>
+    <item>300</item>
+    <item>500</item>
+    <item>1000</item>
+    <item>2000</item>
+    <item>4096</item>
+  </string-array>
+</resources>

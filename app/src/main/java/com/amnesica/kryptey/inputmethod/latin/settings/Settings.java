@@ -54,6 +54,14 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
   public static final String PREF_SPACE_SWIPE = "pref_space_swipe";
   public static final String PREF_DELETE_SWIPE = "pref_delete_swipe";
   public static final String PREF_MATCHING_NAVBAR_COLOR = "pref_matching_navbar_color";
+  /**
+   * The longest message the platform the user is on will carry, or "0" for no limit.
+   *
+   * <p>A string rather than an int because it is a {@code ListPreference}, whose values are
+   * strings; {@link #readMessageLengthLimit} does the conversion and treats anything unreadable as
+   * no limit, which is the pre-existing behaviour.
+   */
+  public static final String PREF_MESSAGE_LENGTH_LIMIT = "pref_message_length_limit";
 
   private static final float UNDEFINED_PREFERENCE_VALUE_FLOAT = -1.0f;
   private static final int UNDEFINED_PREFERENCE_VALUE_INT = -1;
@@ -253,5 +261,21 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
 
   public static boolean readUseMatchingNavbarColor(final SharedPreferences prefs) {
     return prefs.getBoolean(PREF_MATCHING_NAVBAR_COLOR, false);
+  }
+
+  /**
+   * The per-message character limit to split encrypted messages against, or zero for none.
+   *
+   * <p>Zero is the default and means what the app always did: one message, however long. A
+   * positive value makes the strip hand over anything longer in numbered parts - see
+   * {@code ChunkedWire}.
+   */
+  public static int readMessageLengthLimit(final SharedPreferences prefs) {
+    try {
+      final int limit = Integer.parseInt(prefs.getString(PREF_MESSAGE_LENGTH_LIMIT, "0"));
+      return Math.max(0, limit);
+    } catch (final NumberFormatException | ClassCastException unreadable) {
+      return 0;
+    }
   }
 }
