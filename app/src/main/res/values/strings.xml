@@ -112,7 +112,12 @@
   <string name="space_swipe">Space swipe cursor move</string>
   <string name="delete_swipe">Delete swipe</string>
   <string name="matching_navbar_color">Use matching navigation bar color</string>
-  <string name="message_length_limit">Longest message the chat app allows</string>
+  <!-- English-only on purpose. e2ee_help_view_text, itself translatable="false", quotes this title
+       word for word to tell the user which setting to change; a translated title would leave the
+       help naming a setting that does not exist on the user's screen. Lint's MissingTranslation
+       failed CI on this string, and a baseline entry would have hidden a new string rather than
+       grandfathered an old one. -->
+  <string name="message_length_limit" translatable="false">Longest message the chat app allows</string>
   <string name="setup_message">KryptEY Keyboard is not enabled. Click OK to open Languages &amp; Input settings. You will need to select KryptEY Keyboard in your current keyboard to use it.</string>
   <string name="user_languages">Enabled keyboard languages</string>
   <string name="add_language">Add language</string>
