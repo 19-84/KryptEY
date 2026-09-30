@@ -127,9 +127,21 @@ public class AciphertextAddThatPinsAknownKeyIsWarnedAboutTest {
    * reproduces the honest case.
    */
   private MessageEnvelope ciphertextFrom(final String underName) throws Exception {
-    final SignalProtocolAddress victimAddress = ProtocolAddresses.of(
-        victim.getSignalProtocolAddress().getName(), victim.getDeviceId());
-    final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
+    return ciphertextFrom(victim.getSignalProtocolAddress().getName(), underName);
+  }
+
+  /**
+   * As above, but the relay has first delivered our invite to the peer under
+   * {@code ourNameAsThePeerHoldsIt}. If that name does not parse as a service ID, the peer's opening
+   * message carries no addresses and libsignal accepts it under any name.
+   */
+  private MessageEnvelope ciphertextFrom(final String ourNameAsThePeerHoldsIt,
+      final String underName) throws Exception {
+    final SignalProtocolAddress victimAddress =
+        ProtocolAddresses.of(ourNameAsThePeerHoldsIt, victim.getDeviceId());
+    final MessageEnvelope invite = EnvelopeCodec.fromWire(SignalProtocolMain.exportOwnKeyBundle());
+    invite.setSignalProtocolAddressName(ourNameAsThePeerHoldsIt);
+    final String victimBundle = EnvelopeCodec.toWire(invite);
 
     SignalProtocolMain.getInstance().setAccount(peer);
     assertTrue("precondition: the peer must be able to open a session with us",
@@ -208,5 +220,33 @@ public class AciphertextAddThatPinsAknownKeyIsWarnedAboutTest {
         banner().contains("same key already saved"));
     assertTrue("...and it must say the comparison will not separate them: " + banner(),
         banner().contains("will NOT tell them apart"));
+  }
+
+  /**
+   * The second relay route, which libsignal's address binding does not see at all.
+   *
+   * <p>The relay renames our invite to {@code "{" + uuid + "}"} on its way to the peer. That does not
+   * parse as a service ID, so the peer's opening message carries no addresses, and libsignal accepts
+   * it for backward compatibility under whatever name the relay then writes - here a fresh UUID,
+   * which a message carrying addresses could never pass. The key inside is still the peer's, so the
+   * same warning must fire.
+   */
+  @Test
+  public void akeyPinnedThroughAstrippedBindingIsWarnedAboutToo() throws Exception {
+    typeTheName("Bob", "Jones");
+    strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
+    assertTrue("precondition: the peer must be pinned", victim.getContactList().size() >= 1);
+
+    typeTheName("Bobby", "J");
+    final String fresh = java.util.UUID.randomUUID().toString();
+    strip.addContactForTest(
+        ciphertextFrom("{" + victim.getSignalProtocolAddress().getName() + "}", fresh));
+    assertTrue("precondition: libsignal must have ACCEPTED the message under a fresh UUID and pinned "
+            + "the peer's key there - if it refused, the binding was not stripped and the warning "
+            + "below is absent for the wrong reason",
+        SignalProtocolMain.hasPinnedKey(ProtocolAddresses.of(fresh, peerAddress.getDeviceId())));
+
+    assertTrue("the same key pinned at a second address must be said out loud, whichever route put "
+            + "it there: " + banner(), banner().contains("same key already saved"));
   }
 }

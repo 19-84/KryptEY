@@ -8781,6 +8781,8 @@ measured on 0.103.0:
   as a service ID, e.g. `{uuid}`. The app accepts any printable name, so the peer builds its session
   under it and sends opening messages with no addresses. libsignal accepts those for backward
   compatibility, so they can then be relabelled to a fresh UUID. The victim accepts that relabel.
+  `akeyPinnedThroughAstrippedBindingIsWarnedAboutToo` drives this route. Control: the same relabel
+  without the renamed invite is refused by libsignal, and that case's precondition fails.
 
 My first draft said relay relabelling was closed, and the second said it was "mostly" closed.
 Neither is true. What protects the user is the app's own pinning, warnings and per-address
@@ -8819,14 +8821,23 @@ bites.
 ### Not established
 
 **A decision, not a gap: closing relay relabelling in the app.** libsignal leaves both relay routes
-open. The app could close them itself:
-- refuse invite names that are not canonical lowercase UUIDs, so a peer always holds a name that
-  parses and always sends addresses;
-- fold UUID-shaped names to lowercase on receipt, so a case variant lands on the genuine row.
+open (the second is held by `akeyPinnedThroughAstrippedBindingIsWarnedAboutToo`). Options:
+- **Refuse invite names that are not canonical lowercase UUIDs.** This runs on the side that
+  ACCEPTS the invite, so it protects a victim only once their peer has upgraded. A peer still on an
+  older build keeps sending unbound messages.
+- **Fold UUID-shaped names to lowercase on receipt**, so a case variant lands on the genuine row.
+- **Refuse a received PreKey message that carries no addresses.** This is victim-side and closes
+  route 2 for the upgraded user alone, but it cuts off every peer on a build older than libsignal
+  0.91.
+- **Cover the envelope name with the app's own bundle signature.** This is a wire-format change;
+  older verifiers refuse the new invites.
 
-The cost is compatibility. Every test that uses a non-UUID name would change, and any stored
-contact whose name is not a lowercase UUID would be locked out. The pinned-elsewhere and rejection
-warnings already cover both routes today, which is why this is left to the owner.
+The cost to real users is smaller than it looks. Every account name this app has ever generated,
+back to the original 0.1.5, is `UUID.randomUUID().toString()`, which is lowercase and hyphenated,
+so a name check would lock out only rows a relay created. The real costs are the tests (about 33
+test files build addresses from non-UUID literals like `"peer-uuid"`) and, for the last two
+options, older peers. The pinned-elsewhere and rejection warnings already cover both routes, which
+is why this is left to the owner.
 
 **Whether sessions from the published app (0.1.5, libsignal 0.21.1) survive.** That is the population
 that exists. The legacy fixture (`fixtures/protocol-store.json`) holds no sessions, so neither
