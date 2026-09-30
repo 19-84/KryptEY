@@ -1,5 +1,38 @@
 apply plugin: 'com.android.application'
 
+// The android-all jars Robolectric runs the suite against, one per SDK the tests use: the @Config
+// levels (26-28 singly, and {26, 28, 30, 31, 33, 34, 35} in StripCarriedStateRound4Test/Round5Test), plus 35 as
+// the default because it is targetSdk. The versions are the ones Robolectric 4.17's
+// DefaultSdkProvider asks for; see the offline-mode note in testOptions. A test pinned to an SDK not
+// listed here fails with "Path is not a file: .../android-all-instrumented-<version>.jar", which
+// names the exact entry to add.
+//
+// One configuration per SDK, not one for all of them: they are versions of the same module, and
+// inside a single configuration Gradle's conflict resolution keeps only the highest - which left
+// three of the first four SDKs without a jar on the first attempt.
+def robolectricAndroidAllJars = [
+    '26': '8.0.0_r4-robolectric-r1-i7',
+    '27': '8.1.0-robolectric-4611349-i7',
+    '28': '9-robolectric-4913185-2-i7',
+    '30': '11-robolectric-6757853-i7',
+    '31': '12-robolectric-7732740-i7',
+    '33': '13-robolectric-9030017-i7',
+    '34': '14-robolectric-10818077-i7',
+    '35': '15-robolectric-13954326-i7',
+]
+robolectricAndroidAllJars.each { sdk, version ->
+    configurations.create("robolectricAndroidAll${sdk}") {
+        canBeConsumed = false
+        transitive = false
+    }
+    dependencies.add("robolectricAndroidAll${sdk}", "org.robolectric:android-all-instrumented:${version}")
+}
+
+tasks.register('syncRobolectricAndroidAll', Sync) {
+    robolectricAndroidAllJars.keySet().each { sdk -> from configurations.getByName("robolectricAndroidAll${sdk}") }
+    into layout.buildDirectory.dir('robolectric-android-all')
+}
+
 android {
     namespace 'com.amnesica.kryptey.inputmethod'
     compileSdk 35
@@ -230,6 +263,26 @@ android {
                 systemProperty 'kryptey.writeFixtures',
                         System.getProperty('kryptey.writeFixtures', 'false')
 
+                // Robolectric runs offline, from android-all jars Gradle resolved and verified.
+                //
+                // Left alone, Robolectric downloads android-all-instrumented (~100-200 MB per SDK)
+                // from Maven Central at test time, through its own fetcher, into ~/.m2/repository -
+                // outside Gradle's resolution and so outside verification-metadata.xml. A jar already
+                // there is used as found, without even Robolectric's own checksum check. Those jars
+                // are the Android framework the whole suite executes against, in the same CI job that
+                // builds the release APK, and CI used to cache ~/.m2 between runs. REVIEW-SETTLED.md
+                // recorded the fetch as "not there"; re-measured on 2026-09-29 with --network none,
+                // every Robolectric class failed with UnknownHostException under both 4.16.1 and 4.17.
+                //
+                // Offline mode makes a missing jar a loud failure instead of a silent download, so a
+                // Robolectric bump that moves an SDK's build id fails here until the pin below moves
+                // with it and its checksum is recorded.
+                dependsOn 'syncRobolectricAndroidAll'
+                inputs.files(tasks.named('syncRobolectricAndroidAll'))
+                systemProperty 'robolectric.offline', 'true'
+                systemProperty 'robolectric.dependency.dir',
+                        layout.buildDirectory.dir('robolectric-android-all').get().asFile.absolutePath
+
                 // -Dkryptey.isolateClasses=true --rerun-tasks runs every test class in a fresh JVM.
                 //
                 // This suite shares a singleton with static test seams - testIsRunning,
@@ -254,7 +307,7 @@ android {
 dependencies {
     // Jackson versions are aligned by the BOM so databind/core/annotations/jsr310
     // can never drift apart. Bumping the BOM bumps the whole family.
-    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.2')
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.3')
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
@@ -264,7 +317,7 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     // Runs the real SharedPreferences implementation on the JVM, so the storage layer that actually
     // touches Android APIs is covered by tests that execute rather than tests that only compile.
-    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'org.robolectric:robolectric:4.17'
 
     // Instrumentation tests. These are the ONLY way to exercise AndroidKeystoreCryptoBox: a desktop
     // JCE key and a Keystore key have materially different semantics (a Keystore key rejects a

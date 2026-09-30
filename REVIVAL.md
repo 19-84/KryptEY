@@ -33,7 +33,7 @@ claimed for weeks: `FixtureGenerator` is a tool rather than coverage and gives u
 `Assume.assumeTrue`, and three assertions in `StripCarriedStateRound5Test` are `@Ignore`d as
 deliberate rejections — one vacuous, two superseded by `r0`. All four are now listed in
 `IgnoredTestsAreAccountedForTest`, so a fifth fails the build until somebody writes down what it is), all passing, and green from an empty cache rather than only warm. Debug
-and release both assemble; dependency verification pins 386 artifacts by SHA-256.
+and release both assemble; dependency verification pins 280 artifacts by SHA-256.
 
 ---
 
@@ -218,6 +218,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [Checked this round and clean](#checked-this-round-and-clean)
 - [A test that could not reach its own branch, and a device test in the wrong state](#a-test-that-could-not-reach-its-own-branch-and-a-device-test-in-the-wrong-state)
 - [A chat with a character limit can now carry an invite](#a-chat-with-a-character-limit-can-now-carry-an-invite)
+- [The hole was there after all, and it is closed now](#the-hole-was-there-after-all-and-it-is-closed-now)
 
 ---
 ## What was done, by phase
@@ -227,10 +228,12 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 `jcenter()` was the only non-Google repository and has been decommissioned, so the project could not
 resolve `libsignal` at all. Replaced with `mavenCentral()` under `dependencyResolutionManagement`.
 
-- AGP 7.3.1 → **9.3.1**, Gradle 7.4 → **9.7.1**, Java 11 → **17**, compileSdk 33 → **35**
-- Jackson 2.14.1 → **2.22.2** via BOM; `protobuf-javalite` **deleted** (a HIGH CVE carried for one
+- AGP 7.3.1 → **9.4.1**, Gradle 7.4 → **9.8.0**, Java 11 → **17**, compileSdk 33 → **35**
+- Jackson 2.14.1 → **2.22.3** via BOM; `protobuf-javalite` **deleted** (a HIGH CVE carried for one
   call that nothing invoked)
-- `gradle/verification-metadata.xml` — 386 components pinned by SHA-256, enforced in CI
+- `gradle/verification-metadata.xml` — 280 components pinned by SHA-256, enforced in CI (386 until the
+  AGP 9.4.1 bump, which regenerated the file from empty and dropped the stale AGP 9.3 toolchain entries,
+  then gained the eight Robolectric android-all jars that offline mode reads)
 - CI actions pinned to commit SHAs, not mutable tags
 
 **targetSdk was 33; it is now 35.** This paragraph used to say it stays at 33, on the reasoning that
@@ -1256,12 +1259,12 @@ speaks for least, because it changes what the build has to *do* rather than only
 previous cold run was triggered the same way by two commits that changed the build's
 work rather than its inputs.
 The run before it covered `clean assembleDebug` the same way (39 of 39 tasks executed, zero
-verification failures across all 386 pinned components).
+verification failures across all 386 then-pinned components).
 
 **A cold cache is not a fresh clone, and until now only the first had been tested.** Every cold run
 on this branch mounts the working tree — the same directory, with its build outputs and anything
 untracked or ignored sitting in it. Such a run proves the *dependency* story (an empty Gradle volume,
-verification on, 386 components fetched and checked) and says nothing about whether the tracked
+verification on, the 386 then-pinned components fetched and checked) and says nothing about whether the tracked
 content is sufficient. A build quietly depending on an ignored file would pass every one of them.
 
 Tested when the strip gate was written, and again once the build image gained an NDK and the gate was
@@ -3544,7 +3547,7 @@ Recorded so the next round does not spend itself re-deriving them.
   be made quietly.
 
 - **The Gradle wrapper jar is reproducible from the pinned distribution.** Dependency verification
-  pins 386 components by SHA-256, and every one of those checks happens *inside* a build that
+  pins 280 components by SHA-256, and every one of those checks happens *inside* a build that
   `gradle-wrapper.jar` has already started. That jar is 47 KB of executable code, it is committed to
   this repository, this branch modified it, and nothing covered it — a tampered wrapper could ignore
   `distributionSha256Sum` entirely, since it is the thing that enforces it.
@@ -3554,6 +3557,11 @@ Recorded so the next round does not spend itself re-deriving them.
   `7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d`, 47505 bytes. So the trust chain
   closes on itself: the properties file pins the distribution by hash, and the distribution
   reproduces the jar that fetches it.
+
+  Repeated for the move to Gradle 9.8.0 (2026-09-29): `wrapper` run under the 9.8.0 distribution
+  emits `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5`, which is also the digest
+  Gradle publishes separately at `gradle-9.8.0-wrapper.jar.sha256`. `TheWrapperThatRunsEverythingIsPinnedTest`
+  pins the new value.
 
   Two weaker checks were run first and are recorded because neither is sufficient. The jar's
   *structure* is clean — 34 entries, only `org/gradle/{cli,wrapper,internal/file,util/internal}`,
@@ -3630,7 +3638,7 @@ Recorded so the next round does not spend itself re-deriving them.
   No test: a test asserting a fixed list of dead branches records the status quo and fires only when
   someone adds a ninth, which is not worth a file.
 
-- **The numbers in this document**, audited against the tree: 386 pinned components, `KeyResolutionTest`
+- **The numbers in this document**, audited against the tree: 386 then-pinned components (280 as of 2026-09-29), `KeyResolutionTest`
   at 10 tests, the instrumentation `@Test` count (11 when audited, 14 since — the count is dated,
   and `InstrumentationTestsCleanUpTheKeystoreTest` now floors it), the 4096-character invite
   threshold, and the
@@ -7706,7 +7714,7 @@ that the refusal says what happened and does not carry the name — which is wha
 the release APK. The reasoning was sound, the mechanism is real for the versions it describes, and it
 does not happen here — measured.**
 
-Dependency verification pins 386 artifacts. Older Robolectric fetches a ~100 MB `android-all` jar at
+Dependency verification covered the 386 then-pinned artifacts. Older Robolectric fetches a ~100 MB `android-all` jar at
 test time into `~/.m2`, outside Gradle's resolution and therefore outside verification, and that jar
 executes arbitrary code in the same job that produces the release artifact. The reviewer did not
 invent the mechanism: **this repository's own CI comment asserted it**, which is where the finding
@@ -7726,6 +7734,9 @@ produced a finding. A stale note does not merely misinform a reader — it is *r
 next person to look, including a reviewer whose whole job is to be suspicious. The cost is not the
 minute it takes to write; it is a round spent confirming something the codebase asserted about
 itself.
+
+*Overturned on 2026-09-29.* The fetch happens on the current tree, under 4.16.1 as well as 4.17. See
+"The hole was there after all" at the end of this document.
 
 ## The instruction that vanished when it was needed
 
@@ -8621,3 +8632,54 @@ eleven is every run.
 BACKLOG.md; splitting does not touch it. Nothing detects the platform's limit, and nothing should:
 the app cannot see which app holds the cursor with any reliability, and a wrong guess fails on the
 peer's side.
+
+## The hole was there after all, and it is closed now
+
+**"A hole that was not there" was wrong on the current tree. Robolectric downloaded its Android
+framework jars at test time, unverified, in the job that builds the release APK. It now reads them
+from jars Gradle resolved and verification pins.**
+
+Found while bumping Robolectric 4.16.1 → 4.17 on 2026-09-29. The review round for that bump asked
+for the recorded measurement to be repeated rather than relabelled: the full suite, `--rerun-tasks`,
+in a container with `--network none`. Every Robolectric class failed with `Failed to fetch maven
+artifact org.robolectric:android-all-instrumented:15-robolectric-13954326-i7`, caused by
+`UnknownHostException`. The first thought was that 4.17 had brought the fetch back. The control
+refuted that: the same run with 4.16.1 swapped back in fails the same way. So the hole predates the
+bump.
+
+The original measurement, taken on 2026-08-28, was already wrong when it was taken. My first draft
+of this section blamed the targetSdk 33 → 35 raise four days later. A second review round refuted
+that. The tree at `eeb8f09` already pinned `@Config(sdk = 26 / 27 / 28 / 35)` under Robolectric, on
+top of a default of 33, so it needed five `android-all` jars whatever targetSdk was. CI confirms the
+jars were in use: run 33227336542, the same night, restored 583 MB from
+`~/.m2/repository/org/robolectric`. Why the recorded `--network none` run passed is not
+established. Either the network was not really off, or the tests did not really run. What is
+established is that the entry was never true, and that "measured" was carried forward as settled.
+
+The fix is Robolectric's offline mode. `app/build.gradle` declares one configuration per SDK the
+suite uses: the @Config levels 26, 27, 28, 30, 31, 33 and 34, plus 35 as the default. Each resolves
+`org.robolectric:android-all-instrumented` at the version Robolectric 4.17 asks for. A `Sync` task
+copies them to `app/build/robolectric-android-all`, and every unit-test task runs with
+`robolectric.offline=true` and `robolectric.dependency.dir` pointing there. They have to be separate
+configurations. The first attempt put all of them in one, and Gradle's conflict resolution kept only
+the highest version of what it sees as a single module, so three of the four SDKs then declared had no jar.
+
+The eight jars are in `verification-metadata.xml`, and each also matches Maven Central's published
+`.sha1`. With the network off, the suite now runs to completion. A future Robolectric that moves an
+SDK's build id fails loudly with "Path is not a file: …/android-all-instrumented-<version>.jar",
+which names the entry to change. It no longer downloads a replacement in silence.
+
+`RobolectricRunsOfflineTest` holds it from inside the test JVM, which is the only place the property
+is observable. Deleting the offline property does not make a single Robolectric test fail while the
+network is up, because the fetch just comes back quietly.
+
+The hole was wider than a per-run download, and the same second round found why. Robolectric fetches
+into a `/tmp` staging directory, which is the path in the `--network none` error, and then moves the
+jar into `~/.m2/repository`. A jar it finds already there is used as found, without even its own
+same-origin SHA-512 check. The CI step that cached `~/.m2/repository/org/robolectric` was live, not
+inert: run 33787679782 restored 952 MB. So unverified framework jars persisted from run to run, keyed
+only on `app/build.gradle`, in the job that builds the release APK. My first draft called that cache
+a directory Robolectric never wrote to. I had read the ephemeral `/root/.m2` of a `--rm` container
+as if it were CI's. The step is gone, and the repository holds no Actions cache entries now.
+
+The entry is out of REVIEW-SETTLED.md, which lists refuted claims, and this one was not refuted.

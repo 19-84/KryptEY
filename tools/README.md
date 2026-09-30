@@ -22,10 +22,10 @@ tools/build-in-docker testDebugUnitTest
   time, and everyone who touched this repo worked around it by relabelling a copy of the 35.0.0
   directory. That worked, and it meant nobody was building with the tools AGP actually selects.
   Both are installed now so no relabelling is needed.
-- **Gradle 9.7.1**, from `gradle/wrapper/gradle-wrapper.properties`, fetched by the wrapper. The
+- **Gradle 9.8.0**, from `gradle/wrapper/gradle-wrapper.properties`, fetched by the wrapper. The
   distribution is pinned by `distributionSha256Sum`, and the committed `gradle-wrapper.jar` - which
   runs *before* any of that verification applies - is reproducible from that pinned distribution:
-  running `gradle wrapper --gradle-version 9.7.1` with the distribution's own binary emits a
+  running `gradle wrapper --gradle-version 9.8.0` with the distribution's own binary emits a
   byte-identical jar.
 - **NDK 28.2.13676358**, for one reason: `llvm-strip`. Without it AGP cannot strip native libraries,
   only *warns* that it could not, and ships `libsignal_jni.so` whole - 64 MB of DWARF against a
@@ -41,7 +41,7 @@ tools/build-in-docker testDebugUnitTest
 
 ## Dependency verification
 
-`gradle/verification-metadata.xml` pins the SHA-256 of every artifact - 386 components. A build
+`gradle/verification-metadata.xml` pins the SHA-256 of every artifact - 280 components. A build
 whose checksums do not match fails rather than warning.
 
 Verification passing on YOUR machine is weaker than it looks, because a warm Gradle cache never

@@ -34,7 +34,9 @@ import java.util.Set;
  * <p>So the theme here is: exercise the real call path, on a real Keystore key, and assert the
  * things that only differ on hardware.
  *
- * <p>Run with: {@code ./gradlew connectedDebugAndroidTest}
+ * <p>Run with: {@code tools/test-on-emulator} (see tools/README.md). Not
+ * {@code connectedDebugAndroidTest}: that goes through AGP's test platform, and
+ * verification-metadata.xml was last regenerated without it, so its artifacts are not pinned.
  */
 @RunWith(AndroidJUnit4.class)
 public class AndroidKeystoreCryptoBoxTest {

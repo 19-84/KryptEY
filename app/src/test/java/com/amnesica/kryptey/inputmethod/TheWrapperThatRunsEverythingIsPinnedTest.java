@@ -49,9 +49,14 @@ public class TheWrapperThatRunsEverythingIsPinnedTest {
    *
    * <p>Changed by a legitimate wrapper upgrade, which is exactly when someone should have to come
    * here, run {@code sha256sum} themselves and write the new value down.
+   *
+   * <p>Last changed for Gradle 9.7.1 to 9.8.0. The jar was emitted by running {@code wrapper} under
+   * the 9.8.0 distribution itself (pinned by {@code distributionSha256Sum}), and its digest matches
+   * the one Gradle publishes out of band at
+   * services.gradle.org/distributions/gradle-9.8.0-wrapper.jar.sha256.
    */
   private static final String PINNED =
-      "7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d";
+      "238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5";
 
   private static Path repoFile(final String name) {
     for (final String candidate : new String[] {name, "../" + name}) {

@@ -34,26 +34,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
 
-      # Kept, and no longer true of the pinned version - which matters, because a review round read
-      # this comment and reported that those jars run unverified in the job that builds the release
-      # APK. The reasoning was right about older Robolectric: an android-all jar fetched at test time
-      # lands outside Gradle's resolution and so outside dependency verification.
-      #
-      # Measured against Robolectric 4.16.1 as pinned here: the suite runs to completion with
-      # --rerun-tasks in a container started with --network none, no android-all jar exists anywhere
-      # in the image before or after, and no ~/.m2 is created at all. Its Android runtime comes from
-      # nativeruntime and shadows-framework, both pinned and verified.
-      #
-      # The step stays because a future Robolectric could reintroduce the fetch, and because a cache
-      # that hits nothing costs nothing. If it ever starts hitting, this comment is where to check
-      # whether what it caches is verified.
-      - name: Cache Robolectric android-all jars
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.m2/repository/org/robolectric
-          key: robolectric-${{ runner.os }}-${{ hashFiles('app/build.gradle') }}
+      # No Robolectric cache step. One used to cache ~/.m2/repository/org/robolectric, and it was
+      # live: runs restored 583 MB to 952 MB of android-all jars that Robolectric had downloaded
+      # outside dependency verification, keyed only on app/build.gradle. Robolectric uses a jar it
+      # finds there without checking it, so a poisoned entry would have been trusted outright, in
+      # the job that builds the release APK. The suite now runs Robolectric in offline mode against
+      # jars Gradle resolves and verification-metadata.xml pins (app/build.gradle,
+      # RobolectricRunsOfflineTest), so there is nothing to download and nothing to cache. If
+      # Robolectric ever needs a jar that is not pinned, the Unit tests step fails naming it. Do not
+      # answer that failure by adding a cache back.
 
-      # Dependency verification is enforced (gradle/verification-metadata.xml pins 386 artifacts
+      # Dependency verification is enforced (gradle/verification-metadata.xml pins 280 artifacts
       # by SHA-256). Deliberately NOT disabled here - CI is where a substituted artifact should be
       # caught, so a verification failure must fail the build.
       - name: Unit tests
