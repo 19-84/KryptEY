@@ -19,7 +19,8 @@ base key while the message carrying it failed, and every later copy — all carr
 — would be refused as a replay.
 *Measured against libsignal 0.86.5, two corruptions (a byte in the body; a byte in the trailing MAC,
 which parses and fails authentication): no base key recorded, no pre-key marked used, genuine copy
-opens.* The store callbacks are not reached until the message verifies.
+opens.* Re-measured against libsignal 0.103.0 on 2026-09-30, by the same test, after libsignal
+rewrote its session layer in between: it still holds. The store callbacks are not reached until the message verifies.
 Held by `AcorruptedFirstMessageDoesNotPoisonTheGenuineOneTest`, including a replay-refusal floor so
 the test cannot pass against a build with the guard deleted. **A libsignal upgrade could overturn
 this** — that is what the test is for.
@@ -32,6 +33,7 @@ The decoder accepts a signature field of 1..255 bytes and the verifier checks on
 non-empty, so an attacker-chosen length reaches `ECPublicKey.verifySignature` with only `IOException`
 caught on that path. The reasoning is right about the reach; the library does not throw.
 *Measured against libsignal 0.86.5: signature lengths 1, 63, 65, 100 and 255 all return `false`.*
+Re-measured against libsignal 0.103.0 on 2026-09-30 by the same test: still `false`, still no throw.
 Held by `AwrongLengthSignatureIsRefusedRatherThanThrownTest`.
 
 **Removing the screen lock destroys the storage key, silently and unrecoverably.**

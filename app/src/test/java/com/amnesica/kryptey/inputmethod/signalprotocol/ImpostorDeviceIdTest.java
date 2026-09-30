@@ -68,6 +68,11 @@ public class ImpostorDeviceIdTest {
     // codec accepts both without complaint.
     impostorAddress = ProtocolAddresses.of(peerName, (realPeer.getDeviceId() % 127) + 1);
     assertNotEquals("fixture: the two addresses must differ", peerAddress, impostorAddress);
+    // The impostor's own client calls itself by that address. Relabelling the envelope afterwards
+    // no longer works - libsignal binds both addresses into a PreKey message's MAC - but the sender
+    // chooses its own address, so this is the attacker that remains. See SpeakingFrom.
+    impostor = SpeakingFrom.address(impostor, impostorAddress.getName(),
+        impostorAddress.getDeviceId());
 
     // --- the genuine peer is pinned, and holds a session in both directions ---
     activate(realPeer);

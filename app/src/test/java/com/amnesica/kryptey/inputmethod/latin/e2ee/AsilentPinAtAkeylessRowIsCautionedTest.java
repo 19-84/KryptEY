@@ -13,6 +13,7 @@ import com.amnesica.kryptey.inputmethod.R;
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SpeakingFrom;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.helper.StorageHelper;
@@ -79,6 +80,9 @@ public class AsilentPinAtAkeylessRowIsCautionedTest {
     SignalProtocolMain.initialize(null);
     impostor = SignalProtocolMain.getInstance().getAccount();
     impostor.setMessageLogLoader(ArrayList::new);
+    // Its client calls itself by Alice's address - the relabel below no longer suffices on its own,
+    // since libsignal binds both addresses into a PreKey message's MAC. See SpeakingFrom.
+    impostor = SpeakingFrom.address(impostor, aliceAddress.getName(), aliceAddress.getDeviceId());
 
     SignalProtocolMain.initialize(null);
     final Account victim = SignalProtocolMain.getInstance().getAccount();

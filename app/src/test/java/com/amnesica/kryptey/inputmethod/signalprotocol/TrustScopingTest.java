@@ -487,8 +487,8 @@ public class TrustScopingTest {
    *
    * <p>Pinned as an interop guard rather than as an assertion about our code. The obvious use for
    * that argument is the one thing it cannot do: bump it to force everyone to re-compare after a
-   * derivation change. Measured against libsignal 0.86.5, versions 0, 1, 2, 3 and 99 all produce
-   * byte-identical digits.
+   * derivation change. Measured against libsignal 0.86.5 and again on 0.103.0, versions 0, 1, 2, 3
+   * and 99 all produce byte-identical digits.
    *
    * <p>If a future libsignal makes it meaningful, this fails - which is exactly when someone needs
    * to know, because at that moment the constant in {@code createFingerprint} starts deciding what

@@ -909,8 +909,8 @@ public class SignalProtocolMain {
     // transmitted. It does change the digits shown for existing contacts once, so anyone who
     // already compared has to compare again.
     //
-    // This argument is INERT in libsignal 0.86.5. Measured: versions 0, 1, 2, 3 and 99 all produce
-    // byte-identical digits. It is passed because the API demands it, not because it does anything.
+    // This argument is INERT in libsignal 0.86.5 and still in 0.103.0. Measured: versions 0, 1, 2, 3
+    // and 99 all produce byte-identical digits (TrustScopingTest holds it; re-run on 0.103.0). It is passed because the API demands it, not because it does anything.
     //
     // Worth stating plainly, because the obvious use for it is exactly the thing it cannot do: a
     // maintainer who changes a key-derivation detail here and bumps this number to force everyone
@@ -1995,7 +1995,7 @@ public class SignalProtocolMain {
         messageEnvelope = getPreKeyResponseMessage();
       }
 
-      final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
+      final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), localProtocolAddress(), signalProtocolAddress);
       final CiphertextMessage ciphertextMessage;
       try {
         ciphertextMessage = sessionCipher.encrypt(unencryptedMessage.getBytes());
@@ -2177,7 +2177,7 @@ public class SignalProtocolMain {
     // operation that reads it, not only by the one that writes it.
     mLastSessionWriteReachedDisk = true;
 
-    final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), signalProtocolAddress);
+    final SessionCipher sessionCipher = new SessionCipher(mAccount.getSignalProtocolStore(), localProtocolAddress(), signalProtocolAddress);
 
     // Process an attached bundle whenever there IS one - not only when a ciphertext accompanies it.
     //
@@ -2712,7 +2712,7 @@ public class SignalProtocolMain {
    */
   private boolean buildSession(final PreKeyBundle preKeyBundle, final SignalProtocolAddress recipientSignalProtocolAddress) {
     try {
-      SessionBuilder sessionBuilder = new SessionBuilder(mAccount.getSignalProtocolStore(), recipientSignalProtocolAddress);
+      SessionBuilder sessionBuilder = new SessionBuilder(mAccount.getSignalProtocolStore(), recipientSignalProtocolAddress, localProtocolAddress());
       sessionBuilder.process(preKeyBundle);
       // Recorded, not discarded. This was the last member of the write family whose result went
       // nowhere: creation, deletion, rejection, verification, the chat log and both message
@@ -3005,6 +3005,31 @@ public class SignalProtocolMain {
     // The third flag of this shape, and the one that was missed when the other two were listed.
     sInstance.mLastRejectionReachedDisk = true;
     sInstance.mLastContactWriteReachedDisk = true;
+  }
+
+  /**
+   * This account's address as its peers hold it, which libsignal binds into a new session's MAC.
+   *
+   * <p>From libsignal 0.91 a 1:1 encrypt, decrypt or session build takes the local address. When
+   * both names parse as Signal service IDs - ours are bare UUIDs, which do - every PreKey message (a
+   * session's opening messages, sent until the peer first replies) carries the sender's and
+   * recipient's (name, device id) inside its MAC, and the receiver checks them against the addresses
+   * it holds. Ordinary messages on an acknowledged session carry none (libsignal's message_encrypt
+   * passes no address on that branch). So this must be byte-for-byte the address the PEER constructs
+   * for us, or no new session can start: the peer's first decrypt fails.
+   *
+   * <p>The peer builds it as {@code ProtocolAddresses.of(envelope name, envelope device id)} (see
+   * {@code extractContactFromEnvelope}). Message envelopes carry {@code mAccount.getName()} and
+   * {@code getDeviceId()}; bundle envelopes, including the one a signed-pre-key rotation attaches to
+   * a message, carry {@code getSignalProtocolAddress()}'s name and id. Those are the same pair on
+   * every path today: an Account is built either by initializeProtocol, from one generated name and
+   * id, or by StorageHelper, which takes the id from the stored address after the deserializer has
+   * folded it. This folds the message envelope's pair, so it matches the peer's reconstruction
+   * whichever envelope they read. If Account ever keeps a raw id apart from its address, the two
+   * envelope kinds split, and so does this.
+   */
+  private SignalProtocolAddress localProtocolAddress() {
+    return ProtocolAddresses.of(mAccount.getName(), mAccount.getDeviceId());
   }
 
   // needed for testing only

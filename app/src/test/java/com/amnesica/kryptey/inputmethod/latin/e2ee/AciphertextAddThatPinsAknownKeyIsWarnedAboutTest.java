@@ -41,9 +41,13 @@ import java.util.ArrayList;
  * warning this branch records as re-derived nowhere - so on this arm, a warning that is not raised
  * is not merely delayed, it never appears at all.
  *
- * <p><b>What the relay spends to reach it: one relabelled envelope.</b> The sender name and device
- * id are unsigned plaintext outside the bundle signature, so a relay can take a genuine
- * bundle-less message and present it under a fresh address. The key inside is the peer's real one,
+ * <p><b>What the relay spends to reach it: one relabelled envelope, spelled differently.</b> Until
+ * libsignal 0.91 the sender name and device id were unauthenticated, and a relay could present a
+ * genuine bundle-less message under any address. Now a PreKey message binds both addresses into its
+ * MAC - but as the 16 bytes of the UUID, while this app compares names as strings. So the peer's own
+ * UUID in upper case passes libsignal's check (same bytes) and matches none of the app's rows (a
+ * different string): a second row, holding the peer's real key. A different UUID is refused.
+ * Measured on 0.103.0: the upper-cased relabel decrypts, a fresh UUID does not. The key inside is the peer's real one,
  * which is exactly what makes this the fail-OPEN case the raiser's own comment describes: the pin
  * is live, the safety number of the new row matches the peer's, and comparing numbers by voice
  * SUCCEEDS. Only this sentence tells the user the two rows carry one key.
@@ -115,9 +119,9 @@ public class AciphertextAddThatPinsAknownKeyIsWarnedAboutTest {
   /**
    * A genuine bundle-less PreKey message from the peer, presented under {@code underName}.
    *
-   * <p>Relabelling is the whole attack and it costs nothing: the envelope's sender name and device
-   * id sit outside the bundle signature, so the same genuine ciphertext can be presented under any
-   * address. Passing the peer's real name reproduces the honest case.
+   * <p>The relay rewrites only the envelope's name. libsignal accepts it only if the name is the
+   * sender's own UUID in another spelling; see the class note. Passing the peer's real name
+   * reproduces the honest case.
    */
   private MessageEnvelope ciphertextFrom(final String underName) throws Exception {
     final SignalProtocolAddress victimAddress = ProtocolAddresses.of(
@@ -174,10 +178,11 @@ public class AciphertextAddThatPinsAknownKeyIsWarnedAboutTest {
     strip.addContactForTest(EnvelopeCodec.fromWire(genuineBundle));
     assertTrue("precondition: the peer must be pinned", victim.getContactList().size() >= 1);
 
-    // The relay presents the peer's own genuine message under an address of its choosing. The key
-    // inside is still K, so this pins K a second time.
+    // The relay presents the peer's own genuine message under the peer's UUID in upper case: the
+    // same service id to libsignal, a different address to this app. The key inside is still K, so
+    // this pins K a second time.
     typeTheName("Bobby", "J");
-    strip.addContactForTest(ciphertextFrom("relay-minted-address"));
+    strip.addContactForTest(ciphertextFrom(peerAddress.getName().toUpperCase(java.util.Locale.ROOT)));
 
     final ArrayList<Contact> contacts = victim.getContactList();
     assertTrue("precondition: the relabelled message must have created a SECOND row - if it did "

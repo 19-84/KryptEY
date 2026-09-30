@@ -29,7 +29,8 @@ tools/build-in-docker testDebugUnitTest
   byte-identical jar.
 - **NDK 28.2.13676358**, for one reason: `llvm-strip`. Without it AGP cannot strip native libraries,
   only *warns* that it could not, and ships `libsignal_jni.so` whole - 64 MB of DWARF against a
-  4.7 MB `.text`, making the release APK 74 MB instead of 9.4 MB. `verifyReleaseNativesStripped`
+  4.7 MB `.text`, making the release APK 74 MB instead of 9.4 MB (measured on libsignal 0.86.5; on
+  0.103.0 the stripped arm64 APK is 12.6 MB). `verifyReleaseNativesStripped`
   fails the build if that happens, so this image is what makes `assembleRelease` produce something
   distributable.
 
@@ -41,7 +42,7 @@ tools/build-in-docker testDebugUnitTest
 
 ## Dependency verification
 
-`gradle/verification-metadata.xml` pins the SHA-256 of every artifact - 280 components. A build
+`gradle/verification-metadata.xml` pins the SHA-256 of every artifact - 286 components. A build
 whose checksums do not match fails rather than warning.
 
 Verification passing on YOUR machine is weaker than it looks, because a warm Gradle cache never

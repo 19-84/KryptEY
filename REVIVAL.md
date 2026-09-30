@@ -33,7 +33,7 @@ claimed for weeks: `FixtureGenerator` is a tool rather than coverage and gives u
 `Assume.assumeTrue`, and three assertions in `StripCarriedStateRound5Test` are `@Ignore`d as
 deliberate rejections — one vacuous, two superseded by `r0`. All four are now listed in
 `IgnoredTestsAreAccountedForTest`, so a fifth fails the build until somebody writes down what it is), all passing, and green from an empty cache rather than only warm. Debug
-and release both assemble; dependency verification pins 280 artifacts by SHA-256.
+and release both assemble; dependency verification pins 286 artifacts by SHA-256.
 
 ---
 
@@ -219,6 +219,7 @@ reordered, because moving this much prose to tidy it is how paragraphs get lost.
 - [A test that could not reach its own branch, and a device test in the wrong state](#a-test-that-could-not-reach-its-own-branch-and-a-device-test-in-the-wrong-state)
 - [A chat with a character limit can now carry an invite](#a-chat-with-a-character-limit-can-now-carry-an-invite)
 - [The hole was there after all, and it is closed now](#the-hole-was-there-after-all-and-it-is-closed-now)
+- [libsignal 0.86.5 to 0.103.0, and proof that users keep their conversations](#libsignal-0865-to-01030-and-proof-that-users-keep-their-conversations)
 
 ---
 ## What was done, by phase
@@ -231,7 +232,7 @@ resolve `libsignal` at all. Replaced with `mavenCentral()` under `dependencyReso
 - AGP 7.3.1 → **9.4.1**, Gradle 7.4 → **9.8.0**, Java 11 → **17**, compileSdk 33 → **35**
 - Jackson 2.14.1 → **2.22.3** via BOM; `protobuf-javalite` **deleted** (a HIGH CVE carried for one
   call that nothing invoked)
-- `gradle/verification-metadata.xml` — 280 components pinned by SHA-256, enforced in CI (386 until the
+- `gradle/verification-metadata.xml` — 286 components pinned by SHA-256, enforced in CI (386 until the
   AGP 9.4.1 bump, which regenerated the file from empty and dropped the stale AGP 9.3 toolchain entries,
   then gained the eight Robolectric android-all jars that offline mode reads)
 - CI actions pinned to commit SHAs, not mutable tags
@@ -3547,7 +3548,7 @@ Recorded so the next round does not spend itself re-deriving them.
   be made quietly.
 
 - **The Gradle wrapper jar is reproducible from the pinned distribution.** Dependency verification
-  pins 280 components by SHA-256, and every one of those checks happens *inside* a build that
+  pins 286 components by SHA-256, and every one of those checks happens *inside* a build that
   `gradle-wrapper.jar` has already started. That jar is 47 KB of executable code, it is committed to
   this repository, this branch modified it, and nothing covered it — a tampered wrapper could ignore
   `distributionSha256Sum` entirely, since it is the thing that enforces it.
@@ -3638,7 +3639,7 @@ Recorded so the next round does not spend itself re-deriving them.
   No test: a test asserting a fixed list of dead branches records the status quo and fires only when
   someone adds a ninth, which is not worth a file.
 
-- **The numbers in this document**, audited against the tree: 386 then-pinned components (280 as of 2026-09-29), `KeyResolutionTest`
+- **The numbers in this document**, audited against the tree: 386 then-pinned components (286 as of 2026-09-30), `KeyResolutionTest`
   at 10 tests, the instrumentation `@Test` count (11 when audited, 14 since — the count is dated,
   and `InstrumentationTestsCleanUpTheKeystoreTest` now floors it), the 4096-character invite
   threshold, and the
@@ -7285,7 +7286,7 @@ attempt, landing the user on the app's own delete-and-re-invite advice. The sibl
 Measured against libsignal 0.86.5, on two different corruptions — a flipped byte in the body, and a
 flipped byte in the trailing MAC, which parses cleanly and fails authentication — **the store is
 untouched**: no base key recorded, no one-time pre-key marked used, and the genuine copy opens
-normally afterwards. The callbacks are not reached until the message verifies.
+normally afterwards. (Re-measured on libsignal 0.103.0 by the same test: unchanged.) The callbacks are not reached until the message verifies.
 
 That is a property of **the library version**, not of this code, and it is exactly the kind of thing
 that changes under an upgrade without anyone noticing. So it is a test now, with the replay refusal
@@ -8683,3 +8684,142 @@ a directory Robolectric never wrote to. I had read the ephemeral `/root/.m2` of 
 as if it were CI's. The step is gone, and the repository holds no Actions cache entries now.
 
 The entry is out of REVIEW-SETTLED.md, which lists refuted claims, and this one was not refuted.
+
+## libsignal 0.86.5 to 0.103.0, and proof that users keep their conversations
+
+**Seventeen minor versions, a new repository, a rewritten session layer, and a change to what an
+opening message authenticates. A store written by 0.86.5 keeps every conversation under 0.103.0.
+That is shown on stores libsignal 0.86.5 itself wrote, not argued from release notes. Read the
+scope with care: no public release ever shipped 0.86.5. The published app is 0.1.5 on libsignal
+0.21.1, and whether ITS sessions survive is a separate question this section does not answer (see
+"Not established").**
+
+### Where libsignal comes from now
+
+Every release after 0.86.5 is published only at `build-artifacts.signal.org`; Maven Central stops
+there. `settings.gradle` adds that repository under `exclusiveContent`. It is the only source for
+`org.signal`, and it cannot serve anything else. The artifacts are SHA-256-pinned as before, and the
+pinned values were checked against Signal's signature first. The same RSA key,
+`2F6EB0E577CA8474A2F9E676BB7EE61AD5989884`, signed the 0.86.5 artifacts this branch pinned from
+Maven Central and the 0.103.0 artifacts from Signal's server. So the new repository has a
+cryptographic chain back to the one it replaces. The chain reaches only as far as that key, though.
+A second review ran the verifier over older Maven Central releases: GOOD on 0.80 and 0.84, BAD on
+0.75 and earlier, including the 0.21.1 the published app uses. The key was trusted on first use
+when this branch first pinned 0.86.5.
+
+Every keyserver serves that key without a user ID, and `gpg` and `gpgv` both refuse such a key.
+`tools/verify-signal-artifacts.py` checks the OpenPGP signature directly. It pins the fingerprint
+and fails closed; a truncated jar and a jar with one byte changed both come back BAD.
+
+### What changed underneath
+
+Read from the libsignal source between the two tags, since the GitHub release bodies are empty:
+
+- **SPQR is mandatory for new sessions** (0.92 forced it for new sessions; 0.100 removed the ratio
+  knob; 0.103 sets `min_version: V1` when a session starts). An existing session with no SPQR state
+  is not refused. 0.86.5 already
+  started every session at SPQR V1, falling back to none only if the peer lacked it
+  (`min_version: V0`). Two 0.86.5 peers therefore negotiated V1, and their sessions carry the state
+  0.103 now demands.
+- **The session layer was rewritten** (`session_management.rs`, about 3,200 new lines).
+- **1:1 encrypt, decrypt and session build take the local address** (0.91, 0.93). When both names
+  parse as Signal service IDs, every PreKey message binds the sender's and recipient's
+  (name, device id) into its MAC. These are a session's opening messages, sent until the peer first
+  replies. This app's names are bare UUIDs, which parse as service IDs. Ordinary messages on an
+  acknowledged session carry no addresses: `message_encrypt` passes none on that branch. This was
+  measured before it was written down. A probe that sent from a wrong address on an established
+  session was accepted, directly through libsignal as well as through the app.
+
+`SignalProtocolMain.localProtocolAddress()` supplies the local address. It is the same fold,
+`ProtocolAddresses.of(name, device id)`, of the same two fields the message envelope carries, which
+is exactly how the receiver reconstructs the sender. Control: mutate it to bind a neighbouring
+device id, and every new session fails on the peer's first decrypt
+(`TwoUsersInSeparateProcessesTest` 2 cases, `StoresFromLibsignal0865SurviveTest` 2 cases). Sessions
+established before the upgrade are unaffected, consistent with binding covering PreKey messages
+only.
+
+### The proof
+
+`UpgradeFixtureGenerator` ran once with 0.86.5 pinned and wrote four users' stores through the
+app's own entry points and JSON persistence. That fixture was committed before the bump.
+`StoresFromLibsignal0865SurviveTest` opens it under 0.103.0, and all ten cases pass:
+- the fixture predates address binding, read from the bytes: its opening message has no
+  `addresses` field, which every build from 0.91 on writes. An opening message from the current
+  build is parsed the same way and does have it;
+- identity keys are byte-identical, and the safety number is unchanged;
+- a message in flight each way at the moment of the upgrade is read;
+- a message whose key 0.86.5 held as skipped is read;
+- the established conversation carries on both ways, with or without first draining what was in
+  flight, and also when the first send after the upgrade rotates the signed pre-key. The fixture's
+  rotation clocks read 2026-10-30, so the other cases hold rotation off rather than let the calendar
+  pick the path;
+- a session still pending at the upgrade (Carol) completes;
+- an invite made before the upgrade (Dave) is accepted afterwards by a brand-new user;
+- an account with a legacy device id (7296, folded on load) still talks now that PreKey messages
+  bind addresses.
+
+Control: remove Bob's stored session from the fixture, and exactly the four cases that read it fail.
+
+The legacy-id case was wrong on its first version. It built an account holding the raw id 7296,
+and libsignal refused to build that account's invite. That state is unreachable, because the app's
+address deserializer folds on load and the account's id is taken from that address. The case now
+loads through the deserializer, as StorageHelper does.
+
+### Four security tests had to change what they model
+
+They forged a sender by encrypting normally and then rewriting the envelope's name and device id.
+0.103 refuses that on a PreKey message, which mostly closes relabelling for a relay (the
+messenger), because it cannot recompute the MAC. **Mostly:** the MAC binds the UUID's 16 bytes and
+this app compares name strings. The second review found that the peer's own UUID in upper case
+passes libsignal and matches none of the app's rows. Measured on 0.103.0: the upper-cased relabel
+decrypts, a fresh UUID does not. `AciphertextAddThatPinsAknownKeyIsWarnedAboutTest` drives exactly
+that relay attack now. My first draft of this section said relay relabelling was closed, and it is
+not.
+
+Nor does binding remove what the other three tests defend, because a sender chooses its own address
+and the MAC binds whatever it chose. `SpeakingFrom` gives those tests that attacker: the same keys
+and stores, presenting a chosen address. `ImpostorDeviceIdTest`, `PostRejectBundlelessWarningTest`
+and `AsilentPinAtAkeylessRowIsCautionedTest` drive it.
+
+Each of the four has a control run against the production line it guards:
+
+| Test | Control | Result |
+| --- | --- | --- |
+| `AciphertextAdd…` | ciphertext arm's `warnIfThisKeyIsPinnedElsewhere` deleted | attack case fails |
+| `ImpostorDeviceId…` | device id dropped from the chat-log key | 3 of 4 fail |
+| `PostRejectBundleless…` | ciphertext arm's `warnIfKeyWasRejected` deleted | add-contact route case fails |
+| `AsilentPin…` | the decrypt arm's pin caution deleted | 2 of 3 fail |
+
+The first control was aimed at the bundle arm first (line 1766), as the reviewer suggested, and the
+test stayed green. That line is not on this test's path; the ciphertext arm (1884) is, and there it
+bites.
+
+### Re-measured, not relabelled
+
+- REVIEW-SETTLED's two version-bound refutations: the corrupted first message that does not poison
+  the genuine copy, and wrong-length signatures that return false without throwing. Both are held by
+  tests that pass on 0.103.0.
+- The fingerprint generator's version argument is still inert (`TrustScopingTest`).
+- The release APK is 12.6 MB (arm64-v8a) and 10.2 MB (armeabi-v7a), up from 9.8 MB and 8.0 MB. The
+  strip gate passes; the growth is the new native library (9.2 MB stripped) plus dex.
+  `libsignal_jni_testing.so` is still excluded.
+- New on the release classpath: kotlin-stdlib 2.2.20 and kotlinx-serialization 1.9.0. OSV reports
+  no advisories for them or for libsignal 0.103.0.
+
+### Not established
+
+**Whether sessions from the published app (0.1.5, libsignal 0.21.1) survive.** That is the population
+that exists. The legacy fixture (`fixtures/protocol-store.json`) holds no sessions, so neither
+0.86.5 nor 0.103.0 has been shown to continue an X3DH-era conversation. The inference that they
+probably do is not evidence: spqr treats empty state as V0, and existing sessions are not refused.
+Settling it needs stores written by the 0.21.1 build.
+
+A session left unanswered for 30 days at its initiator makes the next send fail with
+`NoSessionException`, and the app shows "encryption failed". That is `MAX_UNACKNOWLEDGED_SESSION_AGE`,
+the same in both versions. It is untested, and it is not a regression.
+
+A 0.86.5 peer talking to a 0.103.0 peer in either direction is untested. Only the one-way case is
+covered: an invite written by 0.86.5 and accepted by 0.103.0. Mixed-version compatibility is not a
+requirement (settled 2026-08-26). Signal's own cross-version test shows a build without SPQR (v0.73)
+cannot start a session with the current one. 0.86.5 does have SPQR V1, so that result does not carry
+over, but nothing here has measured it either way.

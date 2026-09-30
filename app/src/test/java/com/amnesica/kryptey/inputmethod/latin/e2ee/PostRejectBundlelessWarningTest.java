@@ -17,6 +17,7 @@ import com.amnesica.kryptey.inputmethod.R;
 import com.amnesica.kryptey.inputmethod.signalprotocol.Account;
 import com.amnesica.kryptey.inputmethod.signalprotocol.MessageEnvelope;
 import com.amnesica.kryptey.inputmethod.signalprotocol.SignalProtocolMain;
+import com.amnesica.kryptey.inputmethod.signalprotocol.SpeakingFrom;
 import com.amnesica.kryptey.inputmethod.signalprotocol.chat.Contact;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.EnvelopeCodec;
 import com.amnesica.kryptey.inputmethod.signalprotocol.encoding.RawEncoder;
@@ -142,7 +143,8 @@ public class PostRejectBundlelessWarningTest {
     activate(victim);
     final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
 
-    activate(attacker);
+    // Speaking from the peer's address, as the attacker's own client can; see SpeakingFrom.
+    activate(SpeakingFrom.address(attacker, peerAddress.getName(), peerAddress.getDeviceId()));
     assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
         EnvelopeCodec.fromWire(victimBundle), victimAddress()));
     final MessageEnvelope forged = SignalProtocolMain.encryptMessage("hello", victimAddress());
@@ -233,7 +235,7 @@ public class PostRejectBundlelessWarningTest {
     activate(victim);
     final String victimBundle = SignalProtocolMain.exportOwnKeyBundle();
 
-    activate(attacker);
+    activate(SpeakingFrom.address(attacker, "stranger-nobody-has-pinned", 1));
     assertTrue(SignalProtocolMain.processPreKeyResponseMessage(
         EnvelopeCodec.fromWire(victimBundle), victimAddress()));
     final MessageEnvelope sent = SignalProtocolMain.encryptMessage("hello", victimAddress());

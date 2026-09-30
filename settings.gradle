@@ -10,6 +10,25 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // libsignal moved off Maven Central after 0.86.5 (libsignal release notes, v0.86.6); every
+        // later release is published only here. exclusiveContent makes this repository the ONLY
+        // source for org.signal and restricts it to org.signal: nothing else can be resolved from
+        // it, and org.signal cannot be resolved from anywhere else, so a same-named artifact planted
+        // on another repository is never consulted. The artifacts are also pinned by SHA-256 in
+        // verification-metadata.xml, and their PGP signatures were checked against the key that has
+        // signed libsignal's Maven Central releases since at least 0.80, including the 0.86.5 this
+        // build pinned before (tools/verify-signal-artifacts.py).
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = 'SignalBuildArtifacts'
+                    url = 'https://build-artifacts.signal.org/libraries/maven/'
+                }
+            }
+            filter {
+                includeGroup 'org.signal'
+            }
+        }
     }
 }
 

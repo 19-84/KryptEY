@@ -46,7 +46,7 @@ jobs:
       # Robolectric ever needs a jar that is not pinned, the Unit tests step fails naming it. Do not
       # answer that failure by adding a cache back.
 
-      # Dependency verification is enforced (gradle/verification-metadata.xml pins 280 artifacts
+      # Dependency verification is enforced (gradle/verification-metadata.xml pins 286 artifacts
       # by SHA-256). Deliberately NOT disabled here - CI is where a substituted artifact should be
       # caught, so a verification failure must fail the build.
       - name: Unit tests

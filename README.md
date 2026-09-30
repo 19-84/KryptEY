@@ -97,12 +97,13 @@ first time is accepted because there is nothing yet to compare it against. That 
 security numbers by voice matters, and it is the only step that tells your chat partner apart from
 the messenger.
 
-**Key agreement is PQXDH**, the post-quantum variant, using libsignal 0.86.5. Each handshake combines
+**Key agreement is PQXDH**, the post-quantum variant, using libsignal 0.103.0. Each handshake combines
 the elliptic curve X25519 with a Kyber-1024 key encapsulation, so an attacker who records traffic
 today and gains a quantum computer later still cannot derive the session key. Earlier versions of
 this app used X3DH, which is X25519 alone. The distinction is invisible from the outside — an X3DH
 session establishes and carries messages identically — so the app asserts the negotiated session
-version rather than assuming it.
+version rather than assuming it. After the handshake, sessions also run SPQR, libsignal's
+post-quantum ratchet, which libsignal now requires of every new session.
 
 The hash function SHA-256 is used for the various chains and AES-256 with CBC (Pkcs#7) is used for
 the encryption of the messages. SHA-512 is also used to generate the fingerprint, the representation
