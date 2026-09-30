@@ -70,6 +70,18 @@ docker run -d --name "$NAME" "$IMAGE" bash -lc "
 
 echo "==> waiting for boot (up to ${BOOT_TIMEOUT}s)"
 deadline=$((SECONDS + BOOT_TIMEOUT))
+# The liveness check below must not run before the emulator has had a chance to exist. `docker run
+# -d` returns as soon as the container starts, and the launcher then takes a moment to spawn QEMU, so
+# checking for qemu-system on the very first poll reported "the emulator process is gone" with an
+# empty log - twice in one session on a loaded host, each time costing a whole run. It also accepts
+# the launcher itself as alive, not only QEMU. It matches process NAMES, not command lines: this
+# container's PID 1 is the bash -lc that launched the emulator, and its command line contains the
+# whole launch command, so a command-line match on "-avd" or "emulator" would always find PID 1 and
+# never report a dead emulator at all.
+alive_from=$((SECONDS + 60))
+emulator_alive() {
+  docker exec "$NAME" sh -c 'pgrep qemu-system > /dev/null || pgrep -x emulator > /dev/null' 2>/dev/null
+}
 until [ "$(docker exec "$NAME" $ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
   if [ $SECONDS -ge $deadline ]; then
     echo "!! the emulator did not boot. Its log:"
@@ -78,7 +90,7 @@ until [ "$(docker exec "$NAME" $ADB shell getprop sys.boot_completed 2>/dev/null
   fi
   # A dead emulator and a slow one look identical from outside, and one of them is worth
   # saying out loud rather than waiting another twenty minutes for.
-  if ! docker exec "$NAME" pgrep -f qemu-system > /dev/null 2>&1; then
+  if [ $SECONDS -ge $alive_from ] && ! emulator_alive; then
     echo "!! the emulator process is gone. Its log:"
     docker exec "$NAME" tail -30 /tmp/emu.log || true
     exit 1
@@ -111,7 +123,7 @@ until docker exec "$NAME" $ADB shell service check input_method 2>/dev/null | gr
   # docker's own errors and the pipeline's status is grep's, so a container that has died is
   # indistinguishable from a service that is merely slow - and this loop would spend its whole
   # 600s before printing a confident, wrong diagnosis.
-  if ! docker exec "$NAME" pgrep -f qemu-system > /dev/null 2>&1; then
+  if ! emulator_alive; then
     echo "!! the emulator process is gone while waiting for the input-method service. Its log:"
     docker exec "$NAME" tail -30 /tmp/emu.log || true
     exit 1
