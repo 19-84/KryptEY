@@ -8722,10 +8722,11 @@ Read from the libsignal source between the two tags, since the GitHub release bo
   (`min_version: V0`). Two 0.86.5 peers therefore negotiated V1, and their sessions carry the state
   0.103 now demands.
 - **The session layer was rewritten** (`session_management.rs`, about 3,200 new lines).
-- **1:1 encrypt, decrypt and session build take the local address** (0.91, 0.93). When both names
-  parse as Signal service IDs, every PreKey message binds the sender's and recipient's
-  (name, device id) into its MAC. These are a session's opening messages, sent until the peer first
-  replies. This app's names are bare UUIDs, which parse as service IDs. Ordinary messages on an
+- **1:1 encrypt, decrypt and session build take the local address** (0.91, 0.93). When both names,
+  as the sender holds them, parse as Signal service IDs, every PreKey message binds both parties'
+  service IDs (the UUID's bytes) and device ids into its MAC. These are a session's opening
+  messages, sent until the peer first replies. This app's names are bare UUIDs, which parse. If
+  either name does not parse, no addresses are sent and the receiver accepts the message anyway. Ordinary messages on an
   acknowledged session carry no addresses: `message_encrypt` passes none on that branch. This was
   measured before it was written down. A probe that sent from a wrong address on an established
   session was accepted, directly through libsignal as well as through the app.
@@ -8750,9 +8751,11 @@ app's own entry points and JSON persistence. That fixture was committed before t
 - a message in flight each way at the moment of the upgrade is read;
 - a message whose key 0.86.5 held as skipped is read;
 - the established conversation carries on both ways, with or without first draining what was in
-  flight, and also when the first send after the upgrade rotates the signed pre-key. The fixture's
-  rotation clocks read 2026-10-30, so the other cases hold rotation off rather than let the calendar
-  pick the path;
+  flight, and also when the first send after the upgrade rotates the signed pre-key. In that case
+  the receiver must accept the rotated bundle (a refusal would otherwise be decrypted around), and
+  the pre-upgrade message in flight on the session that acceptance archived still opens. The
+  fixture's rotation clocks read 2026-10-30, so the other cases hold rotation off rather than let the
+  calendar pick the path;
 - a session still pending at the upgrade (Carol) completes;
 - an invite made before the upgrade (Dave) is accepted afterwards by a brand-new user;
 - an account with a legacy device id (7296, folded on load) still talks now that PreKey messages
@@ -8768,13 +8771,20 @@ loads through the deserializer, as StorageHelper does.
 ### Four security tests had to change what they model
 
 They forged a sender by encrypting normally and then rewriting the envelope's name and device id.
-0.103 refuses that on a PreKey message, which mostly closes relabelling for a relay (the
-messenger), because it cannot recompute the MAC. **Mostly:** the MAC binds the UUID's 16 bytes and
-this app compares name strings. The second review found that the peer's own UUID in upper case
-passes libsignal and matches none of the app's rows. Measured on 0.103.0: the upper-cased relabel
-decrypts, a fresh UUID does not. `AciphertextAddThatPinsAknownKeyIsWarnedAboutTest` drives exactly
-that relay attack now. My first draft of this section said relay relabelling was closed, and it is
-not.
+0.103 refuses that on a PreKey message. **That does not close relabelling for a relay** (the
+messenger); it barely raises the cost. Two routes were found in two review rounds, and both were
+measured on 0.103.0:
+- **Case variants.** The MAC binds the UUID's 16 bytes, and this app compares name strings. The
+  peer's own UUID in upper case passes libsignal and matches none of the app's rows.
+  `AciphertextAddThatPinsAknownKeyIsWarnedAboutTest` drives this route.
+- **Stripping the binding.** The relay rewrites the victim's invite to a name that does not parse
+  as a service ID, e.g. `{uuid}`. The app accepts any printable name, so the peer builds its session
+  under it and sends opening messages with no addresses. libsignal accepts those for backward
+  compatibility, so they can then be relabelled to a fresh UUID. The victim accepts that relabel.
+
+My first draft said relay relabelling was closed, and the second said it was "mostly" closed.
+Neither is true. What protects the user is the app's own pinning, warnings and per-address
+records, exactly as before the upgrade.
 
 Nor does binding remove what the other three tests defend, because a sender chooses its own address
 and the MAC binds whatever it chose. `SpeakingFrom` gives those tests that attacker: the same keys
@@ -8807,6 +8817,16 @@ bites.
   no advisories for them or for libsignal 0.103.0.
 
 ### Not established
+
+**A decision, not a gap: closing relay relabelling in the app.** libsignal leaves both relay routes
+open. The app could close them itself:
+- refuse invite names that are not canonical lowercase UUIDs, so a peer always holds a name that
+  parses and always sends addresses;
+- fold UUID-shaped names to lowercase on receipt, so a case variant lands on the genuine row.
+
+The cost is compatibility. Every test that uses a non-UUID name would change, and any stored
+contact whose name is not a lowercase UUID would be locked out. The pinned-elsewhere and rejection
+warnings already cover both routes today, which is why this is left to the owner.
 
 **Whether sessions from the published app (0.1.5, libsignal 0.21.1) survive.** That is the population
 that exists. The legacy fixture (`fixtures/protocol-store.json`) holds no sessions, so neither

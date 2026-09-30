@@ -3011,12 +3011,17 @@ public class SignalProtocolMain {
    * This account's address as its peers hold it, which libsignal binds into a new session's MAC.
    *
    * <p>From libsignal 0.91 a 1:1 encrypt, decrypt or session build takes the local address. When
-   * both names parse as Signal service IDs - ours are bare UUIDs, which do - every PreKey message (a
-   * session's opening messages, sent until the peer first replies) carries the sender's and
-   * recipient's (name, device id) inside its MAC, and the receiver checks them against the addresses
-   * it holds. Ordinary messages on an acknowledged session carry none (libsignal's message_encrypt
-   * passes no address on that branch). So this must be byte-for-byte the address the PEER constructs
-   * for us, or no new session can start: the peer's first decrypt fails.
+   * both names, as the sender holds them, parse as Signal service IDs - ours are bare UUIDs, which
+   * do - every PreKey message (a session's opening messages, sent until the peer first replies)
+   * carries both parties' service IDs (the UUID's bytes, so letter case does not matter) and device
+   * ids inside its MAC, and the receiver checks them against the addresses it holds. If either name
+   * does not parse, no addresses are sent and the receiver accepts the message regardless. Ordinary
+   * messages on an acknowledged session carry none (libsignal's message_encrypt passes no address on
+   * that branch). So this must denote the same service ID and device id the PEER derives for us, or
+   * no new session can start: the peer's first decrypt fails.
+   *
+   * <p>This is a correctness requirement, not a defence: a relay can strip the binding by renaming
+   * the invite (see SpeakingFrom in the tests).
    *
    * <p>The peer builds it as {@code ProtocolAddresses.of(envelope name, envelope device id)} (see
    * {@code extractContactFromEnvelope}). Message envelopes carry {@code mAccount.getName()} and

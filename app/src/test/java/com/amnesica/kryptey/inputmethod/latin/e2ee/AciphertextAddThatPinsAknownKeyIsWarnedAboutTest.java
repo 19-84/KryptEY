@@ -46,8 +46,11 @@ import java.util.ArrayList;
  * genuine bundle-less message under any address. Now a PreKey message binds both addresses into its
  * MAC - but as the 16 bytes of the UUID, while this app compares names as strings. So the peer's own
  * UUID in upper case passes libsignal's check (same bytes) and matches none of the app's rows (a
- * different string): a second row, holding the peer's real key. A different UUID is refused.
- * Measured on 0.103.0: the upper-cased relabel decrypts, a fresh UUID does not. The key inside is the peer's real one,
+ * different string): a second row, holding the peer's real key. That is the cheapest route, and the
+ * one driven here. It is not the only one: a relay that also rewrites the invite, so the peer holds
+ * the victim under a name that does not parse as a service ID, gets opening messages with no
+ * addresses at all and can relabel them to anything. Both measured on 0.103.0. This warning is what
+ * covers either route; libsignal does not. The key inside is the peer's real one,
  * which is exactly what makes this the fail-OPEN case the raiser's own comment describes: the pin
  * is live, the safety number of the new row matches the peer's, and comparing numbers by voice
  * SUCCEEDS. Only this sentence tells the user the two rows carry one key.
@@ -182,7 +185,15 @@ public class AciphertextAddThatPinsAknownKeyIsWarnedAboutTest {
     // same service id to libsignal, a different address to this app. The key inside is still K, so
     // this pins K a second time.
     typeTheName("Bobby", "J");
-    strip.addContactForTest(ciphertextFrom(peerAddress.getName().toUpperCase(java.util.Locale.ROOT)));
+    final String caseVariant = peerAddress.getName().toUpperCase(java.util.Locale.ROOT);
+    strip.addContactForTest(ciphertextFrom(caseVariant));
+    // The row is created before the decrypt, so a row count cannot tell a refused relabel from an
+    // accepted one. A key pinned at the variant address can: libsignal saves the identity only after
+    // the message verifies.
+    assertTrue("precondition: libsignal must have ACCEPTED the relabelled message and pinned the "
+            + "peer's key at the case-variant address - if it refused, the warning below is absent "
+            + "for the wrong reason",
+        SignalProtocolMain.hasPinnedKey(ProtocolAddresses.of(caseVariant, peerAddress.getDeviceId())));
 
     final ArrayList<Contact> contacts = victim.getContactList();
     assertTrue("precondition: the relabelled message must have created a SECOND row - if it did "

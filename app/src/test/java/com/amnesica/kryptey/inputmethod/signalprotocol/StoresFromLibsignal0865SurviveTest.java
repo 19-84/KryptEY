@@ -262,9 +262,15 @@ public class StoresFromLibsignal0865SurviveTest {
     assertNotNull("precondition: the send must really have rotated and attached a bundle, or this "
         + "is the plain path again", rotating.getPreKeyResponse());
     assertEquals("bob, rotating", receive(alice, bob, EnvelopeCodec.toWire(rotating)));
-    // What was in flight before the upgrade still opens after the rotation.
-    assertEquals(expect.get("alice-to-bob-inflight"),
-        receive(bob, alice, wire.get("alice-to-bob-inflight")));
+    // Decrypt falls back to the existing session when an attached bundle is refused, so a refusal
+    // would leave the rest of this case green over the untouched 0.86.5 session. The user would see
+    // a refused-invite warning at every rotation.
+    assertFalse("alice must ACCEPT the rotated bundle, not decrypt around it",
+        SignalProtocolMain.lastAttachedBundleWasRefused());
+    // The direction the rotation disturbs: accepting Bob's bundle archived Alice's 0.86.5 session,
+    // and Bob's pre-upgrade message to her was encrypted on it.
+    assertEquals(expect.get("bob-to-alice-inflight"),
+        receive(alice, bob, wire.get("bob-to-alice-inflight")));
     talk(alice, bob, "after the rotation");
   }
 

@@ -8,20 +8,18 @@ import java.util.ArrayList;
  * The same person - same identity key, same stores - speaking from an address they chose.
  *
  * <p>Until libsignal 0.91 a test could forge a sender by encrypting normally and then rewriting the
- * envelope's name and device id, because neither was authenticated. Now both parties' addresses are
- * bound into the MAC of every PreKey message - a session's opening messages, until the peer first
- * replies - whenever the names parse as Signal service IDs, which this app's do. So a relabelled
- * PreKey message is refused before the app ever sees it, and a relay, which cannot recompute the
- * MAC, loses most of that attack. Not all of it: the MAC binds the UUID's bytes and this app compares
- * name strings, so the sender's own UUID in upper case still passes (see
- * AciphertextAddThatPinsAknownKeyIsWarnedAboutTest, which drives exactly that). Ordinary messages on
- * an acknowledged session carry no addresses, so the binding says nothing about them.
+ * envelope's name and device id, because neither was authenticated. Now a PreKey message - a
+ * session's opening message, until the peer first replies - binds both parties' addresses into its
+ * MAC, provided both names parse as Signal service IDs as the SENDER holds them. So a test that
+ * relabels an honest sender's opening message now tests libsignal's refusal, not the app.
  *
- * <p>It does not close it for the sender. Whoever runs the sending client chooses what it calls
- * itself, and the MAC then binds the address they chose. Nothing in the protocol ties an address to
- * an identity key - that is what the app's pinning, warnings and per-address records are for - so
- * the tests of those defences model this attacker. Rewriting the envelope after the fact would now
- * only test that libsignal refuses it.
+ * <p>Binding is not a defence to lean on, in either direction. The sender chooses its own address
+ * and the MAC binds whatever it chose. And a relay is barely slowed: it can relabel under a case
+ * variant of the sender's UUID (the MAC binds the UUID's bytes, this app compares strings), or
+ * rewrite the invite so the peer holds the victim under a name that does not parse, after which the
+ * peer sends no addresses at all and any relabel is accepted. Both were measured on 0.103.0. What
+ * protects the user is the app's pinning, warnings and per-address records, so the tests of those
+ * defences model an attacker libsignal does not stop - this one.
  */
 public final class SpeakingFrom {
 
