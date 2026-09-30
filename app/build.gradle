@@ -262,6 +262,8 @@ android {
             all {
                 systemProperty 'kryptey.writeFixtures',
                         System.getProperty('kryptey.writeFixtures', 'false')
+                systemProperty 'kryptey.writeUpgradeFixtures',
+                        System.getProperty('kryptey.writeUpgradeFixtures', 'false')
 
                 // Robolectric runs offline, from android-all jars Gradle resolved and verified.
                 //
